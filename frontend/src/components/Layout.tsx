@@ -36,7 +36,7 @@ const menuItems = [
   { href: '/checklists', label: 'Checklists', icon: CheckSquare },
   { href: '/properties', label: 'Properties', icon: Building },
   { href: '/ai', label: 'AI Tools', icon: Brain },
-  { href: '/personal', label: 'My Notes', icon: StickyNote },
+  { href: '/notes', label: 'My Notes', icon: StickyNote },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -175,7 +175,7 @@ export default function Layout({ children }: LayoutProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto p-6">
           {children}
         </main>
       </div>
