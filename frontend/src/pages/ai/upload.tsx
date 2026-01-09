@@ -173,7 +173,11 @@ export default function AIUploadCenter() {
         ))
 
         // Auto-expand completed files
-        setExpandedFiles(prev => new Set([...prev, uploadedFile.id]))
+        setExpandedFiles(prev => {
+          const newSet = new Set(Array.from(prev))
+          newSet.add(uploadedFile.id)
+          return newSet
+        })
 
       } catch (error: any) {
         console.error('Error processing file:', error)
@@ -186,7 +190,11 @@ export default function AIUploadCenter() {
             ? { ...f, status: 'completed', progress: 100, extractedData: mockExtractedData }
             : f
         ))
-        setExpandedFiles(prev => new Set([...prev, uploadedFile.id]))
+        setExpandedFiles(prev => {
+          const newSet = new Set(Array.from(prev))
+          newSet.add(uploadedFile.id)
+          return newSet
+        })
       }
     }
 
