@@ -3,10 +3,11 @@
  * صفحه ابزارهای هوش مصنوعی
  */
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import Layout from '@/components/Layout'
 import { aiApi } from '@/services/api'
 import { toast } from 'react-hot-toast'
-import { Brain, Sparkles, FileText, Shield, Loader, Send, Copy, RefreshCw } from 'lucide-react'
+import { Brain, Sparkles, FileText, Shield, Loader, Send, Copy, RefreshCw, Upload, ArrowRight } from 'lucide-react'
 
 export default function AIToolsPage() {
   const [activeTab, setActiveTab] = useState<'generate' | 'analyze' | 'risk' | 'summary'>('generate')
@@ -109,6 +110,24 @@ export default function AIToolsPage() {
             )}
           </div>
         </div>
+
+        {/* Upload Center Banner */}
+        <Link href="/ai/upload" className="block">
+          <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl p-6 text-white hover:shadow-lg transition-shadow">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-lg">
+                  <Upload size={32} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">AI Upload Center</h3>
+                  <p className="text-purple-100">Upload documents and let AI extract & categorize data automatically</p>
+                </div>
+              </div>
+              <ArrowRight size={24} />
+            </div>
+          </div>
+        </Link>
 
         {/* Tabs */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
