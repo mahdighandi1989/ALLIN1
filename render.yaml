@@ -5,13 +5,11 @@ services:
   # Backend API Service
   - type: web
     name: banking-ops-api
-    env: python
+    runtime: python
     region: frankfurt
-    plan: starter
-    buildCommand: |
-      cd backend && pip install -r requirements.txt
-    startCommand: |
-      cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DEBUG
         value: "false"
@@ -23,45 +21,17 @@ services:
         fromDatabase:
           name: banking-ops-db
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: banking-ops-redis
-          property: connectionString
-      # AI Providers (configure in Render dashboard)
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: GOOGLE_AI_API_KEY
-        sync: false
-      # Email
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      # Google Drive
-      - key: GOOGLE_DRIVE_ENABLED
-        value: "false"
-      - key: GOOGLE_CREDENTIALS_FILE
-        sync: false
-      - key: GOOGLE_DRIVE_FOLDER_ID
-        sync: false
     healthCheckPath: /health
     autoDeploy: true
 
   # Frontend (Next.js)
   - type: web
     name: banking-ops-frontend
-    env: node
+    runtime: node
     region: frankfurt
-    plan: starter
-    buildCommand: |
-      cd frontend && npm install && npm run build
-    startCommand: |
-      cd frontend && npm start
+    plan: free
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm start
     envVars:
       - key: NEXT_PUBLIC_API_URL
         fromService:
@@ -71,18 +41,10 @@ services:
     healthCheckPath: /
     autoDeploy: true
 
-  # Redis Cache
-  - type: redis
-    name: banking-ops-redis
-    region: frankfurt
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-
 databases:
   # PostgreSQL Database
   - name: banking-ops-db
     region: frankfurt
-    plan: starter
+    plan: free
     databaseName: banking_ops
     user: banking_ops_user
-    postgresMajorVersion: 15
