@@ -5,10 +5,13 @@ AI API Routes
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from sqlalchemy import select
+import json
 
 from app.core.security import get_current_user, TokenData, require_permission
 from app.core.database import get_db
-from app.services.ai_service import ai_service
+from app.services.ai_service import ai_service, AIService
+from app.models.settings import SystemSetting
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -46,21 +49,143 @@ class SummaryReportRequest(BaseModel):
     provider: Optional[str] = None
 
 
+# ========== Helper Functions ==========
+async def get_configured_providers_from_db(db: AsyncSession) -> List[str]:
+    """
+    دریافت لیست پرووایدرهای پیکربندی شده از دیتابیس
+    Get list of configured AI providers from database settings
+    """
+    result = await db.execute(
+        select(SystemSetting).where(
+            SystemSetting.key.like("ai_provider_%"),
+            SystemSetting.is_active == True
+        )
+    )
+    settings = result.scalars().all()
+
+    providers = []
+    for setting in settings:
+        provider_id = setting.key.replace("ai_provider_", "")
+        try:
+            data = json.loads(setting.value) if setting.value else {}
+            # Check if provider has API key
+            # If API key exists, consider enabled unless explicitly disabled
+            if data.get("api_key"):
+                # Default to enabled=True if not explicitly set to False
+                if data.get("enabled", True) != False:
+                    providers.append(provider_id)
+        except json.JSONDecodeError:
+            continue
+
+    return providers
+
+
+def reinitialize_ai_service_with_keys(providers_data: Dict[str, Dict]) -> None:
+    """
+    بروزرسانی AIService با کلیدهای API از دیتابیس
+    Reinitialize AIService with API keys from database
+    """
+    from app.services.ai_service import OpenAIProvider, AnthropicProvider, GoogleAIProvider, AIProvider
+
+    for provider_id, data in providers_data.items():
+        api_key = data.get("api_key")
+        # Skip if no API key or explicitly disabled
+        if not api_key or data.get("enabled", True) == False:
+            continue
+
+        if provider_id == "openai" and AIProvider.OPENAI not in ai_service.providers:
+            provider = OpenAIProvider()
+            provider.api_key = api_key
+            ai_service.providers[AIProvider.OPENAI] = provider
+
+        elif provider_id == "anthropic" and AIProvider.ANTHROPIC not in ai_service.providers:
+            provider = AnthropicProvider()
+            provider.api_key = api_key
+            ai_service.providers[AIProvider.ANTHROPIC] = provider
+
+        elif provider_id == "google" and AIProvider.GOOGLE not in ai_service.providers:
+            provider = GoogleAIProvider()
+            provider.api_key = api_key
+            ai_service.providers[AIProvider.GOOGLE] = provider
+
+
+async def ensure_ai_providers_loaded(db: AsyncSession) -> AIService:
+    """
+    اطمینان از بارگذاری پرووایدرها از دیتابیس
+    Ensure AI providers are loaded from database before using them
+    """
+    # If service already has providers, return it
+    if ai_service.get_available_providers():
+        return ai_service
+
+    # Load from database
+    result = await db.execute(
+        select(SystemSetting).where(
+            SystemSetting.key.like("ai_provider_%"),
+            SystemSetting.is_active == True
+        )
+    )
+    settings = result.scalars().all()
+
+    providers_data = {}
+    for setting in settings:
+        provider_id = setting.key.replace("ai_provider_", "")
+        try:
+            providers_data[provider_id] = json.loads(setting.value) if setting.value else {}
+        except json.JSONDecodeError:
+            continue
+
+    if providers_data:
+        reinitialize_ai_service_with_keys(providers_data)
+
+    return ai_service
+
+
 # ========== Routes ==========
 @router.get("/status")
 async def get_ai_status(
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     دریافت وضعیت سرویس‌های AI
     """
-    providers = await ai_service.get_available_providers()
+    # First check providers initialized from environment variables
+    env_providers = ai_service.get_available_providers()
+
+    # Then check providers from database
+    db_providers = await get_configured_providers_from_db(db)
+
+    # Combine both sources (removing duplicates)
+    all_providers = list(set(env_providers + db_providers))
+
+    # If we have db providers but not in service, reinitialize them
+    if db_providers and not env_providers:
+        # Get full provider data for reinitialization
+        result = await db.execute(
+            select(SystemSetting).where(
+                SystemSetting.key.like("ai_provider_%"),
+                SystemSetting.is_active == True
+            )
+        )
+        settings = result.scalars().all()
+        providers_data = {}
+        for setting in settings:
+            provider_id = setting.key.replace("ai_provider_", "")
+            try:
+                providers_data[provider_id] = json.loads(setting.value) if setting.value else {}
+            except json.JSONDecodeError:
+                continue
+
+        reinitialize_ai_service_with_keys(providers_data)
+        # Update available providers after reinitialization
+        all_providers = list(set(ai_service.get_available_providers() + db_providers))
 
     return {
-        "available": len(providers) > 0,
-        "enabled": len(providers) > 0,
-        "available_providers": providers,
-        "default_provider": "openai" if "openai" in providers else (providers[0] if providers else None),
+        "available": len(all_providers) > 0,
+        "enabled": len(all_providers) > 0,
+        "available_providers": all_providers,
+        "default_provider": "openai" if "openai" in all_providers else (all_providers[0] if all_providers else None),
         "features": [
             "document_analysis",
             "risk_assessment",
@@ -74,13 +199,17 @@ async def get_ai_status(
 @router.post("/generate")
 async def generate_text(
     request: GenerateRequest,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     تولید متن با AI
     """
     try:
-        result = await ai_service.generate(
+        # Ensure providers are loaded from database
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.generate(
             prompt=request.prompt,
             provider=request.provider,
             system_prompt=request.system_prompt,
@@ -102,13 +231,16 @@ async def generate_text(
 @router.post("/analyze")
 async def analyze_document(
     request: AnalyzeDocumentRequest,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     تحلیل سند با AI
     """
     try:
-        result = await ai_service.analyze_document(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.analyze_document(
             content=request.content,
             analysis_type=request.analysis_type,
             provider=request.provider
@@ -126,13 +258,16 @@ async def analyze_document(
 @router.post("/extract-data")
 async def extract_customer_data(
     request: ExtractDataRequest,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     استخراج اطلاعات مشتری از سند
     """
     try:
-        result = await ai_service.extract_customer_data(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.extract_customer_data(
             document_content=request.document_content,
             provider=request.provider
         )
@@ -148,13 +283,16 @@ async def extract_customer_data(
 @router.post("/risk-assessment")
 async def assess_risk(
     request: RiskAssessmentRequest,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     ارزیابی ریسک با AI
     """
     try:
-        result = await ai_service.assess_risk(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.assess_risk(
             customer_data=request.customer_data,
             facilities_data=request.facilities_data,
             provider=request.provider
@@ -171,13 +309,16 @@ async def assess_risk(
 @router.post("/generate-summary")
 async def generate_summary_report(
     request: SummaryReportRequest,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     تولید گزارش خلاصه با AI
     """
     try:
-        result = await ai_service.generate_summary_report(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.generate_summary_report(
             customer_data=request.customer_data,
             facilities_data=request.facilities_data,
             provider=request.provider
@@ -195,13 +336,16 @@ async def generate_summary_report(
 async def suggest_missing_fields(
     profile_data: Dict[str, Any],
     provider: Optional[str] = None,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     پیشنهاد فیلدهای ناقص پروفایل
     """
     try:
-        result = await ai_service.suggest_missing_fields(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.suggest_missing_fields(
             profile_data=profile_data,
             provider=provider
         )
@@ -219,7 +363,8 @@ async def analyze_uploaded_document(
     file: UploadFile = File(...),
     analysis_type: str = "summary",
     provider: Optional[str] = None,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     تحلیل فایل آپلود شده
@@ -237,7 +382,9 @@ async def analyze_uploaded_document(
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
     try:
-        result = await ai_service.analyze_document(
+        service = await ensure_ai_providers_loaded(db)
+
+        result = await service.analyze_document(
             content=text_content,
             analysis_type=analysis_type,
             provider=provider
@@ -257,14 +404,17 @@ async def analyze_uploaded_document(
 async def extract_document_data(
     file: UploadFile = File(...),
     provider: Optional[str] = None,
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     استخراج و دسته‌بندی هوشمند داده‌ها از فایل
     Extract and intelligently categorize data from uploaded file
     """
-    import json
     from io import BytesIO
+
+    # Ensure AI providers are loaded
+    service = await ensure_ai_providers_loaded(db)
 
     content = await file.read()
     filename = file.filename.lower()
@@ -339,7 +489,7 @@ Document content:
 """
 
         try:
-            ai_result = await ai_service.generate(
+            ai_result = await service.generate(
                 prompt=categorization_prompt,
                 provider=provider,
                 system_prompt="You are a data extraction AI. Return only valid JSON arrays. Be precise and accurate.",
