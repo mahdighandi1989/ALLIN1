@@ -1208,7 +1208,10 @@ export default function SettingsPage() {
           </table>
         </div>
 
-        <button className="btn-primary mt-4 flex items-center gap-2">
+        <button
+          className="btn-primary mt-4 flex items-center gap-2"
+          onClick={() => toast.info('User management available in Users section or contact administrator')}
+        >
           <Plus size={18} />
           Add User
         </button>
@@ -1228,7 +1231,12 @@ export default function SettingsPage() {
                   {role === 'Viewer' && 'View only access'}
                 </p>
               </div>
-              <button className="text-blue-600 text-sm hover:underline">Configure</button>
+              <button
+                className="text-blue-600 text-sm hover:underline"
+                onClick={() => toast.info(`${role} permissions are system-defined`)}
+              >
+                Configure
+              </button>
             </div>
           ))}
         </div>
@@ -1511,7 +1519,12 @@ export default function SettingsPage() {
                 <p className="text-sm text-gray-500">Not connected</p>
               </div>
             </div>
-            <button className="btn-primary">Connect</button>
+            <button
+              className="btn-primary"
+              onClick={() => toast.info('Google Drive integration requires OAuth setup. Contact administrator.')}
+            >
+              Connect
+            </button>
           </div>
         </div>
       </div>
@@ -1520,7 +1533,10 @@ export default function SettingsPage() {
         <h3 className="font-medium mb-4">Webhooks</h3>
         <p className="text-sm text-gray-500 mb-4">Send data to external services when events occur</p>
 
-        <button className="btn-outline flex items-center gap-2">
+        <button
+          className="btn-outline flex items-center gap-2"
+          onClick={() => toast.info('Webhook configuration coming soon')}
+        >
           <Plus size={18} />
           Add Webhook
         </button>
@@ -1529,8 +1545,36 @@ export default function SettingsPage() {
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="font-medium mb-4">Export & Import</h3>
         <div className="flex gap-3">
-          <button className="btn-outline">Export All Data</button>
-          <button className="btn-outline">Import Data</button>
+          <button
+            className="btn-outline"
+            onClick={async () => {
+              try {
+                setSaving(true)
+                const response = await settingsApi.getSystem()
+                const data = JSON.stringify(response.data, null, 2)
+                const blob = new Blob([data], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = `backup-${new Date().toISOString().slice(0,10)}.json`
+                a.click()
+                URL.revokeObjectURL(url)
+                toast.success('Data exported successfully')
+              } catch (error) {
+                toast.error('Failed to export data')
+              } finally {
+                setSaving(false)
+              }
+            }}
+          >
+            Export All Data
+          </button>
+          <button
+            className="btn-outline"
+            onClick={() => toast.info('Import functionality coming soon')}
+          >
+            Import Data
+          </button>
         </div>
       </div>
     </div>
