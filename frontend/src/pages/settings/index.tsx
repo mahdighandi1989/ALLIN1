@@ -4,11 +4,12 @@
  */
 import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import { settingsApi, aiProvidersApi } from '@/services/api'
+import { settingsApi, aiProvidersApi, googleDriveApi } from '@/services/api'
 import { toast } from 'react-hot-toast'
 import {
   Settings, Database, Users, Bell, Shield, Palette, Globe, Key, Save, Plus, Trash2, Edit,
-  Brain, CheckCircle, XCircle, RefreshCw, Eye, EyeOff, Zap, AlertCircle, Loader2, Star
+  Brain, CheckCircle, XCircle, RefreshCw, Eye, EyeOff, Zap, AlertCircle, Loader2, Star,
+  Cloud, CloudOff, Link2, FolderOpen, Upload, Download, File, ExternalLink
 } from 'lucide-react'
 
 interface SystemSetting {
@@ -77,6 +78,16 @@ export default function SettingsPage() {
   const [testingProvider, setTestingProvider] = useState<string | null>(null)
   const [fetchingModels, setFetchingModels] = useState<string | null>(null)
   const [providerModels, setProviderModels] = useState<Record<string, string[]>>({})
+
+  // Google Drive state
+  const [gdriveStatus, setGdriveStatus] = useState<{
+    connected: boolean
+    status: string
+    user?: { email: string; name: string; photo?: string }
+  }>({ connected: false, status: 'disconnected' })
+  const [gdriveLoading, setGdriveLoading] = useState(false)
+  const [gdriveFiles, setGdriveFiles] = useState<any[]>([])
+  const [showGdriveFiles, setShowGdriveFiles] = useState(false)
 
   // Form for new custom field
   const [showFieldForm, setShowFieldForm] = useState(false)
@@ -179,7 +190,27 @@ export default function SettingsPage() {
     if (activeTab === 'ai-providers') {
       fetchAIProviders()
     }
+    if (activeTab === 'integrations') {
+      fetchGdriveStatus()
+    }
   }, [activeTab])
+
+  // Check URL params for OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const gdriveStatus = params.get('gdrive')
+    if (gdriveStatus === 'connected') {
+      toast.success('Successfully connected to Google Drive!')
+      setActiveTab('integrations')
+      fetchGdriveStatus()
+      // Clean URL
+      window.history.replaceState({}, '', '/settings')
+    } else if (gdriveStatus === 'error') {
+      toast.error(`Google Drive connection failed: ${params.get('message') || 'Unknown error'}`)
+      setActiveTab('integrations')
+      window.history.replaceState({}, '', '/settings')
+    }
+  }, [])
 
   const fetchSettings = async () => {
     setLoading(true)
@@ -242,6 +273,99 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Error fetching AI providers:', error)
       toast.error('Failed to load AI providers')
+    }
+  }
+
+  // Google Drive Functions
+  const fetchGdriveStatus = async () => {
+    try {
+      const response = await googleDriveApi.getStatus()
+      setGdriveStatus(response.data)
+    } catch (error) {
+      console.error('Error fetching Google Drive status:', error)
+      setGdriveStatus({ connected: false, status: 'error' })
+    }
+  }
+
+  const handleGdriveConnect = async () => {
+    setGdriveLoading(true)
+    try {
+      // Get current URL for redirect
+      const redirectUri = `${window.location.origin}/api/v1/google-drive/oauth/redirect`
+      const response = await googleDriveApi.initOAuth(redirectUri)
+
+      if (response.data.auth_url) {
+        // Redirect to Google OAuth
+        window.location.href = response.data.auth_url
+      }
+    } catch (error: any) {
+      console.error('Error initiating Google Drive OAuth:', error)
+      toast.error(error.response?.data?.detail || 'Failed to connect to Google Drive. Check OAuth configuration.')
+    } finally {
+      setGdriveLoading(false)
+    }
+  }
+
+  const handleGdriveDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect from Google Drive?')) return
+
+    setGdriveLoading(true)
+    try {
+      await googleDriveApi.disconnect()
+      setGdriveStatus({ connected: false, status: 'disconnected' })
+      setGdriveFiles([])
+      toast.success('Disconnected from Google Drive')
+    } catch (error) {
+      toast.error('Failed to disconnect')
+    } finally {
+      setGdriveLoading(false)
+    }
+  }
+
+  const handleGdriveTest = async () => {
+    setGdriveLoading(true)
+    try {
+      const response = await googleDriveApi.testConnection()
+      if (response.data.connected) {
+        toast.success('Connection successful!')
+        setGdriveStatus(response.data)
+      } else {
+        toast.error(response.data.error || 'Connection failed')
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Connection test failed')
+    } finally {
+      setGdriveLoading(false)
+    }
+  }
+
+  const handleGdriveListFiles = async () => {
+    setGdriveLoading(true)
+    try {
+      const response = await googleDriveApi.listFiles({ page_size: 20 })
+      setGdriveFiles(response.data.files || [])
+      setShowGdriveFiles(true)
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to list files')
+    } finally {
+      setGdriveLoading(false)
+    }
+  }
+
+  const handleGdriveBackup = async () => {
+    setGdriveLoading(true)
+    try {
+      const response = await googleDriveApi.createBackup()
+      if (response.data.success) {
+        toast.success('Backup created successfully!')
+        if (response.data.backup?.url) {
+          window.open(response.data.backup.url, '_blank')
+        }
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to create backup')
+    } finally {
+      setGdriveLoading(false)
     }
   }
 
@@ -1504,31 +1628,187 @@ export default function SettingsPage() {
 
   const renderIntegrations = () => (
     <div className="space-y-6">
+      {/* Google Drive Integration */}
       <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="font-medium mb-4">Google Drive Integration</h3>
-        <p className="text-sm text-gray-500 mb-4">Sync documents and attachments with Google Drive</p>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Globe className="text-blue-600" size={20} />
-              </div>
-              <div>
-                <p className="font-medium">Google Drive</p>
-                <p className="text-sm text-gray-500">Not connected</p>
-              </div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+              gdriveStatus.connected ? 'bg-green-100' : 'bg-gray-100'
+            }`}>
+              {gdriveStatus.connected ? (
+                <Cloud className="text-green-600" size={24} />
+              ) : (
+                <CloudOff className="text-gray-400" size={24} />
+              )}
             </div>
-            <button
-              className="btn-primary"
-              onClick={() => toast('Google Drive integration requires OAuth setup. Contact administrator.', { icon: 'ℹ️' })}
-            >
-              Connect
-            </button>
+            <div>
+              <h3 className="font-medium">Google Drive Integration</h3>
+              <p className="text-sm text-gray-500">
+                {gdriveStatus.connected
+                  ? `Connected as ${gdriveStatus.user?.email || 'Unknown'}`
+                  : 'Sync documents and attachments with Google Drive'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {gdriveStatus.connected ? (
+              <span className="flex items-center gap-1 text-sm text-green-600">
+                <CheckCircle size={16} />
+                Connected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sm text-gray-500">
+                <XCircle size={16} />
+                Not connected
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Connection Status Details */}
+        {gdriveStatus.connected && gdriveStatus.user && (
+          <div className="mb-4 p-4 bg-green-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              {gdriveStatus.user.photo && (
+                <img
+                  src={gdriveStatus.user.photo}
+                  alt={gdriveStatus.user.name}
+                  className="w-10 h-10 rounded-full"
+                />
+              )}
+              <div>
+                <p className="font-medium">{gdriveStatus.user.name}</p>
+                <p className="text-sm text-gray-600">{gdriveStatus.user.email}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-3">
+          {!gdriveStatus.connected ? (
+            <button
+              onClick={handleGdriveConnect}
+              disabled={gdriveLoading}
+              className="btn-primary flex items-center gap-2"
+            >
+              {gdriveLoading ? (
+                <Loader2 className="animate-spin" size={18} />
+              ) : (
+                <Link2 size={18} />
+              )}
+              Connect to Google Drive
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleGdriveTest}
+                disabled={gdriveLoading}
+                className="btn-outline flex items-center gap-2"
+              >
+                {gdriveLoading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <Zap size={18} />
+                )}
+                Test Connection
+              </button>
+              <button
+                onClick={handleGdriveListFiles}
+                disabled={gdriveLoading}
+                className="btn-outline flex items-center gap-2"
+              >
+                <FolderOpen size={18} />
+                Browse Files
+              </button>
+              <button
+                onClick={handleGdriveBackup}
+                disabled={gdriveLoading}
+                className="btn-outline flex items-center gap-2"
+              >
+                <Upload size={18} />
+                Create Backup
+              </button>
+              <button
+                onClick={handleGdriveDisconnect}
+                disabled={gdriveLoading}
+                className="btn-outline text-red-600 hover:bg-red-50 flex items-center gap-2"
+              >
+                <CloudOff size={18} />
+                Disconnect
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* File Browser Modal */}
+        {showGdriveFiles && (
+          <div className="mt-4 border rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-gray-50 border-b">
+              <h4 className="font-medium">Google Drive Files</h4>
+              <button
+                onClick={() => setShowGdriveFiles(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {gdriveFiles.length === 0 ? (
+                <div className="p-4 text-center text-gray-500">
+                  No files found
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {gdriveFiles.map((file: any) => (
+                    <div key={file.id} className="flex items-center justify-between p-3 hover:bg-gray-50">
+                      <div className="flex items-center gap-3">
+                        {file.is_folder ? (
+                          <FolderOpen className="text-yellow-500" size={20} />
+                        ) : (
+                          <File className="text-blue-500" size={20} />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium">{file.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {file.size ? `${(parseInt(file.size) / 1024).toFixed(1)} KB` : 'Folder'}
+                          </p>
+                        </div>
+                      </div>
+                      {file.url && (
+                        <a
+                          href={file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          <ExternalLink size={16} />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Setup Instructions */}
+        {!gdriveStatus.connected && (
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <h4 className="font-medium text-blue-800 mb-2">Setup Instructions</h4>
+            <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+              <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="underline">Google Cloud Console</a></li>
+              <li>Create a project and enable Google Drive API</li>
+              <li>Create OAuth 2.0 credentials (Web application)</li>
+              <li>Add <code className="bg-blue-100 px-1 rounded">{typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/google-drive/oauth/redirect</code> as redirect URI</li>
+              <li>Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend environment</li>
+            </ol>
+          </div>
+        )}
       </div>
 
+      {/* Webhooks Section */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="font-medium mb-4">Webhooks</h3>
         <p className="text-sm text-gray-500 mb-4">Send data to external services when events occur</p>
@@ -1542,11 +1822,12 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {/* Export & Import Section */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="font-medium mb-4">Export & Import</h3>
         <div className="flex gap-3">
           <button
-            className="btn-outline"
+            className="btn-outline flex items-center gap-2"
             onClick={async () => {
               try {
                 setSaving(true)
@@ -1567,14 +1848,26 @@ export default function SettingsPage() {
               }
             }}
           >
+            <Download size={18} />
             Export All Data
           </button>
           <button
-            className="btn-outline"
+            className="btn-outline flex items-center gap-2"
             onClick={() => toast('Import functionality coming soon', { icon: 'ℹ️' })}
           >
+            <Upload size={18} />
             Import Data
           </button>
+          {gdriveStatus.connected && (
+            <button
+              className="btn-outline flex items-center gap-2"
+              onClick={handleGdriveBackup}
+              disabled={gdriveLoading}
+            >
+              <Cloud size={18} />
+              Backup to Drive
+            </button>
+          )}
         </div>
       </div>
     </div>
