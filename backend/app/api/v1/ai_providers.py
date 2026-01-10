@@ -183,7 +183,7 @@ async def get_stored_providers(db: AsyncSession) -> Dict[str, Any]:
     result = await db.execute(
         select(SystemSetting).where(
             SystemSetting.key.like("ai_provider_%"),
-            SystemSetting.is_deleted == False
+            SystemSetting.is_active == True
         )
     )
     settings = result.scalars().all()
@@ -518,7 +518,7 @@ async def delete_provider(
     setting = result.scalar_one_or_none()
 
     if setting:
-        setting.is_deleted = True
+        setting.is_active = False
         await db.commit()
 
     return {"message": "Provider deleted successfully"}
