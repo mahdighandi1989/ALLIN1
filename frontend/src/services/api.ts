@@ -121,3 +121,62 @@ export const settingsApi = {
   updateUser: (settings: any) => api.put('/settings/user', settings),
   getAIProviders: () => api.get('/settings/ai/providers'),
 }
+
+// AI Providers Management API
+export const aiProvidersApi = {
+  // Get all configured providers
+  list: () => api.get('/ai-providers/providers'),
+
+  // Get known/preset providers
+  getKnown: () => api.get('/ai-providers/providers/known'),
+
+  // Get single provider details
+  get: (providerId: string) => api.get(`/ai-providers/providers/${providerId}`),
+
+  // Create custom provider
+  create: (data: {
+    provider_id: string
+    name: string
+    api_key?: string
+    base_url?: string
+    default_model?: string
+    enabled?: boolean
+    provider_type?: string
+  }) => api.post('/ai-providers/providers', data),
+
+  // Update provider config
+  update: (providerId: string, data: {
+    name?: string
+    api_key?: string
+    base_url?: string
+    default_model?: string
+    enabled?: boolean
+  }) => api.put(`/ai-providers/providers/${providerId}`, data),
+
+  // Delete provider
+  delete: (providerId: string) => api.delete(`/ai-providers/providers/${providerId}`),
+
+  // Test provider connection
+  test: (providerId: string, apiKey?: string) =>
+    api.post(`/ai-providers/providers/${providerId}/test`, null, {
+      params: apiKey ? { api_key: apiKey } : undefined
+    }),
+
+  // Get available models for provider
+  getModels: (providerId: string, refresh?: boolean) =>
+    api.get(`/ai-providers/providers/${providerId}/models`, {
+      params: { refresh }
+    }),
+
+  // Fetch models from provider API
+  fetchModels: (providerId: string, apiKey?: string) =>
+    api.post(`/ai-providers/providers/${providerId}/fetch-models`, null, {
+      params: apiKey ? { api_key: apiKey } : undefined
+    }),
+
+  // Get default provider
+  getDefault: () => api.get('/ai-providers/default-provider'),
+
+  // Set default provider
+  setDefault: (providerId: string) => api.put(`/ai-providers/default-provider/${providerId}`),
+}
