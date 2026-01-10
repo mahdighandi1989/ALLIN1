@@ -240,6 +240,10 @@ async def auto_import_data():
                             if not account_no or account_no == '0':
                                 continue
 
+                            # Skip if already processed (avoid duplicates)
+                            if account_no in customer_cache:
+                                continue
+
                             category = str(row.get('Category', '')).lower()
                             account_type = AccountType.CORPORATE if 'corporate' in category else AccountType.RETAIL
 
