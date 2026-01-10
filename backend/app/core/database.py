@@ -74,7 +74,9 @@ async def init_db():
     from app.models import (
         user, customer, facility, guarantor, property,
         deposit, kyc, checklist, attachment, note, journal, settings,
-        task, security
+        task, security,
+        # New comprehensive models
+        branch, category, document, partner, property_valuation, security_record
     )
 
     async with engine.begin() as conn:

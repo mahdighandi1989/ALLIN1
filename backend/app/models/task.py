@@ -67,8 +67,8 @@ class CustomTask(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
     custom_fields = Column(JSON, default=dict)
 
     # روابط
-    customer = relationship("Customer", backref="tasks")
-    facility = relationship("Facility", backref="tasks")
+    customer = relationship("Customer", back_populates="tasks")
+    facility = relationship("Facility", backref="custom_tasks")
 
     def __repr__(self):
         return f"<CustomTask {self.id}: {self.task_name[:30]}>"

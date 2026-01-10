@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.core.config import settings
 from app.models.base import generate_uuid, generate_short_id
+
+# Core models
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.property import Property, PropertyLocation, PropertyType, PropertyStatus
@@ -24,6 +26,15 @@ from app.models.guarantor import Guarantor, GuarantorCheque
 from app.models.journal import JournalEntry
 from app.models.task import CustomTask, TaskStatus, TaskPriority
 from app.models.security import Security, SecurityCategory, SecurityStatus
+from app.models.note import Note, NoteCategory, NotePriority
+
+# New comprehensive models
+from app.models.branch import Branch
+from app.models.category import Category
+from app.models.document import Document, DocumentType, DocumentStatus
+from app.models.partner import Partner
+from app.models.property_valuation import PropertyValuation, PropertyInsurance
+from app.models.security_record import SecurityRecord, SecurityRecordCategory
 
 logger = structlog.get_logger()
 
@@ -76,6 +87,14 @@ def parse_date(value) -> Optional[date]:
     return None
 
 
+def clean_str(value) -> Optional[str]:
+    """Clean string value"""
+    if pd.isna(value) or value is None:
+        return None
+    val = str(value).strip()
+    return val if val and val.lower() not in ['nan', 'none', ''] else None
+
+
 async def auto_import_data():
     """
     Auto-import data from Excel files on startup
@@ -114,23 +133,102 @@ async def auto_import_data():
 
         logger.info(f"Found {len(files)} Excel files to import")
 
+        # Caches for relationships
         customer_cache: Dict[str, str] = {}  # account_no -> customer_id
+        branch_cache: Dict[str, str] = {}  # branch_code -> branch_id
+        category_cache: Dict[str, str] = {}  # category_name -> category_id
+        property_cache: Dict[str, str] = {}  # property key -> property_id
+
         stats = {
+            "branches": 0,
+            "categories": 0,
             "customers": 0,
+            "profiles": 0,
+            "documents": 0,
+            "partners": 0,
             "facilities": 0,
-            "properties": 0,
             "guarantors": 0,
             "tasks": 0,
+            "notes": 0,
+            "properties": 0,
+            "valuations": 0,
             "securities": 0,
             "journal": 0,
             "errors": []
         }
 
         try:
-            # 1. Import Customers from Backend_Database.xlsm
             backend_file = data_dir / "Backend_Database.xlsm"
+
             if backend_file.exists():
-                logger.info("Importing customers from Backend_Database.xlsm...")
+                # ==============================================================
+                # PHASE 1: Import Branches (extract from customer data)
+                # ==============================================================
+                logger.info("Phase 1: Extracting branches...")
+                try:
+                    df = pd.read_excel(backend_file, sheet_name="Customers")
+                    df = df.dropna(how='all')
+
+                    branches_set = set()
+                    for _, row in df.iterrows():
+                        branch = row.get('Branch')
+                        if pd.notna(branch):
+                            branches_set.add(str(int(branch)) if isinstance(branch, float) else str(branch))
+
+                    for branch_code in branches_set:
+                        branch = Branch(
+                            id=generate_uuid(),
+                            branch_code=branch_code,
+                            branch_name=f"Branch {branch_code}",
+                            country="UAE",
+                        )
+                        db.add(branch)
+                        branch_cache[branch_code] = branch.id
+                        stats["branches"] += 1
+
+                    logger.info(f"Created {stats['branches']} branches")
+                except Exception as e:
+                    logger.error(f"Error extracting branches: {e}")
+                    stats["errors"].append(f"Branches: {e}")
+
+                # ==============================================================
+                # PHASE 2: Import Categories
+                # ==============================================================
+                logger.info("Phase 2: Creating categories...")
+                try:
+                    categories = ["Retail", "Corporate", "VIP", "Staff", "Government"]
+                    for cat_name in categories:
+                        category = Category(
+                            id=generate_uuid(),
+                            name=cat_name,
+                            category_type="customer",
+                            is_active=True,
+                        )
+                        db.add(category)
+                        category_cache[cat_name.lower()] = category.id
+                        stats["categories"] += 1
+
+                    # Add document categories
+                    doc_categories = ["Trade License", "Passport", "Emirates ID", "Visa", "Tenancy"]
+                    for cat_name in doc_categories:
+                        category = Category(
+                            id=generate_uuid(),
+                            name=cat_name,
+                            category_type="document",
+                            is_active=True,
+                        )
+                        db.add(category)
+                        stats["categories"] += 1
+
+                    logger.info(f"Created {stats['categories']} categories")
+                except Exception as e:
+                    logger.error(f"Error creating categories: {e}")
+                    stats["errors"].append(f"Categories: {e}")
+
+                # ==============================================================
+                # PHASE 3: Import Customers
+                # ==============================================================
+                logger.info("Phase 3: Importing customers...")
                 try:
                     df = pd.read_excel(backend_file, sheet_name="Customers")
                     df = df.dropna(how='all')
@@ -145,11 +243,13 @@ async def auto_import_data():
                             category = str(row.get('Category', '')).lower()
                             account_type = AccountType.CORPORATE if 'corporate' in category else AccountType.RETAIL
 
+                            branch_code = str(int(row.get('Branch', 0))) if pd.notna(row.get('Branch')) else None
+
                             customer = Customer(
                                 id=generate_uuid(),
                                 account_no=account_no,
-                                customer_name=str(row.get('Account Name', '')).strip() or 'Unknown',
-                                branch=str(int(row.get('Branch', 0))) if pd.notna(row.get('Branch')) else None,
+                                customer_name=clean_str(row.get('Account Name')) or 'Unknown',
+                                branch=branch_code,
                                 account_type=account_type,
                                 status=CustomerStatus.ACTIVE,
                                 country="UAE",
@@ -165,8 +265,79 @@ async def auto_import_data():
                     logger.error(f"Error importing customers: {e}")
                     stats["errors"].append(f"Customers: {e}")
 
-                # 2. Import Facilities
-                logger.info("Importing facilities...")
+                # ==============================================================
+                # PHASE 4: Import Customer Profiles, Documents, Partners
+                # ==============================================================
+                logger.info("Phase 4: Importing customer profiles, documents, and partners...")
+                try:
+                    df = pd.read_excel(backend_file, sheet_name="CustomerProfileData")
+                    df = df.dropna(how='all')
+
+                    for _, row in df.iterrows():
+                        try:
+                            account_no = str(int(row.get('AccountNo', 0))) if pd.notna(row.get('AccountNo')) else None
+                            if not account_no:
+                                continue
+
+                            customer_id = customer_cache.get(account_no)
+                            if not customer_id:
+                                continue
+
+                            stats["profiles"] += 1
+
+                            # Create Documents
+                            doc_types = [
+                                ('TradeLicense', DocumentType.TradeLicense),
+                                ('Passport', DocumentType.Passport),
+                                ('EmiratesID', DocumentType.EmiratesID),
+                                ('Visa', DocumentType.Visa),
+                                ('Tenancy', DocumentType.Tenancy),
+                            ]
+
+                            for prefix, doc_type in doc_types:
+                                doc_no = clean_str(row.get(f'{prefix}No'))
+                                if doc_no:
+                                    doc = Document(
+                                        id=generate_short_id("DOC-"),
+                                        customer_id=customer_id,
+                                        document_type=doc_type,
+                                        document_no=doc_no,
+                                        issue_date=parse_date(row.get(f'{prefix}Issue')),
+                                        expiry_date=parse_date(row.get(f'{prefix}Expiry')),
+                                        remarks=clean_str(row.get(f'{prefix}Remarks')),
+                                        status=DocumentStatus.ACTIVE,
+                                    )
+                                    db.add(doc)
+                                    stats["documents"] += 1
+
+                            # Create Partners (up to 4)
+                            for i in range(1, 5):
+                                partner_name = clean_str(row.get(f'Partner{i}Name'))
+                                if partner_name:
+                                    share_pct = row.get(f'Partner{i}Share')
+                                    partner = Partner(
+                                        id=generate_short_id("PTR-"),
+                                        customer_id=customer_id,
+                                        partner_name=partner_name,
+                                        nationality=clean_str(row.get(f'Partner{i}Nationality')),
+                                        share_percent=Decimal(str(share_pct)) if pd.notna(share_pct) else None,
+                                        order_no=i,
+                                    )
+                                    db.add(partner)
+                                    stats["partners"] += 1
+
+                        except Exception as e:
+                            stats["errors"].append(f"Profile row error: {e}")
+
+                    logger.info(f"Imported {stats['profiles']} profiles, {stats['documents']} documents, {stats['partners']} partners")
+                except Exception as e:
+                    logger.error(f"Error importing profiles: {e}")
+                    stats["errors"].append(f"Profiles: {e}")
+
+                # ==============================================================
+                # PHASE 5: Import Facilities
+                # ==============================================================
+                logger.info("Phase 5: Importing facilities...")
                 try:
                     df = pd.read_excel(backend_file, sheet_name="Facilities")
                     df = df.dropna(how='all')
@@ -183,24 +354,28 @@ async def auto_import_data():
                                 facility_type = FacilityType.OD
                             elif 'personal' in ftype or 'loan' in ftype:
                                 facility_type = FacilityType.LOAN
-                            elif 'lg' in ftype:
+                            elif 'lg' in ftype or 'guarantee' in ftype:
                                 facility_type = FacilityType.LG
+                            elif 'lc' in ftype or 'credit' in ftype:
+                                facility_type = FacilityType.LC
+                            elif 'tr' in ftype or 'trust' in ftype:
+                                facility_type = FacilityType.TR
                             else:
                                 facility_type = FacilityType.OTHER
 
                             amount = parse_amount(str(row.get('Amount', '0')))
 
                             facility = Facility(
-                                id=str(row.get('FacilityID')) or generate_short_id("FAC-"),
+                                id=clean_str(row.get('FacilityID')) or generate_short_id("FAC-"),
                                 customer_id=customer_id,
                                 facility_type=facility_type,
-                                facility_name=str(row.get('FacilityNo', '')) or None,
-                                reference_no=str(row.get('FacilityNo', '')) or None,
+                                facility_name=clean_str(row.get('FacilityNo')),
+                                reference_no=clean_str(row.get('FacilityNo')),
                                 status=FacilityStatus.ACTIVE if row.get('IsActive', 1) == 1 else FacilityStatus.CLOSED,
                                 approved_amount=Decimal(str(amount)) if amount else Decimal('0'),
-                                currency=str(row.get('Currency', 'AED')),
+                                currency=clean_str(row.get('Currency')) or 'AED',
                                 sanction_date=parse_date(row.get('ApprovalDate')),
-                                notes=str(row.get('Notes', '')) if pd.notna(row.get('Notes')) else None,
+                                notes=clean_str(row.get('Notes')),
                             )
                             db.add(facility)
                             stats["facilities"] += 1
@@ -212,8 +387,10 @@ async def auto_import_data():
                     logger.error(f"Error importing facilities: {e}")
                     stats["errors"].append(f"Facilities: {e}")
 
-                # 3. Import Guarantors
-                logger.info("Importing guarantors...")
+                # ==============================================================
+                # PHASE 6: Import Guarantors
+                # ==============================================================
+                logger.info("Phase 6: Importing guarantors...")
                 try:
                     df = pd.read_excel(backend_file, sheet_name="Guarantors")
                     df = df.dropna(how='all')
@@ -226,10 +403,10 @@ async def auto_import_data():
                                 continue
 
                             guarantor = Guarantor(
-                                id=str(row.get('GuarantorID')) or generate_short_id("GNT-"),
+                                id=clean_str(row.get('GuarantorID')) or generate_short_id("GNT-"),
                                 customer_id=customer_id,
-                                guarantor_name=str(row.get('GuarantorName', '')).strip() or 'Unknown',
-                                phone=str(row.get('GuarantorAccount', '')) if pd.notna(row.get('GuarantorAccount')) else None,
+                                guarantor_name=clean_str(row.get('GuarantorName')) or 'Unknown',
+                                phone=clean_str(row.get('GuarantorAccount')),
                             )
                             db.add(guarantor)
 
@@ -239,7 +416,7 @@ async def auto_import_data():
                                     id=generate_short_id("CHQ-"),
                                     guarantor_id=guarantor.id,
                                     cheque_no=str(cheque_no),
-                                    bank_name=str(row.get('IssuingBank', '')) if pd.notna(row.get('IssuingBank')) else None,
+                                    bank_name=clean_str(row.get('IssuingBank')),
                                     amount=Decimal(str(parse_amount(str(row.get('ChequeAmount', '0'))))) if row.get('ChequeAmount') else None,
                                     currency="AED",
                                 )
@@ -254,8 +431,10 @@ async def auto_import_data():
                     logger.error(f"Error importing guarantors: {e}")
                     stats["errors"].append(f"Guarantors: {e}")
 
-                # 4. Import CustomTasks
-                logger.info("Importing tasks...")
+                # ==============================================================
+                # PHASE 7: Import Custom Tasks
+                # ==============================================================
+                logger.info("Phase 7: Importing tasks...")
                 try:
                     df = pd.read_excel(backend_file, sheet_name="CustomTasks")
                     df = df.dropna(how='all')
@@ -272,11 +451,15 @@ async def auto_import_data():
                                 status = TaskStatus.IN_PROGRESS
                             elif 'cancel' in status_str:
                                 status = TaskStatus.CANCELLED
+                            elif 'hold' in status_str:
+                                status = TaskStatus.ON_HOLD
                             else:
                                 status = TaskStatus.PENDING
 
                             priority_str = str(row.get('Priority', '')).lower()
-                            if 'high' in priority_str or 'urgent' in priority_str:
+                            if 'urgent' in priority_str:
+                                priority = TaskPriority.URGENT
+                            elif 'high' in priority_str:
                                 priority = TaskPriority.HIGH
                             elif 'low' in priority_str:
                                 priority = TaskPriority.LOW
@@ -285,14 +468,14 @@ async def auto_import_data():
 
                             task = CustomTask(
                                 id=generate_short_id("TSK-"),
-                                task_id=str(row.get('TaskID', '')) or None,
+                                task_id=clean_str(row.get('TaskID')),
                                 customer_id=customer_id,
                                 account_no=account_no,
-                                task_name=str(row.get('TaskName', 'Unnamed Task')),
+                                task_name=clean_str(row.get('TaskName')) or 'Unnamed Task',
                                 status=status,
                                 priority=priority,
                                 follow_up_date=parse_date(row.get('FollowUpDate')),
-                                notes=str(row.get('Notes', '')) if pd.notna(row.get('Notes')) else None,
+                                notes=clean_str(row.get('Notes')),
                                 is_active=row.get('IsActive', 1) == 1,
                             )
                             db.add(task)
@@ -305,12 +488,72 @@ async def auto_import_data():
                     logger.error(f"Error importing tasks: {e}")
                     stats["errors"].append(f"Tasks: {e}")
 
-                # 5. Import Journal
-                logger.info("Importing journal entries...")
+                # ==============================================================
+                # PHASE 8: Import Customer Notes
+                # ==============================================================
+                logger.info("Phase 8: Importing customer notes...")
+                try:
+                    df = pd.read_excel(backend_file, sheet_name="CustomerNotes")
+                    df = df.dropna(how='all')
+
+                    for _, row in df.iterrows():
+                        try:
+                            account_no = str(int(row.get('AccountNo', 0))) if pd.notna(row.get('AccountNo')) else None
+                            customer_id = customer_cache.get(account_no) if account_no else None
+                            if not customer_id:
+                                continue
+
+                            cat_str = str(row.get('Category', '')).lower()
+                            if 'follow' in cat_str:
+                                note_category = NoteCategory.FOLLOW_UP
+                            elif 'meeting' in cat_str:
+                                note_category = NoteCategory.MEETING
+                            elif 'call' in cat_str:
+                                note_category = NoteCategory.CALL
+                            elif 'email' in cat_str:
+                                note_category = NoteCategory.EMAIL
+                            elif 'document' in cat_str or 'doc' in cat_str:
+                                note_category = NoteCategory.DOCUMENT
+                            elif 'risk' in cat_str:
+                                note_category = NoteCategory.RISK
+                            elif 'compliance' in cat_str:
+                                note_category = NoteCategory.COMPLIANCE
+                            else:
+                                note_category = NoteCategory.GENERAL
+
+                            priority_str = str(row.get('Priority', '')).lower()
+                            if 'high' in priority_str or 'urgent' in priority_str:
+                                note_priority = NotePriority.HIGH
+                            elif 'low' in priority_str:
+                                note_priority = NotePriority.LOW
+                            else:
+                                note_priority = NotePriority.MEDIUM
+
+                            note = Note(
+                                id=clean_str(row.get('NoteID')) or generate_short_id("NTE-"),
+                                customer_id=customer_id,
+                                title=clean_str(row.get('Title')) or 'Note',
+                                content=clean_str(row.get('Content')) or '',
+                                category=note_category,
+                                priority=note_priority,
+                            )
+                            db.add(note)
+                            stats["notes"] += 1
+                        except Exception as e:
+                            stats["errors"].append(f"Note row error: {e}")
+
+                    logger.info(f"Imported {stats['notes']} notes")
+                except Exception as e:
+                    logger.error(f"Error importing notes: {e}")
+                    stats["errors"].append(f"Notes: {e}")
+
+                # ==============================================================
+                # PHASE 9: Import Journal Entries
+                # ==============================================================
+                logger.info("Phase 9: Importing journal entries...")
                 try:
                     df = pd.read_excel(backend_file, sheet_name="Journal")
                     df = df.dropna(how='all')
-                    # Skip header marker row if exists
                     if 'Record ID' in df.columns:
                         df = df[df['Record ID'] != '--- Data Below ---']
 
@@ -327,15 +570,16 @@ async def auto_import_data():
                             entry = JournalEntry(
                                 id=generate_short_id("JRN-"),
                                 timestamp=timestamp,
-                                action_type=str(row.get('Action', 'import')) if pd.notna(row.get('Action')) else 'import',
+                                action_type=clean_str(row.get('Action')) or 'import',
                                 entity_type='customer' if customer_id else 'general',
                                 entity_id=customer_id,
-                                description=str(row.get('Notes', '')) if pd.notna(row.get('Notes')) else str(row.get('Item', '')),
+                                description=clean_str(row.get('Notes')) or clean_str(row.get('Item')),
                                 details={
                                     "account_no": account_no,
-                                    "branch": str(row.get('Branch', '')) if pd.notna(row.get('Branch')) else None,
-                                    "category": str(row.get('Category', '')) if pd.notna(row.get('Category')) else None,
-                                    "item": str(row.get('Item', '')) if pd.notna(row.get('Item')) else None,
+                                    "branch": clean_str(row.get('Branch')),
+                                    "category": clean_str(row.get('Category')),
+                                    "item": clean_str(row.get('Item')),
+                                    "status": clean_str(row.get('Status')),
                                 }
                             )
                             db.add(entry)
@@ -348,10 +592,12 @@ async def auto_import_data():
                     logger.error(f"Error importing journal: {e}")
                     stats["errors"].append(f"Journal: {e}")
 
-            # 6. Import Iran Properties
+            # ==============================================================
+            # PHASE 10: Import Iran Properties
+            # ==============================================================
             iran_file = data_dir / "PROPERTIES - IRAN.xlsx"
             if iran_file.exists():
-                logger.info("Importing Iran properties...")
+                logger.info("Phase 10: Importing Iran properties...")
                 try:
                     df = pd.read_excel(iran_file, sheet_name="IRAN")
                     df = df.dropna(how='all')
@@ -366,7 +612,7 @@ async def auto_import_data():
                                 customer = Customer(
                                     id=generate_uuid(),
                                     account_no=account_no,
-                                    customer_name=str(row.get('نام مشتری', '')).strip() or 'Unknown',
+                                    customer_name=clean_str(row.get('نام مشتری')) or 'Unknown',
                                     account_type=AccountType.CORPORATE,
                                     status=CustomerStatus.ACTIVE,
                                     country="IRAN",
@@ -395,11 +641,11 @@ async def auto_import_data():
                                 location=PropertyLocation.IRAN,
                                 property_type=property_type,
                                 status=PropertyStatus.MORTGAGED,
-                                plate_no=str(row.get('شماره پلاک ثبتی', '')) if pd.notna(row.get('شماره پلاک ثبتی')) else None,
-                                city=str(row.get('شهر', '')) if pd.notna(row.get('شهر')) else None,
-                                address=str(row.get('نشانی ملک', '')) if pd.notna(row.get('نشانی ملک')) else None,
+                                plate_no=clean_str(row.get('شماره پلاک ثبتی')),
+                                city=clean_str(row.get('شهر')),
+                                address=clean_str(row.get('نشانی ملک')),
                                 currency="IRR",
-                                owner_name=str(row.get('نام مشتری', '')) if pd.notna(row.get('نام مشتری')) else None,
+                                owner_name=clean_str(row.get('نام مشتری')),
                             )
                             db.add(prop)
                             count += 1
@@ -412,14 +658,17 @@ async def auto_import_data():
                     logger.error(f"Error importing Iran properties: {e}")
                     stats["errors"].append(f"Iran Properties: {e}")
 
-            # 7. Import UAE Properties
+            # ==============================================================
+            # PHASE 11: Import UAE Properties with Valuations
+            # ==============================================================
             uae_file = data_dir / "PROPERTIES - UAE.xlsx"
             if uae_file.exists():
-                logger.info("Importing UAE properties...")
+                logger.info("Phase 11: Importing UAE properties with valuations...")
                 try:
                     df = pd.read_excel(uae_file, sheet_name="U.A.E")
                     df = df.dropna(how='all')
                     count = 0
+                    valuation_count = 0
 
                     for _, row in df.iterrows():
                         try:
@@ -430,7 +679,7 @@ async def auto_import_data():
                                 customer = Customer(
                                     id=generate_uuid(),
                                     account_no=account_no,
-                                    customer_name=str(row.get('Name', '')).strip() or 'Unknown',
+                                    customer_name=clean_str(row.get('Name')) or 'Unknown',
                                     branch=str(int(row.get('Branch', 0))) if pd.notna(row.get('Branch')) else None,
                                     account_type=AccountType.CORPORATE,
                                     status=CustomerStatus.ACTIVE,
@@ -453,6 +702,10 @@ async def auto_import_data():
                                 property_type = PropertyType.VILLA
                             elif 'land' in prop_type:
                                 property_type = PropertyType.LAND
+                            elif 'warehouse' in prop_type:
+                                property_type = PropertyType.WAREHOUSE
+                            elif 'office' in prop_type:
+                                property_type = PropertyType.OFFICE
                             else:
                                 property_type = PropertyType.OTHER
 
@@ -464,28 +717,50 @@ async def auto_import_data():
                                 location=PropertyLocation.UAE,
                                 property_type=property_type,
                                 status=PropertyStatus.MORTGAGED,
-                                deed_no=str(row.get('Deed No.', '')) if pd.notna(row.get('Deed No.')) else None,
-                                city=str(row.get('City', '')) if pd.notna(row.get('City')) else None,
-                                area=str(row.get('Zone', '')) if pd.notna(row.get('Zone')) else None,
+                                deed_no=clean_str(row.get('Deed No.')),
+                                city=clean_str(row.get('City')),
+                                area=clean_str(row.get('Zone')),
                                 current_value=Decimal(str(value_2025)) if value_2025 else None,
                                 currency="AED",
-                                owner_name=str(row.get('Name.1', '')) if pd.notna(row.get('Name.1')) else None,
+                                owner_name=clean_str(row.get('Name.1')),
                             )
                             db.add(prop)
+                            property_cache[f"{account_no}-{prop.deed_no}"] = prop.id
                             count += 1
+
+                            # Create PropertyValuation records for each year
+                            for year in [2021, 2022, 2023, 2024, 2025]:
+                                value_col = f'AED Value {year}'
+                                if value_col in row.index:
+                                    value = parse_amount(str(row.get(value_col, 0)))
+                                    if value > 0:
+                                        valuation = PropertyValuation(
+                                            id=generate_short_id("VAL-"),
+                                            property_id=prop.id,
+                                            valuation_year=year,
+                                            valuation_date=date(year, 1, 1),
+                                            market_value=Decimal(str(value)),
+                                            currency="AED",
+                                        )
+                                        db.add(valuation)
+                                        valuation_count += 1
+
                         except Exception as e:
                             stats["errors"].append(f"UAE property row error: {e}")
 
                     stats["properties"] += count
-                    logger.info(f"Imported {count} UAE properties")
+                    stats["valuations"] = valuation_count
+                    logger.info(f"Imported {count} UAE properties with {valuation_count} valuations")
                 except Exception as e:
                     logger.error(f"Error importing UAE properties: {e}")
                     stats["errors"].append(f"UAE Properties: {e}")
 
-            # 8. Import Securities from yearly files
+            # ==============================================================
+            # PHASE 12: Import Securities from yearly files
+            # ==============================================================
             security_files = sorted(data_dir.glob("Securities List*.xlsx"))
             for sec_file in security_files:
-                logger.info(f"Importing securities from {sec_file.name}...")
+                logger.info(f"Phase 12: Importing securities from {sec_file.name}...")
                 year_match = re.search(r'20\d{2}', sec_file.name)
                 year = int(year_match.group()) if year_match else None
                 count = 0
@@ -494,15 +769,21 @@ async def auto_import_data():
                     xl = pd.ExcelFile(sec_file)
 
                     for sheet in xl.sheet_names:
-                        category = SecurityCategory.RETAIL if 'retail' in sheet.lower() else SecurityCategory.CORPORATE
+                        cat_str = sheet.lower()
+                        if 'retail' in cat_str:
+                            category = SecurityRecordCategory.RETAIL
+                        elif 'corporate' in cat_str:
+                            category = SecurityRecordCategory.CORPORATE
+                        else:
+                            continue
 
                         df = pd.read_excel(xl, sheet_name=sheet, header=None)
                         df = df.dropna(how='all')
 
                         # Find header row
                         header_row = None
-                        for i, row in df.iterrows():
-                            row_str = ' '.join(str(x).lower() for x in row.values if pd.notna(x))
+                        for i, row_data in df.iterrows():
+                            row_str = ' '.join(str(x).lower() for x in row_data.values if pd.notna(x))
                             if 'account' in row_str and ('no' in row_str or '#' in row_str):
                                 header_row = i
                                 break
@@ -540,18 +821,18 @@ async def auto_import_data():
                                         branch = row.get(col)
                                         break
 
-                                security = Security(
-                                    id=generate_short_id("SEC-"),
+                                # Use SecurityRecord model (new)
+                                security_record = SecurityRecord(
+                                    id=generate_short_id("SCR-"),
                                     customer_id=customer_id,
                                     account_no=account_no,
-                                    branch=str(int(branch)) if pd.notna(branch) and isinstance(branch, (int, float)) else str(branch) if pd.notna(branch) else None,
-                                    customer_name=str(customer_name).strip() if pd.notna(customer_name) else None,
+                                    branch=str(int(branch)) if pd.notna(branch) and isinstance(branch, (int, float)) else clean_str(branch),
+                                    customer_name=clean_str(customer_name),
                                     category=category,
                                     year=year,
-                                    status=SecurityStatus.ACTIVE,
                                     source_file=sec_file.name,
                                 )
-                                db.add(security)
+                                db.add(security_record)
                                 count += 1
                             except Exception as e:
                                 stats["errors"].append(f"Security row error: {e}")
@@ -562,21 +843,33 @@ async def auto_import_data():
                     logger.error(f"Error importing securities from {sec_file.name}: {e}")
                     stats["errors"].append(f"Securities {sec_file.name}: {e}")
 
-            # Commit all changes
+            # ==============================================================
+            # COMMIT ALL CHANGES
+            # ==============================================================
             await db.commit()
 
             total = sum([
-                stats['customers'], stats['facilities'], stats['properties'],
-                stats['guarantors'], stats['tasks'], stats['securities'], stats['journal']
+                stats['branches'], stats['categories'], stats['customers'],
+                stats['profiles'], stats['documents'], stats['partners'],
+                stats['facilities'], stats['guarantors'], stats['tasks'],
+                stats['notes'], stats['properties'], stats['valuations'],
+                stats['securities'], stats['journal']
             ])
 
             logger.info(
                 "Auto-import completed successfully",
+                branches=stats['branches'],
+                categories=stats['categories'],
                 customers=stats['customers'],
+                profiles=stats['profiles'],
+                documents=stats['documents'],
+                partners=stats['partners'],
                 facilities=stats['facilities'],
-                properties=stats['properties'],
                 guarantors=stats['guarantors'],
                 tasks=stats['tasks'],
+                notes=stats['notes'],
+                properties=stats['properties'],
+                valuations=stats['valuations'],
                 securities=stats['securities'],
                 journal=stats['journal'],
                 total=total,

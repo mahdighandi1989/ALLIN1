@@ -86,6 +86,12 @@ class Customer(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
     attachments = relationship("Attachment", back_populates="customer", cascade="all, delete-orphan")
     notes_rel = relationship("Note", back_populates="customer", cascade="all, delete-orphan")
 
+    # New relationships for comprehensive schema
+    documents = relationship("Document", back_populates="customer", cascade="all, delete-orphan")
+    partners = relationship("Partner", back_populates="customer", cascade="all, delete-orphan")
+    security_records = relationship("SecurityRecord", back_populates="customer", cascade="all, delete-orphan")
+    tasks = relationship("CustomTask", back_populates="customer", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<Customer {self.account_no}: {self.customer_name}>"
 
