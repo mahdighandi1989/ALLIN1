@@ -8,10 +8,31 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
+
+def get_async_database_url() -> str:
+    """
+    Convert database URL to async compatible format
+    تبدیل URL دیتابیس به فرمت async
+    """
+    url = settings.DATABASE_URL
+    if not url:
+        return "postgresql+asyncpg://localhost/banking"
+
+    # Convert postgresql:// to postgresql+asyncpg://
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif not url.startswith("postgresql+asyncpg://"):
+        url = f"postgresql+asyncpg://{url}"
+
+    return url
+
+
 # Create async engine
 # Use NullPool for serverless environments like Render
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    get_async_database_url(),
     echo=settings.DEBUG,
     pool_pre_ping=True,
     poolclass=NullPool,  # Better for serverless
