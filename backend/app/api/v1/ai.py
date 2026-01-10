@@ -54,9 +54,10 @@ async def get_ai_status(
     """
     دریافت وضعیت سرویس‌های AI
     """
-    providers = ai_service.get_available_providers()
+    providers = await ai_service.get_available_providers()
 
     return {
+        "available": len(providers) > 0,
         "enabled": len(providers) > 0,
         "available_providers": providers,
         "default_provider": "openai" if "openai" in providers else (providers[0] if providers else None),

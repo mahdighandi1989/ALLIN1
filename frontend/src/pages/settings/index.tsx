@@ -187,7 +187,7 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (activeTab === 'ai-providers') {
+    if (activeTab === 'ai-providers' || activeTab === 'api') {
       fetchAIProviders()
     }
     if (activeTab === 'integrations') {
@@ -649,10 +649,8 @@ export default function SettingsPage() {
       // Clear the form
       setApiKeysForm({ openai_key: '', anthropic_key: '', google_key: '' })
 
-      // Refresh providers list if on that tab
-      if (activeTab === 'ai-providers') {
-        fetchAIProviders()
-      }
+      // Refresh providers list to show updated configuration status
+      fetchAIProviders()
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Failed to save API keys')
     } finally {
@@ -1873,7 +1871,13 @@ export default function SettingsPage() {
     </div>
   )
 
-  const renderAPIKeys = () => (
+  const renderAPIKeys = () => {
+    // Check which providers are configured
+    const openaiConfigured = providers.find(p => p.provider_id === 'openai')?.has_api_key
+    const anthropicConfigured = providers.find(p => p.provider_id === 'anthropic')?.has_api_key
+    const googleConfigured = providers.find(p => p.provider_id === 'google')?.has_api_key
+
+    return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="font-medium mb-4">AI Provider API Keys</h3>
@@ -1883,34 +1887,58 @@ export default function SettingsPage() {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">OpenAI API Key</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium">OpenAI API Key</label>
+              {openaiConfigured && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1">
+                  <CheckCircle size={12} /> Configured
+                </span>
+              )}
+            </div>
             <input
               type="password"
-              placeholder="sk-..."
+              placeholder={openaiConfigured ? "••••••••••••••••••••••••" : "sk-..."}
               value={apiKeysForm.openai_key}
               onChange={(e) => setApiKeysForm({ ...apiKeysForm, openai_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
+            {openaiConfigured && <p className="text-xs text-gray-500 mt-1">Leave empty to keep existing key, or enter a new key to update</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Anthropic API Key (Claude)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium">Anthropic API Key (Claude)</label>
+              {anthropicConfigured && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1">
+                  <CheckCircle size={12} /> Configured
+                </span>
+              )}
+            </div>
             <input
               type="password"
-              placeholder="sk-ant-..."
+              placeholder={anthropicConfigured ? "••••••••••••••••••••••••" : "sk-ant-..."}
               value={apiKeysForm.anthropic_key}
               onChange={(e) => setApiKeysForm({ ...apiKeysForm, anthropic_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
+            {anthropicConfigured && <p className="text-xs text-gray-500 mt-1">Leave empty to keep existing key, or enter a new key to update</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Google AI API Key (Gemini)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium">Google AI API Key (Gemini)</label>
+              {googleConfigured && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1">
+                  <CheckCircle size={12} /> Configured
+                </span>
+              )}
+            </div>
             <input
               type="password"
-              placeholder="AIza..."
+              placeholder={googleConfigured ? "••••••••••••••••••••••••" : "AIza..."}
               value={apiKeysForm.google_key}
               onChange={(e) => setApiKeysForm({ ...apiKeysForm, google_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
+            {googleConfigured && <p className="text-xs text-gray-500 mt-1">Leave empty to keep existing key, or enter a new key to update</p>}
           </div>
         </div>
 
@@ -1977,7 +2005,7 @@ export default function SettingsPage() {
         </button>
       </div>
     </div>
-  )
+  )}
 
   const renderTabContent = () => {
     switch (activeTab) {
