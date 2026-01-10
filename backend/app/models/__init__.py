@@ -15,6 +15,8 @@ from app.models.attachment import Attachment
 from app.models.note import Note, PersonalNote, Reminder
 from app.models.journal import JournalEntry
 from app.models.settings import SystemSetting, UserSetting
+from app.models.task import CustomTask, TaskStatus, TaskPriority
+from app.models.security import Security, SecurityCategory, SecurityStatus
 
 __all__ = [
     "Base",
@@ -43,4 +45,10 @@ __all__ = [
     "JournalEntry",
     "SystemSetting",
     "UserSetting",
+    "CustomTask",
+    "TaskStatus",
+    "TaskPriority",
+    "Security",
+    "SecurityCategory",
+    "SecurityStatus",
 ]
