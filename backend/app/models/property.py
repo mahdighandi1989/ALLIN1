@@ -105,6 +105,8 @@ class Property(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
 
     # روابط
     customer = relationship("Customer", back_populates="properties")
+    valuations = relationship("PropertyValuation", back_populates="property", cascade="all, delete-orphan")
+    insurances = relationship("PropertyInsurance", back_populates="property", cascade="all, delete-orphan")
 
     @property
     def ltv_ratio(self) -> float:
