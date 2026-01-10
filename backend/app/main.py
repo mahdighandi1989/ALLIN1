@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Banking Operations System", version=settings.APP_VERSION)
 
+    # Initialize database
+    try:
+        from app.core.database import init_db
+        await init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning("Database initialization skipped", error=str(e))
+
     # Initialize file service
     await file_service.initialize()
 
@@ -95,9 +103,28 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# Build allowed origins list
+cors_origins = []
+for host in settings.ALLOWED_HOSTS:
+    if host == "*":
+        # When * is specified, add common frontend origins
+        cors_origins.extend([
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "https://banking-ops-frontend.onrender.com",
+            "https://banking-ops-frontend-*.onrender.com",
+        ])
+    else:
+        cors_origins.append(host)
+
+# Remove duplicates
+cors_origins = list(set(cors_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_HOSTS,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",  # Allow all onrender.com subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

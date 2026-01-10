@@ -47,7 +47,7 @@ const mockActivities = [
   },
 ]
 
-const activityIcons = {
+const activityIcons: Record<string, JSX.Element> = {
   create: <UserPlus className="w-4 h-4 text-green-600" />,
   update: <FileEdit className="w-4 h-4 text-blue-600" />,
   complete: <CheckSquare className="w-4 h-4 text-purple-600" />,
@@ -55,7 +55,7 @@ const activityIcons = {
   delete: <Trash2 className="w-4 h-4 text-red-600" />,
 }
 
-const activityColors = {
+const activityColors: Record<string, string> = {
   create: 'bg-green-100',
   update: 'bg-blue-100',
   complete: 'bg-purple-100',
