@@ -58,7 +58,7 @@ class Attachment(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
     notes = Column(Text, nullable=True)
 
     # متادیتا
-    metadata = Column(JSON, default=dict)
+    file_metadata = Column(JSON, default=dict)
 
     # روابط
     customer = relationship("Customer", back_populates="attachments")
