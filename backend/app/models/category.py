@@ -19,6 +19,7 @@ class Category(Base, TimestampMixin, SoftDeleteMixin):
     name = Column(String(100), nullable=False, unique=True)
     name_fa = Column(String(100))
     code = Column(String(20), unique=True, index=True)
+    category_type = Column(String(50), default="general")  # customer, document, facility, etc.
     parent_id = Column(String(50), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     description = Column(Text)
     display_order = Column(Integer, default=0)
