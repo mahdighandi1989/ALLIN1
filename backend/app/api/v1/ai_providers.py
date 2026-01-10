@@ -443,10 +443,10 @@ async def create_provider(
     """
     ایجاد پرووایدر AI جدید (کاستوم)
     """
-    # Check if already exists
+    # Check if already exists - but allow updating known providers that don't have data yet
     stored_providers = await get_stored_providers(db)
-    if provider.provider_id in stored_providers or provider.provider_id in KNOWN_PROVIDERS:
-        raise HTTPException(status_code=400, detail="Provider ID already exists")
+    if provider.provider_id in stored_providers:
+        raise HTTPException(status_code=400, detail="Provider ID already exists. Use PUT to update.")
 
     data = {
         "name": provider.name,
@@ -458,6 +458,10 @@ async def create_provider(
     }
 
     await save_provider_setting(db, provider.provider_id, data)
+
+    # Refresh AI service cache so new keys are available immediately
+    from app.services.ai_service import ai_service
+    ai_service.refresh_providers()
 
     return {
         "message": "Provider created successfully",
@@ -490,6 +494,10 @@ async def update_provider(
     }
 
     await save_provider_setting(db, provider_id, data)
+
+    # Refresh AI service cache so new keys are available immediately
+    from app.services.ai_service import ai_service
+    ai_service.refresh_providers()
 
     return {
         "message": "Provider updated successfully",

@@ -18,6 +18,55 @@ class AIProvider(str, Enum):
     GOOGLE = "google"
 
 
+# Database provider cache
+_db_providers_cache: Dict[str, Dict[str, Any]] = {}
+_db_providers_loaded: bool = False
+
+
+async def get_db_providers() -> Dict[str, Dict[str, Any]]:
+    """Get providers configured in database"""
+    global _db_providers_cache, _db_providers_loaded
+
+    if _db_providers_loaded:
+        return _db_providers_cache
+
+    try:
+        from app.core.database import async_session
+        from app.models.settings import SystemSetting
+        from sqlalchemy import select
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(SystemSetting).where(
+                    SystemSetting.key.like("ai_provider_%"),
+                    SystemSetting.is_active == True
+                )
+            )
+            settings_list = result.scalars().all()
+
+            for setting in settings_list:
+                provider_id = setting.key.replace("ai_provider_", "")
+                try:
+                    data = json.loads(setting.value) if setting.value else {}
+                    if data.get("api_key") and data.get("enabled"):
+                        _db_providers_cache[provider_id] = data
+                except json.JSONDecodeError:
+                    pass
+
+            _db_providers_loaded = True
+    except Exception as e:
+        print(f"Error loading DB providers: {e}")
+
+    return _db_providers_cache
+
+
+def refresh_db_providers():
+    """Force refresh of database providers cache"""
+    global _db_providers_cache, _db_providers_loaded
+    _db_providers_cache = {}
+    _db_providers_loaded = False
+
+
 class AIModel(str, Enum):
     """مدل‌های موجود"""
     # OpenAI
@@ -59,15 +108,19 @@ class BaseAIProvider(ABC):
 class OpenAIProvider(BaseAIProvider):
     """ارائه‌دهنده OpenAI"""
 
-    def __init__(self):
-        self.api_key = settings.OPENAI_API_KEY
-        self.model = settings.OPENAI_MODEL
+    def __init__(self, api_key: str = None, model: str = None, base_url: str = None):
+        self.api_key = api_key or settings.OPENAI_API_KEY
+        self.model = model or settings.OPENAI_MODEL
+        self.base_url = base_url
         self.client = None
 
     async def _get_client(self):
         if self.client is None:
             from openai import AsyncOpenAI
-            self.client = AsyncOpenAI(api_key=self.api_key)
+            kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self.client = AsyncOpenAI(**kwargs)
         return self.client
 
     async def generate(
@@ -135,15 +188,19 @@ class OpenAIProvider(BaseAIProvider):
 class AnthropicProvider(BaseAIProvider):
     """ارائه‌دهنده Anthropic (Claude)"""
 
-    def __init__(self):
-        self.api_key = settings.ANTHROPIC_API_KEY
-        self.model = settings.ANTHROPIC_MODEL
+    def __init__(self, api_key: str = None, model: str = None, base_url: str = None):
+        self.api_key = api_key or settings.ANTHROPIC_API_KEY
+        self.model = model or settings.ANTHROPIC_MODEL
+        self.base_url = base_url
         self.client = None
 
     async def _get_client(self):
         if self.client is None:
             from anthropic import AsyncAnthropic
-            self.client = AsyncAnthropic(api_key=self.api_key)
+            kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self.client = AsyncAnthropic(**kwargs)
         return self.client
 
     async def generate(
@@ -206,9 +263,10 @@ class AnthropicProvider(BaseAIProvider):
 class GoogleAIProvider(BaseAIProvider):
     """ارائه‌دهنده Google (Gemini)"""
 
-    def __init__(self):
-        self.api_key = settings.GOOGLE_AI_API_KEY
-        self.model = settings.GOOGLE_AI_MODEL
+    def __init__(self, api_key: str = None, model: str = None, base_url: str = None):
+        self.api_key = api_key or settings.GOOGLE_AI_API_KEY
+        self.model = model or settings.GOOGLE_AI_MODEL
+        self.base_url = base_url
         self.client = None
 
     async def _get_client(self):
@@ -271,10 +329,11 @@ class AIService:
 
     def __init__(self):
         self.providers: Dict[str, BaseAIProvider] = {}
-        self._initialize_providers()
+        self._db_providers_initialized = False
+        self._initialize_env_providers()
 
-    def _initialize_providers(self):
-        """راه‌اندازی ارائه‌دهندگان"""
+    def _initialize_env_providers(self):
+        """راه‌اندازی ارائه‌دهندگان از متغیرهای محیطی"""
         if settings.OPENAI_API_KEY:
             self.providers[AIProvider.OPENAI] = OpenAIProvider()
 
@@ -284,20 +343,63 @@ class AIService:
         if settings.GOOGLE_AI_API_KEY:
             self.providers[AIProvider.GOOGLE] = GoogleAIProvider()
 
-    def get_provider(self, provider: Optional[str] = None) -> BaseAIProvider:
+    async def _ensure_db_providers(self):
+        """Load providers from database if not already loaded"""
+        if self._db_providers_initialized:
+            return
+
+        try:
+            db_providers = await get_db_providers()
+            for provider_id, data in db_providers.items():
+                api_key = data.get("api_key")
+                model = data.get("default_model")
+                base_url = data.get("base_url")
+
+                if not api_key:
+                    continue
+
+                # Create appropriate provider based on type
+                provider_type = data.get("provider_type", "openai_compatible")
+
+                if provider_id == "openai" or provider_type == "openai":
+                    self.providers[provider_id] = OpenAIProvider(api_key=api_key, model=model, base_url=base_url)
+                elif provider_id == "anthropic" or provider_type == "anthropic":
+                    self.providers[provider_id] = AnthropicProvider(api_key=api_key, model=model, base_url=base_url)
+                elif provider_id == "google" or provider_type == "google":
+                    self.providers[provider_id] = GoogleAIProvider(api_key=api_key, model=model, base_url=base_url)
+                elif provider_type == "openai_compatible":
+                    # Use OpenAI-compatible provider for others (groq, together, mistral, deepseek, etc.)
+                    self.providers[provider_id] = OpenAIProvider(api_key=api_key, model=model, base_url=base_url)
+
+            self._db_providers_initialized = True
+        except Exception as e:
+            print(f"Error loading database providers: {e}")
+
+    def refresh_providers(self):
+        """Refresh providers from database"""
+        self._db_providers_initialized = False
+        refresh_db_providers()
+        # Re-initialize from env
+        self.providers = {}
+        self._initialize_env_providers()
+
+    async def get_provider(self, provider: Optional[str] = None) -> BaseAIProvider:
         """دریافت ارائه‌دهنده"""
+        await self._ensure_db_providers()
+
         provider = provider or settings.DEFAULT_AI_PROVIDER
 
         if provider not in self.providers:
             available = list(self.providers.keys())
             if not available:
-                raise ValueError("No AI provider configured")
+                raise ValueError("No AI provider configured. Please add API keys in Settings > AI Providers.")
             provider = available[0]
 
         return self.providers[provider]
 
-    def get_available_providers(self) -> List[str]:
+    async def get_available_providers(self) -> List[str]:
         """دریافت لیست ارائه‌دهندگان موجود"""
+        await self._ensure_db_providers()
         return list(self.providers.keys())
 
     async def generate(
@@ -307,7 +409,7 @@ class AIService:
         **kwargs
     ) -> str:
         """تولید متن با AI"""
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         return await ai_provider.generate(prompt, **kwargs)
 
     async def analyze_document(
@@ -317,7 +419,7 @@ class AIService:
         provider: Optional[str] = None
     ) -> Dict[str, Any]:
         """تحلیل سند"""
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         return await ai_provider.analyze_document(content, analysis_type)
 
     async def extract_customer_data(
@@ -337,7 +439,7 @@ class AIService:
         - Any other relevant information
         """
 
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         result = await ai_provider.generate(
             prompt=document_content,
             system_prompt=system_prompt,
@@ -372,7 +474,7 @@ class AIService:
         Facilities: {json.dumps(facilities_data, indent=2)}
         """
 
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         return await ai_provider.generate(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -391,7 +493,7 @@ class AIService:
         Focus on critical fields for banking operations and compliance.
         """
 
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         result = await ai_provider.generate(
             prompt=f"Profile data: {json.dumps(profile_data)}",
             system_prompt=system_prompt,
@@ -429,7 +531,7 @@ class AIService:
             "facilities": facilities_data or []
         }
 
-        ai_provider = self.get_provider(provider)
+        ai_provider = await self.get_provider(provider)
         result = await ai_provider.generate(
             prompt=f"Assess risk for: {json.dumps(data)}",
             system_prompt=system_prompt,

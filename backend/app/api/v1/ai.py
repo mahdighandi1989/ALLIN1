@@ -182,6 +182,7 @@ async def get_ai_status(
         all_providers = list(set(ai_service.get_available_providers() + db_providers))
 
     return {
+        "available": len(all_providers) > 0,
         "enabled": len(all_providers) > 0,
         "available_providers": all_providers,
         "default_provider": "openai" if "openai" in all_providers else (all_providers[0] if all_providers else None),
