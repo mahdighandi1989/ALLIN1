@@ -50,6 +50,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Database initialization skipped", error=str(e))
 
+    # Auto-import data from Excel files on startup
+    try:
+        from app.services.data_importer import auto_import_data
+        await auto_import_data()
+        logger.info("Data import completed")
+    except Exception as e:
+        logger.warning("Data import skipped", error=str(e))
+
     # Initialize file service
     await file_service.initialize()
 
