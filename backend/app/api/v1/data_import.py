@@ -63,12 +63,17 @@ class AvailableFilesResponse(BaseModel):
 # Helper functions
 def get_data_import_path() -> Path:
     """Get the data-import directory path"""
-    # In production (Render), check for uploaded files in /tmp or app directory
-    # In development, use relative path from project root
+    # Calculate path relative to this file
+    # __file__ = backend/app/api/v1/data_import.py
+    # We need to go up to project root and then into data-import
+    this_file = Path(__file__).resolve()
+    backend_dir = this_file.parent.parent.parent.parent  # backend/
+    project_root = backend_dir.parent  # ALLIN1/ or /opt/render/project/src/
+
     possible_paths = [
-        Path(__file__).parent.parent.parent.parent.parent / "data-import",  # Development
-        Path("/app/data-import"),  # Render with volume
-        Path("/tmp/data-import"),  # Render temp storage
+        project_root / "data-import",  # Main path
+        Path("/opt/render/project/src/data-import"),  # Render explicit path
+        Path("/app/data-import"),  # Docker/alternative
     ]
 
     for path in possible_paths:
