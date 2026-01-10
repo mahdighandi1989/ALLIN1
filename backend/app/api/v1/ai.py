@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from app.core.security import get_current_user, TokenData, require_permission
+from app.core.database import get_db
 from app.services.ai_service import ai_service
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
@@ -401,38 +403,169 @@ Document content:
 @router.post("/import-extracted")
 async def import_extracted_data(
     data: Dict[str, Any],
-    current_user: TokenData = Depends(require_permission("use:ai"))
+    current_user: TokenData = Depends(require_permission("use:ai")),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     ذخیره داده‌های استخراج شده در دیتابیس
     Import extracted data items into the database
     """
-    category = data.get("category")
-    items = data.get("items", [])
+    from sqlalchemy import select
+    from decimal import Decimal
+    from app.models.customer import Customer, CustomerProfile, AccountType, CustomerStatus
+    from app.models.facility import Facility, FacilityType, FacilityStatus
+    from app.models.property import Property, PropertyLocation, PropertyType, PropertyStatus
+    from app.models.guarantor import Guarantor
+    from app.models.task import CustomTask, TaskStatus, TaskPriority
+    from app.models.note import Note, NoteCategory, NotePriority
+    from app.models.base import generate_uuid, generate_short_id
 
-    if not category or not items:
-        raise HTTPException(status_code=400, detail="Missing category or items")
+    items = data.get("items", [])
+    target_customer_id = data.get("customer_id")  # Optional: merge to specific customer
+
+    if not items:
+        raise HTTPException(status_code=400, detail="No items to import")
 
     imported_count = 0
     errors = []
+    results = {"customers": 0, "facilities": 0, "properties": 0, "guarantors": 0, "tasks": 0, "notes": 0}
 
-    # In a real implementation, this would save to the database
-    # For now, just validate and return success
-    for item in items:
-        try:
-            # Validate item has required fields based on category
-            if category == "customer" and "full_name" not in item:
-                item["full_name"] = item.get("name", "Unknown")
+    try:
+        for item in items:
+            category = item.get("category", "unknown")
+            item_data = item.get("data", {})
 
-            imported_count += 1
+            try:
+                if category == "customer":
+                    # Create or update customer
+                    account_no = str(item_data.get("account_no") or item_data.get("AccountNo") or generate_short_id(""))
+                    name = item_data.get("name") or item_data.get("customer_name") or item_data.get("full_name") or "Unknown"
 
-        except Exception as e:
-            errors.append(str(e))
+                    # Check if exists
+                    result = await db.execute(
+                        select(Customer).where(Customer.account_no == account_no)
+                    )
+                    existing = result.scalar_one_or_none()
 
-    return {
-        "success": True,
-        "category": category,
-        "imported": imported_count,
-        "total": len(items),
-        "errors": errors if errors else None
-    }
+                    if not existing:
+                        customer = Customer(
+                            id=generate_uuid(),
+                            account_no=account_no,
+                            customer_name=name,
+                            branch=str(item_data.get("branch", "")),
+                            email=item_data.get("email"),
+                            phone=item_data.get("phone"),
+                            mobile=item_data.get("mobile"),
+                            address=item_data.get("address"),
+                            account_type=AccountType.CORPORATE if "corporate" in str(item_data.get("type", "")).lower() else AccountType.RETAIL,
+                            status=CustomerStatus.ACTIVE,
+                        )
+                        db.add(customer)
+                        results["customers"] += 1
+                        imported_count += 1
+
+                elif category == "facility":
+                    customer_id = target_customer_id or item_data.get("customer_id")
+                    if customer_id:
+                        ftype = str(item_data.get("type", "")).lower()
+                        if "od" in ftype or "overdraft" in ftype:
+                            facility_type = FacilityType.OD
+                        elif "loan" in ftype:
+                            facility_type = FacilityType.LOAN
+                        elif "lg" in ftype:
+                            facility_type = FacilityType.LG
+                        else:
+                            facility_type = FacilityType.OTHER
+
+                        amount = item_data.get("amount") or item_data.get("approved_amount") or 0
+                        try:
+                            amount = Decimal(str(amount).replace(",", ""))
+                        except:
+                            amount = Decimal("0")
+
+                        facility = Facility(
+                            id=generate_short_id("FAC-"),
+                            customer_id=customer_id,
+                            facility_type=facility_type,
+                            facility_name=item_data.get("name") or item_data.get("facility_no"),
+                            approved_amount=amount,
+                            currency=item_data.get("currency", "AED"),
+                            status=FacilityStatus.ACTIVE,
+                        )
+                        db.add(facility)
+                        results["facilities"] += 1
+                        imported_count += 1
+
+                elif category == "property":
+                    customer_id = target_customer_id or item_data.get("customer_id")
+                    if customer_id:
+                        prop = Property(
+                            id=generate_short_id("PRP-"),
+                            customer_id=customer_id,
+                            location=PropertyLocation.UAE if "uae" in str(item_data.get("location", "")).lower() else PropertyLocation.IRAN,
+                            property_type=PropertyType.BUILDING,
+                            city=item_data.get("city"),
+                            address=item_data.get("address"),
+                            deed_no=item_data.get("deed_no"),
+                            status=PropertyStatus.MORTGAGED,
+                        )
+                        db.add(prop)
+                        results["properties"] += 1
+                        imported_count += 1
+
+                elif category == "guarantor":
+                    customer_id = target_customer_id or item_data.get("customer_id")
+                    if customer_id:
+                        guarantor = Guarantor(
+                            id=generate_short_id("GNT-"),
+                            customer_id=customer_id,
+                            guarantor_name=item_data.get("name") or item_data.get("guarantor_name") or "Unknown",
+                            phone=item_data.get("phone") or item_data.get("account"),
+                        )
+                        db.add(guarantor)
+                        results["guarantors"] += 1
+                        imported_count += 1
+
+                elif category == "checklist" or category == "task":
+                    task = CustomTask(
+                        id=generate_short_id("TSK-"),
+                        customer_id=target_customer_id,
+                        task_name=item_data.get("name") or item_data.get("task") or item_data.get("item") or "Task",
+                        status=TaskStatus.PENDING,
+                        priority=TaskPriority.MEDIUM,
+                        notes=item_data.get("notes") or item_data.get("description"),
+                    )
+                    db.add(task)
+                    results["tasks"] += 1
+                    imported_count += 1
+
+                elif category == "note":
+                    if target_customer_id:
+                        note = Note(
+                            id=generate_short_id("NTE-"),
+                            customer_id=target_customer_id,
+                            title=item_data.get("title") or "Note",
+                            content=item_data.get("content") or item_data.get("text") or str(item_data),
+                            category=NoteCategory.GENERAL,
+                            priority=NotePriority.MEDIUM,
+                        )
+                        db.add(note)
+                        results["notes"] += 1
+                        imported_count += 1
+
+            except Exception as e:
+                errors.append(f"Item error: {str(e)}")
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "imported": imported_count,
+            "total": len(items),
+            "results": results,
+            "errors": errors if errors else None
+        }
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")

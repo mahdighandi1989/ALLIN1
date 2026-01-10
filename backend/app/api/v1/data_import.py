@@ -596,3 +596,38 @@ async def get_database_stats(
     stats["total"] = sum(stats.values())
 
     return stats
+
+
+@router.post("/enhance")
+async def enhance_existing_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """
+    Enhance existing data with more information from Excel files
+    This adds MORE data without deleting existing records
+    تکمیل داده‌های موجود با اطلاعات بیشتر از فایل‌های اکسل
+    """
+    from app.services.ai_data_processor import enhance_data_from_excel
+
+    data_dir = get_data_import_path()
+    backend_file = data_dir / "Backend_Database.xlsm"
+
+    if not backend_file.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Backend_Database.xlsm not found in data-import directory"
+        )
+
+    try:
+        stats = await enhance_data_from_excel(db, backend_file)
+        return {
+            "success": True,
+            "message": "Data enhancement completed",
+            "stats": stats
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enhancement failed: {str(e)}"
+        )
