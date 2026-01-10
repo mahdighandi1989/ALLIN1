@@ -1210,7 +1210,7 @@ export default function SettingsPage() {
 
         <button
           className="btn-primary mt-4 flex items-center gap-2"
-          onClick={() => toast.info('User management available in Users section or contact administrator')}
+          onClick={() => toast('User management available in Users section or contact administrator', { icon: 'ℹ️' })}
         >
           <Plus size={18} />
           Add User
@@ -1233,7 +1233,7 @@ export default function SettingsPage() {
               </div>
               <button
                 className="text-blue-600 text-sm hover:underline"
-                onClick={() => toast.info(`${role} permissions are system-defined`)}
+                onClick={() => toast(`${role} permissions are system-defined`, { icon: 'ℹ️' })}
               >
                 Configure
               </button>
@@ -1521,7 +1521,7 @@ export default function SettingsPage() {
             </div>
             <button
               className="btn-primary"
-              onClick={() => toast.info('Google Drive integration requires OAuth setup. Contact administrator.')}
+              onClick={() => toast('Google Drive integration requires OAuth setup. Contact administrator.', { icon: 'ℹ️' })}
             >
               Connect
             </button>
@@ -1535,7 +1535,7 @@ export default function SettingsPage() {
 
         <button
           className="btn-outline flex items-center gap-2"
-          onClick={() => toast.info('Webhook configuration coming soon')}
+          onClick={() => toast('Webhook configuration coming soon', { icon: 'ℹ️' })}
         >
           <Plus size={18} />
           Add Webhook
@@ -1571,7 +1571,7 @@ export default function SettingsPage() {
           </button>
           <button
             className="btn-outline"
-            onClick={() => toast.info('Import functionality coming soon')}
+            onClick={() => toast('Import functionality coming soon', { icon: 'ℹ️' })}
           >
             Import Data
           </button>
