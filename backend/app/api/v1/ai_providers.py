@@ -489,7 +489,7 @@ async def update_provider(
         "api_key": update.api_key if update.api_key is not None else existing.get("api_key"),
         "base_url": update.base_url if update.base_url is not None else existing.get("base_url"),
         "default_model": update.default_model if update.default_model is not None else existing.get("default_model"),
-        "enabled": update.enabled if update.enabled is not None else existing.get("enabled", False),
+        "enabled": update.enabled if update.enabled is not None else existing.get("enabled", True),
         "provider_type": existing.get("provider_type") or config.get("provider_type", "openai_compatible")
     }
 
