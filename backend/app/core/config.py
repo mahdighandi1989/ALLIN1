@@ -63,9 +63,11 @@ class Settings(BaseSettings):
 
     # ================== Google Drive Integration ==================
     GOOGLE_DRIVE_ENABLED: bool = True
+    GOOGLE_DRIVE_EMAIL: str = "mohamad.mahdi1988@gmail.com"  # Email for Google Drive sync
     GOOGLE_CREDENTIALS_FILE: Optional[str] = None
     GOOGLE_DRIVE_FOLDER_ID: Optional[str] = None
     GOOGLE_DRIVE_SYNC_INTERVAL: int = 300  # seconds
+    GOOGLE_DRIVE_AUTO_BACKUP: bool = True  # Automatic database backup to Drive
 
     # ================== Email Settings ==================
     SMTP_HOST: str = "smtp.gmail.com"
