@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Banking Operations System", version=settings.APP_VERSION)
 
+    # Initialize database
+    try:
+        from app.core.database import init_db
+        await init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning("Database initialization skipped", error=str(e))
+
     # Initialize file service
     await file_service.initialize()
 
