@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
-import { api } from '@/utils/api'
+import api from '@/services/api'
 import { toast } from 'react-hot-toast'
 import {
   Database, Upload, Play, CheckCircle, XCircle, RefreshCw,
@@ -66,8 +66,8 @@ export default function DataImportPage() {
     setError(null)
     try {
       const [filesRes, statsRes] = await Promise.all([
-        api.get('/v1/data-import/files'),
-        api.get('/v1/data-import/stats'),
+        api.get('/data-import/files'),
+        api.get('/data-import/stats'),
       ])
       setFiles(filesRes.data.files || [])
       setDbStats(statsRes.data)
@@ -87,14 +87,14 @@ export default function DataImportPage() {
     setImportResult(null)
     setError(null)
     try {
-      const res = await api.post('/v1/data-import/run')
+      const res = await api.post('/data-import/run')
       setImportResult(res.data)
       toast.success(`Imported ${res.data.stats.total} records successfully!`)
       // Refresh stats after import
-      const statsRes = await api.get('/v1/data-import/stats')
+      const statsRes = await api.get('/data-import/stats')
       setDbStats(statsRes.data)
       // Refresh files list
-      const filesRes = await api.get('/v1/data-import/files')
+      const filesRes = await api.get('/data-import/files')
       setFiles(filesRes.data.files || [])
     } catch (err: any) {
       if (err.response?.status === 401) {
