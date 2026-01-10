@@ -100,7 +100,7 @@ export default function AIToolsPage() {
             <p className="text-gray-600">Powered by OpenAI, Claude, and Gemini</p>
           </div>
           <div className="flex items-center gap-2">
-            {aiStatus?.available ? (
+            {aiStatus?.enabled ? (
               <span className="badge bg-green-100 text-green-700 flex items-center gap-1">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 AI Available
