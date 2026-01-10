@@ -169,8 +169,30 @@ export default function SettingsPage() {
   const fetchSettings = async () => {
     setLoading(true)
     try {
-      const response = await settingsApi.getSystem()
-      setSettings(response.data.items || response.data || [])
+      // Get user settings first (accessible by all users)
+      const userResponse = await settingsApi.getUser()
+      if (userResponse.data?.settings) {
+        const s = userResponse.data.settings
+        if (s.theme) setAppearanceForm(prev => ({ ...prev, theme: s.theme }))
+        if (s.notifications_enabled !== undefined) {
+          setNotificationForm(prev => ({
+            ...prev,
+            email_notifications: s.email_notifications ?? true,
+            task_reminders: s.task_reminders ?? true
+          }))
+        }
+      }
+
+      // Try to get system settings (only works for admin/manager)
+      try {
+        const response = await settingsApi.getSystem()
+        setSettings(response.data.items || response.data.settings || [])
+      } catch (err: any) {
+        // Ignore 401/403 - user might not have admin access
+        if (err.response?.status !== 401 && err.response?.status !== 403) {
+          console.error('Error fetching system settings:', err)
+        }
+      }
 
       setCustomFields([
         { id: '1', entity: 'customer', field_name: 'company_size', field_label: 'Company Size', field_type: 'select', required: false, options: ['Small', 'Medium', 'Large', 'Enterprise'], order: 1 },
@@ -365,6 +387,58 @@ export default function SettingsPage() {
     }
   }
 
+  // Save general settings (admin only)
+  const handleSaveGeneral = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateUser(generalForm)
+      toast.success('General settings saved')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Save notification preferences (user settings)
+  const handleSaveNotifications = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateUser(notificationForm)
+      toast.success('Notification preferences saved')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save preferences')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Save security settings (admin only)
+  const handleSaveSecurity = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateUser(securityForm)
+      toast.success('Security settings saved')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save security settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Save appearance settings (user settings)
+  const handleSaveAppearance = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateUser(appearanceForm)
+      toast.success('Appearance settings saved')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save appearance')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSaveField = async () => {
     if (!fieldForm.field_name || !fieldForm.field_label) {
       toast.error('Please fill in all required fields')
@@ -487,8 +561,12 @@ export default function SettingsPage() {
             </select>
           </div>
         </div>
-        <button className="btn-primary mt-4 flex items-center gap-2">
-          <Save size={18} />
+        <button
+          onClick={handleSaveGeneral}
+          disabled={saving}
+          className="btn-primary mt-4 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           Save Changes
         </button>
       </div>
@@ -1128,8 +1206,12 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <button className="btn-primary mt-6 flex items-center gap-2">
-          <Save size={18} />
+        <button
+          onClick={handleSaveNotifications}
+          disabled={saving}
+          className="btn-primary mt-6 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           Save Preferences
         </button>
       </div>
@@ -1207,8 +1289,12 @@ export default function SettingsPage() {
         <p className="text-xs text-gray-500 mt-1">One IP or CIDR range per line. Leave empty to allow all.</p>
       </div>
 
-      <button className="btn-primary flex items-center gap-2">
-        <Save size={18} />
+      <button
+        onClick={handleSaveSecurity}
+        disabled={saving}
+        className="btn-primary flex items-center gap-2"
+      >
+        {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
         Save Security Settings
       </button>
     </div>
@@ -1282,8 +1368,12 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <button className="btn-primary flex items-center gap-2">
-        <Save size={18} />
+      <button
+        onClick={handleSaveAppearance}
+        disabled={saving}
+        className="btn-primary flex items-center gap-2"
+      >
+        {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
         Save Appearance
       </button>
     </div>
