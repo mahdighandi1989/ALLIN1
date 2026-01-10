@@ -103,9 +103,28 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# Build allowed origins list
+cors_origins = []
+for host in settings.ALLOWED_HOSTS:
+    if host == "*":
+        # When * is specified, add common frontend origins
+        cors_origins.extend([
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "https://banking-ops-frontend.onrender.com",
+            "https://banking-ops-frontend-*.onrender.com",
+        ])
+    else:
+        cors_origins.append(host)
+
+# Remove duplicates
+cors_origins = list(set(cors_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_HOSTS,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.onrender\.com",  # Allow all onrender.com subdomains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
