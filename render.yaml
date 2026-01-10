@@ -47,6 +47,6 @@ databases:
   # PostgreSQL Database
   - name: banking-ops-db
     region: frankfurt
-    plan: free
+    plan: basic-256mb
     databaseName: banking_ops
     user: banking_ops_user
