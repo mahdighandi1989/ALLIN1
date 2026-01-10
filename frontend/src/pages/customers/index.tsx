@@ -9,78 +9,70 @@ import DataTable, { Column } from '@/components/ui/DataTable'
 import DynamicForm, { FormField } from '@/components/ui/DynamicForm'
 import { customersApi } from '@/services/api'
 import { toast } from 'react-hot-toast'
-import { Users, Building2, User } from 'lucide-react'
+import { Users, Building2, User, MapPin } from 'lucide-react'
 
-// Customer form fields - can be extended from settings
+// Customer form fields - matching API structure
 const customerFields: FormField[] = [
   // Basic Info
-  { key: 'customer_type', label: 'Customer Type', type: 'select', required: true, group: 'Basic Information', options: [
-    { value: 'individual', label: 'Individual' },
+  { key: 'account_no', label: 'Account Number', type: 'text', required: true, group: 'Basic Information' },
+  { key: 'customer_name', label: 'Customer Name', type: 'text', required: true, group: 'Basic Information' },
+  { key: 'customer_name_ar', label: 'Name (Arabic/Persian)', type: 'text', group: 'Basic Information' },
+  { key: 'account_type', label: 'Account Type', type: 'select', required: true, group: 'Basic Information', options: [
+    { value: 'retail', label: 'Retail' },
     { value: 'corporate', label: 'Corporate' },
     { value: 'sme', label: 'SME' },
   ]},
-  { key: 'full_name', label: 'Full Name / Company Name', type: 'text', required: true, group: 'Basic Information' },
-  { key: 'trade_name', label: 'Trade Name', type: 'text', group: 'Basic Information' },
-  { key: 'email', label: 'Email', type: 'email', group: 'Basic Information' },
-  { key: 'phone', label: 'Phone', type: 'tel', group: 'Basic Information' },
-  { key: 'mobile', label: 'Mobile', type: 'tel', group: 'Basic Information' },
+  { key: 'branch', label: 'Branch', type: 'text', group: 'Basic Information' },
+  { key: 'relationship_manager', label: 'Relationship Manager', type: 'text', group: 'Basic Information' },
 
-  // Identification
-  { key: 'emirates_id', label: 'Emirates ID', type: 'text', group: 'Identification' },
-  { key: 'passport_number', label: 'Passport Number', type: 'text', group: 'Identification' },
-  { key: 'trade_license', label: 'Trade License', type: 'text', group: 'Identification' },
-  { key: 'tax_registration', label: 'Tax Registration', type: 'text', group: 'Identification' },
-
-  // Address
-  { key: 'address', label: 'Address', type: 'textarea', width: 'full', group: 'Address' },
-  { key: 'city', label: 'City', type: 'text', group: 'Address' },
-  { key: 'country', label: 'Country', type: 'select', group: 'Address', options: [
-    { value: 'UAE', label: 'United Arab Emirates' },
-    { value: 'Iran', label: 'Iran' },
-    { value: 'Other', label: 'Other' },
-  ]},
-
-  // Status
-  { key: 'status', label: 'Status', type: 'select', group: 'Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' },
-    { value: 'blocked', label: 'Blocked' },
-  ], defaultValue: 'active' },
-  { key: 'risk_rating', label: 'Risk Rating', type: 'select', group: 'Status', options: [
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
-  ]},
+  // Contact Info
+  { key: 'email', label: 'Email', type: 'email', group: 'Contact Information' },
+  { key: 'phone', label: 'Phone', type: 'tel', group: 'Contact Information' },
+  { key: 'mobile', label: 'Mobile', type: 'tel', group: 'Contact Information' },
+  { key: 'address', label: 'Address', type: 'textarea', width: 'full', group: 'Contact Information' },
 
   // Notes
   { key: 'notes', label: 'Notes', type: 'textarea', width: 'full', group: 'Additional' },
 ]
 
 const tableColumns: Column[] = [
-  { key: 'id', label: 'ID', sortable: true, width: '80px' },
-  { key: 'customer_type', label: 'Type', sortable: true, type: 'badge' },
-  { key: 'full_name', label: 'Name', sortable: true },
-  { key: 'email', label: 'Email', sortable: true },
-  { key: 'phone', label: 'Phone' },
+  { key: 'account_no', label: 'Account No', sortable: true, width: '120px' },
+  { key: 'customer_name', label: 'Name', sortable: true },
+  { key: 'account_type', label: 'Type', sortable: true, render: (value) => (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+      value === 'corporate' ? 'bg-purple-100 text-purple-800' :
+      value === 'retail' ? 'bg-blue-100 text-blue-800' :
+      'bg-gray-100 text-gray-800'
+    }`}>
+      {value}
+    </span>
+  )},
+  { key: 'branch', label: 'Branch', sortable: true },
+  { key: 'email', label: 'Email' },
   { key: 'status', label: 'Status', sortable: true, render: (value) => (
-    <span className={`badge ${
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
       value === 'active' ? 'bg-green-100 text-green-800' :
       value === 'inactive' ? 'bg-gray-100 text-gray-800' :
+      value === 'suspended' ? 'bg-yellow-100 text-yellow-800' :
       'bg-red-100 text-red-800'
     }`}>
       {value}
     </span>
   )},
-  { key: 'risk_rating', label: 'Risk', render: (value) => (
-    <span className={`badge ${
-      value === 'low' ? 'bg-green-100 text-green-800' :
-      value === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-      'bg-red-100 text-red-800'
-    }`}>
-      {value || '-'}
-    </span>
+  { key: 'profile_completeness', label: 'Profile %', render: (value) => (
+    <div className="flex items-center gap-2">
+      <div className="w-16 bg-gray-200 rounded-full h-2">
+        <div
+          className={`h-2 rounded-full ${
+            value >= 70 ? 'bg-green-500' :
+            value >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+          }`}
+          style={{ width: `${value || 0}%` }}
+        />
+      </div>
+      <span className="text-xs text-gray-600">{value || 0}%</span>
+    </div>
   )},
-  { key: 'created_at', label: 'Created', type: 'date', sortable: true },
   { key: 'actions', label: 'Actions', type: 'actions', width: '100px' },
 ]
 
@@ -90,20 +82,32 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<any>(null)
-  const [stats, setStats] = useState({ total: 0, active: 0, corporate: 0 })
+  const [stats, setStats] = useState({ total: 0, active: 0, corporate: 0, branches: 0 })
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, pages: 1 })
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (page = 1) => {
     setLoading(true)
     try {
-      const response = await customersApi.list()
-      const data = response.data.items || response.data || []
-      setCustomers(data)
+      const response = await customersApi.list({ page, page_size: pagination.pageSize })
+      const data = response.data
+
+      const items = data.items || []
+      setCustomers(items)
+
+      setPagination({
+        page: data.page || 1,
+        pageSize: data.page_size || 20,
+        total: data.total || 0,
+        pages: data.pages || 1,
+      })
 
       // Calculate stats
+      const uniqueBranches = new Set(items.map((c: any) => c.branch).filter(Boolean))
       setStats({
-        total: data.length,
-        active: data.filter((c: any) => c.status === 'active').length,
-        corporate: data.filter((c: any) => c.customer_type === 'corporate').length,
+        total: data.total || items.length,
+        active: items.filter((c: any) => c.status === 'active').length,
+        corporate: items.filter((c: any) => c.account_type === 'corporate').length,
+        branches: uniqueBranches.size,
       })
     } catch (error: any) {
       console.error('Error fetching customers:', error)
@@ -132,12 +136,12 @@ export default function CustomersPage() {
   }
 
   const handleDelete = async (customer: any) => {
-    if (!confirm(`Are you sure you want to delete "${customer.full_name}"?`)) return
+    if (!confirm(`Are you sure you want to delete "${customer.customer_name}"?`)) return
 
     try {
       await customersApi.delete(customer.id)
       toast.success('Customer deleted successfully')
-      fetchCustomers()
+      fetchCustomers(pagination.page)
     } catch (error) {
       toast.error('Failed to delete customer')
     }
@@ -153,7 +157,7 @@ export default function CustomersPage() {
         toast.success('Customer created successfully')
       }
       setShowForm(false)
-      fetchCustomers()
+      fetchCustomers(pagination.page)
     } catch (error: any) {
       throw new Error(error.response?.data?.detail || 'Failed to save customer')
     }
@@ -169,7 +173,7 @@ export default function CustomersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
             <div className="p-3 bg-blue-100 rounded-lg">
               <Users className="text-blue-600" size={24} />
@@ -197,6 +201,15 @@ export default function CustomersPage() {
               <p className="text-2xl font-bold">{stats.corporate}</p>
             </div>
           </div>
+          <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
+            <div className="p-3 bg-orange-100 rounded-lg">
+              <MapPin className="text-orange-600" size={24} />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Branches</p>
+              <p className="text-2xl font-bold">{stats.branches}</p>
+            </div>
+          </div>
         </div>
 
         {/* Data Table */}
@@ -210,6 +223,34 @@ export default function CustomersPage() {
           onDelete={handleDelete}
           addButtonText="Add Customer"
         />
+
+        {/* Pagination Info */}
+        {pagination.total > 0 && (
+          <div className="flex justify-between items-center text-sm text-gray-600">
+            <span>
+              Showing {((pagination.page - 1) * pagination.pageSize) + 1} to {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} customers
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => fetchCustomers(pagination.page - 1)}
+                disabled={pagination.page <= 1}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1">
+                Page {pagination.page} of {pagination.pages}
+              </span>
+              <button
+                onClick={() => fetchCustomers(pagination.page + 1)}
+                disabled={pagination.page >= pagination.pages}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Form Modal */}
         {showForm && (
