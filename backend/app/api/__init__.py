@@ -4,7 +4,7 @@ API Package
 """
 from fastapi import APIRouter
 
-from app.api.v1 import auth, customers, facilities, checklists, settings, ai, personal, ai_providers, properties, profile, tasks, securities
+from app.api.v1 import auth, customers, facilities, checklists, settings, ai, personal, ai_providers, properties, profile, tasks, securities, data_import
 
 api_router = APIRouter()
 
@@ -21,3 +21,4 @@ api_router.include_router(properties.router, prefix="/v1/properties", tags=["Pro
 api_router.include_router(profile.router, prefix="/v1/profile", tags=["Profile"])
 api_router.include_router(tasks.router, prefix="/v1/tasks", tags=["Tasks"])
 api_router.include_router(securities.router, prefix="/v1/securities", tags=["Securities"])
+api_router.include_router(data_import.router, prefix="/v1/data-import", tags=["Data Import"])
