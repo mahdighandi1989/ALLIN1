@@ -48,7 +48,8 @@ async def get_db_providers() -> Dict[str, Dict[str, Any]]:
                 provider_id = setting.key.replace("ai_provider_", "")
                 try:
                     data = json.loads(setting.value) if setting.value else {}
-                    if data.get("api_key") and data.get("enabled"):
+                    # If API key exists, consider enabled unless explicitly disabled
+                    if data.get("api_key") and data.get("enabled", True) != False:
                         _db_providers_cache[provider_id] = data
                 except json.JSONDecodeError:
                     pass
