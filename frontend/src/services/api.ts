@@ -180,3 +180,79 @@ export const aiProvidersApi = {
   // Set default provider
   setDefault: (providerId: string) => api.put(`/ai-providers/default-provider/${providerId}`),
 }
+
+// Google Drive API
+export const googleDriveApi = {
+  // Get connection status
+  getStatus: () => api.get('/google-drive/status'),
+
+  // Test connection
+  testConnection: () => api.post('/google-drive/test'),
+
+  // Disconnect
+  disconnect: () => api.post('/google-drive/disconnect'),
+
+  // Initialize OAuth flow
+  initOAuth: (redirectUri: string) => api.post('/google-drive/oauth/init', { redirect_uri: redirectUri }),
+
+  // Handle OAuth callback
+  oauthCallback: (code: string, redirectUri: string) =>
+    api.post('/google-drive/oauth/callback', { code, redirect_uri: redirectUri }),
+
+  // List files
+  listFiles: (params?: { folder_id?: string; query?: string; page_size?: number; page_token?: string }) =>
+    api.get('/google-drive/files', { params }),
+
+  // Get file details
+  getFile: (fileId: string) => api.get(`/google-drive/files/${fileId}`),
+
+  // Download file
+  downloadFile: (fileId: string) => api.get(`/google-drive/files/${fileId}/download`, { responseType: 'blob' }),
+
+  // Upload file
+  uploadFile: (file: File, folderId?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (folderId) {
+      formData.append('folder_id', folderId)
+    }
+    return api.post('/google-drive/files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  // Delete file
+  deleteFile: (fileId: string, permanent: boolean = false) =>
+    api.delete(`/google-drive/files/${fileId}`, { params: { permanent } }),
+
+  // Create folder
+  createFolder: (name: string, parentId?: string) =>
+    api.post('/google-drive/folders', { name, parent_id: parentId }),
+
+  // Get or create folder
+  getOrCreateFolder: (name: string, parentId?: string) =>
+    api.post('/google-drive/folders/get-or-create', { name, parent_id: parentId }),
+
+  // Move file
+  moveFile: (fileId: string, newFolderId: string) =>
+    api.post('/google-drive/files/move', { file_id: fileId, new_folder_id: newFolderId }),
+
+  // Rename file
+  renameFile: (fileId: string, newName: string) =>
+    api.post('/google-drive/files/rename', { file_id: fileId, new_name: newName }),
+
+  // Share file
+  shareFile: (fileId: string, email?: string, role: string = 'reader', anyoneWithLink: boolean = false) =>
+    api.post('/google-drive/files/share', {
+      file_id: fileId,
+      email,
+      role,
+      anyone_with_link: anyoneWithLink
+    }),
+
+  // Create backup
+  createBackup: () => api.post('/google-drive/backup'),
+
+  // Sync customer documents
+  syncCustomer: (customerId: string) => api.post(`/google-drive/sync/customer/${customerId}`),
+}
