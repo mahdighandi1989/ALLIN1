@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from datetime import date
 
 from app.core.database import get_db
-from app.core.auth import get_current_user, TokenData
+from app.core.security import get_current_user, TokenData
 from app.models.task import CustomTask, TaskStatus, TaskPriority
 
 router = APIRouter()
