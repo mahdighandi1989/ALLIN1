@@ -124,6 +124,21 @@ export default function SettingsPage() {
     primary_color: '#2563eb'
   })
 
+  // API Keys form
+  const [apiKeysForm, setApiKeysForm] = useState({
+    openai_key: '',
+    anthropic_key: '',
+    google_key: ''
+  })
+
+  // Email settings form
+  const [emailForm, setEmailForm] = useState({
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_username: '',
+    smtp_password: ''
+  })
+
   const tabs = [
     { id: 'general', label: 'General', icon: Settings },
     { id: 'ai-providers', label: 'AI Providers', icon: Brain },
@@ -434,6 +449,106 @@ export default function SettingsPage() {
       toast.success('Appearance settings saved')
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'Failed to save appearance')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Save API Keys - updates AI providers with API keys
+  const handleSaveApiKeys = async () => {
+    setSaving(true)
+    try {
+      const promises = []
+
+      // Update OpenAI if key provided
+      if (apiKeysForm.openai_key) {
+        promises.push(
+          aiProvidersApi.update('openai', {
+            api_key: apiKeysForm.openai_key,
+            enabled: true
+          }).catch(() =>
+            aiProvidersApi.create({
+              provider_id: 'openai',
+              name: 'OpenAI',
+              api_key: apiKeysForm.openai_key,
+              provider_type: 'openai',
+              enabled: true
+            })
+          )
+        )
+      }
+
+      // Update Anthropic if key provided
+      if (apiKeysForm.anthropic_key) {
+        promises.push(
+          aiProvidersApi.update('anthropic', {
+            api_key: apiKeysForm.anthropic_key,
+            enabled: true
+          }).catch(() =>
+            aiProvidersApi.create({
+              provider_id: 'anthropic',
+              name: 'Anthropic (Claude)',
+              api_key: apiKeysForm.anthropic_key,
+              provider_type: 'anthropic',
+              enabled: true
+            })
+          )
+        )
+      }
+
+      // Update Google if key provided
+      if (apiKeysForm.google_key) {
+        promises.push(
+          aiProvidersApi.update('google', {
+            api_key: apiKeysForm.google_key,
+            enabled: true
+          }).catch(() =>
+            aiProvidersApi.create({
+              provider_id: 'google',
+              name: 'Google AI (Gemini)',
+              api_key: apiKeysForm.google_key,
+              provider_type: 'google',
+              enabled: true
+            })
+          )
+        )
+      }
+
+      if (promises.length === 0) {
+        toast.error('Please enter at least one API key')
+        return
+      }
+
+      await Promise.all(promises)
+      toast.success('API keys saved successfully')
+
+      // Clear the form
+      setApiKeysForm({ openai_key: '', anthropic_key: '', google_key: '' })
+
+      // Refresh providers list if on that tab
+      if (activeTab === 'ai-providers') {
+        fetchAIProviders()
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save API keys')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Save email settings
+  const handleSaveEmailSettings = async () => {
+    setSaving(true)
+    try {
+      await settingsApi.updateUser({
+        smtp_host: emailForm.smtp_host,
+        smtp_port: parseInt(emailForm.smtp_port),
+        smtp_username: emailForm.smtp_username,
+        smtp_password: emailForm.smtp_password
+      })
+      toast.success('Email settings saved')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save email settings')
     } finally {
       setSaving(false)
     }
@@ -1435,6 +1550,8 @@ export default function SettingsPage() {
             <input
               type="password"
               placeholder="sk-..."
+              value={apiKeysForm.openai_key}
+              onChange={(e) => setApiKeysForm({ ...apiKeysForm, openai_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
           </div>
@@ -1443,6 +1560,8 @@ export default function SettingsPage() {
             <input
               type="password"
               placeholder="sk-ant-..."
+              value={apiKeysForm.anthropic_key}
+              onChange={(e) => setApiKeysForm({ ...apiKeysForm, anthropic_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
           </div>
@@ -1451,13 +1570,19 @@ export default function SettingsPage() {
             <input
               type="password"
               placeholder="AIza..."
+              value={apiKeysForm.google_key}
+              onChange={(e) => setApiKeysForm({ ...apiKeysForm, google_key: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg font-mono"
             />
           </div>
         </div>
 
-        <button className="btn-primary mt-6 flex items-center gap-2">
-          <Save size={18} />
+        <button
+          onClick={handleSaveApiKeys}
+          disabled={saving}
+          className="btn-primary mt-6 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           Save API Keys
         </button>
       </div>
@@ -1467,23 +1592,50 @@ export default function SettingsPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">SMTP Host</label>
-            <input type="text" placeholder="smtp.gmail.com" className="w-full px-3 py-2 border rounded-lg" />
+            <input
+              type="text"
+              placeholder="smtp.gmail.com"
+              value={emailForm.smtp_host}
+              onChange={(e) => setEmailForm({ ...emailForm, smtp_host: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">SMTP Port</label>
-            <input type="number" placeholder="587" className="w-full px-3 py-2 border rounded-lg" />
+            <input
+              type="number"
+              placeholder="587"
+              value={emailForm.smtp_port}
+              onChange={(e) => setEmailForm({ ...emailForm, smtp_port: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Username</label>
-            <input type="email" placeholder="your-email@gmail.com" className="w-full px-3 py-2 border rounded-lg" />
+            <input
+              type="email"
+              placeholder="your-email@gmail.com"
+              value={emailForm.smtp_username}
+              onChange={(e) => setEmailForm({ ...emailForm, smtp_username: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Password</label>
-            <input type="password" className="w-full px-3 py-2 border rounded-lg" />
+            <input
+              type="password"
+              value={emailForm.smtp_password}
+              onChange={(e) => setEmailForm({ ...emailForm, smtp_password: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
           </div>
         </div>
-        <button className="btn-primary mt-4 flex items-center gap-2">
-          <Save size={18} />
+        <button
+          onClick={handleSaveEmailSettings}
+          disabled={saving}
+          className="btn-primary mt-4 flex items-center gap-2"
+        >
+          {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           Save Email Settings
         </button>
       </div>
