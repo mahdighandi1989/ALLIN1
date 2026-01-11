@@ -83,12 +83,12 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<any>(null)
   const [stats, setStats] = useState({ total: 0, active: 0, corporate: 0, branches: 0 })
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 20, total: 0, pages: 1 })
+  const [pagination, setPagination] = useState({ page: 1, pageSize: 50, total: 0, pages: 1 })
 
-  const fetchCustomers = async (page = 1) => {
+  const fetchCustomers = async (page = 1, pageSize = pagination.pageSize) => {
     setLoading(true)
     try {
-      const response = await customersApi.list({ page, page_size: pagination.pageSize })
+      const response = await customersApi.list({ page, page_size: pageSize })
       const data = response.data
 
       const items = data.items || []
@@ -96,18 +96,17 @@ export default function CustomersPage() {
 
       setPagination({
         page: data.page || 1,
-        pageSize: data.page_size || 20,
+        pageSize: data.page_size || pageSize,
         total: data.total || 0,
         pages: data.pages || 1,
       })
 
-      // Calculate stats
-      const uniqueBranches = new Set(items.map((c: any) => c.branch).filter(Boolean))
+      // Calculate stats from total API response
       setStats({
         total: data.total || items.length,
-        active: items.filter((c: any) => c.status === 'active').length,
-        corporate: items.filter((c: any) => c.account_type === 'corporate').length,
-        branches: uniqueBranches.size,
+        active: data.active_count || items.filter((c: any) => c.status === 'active').length,
+        corporate: data.corporate_count || items.filter((c: any) => c.account_type === 'corporate').length,
+        branches: data.branch_count || new Set(items.map((c: any) => c.branch).filter(Boolean)).size,
       })
     } catch (error: any) {
       console.error('Error fetching customers:', error)
@@ -118,7 +117,7 @@ export default function CustomersPage() {
   }
 
   useEffect(() => {
-    fetchCustomers()
+    fetchCustomers(1, 50)
   }, [])
 
   const handleAdd = () => {
@@ -226,15 +225,30 @@ export default function CustomersPage() {
 
         {/* Pagination Info */}
         {pagination.total > 0 && (
-          <div className="flex justify-between items-center text-sm text-gray-600">
-            <span>
-              Showing {((pagination.page - 1) * pagination.pageSize) + 1} to {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} customers
-            </span>
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-gray-600">
+            <div className="flex items-center gap-4">
+              <span>
+                Showing {((pagination.page - 1) * pagination.pageSize) + 1} to {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} customers
+              </span>
+              <select
+                value={pagination.pageSize}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value)
+                  setPagination(prev => ({ ...prev, pageSize: newSize }))
+                  fetchCustomers(1, newSize)
+                }}
+                className="px-2 py-1 border rounded text-sm"
+              >
+                <option value={20}>20 per page</option>
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+              </select>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => fetchCustomers(pagination.page - 1)}
                 disabled={pagination.page <= 1}
-                className="px-3 py-1 border rounded disabled:opacity-50"
+                className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-100"
               >
                 Previous
               </button>
@@ -244,7 +258,7 @@ export default function CustomersPage() {
               <button
                 onClick={() => fetchCustomers(pagination.page + 1)}
                 disabled={pagination.page >= pagination.pages}
-                className="px-3 py-1 border rounded disabled:opacity-50"
+                className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-100"
               >
                 Next
               </button>
