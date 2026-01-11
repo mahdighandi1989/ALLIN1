@@ -40,7 +40,7 @@ export default function NotesPage() {
   const fetchNotes = async () => {
     setLoading(true)
     try {
-      const response = await personalApi.getNotes()
+      const response = await personalApi.getNotes({ page_size: 100 })
       setNotes(response.data.items || response.data || [])
     } catch (error) {
       console.error('Error fetching notes:', error)

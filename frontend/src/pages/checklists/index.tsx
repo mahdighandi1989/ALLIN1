@@ -40,8 +40,8 @@ export default function ChecklistsPage() {
     setLoading(true)
     try {
       const [checklistsRes, customersRes] = await Promise.all([
-        checklistsApi.list(),
-        customersApi.list()
+        checklistsApi.list({ page_size: 100 }),
+        customersApi.list({ page_size: 100 })
       ])
 
       const checklistsData = checklistsRes.data.items || checklistsRes.data || []

@@ -87,8 +87,8 @@ export default function PropertiesPage() {
     setLoading(true)
     try {
       const [propertiesRes, customersRes] = await Promise.all([
-        api.get('/properties'),
-        customersApi.list()
+        api.get('/properties', { params: { page_size: 100 } }),
+        customersApi.list({ page_size: 100 })
       ])
 
       const propertiesData = propertiesRes.data.items || propertiesRes.data || []

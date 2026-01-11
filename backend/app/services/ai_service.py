@@ -76,9 +76,9 @@ class AIModel(str, Enum):
     GPT35_TURBO = "gpt-3.5-turbo"
 
     # Anthropic
+    CLAUDE_35_SONNET = "claude-3-5-sonnet-20241022"
+    CLAUDE_35_HAIKU = "claude-3-5-haiku-20241022"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
-    CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
-    CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
 
     # Google
     GEMINI_PRO = "gemini-pro"
