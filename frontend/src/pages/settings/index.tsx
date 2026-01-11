@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
 import { settingsApi, aiProvidersApi, googleDriveApi } from '@/services/api'
 import { toast } from 'react-hot-toast'
+import { useSettings } from '@/hooks/useSettings'
 import {
   Settings, Database, Users, Bell, Shield, Palette, Globe, Key, Save, Plus, Trash2, Edit,
   Brain, CheckCircle, XCircle, RefreshCw, Eye, EyeOff, Zap, AlertCircle, Loader2, Star,
@@ -53,6 +54,7 @@ interface KnownProvider {
 }
 
 export default function SettingsPage() {
+  const globalSettings = useSettings()
   const [activeTab, setActiveTab] = useState('general')
   const [settings, setSettings] = useState<SystemSetting[]>([])
   const [customFields, setCustomFields] = useState<CustomField[]>([])
@@ -788,14 +790,19 @@ export default function SettingsPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Language</label>
             <select
-              value={generalForm.language}
-              onChange={(e) => setGeneralForm({ ...generalForm, language: e.target.value })}
+              value={globalSettings.language}
+              onChange={(e) => {
+                const lang = e.target.value as 'en' | 'fa' | 'ar'
+                globalSettings.setLanguage(lang)
+                setGeneralForm({ ...generalForm, language: lang })
+              }}
               className="w-full px-3 py-2 border rounded-lg"
             >
               <option value="en">English</option>
               <option value="fa">فارسی</option>
               <option value="ar">العربية</option>
             </select>
+            <p className="text-xs text-gray-500 mt-1">Language change is applied immediately</p>
           </div>
         </div>
         <button
@@ -1547,39 +1554,45 @@ export default function SettingsPage() {
 
   const renderAppearance = () => (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="font-medium mb-4">Theme</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h3 className="font-medium mb-4 dark:text-white">Theme</h3>
         <div className="grid grid-cols-3 gap-4">
           {[
             { id: 'light', label: 'Light', bg: 'bg-white', text: 'text-gray-900' },
             { id: 'dark', label: 'Dark', bg: 'bg-gray-900', text: 'text-white' },
             { id: 'system', label: 'System', bg: 'bg-gradient-to-r from-white to-gray-900', text: 'text-gray-600' }
-          ].map(theme => (
+          ].map(themeOption => (
             <button
-              key={theme.id}
-              onClick={() => setAppearanceForm({ ...appearanceForm, theme: theme.id })}
+              key={themeOption.id}
+              onClick={() => {
+                globalSettings.setTheme(themeOption.id as 'light' | 'dark' | 'system')
+                setAppearanceForm({ ...appearanceForm, theme: themeOption.id })
+              }}
               className={`p-4 border-2 rounded-lg transition-colors ${
-                appearanceForm.theme === theme.id ? 'border-blue-500' : 'border-gray-200'
+                globalSettings.theme === themeOption.id ? 'border-blue-500' : 'border-gray-200 dark:border-gray-600'
               }`}
             >
-              <div className={`h-16 rounded ${theme.bg} ${theme.text} flex items-center justify-center mb-2 border`}>
+              <div className={`h-16 rounded ${themeOption.bg} ${themeOption.text} flex items-center justify-center mb-2 border`}>
                 Aa
               </div>
-              <p className="text-sm font-medium">{theme.label}</p>
+              <p className="text-sm font-medium dark:text-gray-300">{themeOption.label}</p>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="font-medium mb-4">Primary Color</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h3 className="font-medium mb-4 dark:text-white">Primary Color</h3>
         <div className="flex gap-3">
           {['#2563eb', '#7c3aed', '#059669', '#dc2626', '#ea580c', '#0891b2'].map(color => (
             <button
               key={color}
-              onClick={() => setAppearanceForm({ ...appearanceForm, primary_color: color })}
+              onClick={() => {
+                globalSettings.setPrimaryColor(color)
+                setAppearanceForm({ ...appearanceForm, primary_color: color })
+              }}
               className={`w-10 h-10 rounded-full border-2 transition-transform hover:scale-110 ${
-                appearanceForm.primary_color === color ? 'border-gray-900 scale-110' : 'border-transparent'
+                globalSettings.primaryColor === color ? 'border-gray-900 dark:border-white scale-110' : 'border-transparent'
               }`}
               style={{ backgroundColor: color }}
             />
@@ -1587,34 +1600,50 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="font-medium mb-4">Display Options</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h3 className="font-medium mb-4 dark:text-white">Display Options</h3>
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="sidebar_collapsed"
-              checked={appearanceForm.sidebar_collapsed}
-              onChange={(e) => setAppearanceForm({ ...appearanceForm, sidebar_collapsed: e.target.checked })}
+              checked={globalSettings.sidebarCollapsed}
+              onChange={(e) => {
+                globalSettings.setSidebarCollapsed(e.target.checked)
+                setAppearanceForm({ ...appearanceForm, sidebar_collapsed: e.target.checked })
+              }}
               className="w-4 h-4"
             />
-            <label htmlFor="sidebar_collapsed" className="text-sm">Start with collapsed sidebar</label>
+            <label htmlFor="sidebar_collapsed" className="text-sm dark:text-gray-300">Start with collapsed sidebar</label>
           </div>
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="dense_mode"
-              checked={appearanceForm.dense_mode}
-              onChange={(e) => setAppearanceForm({ ...appearanceForm, dense_mode: e.target.checked })}
+              checked={globalSettings.denseMode}
+              onChange={(e) => {
+                globalSettings.setDenseMode(e.target.checked)
+                setAppearanceForm({ ...appearanceForm, dense_mode: e.target.checked })
+              }}
               className="w-4 h-4"
             />
-            <label htmlFor="dense_mode" className="text-sm">Dense mode (compact spacing)</label>
+            <label htmlFor="dense_mode" className="text-sm dark:text-gray-300">Dense mode (compact spacing)</label>
           </div>
         </div>
       </div>
 
       <button
-        onClick={handleSaveAppearance}
+        onClick={async () => {
+          setSaving(true)
+          try {
+            await globalSettings.saveSettings()
+            toast.success('Appearance settings saved')
+          } catch (error) {
+            toast.error('Failed to save appearance')
+          } finally {
+            setSaving(false)
+          }
+        }}
         disabled={saving}
         className="btn-primary flex items-center gap-2"
       >
