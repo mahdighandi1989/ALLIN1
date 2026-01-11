@@ -115,7 +115,7 @@ async def ensure_ai_providers_loaded(db: AsyncSession) -> AIService:
     Ensure AI providers are loaded from database before using them
     """
     # If service already has providers, return it
-    if ai_service.get_available_providers():
+    if await ai_service.get_available_providers():
         return ai_service
 
     # Load from database
@@ -151,7 +151,7 @@ async def get_ai_status(
     دریافت وضعیت سرویس‌های AI
     """
     # First check providers initialized from environment variables
-    env_providers = ai_service.get_available_providers()
+    env_providers = await ai_service.get_available_providers()
 
     # Then check providers from database
     db_providers = await get_configured_providers_from_db(db)
@@ -179,7 +179,7 @@ async def get_ai_status(
 
         reinitialize_ai_service_with_keys(providers_data)
         # Update available providers after reinitialization
-        all_providers = list(set(ai_service.get_available_providers() + db_providers))
+        all_providers = list(set(await ai_service.get_available_providers() + db_providers))
 
     return {
         "available": len(all_providers) > 0,
