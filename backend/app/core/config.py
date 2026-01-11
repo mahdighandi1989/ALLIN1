@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # Anthropic Claude
     ANTHROPIC_API_KEY: Optional[str] = None
-    ANTHROPIC_MODEL: str = "claude-3-opus-20240229"
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
     ANTHROPIC_MAX_TOKENS: int = 4096
 
     # Google Gemini
