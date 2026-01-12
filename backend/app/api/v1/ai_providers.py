@@ -386,11 +386,10 @@ async def list_ai_providers(
 
 
 @router.get("/providers/known")
-async def list_known_providers(
-    current_user: TokenData = Depends(get_current_user)
-):
+async def list_known_providers():
     """
     لیست پرووایدرهای شناخته شده (برای انتخاب سریع)
+    این endpoint عمومی است و نیاز به احراز هویت ندارد
     """
     return {
         "providers": [
@@ -646,7 +645,6 @@ async def fetch_models(
 
 @router.get("/default-provider")
 async def get_default_provider(
-    current_user: TokenData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """

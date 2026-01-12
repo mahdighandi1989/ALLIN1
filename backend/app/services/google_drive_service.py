@@ -254,18 +254,35 @@ class GoogleDriveService:
         """ایجاد پوشه در Drive"""
         await self._ensure_initialized()
 
+        parent = parent_id or self.folder_id
         file_metadata = {
             'name': folder_name,
             'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [parent_id or self.folder_id] if (parent_id or self.folder_id) else []
         }
 
-        folder = await asyncio.to_thread(
-            self.service.files().create(
-                body=file_metadata,
-                fields='id, name, webViewLink'
-            ).execute
-        )
+        if parent:
+            file_metadata['parents'] = [parent]
+
+        try:
+            folder = await asyncio.to_thread(
+                self.service.files().create(
+                    body=file_metadata,
+                    fields='id, name, webViewLink'
+                ).execute
+            )
+        except Exception as e:
+            # If parent folder not found, create at root level
+            if 'File not found' in str(e) and parent:
+                print(f"Parent folder {parent} not found, creating at root level")
+                file_metadata.pop('parents', None)
+                folder = await asyncio.to_thread(
+                    self.service.files().create(
+                        body=file_metadata,
+                        fields='id, name, webViewLink'
+                    ).execute
+                )
+            else:
+                raise
 
         return {
             'id': folder.get('id'),
@@ -457,9 +474,23 @@ class GoogleDriveService:
         if page_token:
             params['pageToken'] = page_token
 
-        result = await asyncio.to_thread(
-            self.service.files().list(**params).execute
-        )
+        try:
+            result = await asyncio.to_thread(
+                self.service.files().list(**params).execute
+            )
+        except Exception as e:
+            # If folder not found, try listing without parent filter
+            if 'File not found' in str(e) and parent_id:
+                print(f"Folder {parent_id} not found, listing all files instead")
+                q_parts = ["trashed = false"]
+                if query:
+                    q_parts.append(f"name contains '{query}'")
+                params['q'] = " and ".join(q_parts)
+                result = await asyncio.to_thread(
+                    self.service.files().list(**params).execute
+                )
+            else:
+                raise
 
         files = result.get('files', [])
         return {
@@ -631,12 +662,32 @@ class GoogleDriveService:
 
         q = " and ".join(q_parts)
 
-        result = await asyncio.to_thread(
-            self.service.files().list(
-                q=q,
-                fields="files(id, name, webViewLink)"
-            ).execute
-        )
+        try:
+            result = await asyncio.to_thread(
+                self.service.files().list(
+                    q=q,
+                    fields="files(id, name, webViewLink)"
+                ).execute
+            )
+        except Exception as e:
+            # If parent folder not found, try without parent filter
+            if 'File not found' in str(e) and parent:
+                print(f"Parent folder {parent} not found, searching in root")
+                q_parts = [
+                    f"name = '{folder_name}'",
+                    "mimeType = 'application/vnd.google-apps.folder'",
+                    "trashed = false"
+                ]
+                q = " and ".join(q_parts)
+                result = await asyncio.to_thread(
+                    self.service.files().list(
+                        q=q,
+                        fields="files(id, name, webViewLink)"
+                    ).execute
+                )
+                parent = None  # Create at root level if needed
+            else:
+                raise
 
         files = result.get('files', [])
         if files:
@@ -648,7 +699,8 @@ class GoogleDriveService:
                 'created': False
             }
 
-        folder = await self.create_folder(folder_name, parent)
+        # Create folder - use None for parent if original parent was not found
+        folder = await self.create_folder(folder_name, parent if parent != self.folder_id else None)
         folder['created'] = True
         return folder
 

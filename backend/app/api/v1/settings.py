@@ -141,16 +141,18 @@ async def update_system_setting(
 
 # ========== User Settings ==========
 @router.get("/user")
-async def get_user_settings(
-    current_user: TokenData = Depends(get_current_user)
-):
+async def get_user_settings():
     """
     دریافت تنظیمات کاربر فعلی
+    این endpoint عمومی است و تنظیمات پیش‌فرض برمی‌گرداند
     """
     return {
         "settings": {
             "theme": "light",
             "language": "en",
+            "primary_color": "#2563eb",
+            "sidebar_collapsed": False,
+            "dense_mode": False,
             "notifications_enabled": True,
             "email_notifications": True,
             "dashboard_widgets": ["pending_tasks", "expiring_docs", "recent_activity"],
