@@ -325,6 +325,34 @@ export default function AIUploadCenter() {
     }))
   }
 
+  const toggleSelectAll = (fileId: string, selectAll: boolean) => {
+    setFiles(prev => prev.map(f => {
+      if (f.id !== fileId || !f.extractedData) return f
+      return {
+        ...f,
+        extractedData: {
+          ...f.extractedData,
+          items: f.extractedData.items.map(item => ({ ...item, selected: selectAll }))
+        }
+      }
+    }))
+  }
+
+  const isAllSelected = (file: UploadedFile): boolean => {
+    if (!file.extractedData || file.extractedData.items.length === 0) return false
+    return file.extractedData.items.every(item => item.selected)
+  }
+
+  const isNoneSelected = (file: UploadedFile): boolean => {
+    if (!file.extractedData || file.extractedData.items.length === 0) return true
+    return file.extractedData.items.every(item => !item.selected)
+  }
+
+  const getSelectedCount = (file: UploadedFile): number => {
+    if (!file.extractedData) return 0
+    return file.extractedData.items.filter(item => item.selected).length
+  }
+
   const saveSelectedItems = async () => {
     setSaving(true)
 
@@ -547,6 +575,27 @@ export default function AIUploadCenter() {
                               )
                             })}
                           </div>
+                        </div>
+
+                        {/* Select All Controls */}
+                        <div className="p-3 border-b bg-white flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isAllSelected(file)}
+                              ref={(el) => {
+                                if (el) {
+                                  el.indeterminate = !isAllSelected(file) && !isNoneSelected(file)
+                                }
+                              }}
+                              onChange={(e) => toggleSelectAll(file.id, e.target.checked)}
+                              className="w-5 h-5 rounded border-gray-300"
+                            />
+                            <span className="font-medium text-gray-700">Select All</span>
+                          </label>
+                          <span className="text-sm text-gray-500">
+                            {getSelectedCount(file)} of {file.extractedData.items.length} selected
+                          </span>
                         </div>
 
                         {/* Items */}

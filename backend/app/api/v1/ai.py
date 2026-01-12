@@ -576,7 +576,7 @@ Document content:
             guarantor_keywords = ['guarantor', 'guarantee', 'cheque', 'chq', 'ضامن']
             checklist_keywords = ['task', 'pending', 'due', 'check', 'todo', 'action', 'status']
 
-            for i, record in enumerate(records[:100]):  # Limit to 100 records
+            for i, record in enumerate(records):  # Process all records
                 record_str = str(record).lower()
                 record_keys = ' '.join([str(k).lower() for k in record.keys()])
 
