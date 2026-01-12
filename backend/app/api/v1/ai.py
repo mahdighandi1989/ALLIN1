@@ -7,8 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 import json
+import structlog
 
 from app.core.security import get_current_user, TokenData, require_permission
+
+logger = structlog.get_logger()
 from app.core.database import get_db
 from app.services.ai_service import ai_service, AIService
 from app.models.settings import SystemSetting
@@ -420,19 +423,54 @@ async def extract_document_data(
     filename = file.filename.lower()
     extracted_items = []
 
+    # Import pandas for all file type handling
+    import pandas as pd
+
     try:
         # Extract text/data based on file type
         if filename.endswith(('.xlsx', '.xls')):
-            # Excel file - use pandas
-            import pandas as pd
-            df = pd.read_excel(BytesIO(content))
-            text_content = df.to_string()
 
-            # Also extract as structured data
-            records = df.to_dict('records')
+            # Read all sheets from Excel file
+            all_records = []
+            text_parts = []
+
+            try:
+                xl = pd.ExcelFile(BytesIO(content))
+                sheet_names = xl.sheet_names
+                logger.info(f"Excel file has sheets: {sheet_names}")
+
+                for sheet_name in sheet_names:
+                    try:
+                        df = pd.read_excel(xl, sheet_name=sheet_name)
+                        df = df.dropna(how='all')  # Remove empty rows
+
+                        if not df.empty:
+                            text_parts.append(f"Sheet: {sheet_name}\n{df.to_string()}")
+
+                            # Add sheet records with sheet name context
+                            sheet_records = df.to_dict('records')
+                            for record in sheet_records:
+                                record['_sheet'] = sheet_name
+                            all_records.extend(sheet_records)
+
+                            logger.info(f"Sheet '{sheet_name}': {len(sheet_records)} records")
+                    except Exception as sheet_error:
+                        logger.warning(f"Error reading sheet {sheet_name}: {sheet_error}")
+                        continue
+
+            except Exception as xl_error:
+                # Fallback to single sheet reading
+                logger.warning(f"Error reading Excel file, trying single sheet: {xl_error}")
+                df = pd.read_excel(BytesIO(content))
+                df = df.dropna(how='all')
+                text_parts = [df.to_string()]
+                all_records = df.to_dict('records')
+
+            text_content = "\n\n".join(text_parts)
+            records = all_records
+            logger.info(f"Total extracted records: {len(records)}")
 
         elif filename.endswith('.csv'):
-            import pandas as pd
             df = pd.read_csv(BytesIO(content))
             text_content = df.to_string()
             records = df.to_dict('records')
@@ -509,26 +547,64 @@ Document content:
                 pass
 
         except Exception as ai_error:
-            # If AI fails, do basic extraction from records
-            if records:
-                for i, record in enumerate(records[:50]):  # Limit to 50 records
-                    # Try to guess category based on fields
-                    category = "unknown"
-                    if any(k.lower() in str(record).lower() for k in ['name', 'email', 'phone', 'customer']):
-                        category = "customer"
-                    elif any(k.lower() in str(record).lower() for k in ['amount', 'loan', 'facility', 'credit']):
-                        category = "facility"
-                    elif any(k.lower() in str(record).lower() for k in ['property', 'address', 'location', 'sqft']):
-                        category = "property"
-                    elif any(k.lower() in str(record).lower() for k in ['task', 'pending', 'due', 'check']):
-                        category = "checklist"
+            logger.warning(f"AI extraction failed: {ai_error}")
 
-                    extracted_items.append({
-                        "category": category,
-                        "confidence": 0.6,
-                        "data": {k: v for k, v in record.items() if pd.notna(v)},
-                        "originalText": f"Row {i+1}"
-                    })
+        # If AI returned no items, use basic extraction from records
+        if not extracted_items and records:
+            logger.info(f"Using fallback extraction for {len(records)} records")
+
+            # Check filename for category hints
+            filename_lower = file.filename.lower()
+            default_category = "unknown"
+            if 'propert' in filename_lower or 'iran' in filename_lower or 'uae' in filename_lower:
+                default_category = "property"
+            elif 'customer' in filename_lower or 'client' in filename_lower:
+                default_category = "customer"
+            elif 'facilit' in filename_lower or 'loan' in filename_lower:
+                default_category = "facility"
+            elif 'guarantor' in filename_lower:
+                default_category = "guarantor"
+            elif 'task' in filename_lower or 'checklist' in filename_lower:
+                default_category = "checklist"
+
+            # Extended keyword lists for better detection
+            customer_keywords = ['name', 'email', 'phone', 'customer', 'client', 'contact', 'account']
+            facility_keywords = ['amount', 'loan', 'facility', 'credit', 'overdraft', 'od', 'lg', 'lc', 'sanction']
+            property_keywords = ['property', 'address', 'location', 'sqft', 'deed', 'mortgage', 'real estate',
+                                 'land', 'building', 'apartment', 'villa', 'plot', 'city', 'country', 'iran',
+                                 'uae', 'dubai', 'tehran', 'area', 'meter', 'sqm', 'value', 'ملک', 'آدرس']
+            guarantor_keywords = ['guarantor', 'guarantee', 'cheque', 'chq', 'ضامن']
+            checklist_keywords = ['task', 'pending', 'due', 'check', 'todo', 'action', 'status']
+
+            for i, record in enumerate(records[:100]):  # Limit to 100 records
+                record_str = str(record).lower()
+                record_keys = ' '.join([str(k).lower() for k in record.keys()])
+
+                # Try to guess category based on fields and content
+                category = default_category
+
+                if any(k in record_str or k in record_keys for k in customer_keywords):
+                    category = "customer"
+                elif any(k in record_str or k in record_keys for k in facility_keywords):
+                    category = "facility"
+                elif any(k in record_str or k in record_keys for k in property_keywords):
+                    category = "property"
+                elif any(k in record_str or k in record_keys for k in guarantor_keywords):
+                    category = "guarantor"
+                elif any(k in record_str or k in record_keys for k in checklist_keywords):
+                    category = "checklist"
+
+                # Get sheet name if available
+                sheet_name = record.pop('_sheet', 'Sheet1')
+
+                extracted_items.append({
+                    "category": category,
+                    "confidence": 0.7 if category != "unknown" else 0.5,
+                    "data": {k: v for k, v in record.items() if pd.notna(v) and k != '_sheet'},
+                    "originalText": f"Sheet: {sheet_name}, Row {i+1}"
+                })
+
+            logger.info(f"Fallback extracted {len(extracted_items)} items")
 
         # Add unique IDs to items
         for i, item in enumerate(extracted_items):
