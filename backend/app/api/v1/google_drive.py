@@ -473,8 +473,13 @@ async def create_backup(
     """
     Create a database backup and upload to Google Drive
     """
+    import structlog
+    logger = structlog.get_logger()
+
     try:
         from datetime import datetime
+
+        logger.info("Starting backup process...")
 
         # Create sample backup data
         backup_data = {
@@ -483,19 +488,23 @@ async def create_backup(
             "type": "full_backup"
         }
 
+        logger.info(f"Backup data created, calling backup_database...")
         result = await drive_service.backup_database(backup_data)
+        logger.info(f"Backup successful: {result}")
 
         return {
             "success": True,
             "backup": result
         }
     except RuntimeError as e:
+        logger.error(f"RuntimeError in backup: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Google Drive not connected"
+            detail=f"Google Drive error: {str(e)}"
         )
     except Exception as e:
+        logger.error(f"Exception in backup: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Backup failed: {str(e)}"
         )
