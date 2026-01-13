@@ -42,19 +42,30 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token')
       if (refreshToken) {
         try {
+          console.log('Attempting to refresh token...')
           const response = await axios.post(`${API_URL}/auth/refresh`, {
             refresh_token: refreshToken,
           })
 
+          console.log('Token refreshed successfully')
           localStorage.setItem('access_token', response.data.access_token)
           localStorage.setItem('refresh_token', response.data.refresh_token)
 
           originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`
           return api(originalRequest)
-        } catch (refreshError) {
+        } catch (refreshError: any) {
+          console.error('Token refresh failed:', refreshError.response?.data || refreshError.message)
           // Refresh failed, redirect to login
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
+          // Only redirect if not already on login page
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
+        }
+      } else {
+        // No refresh token, redirect to login
+        if (window.location.pathname !== '/login') {
           window.location.href = '/login'
         }
       }

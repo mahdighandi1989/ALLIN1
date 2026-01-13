@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     # ================== Authentication ==================
     JWT_SECRET_KEY: str = "jwt-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days (7 * 24 * 60)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ================== AI Models Configuration ==================
     # OpenAI
