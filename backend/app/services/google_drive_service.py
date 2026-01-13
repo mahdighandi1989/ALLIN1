@@ -254,14 +254,20 @@ class GoogleDriveService:
         """ایجاد پوشه در Drive"""
         await self._ensure_initialized()
 
+        # Always use shared folder - service accounts have no storage quota
         parent = parent_id or self.folder_id
+        if not parent:
+            raise RuntimeError(
+                "GOOGLE_DRIVE_FOLDER_ID not configured. "
+                "Service accounts have no storage quota. "
+                "Please share a folder with the service account and set GOOGLE_DRIVE_FOLDER_ID."
+            )
+
         file_metadata = {
             'name': folder_name,
             'mimeType': 'application/vnd.google-apps.folder',
+            'parents': [parent]
         }
-
-        if parent:
-            file_metadata['parents'] = [parent]
 
         try:
             folder = await asyncio.to_thread(
@@ -271,18 +277,13 @@ class GoogleDriveService:
                 ).execute
             )
         except Exception as e:
-            # If parent folder not found, create at root level
-            if 'File not found' in str(e) and parent:
-                print(f"Parent folder {parent} not found, creating at root level")
-                file_metadata.pop('parents', None)
-                folder = await asyncio.to_thread(
-                    self.service.files().create(
-                        body=file_metadata,
-                        fields='id, name, webViewLink'
-                    ).execute
+            error_msg = str(e)
+            if 'storageQuotaExceeded' in error_msg:
+                raise RuntimeError(
+                    f"Storage quota exceeded. Make sure the folder '{parent}' is shared with "
+                    f"the service account as Editor and belongs to a user with storage quota."
                 )
-            else:
-                raise
+            raise
 
         return {
             'id': folder.get('id'),
@@ -305,13 +306,18 @@ class GoogleDriveService:
         if not file_name:
             file_name = os.path.basename(file_path)
 
+        # Always use shared folder - service accounts have no storage quota
+        parent = folder_id or self.folder_id
+        if not parent:
+            raise RuntimeError(
+                "GOOGLE_DRIVE_FOLDER_ID not configured. "
+                "Service accounts have no storage quota."
+            )
+
         file_metadata = {
             'name': file_name,
+            'parents': [parent]
         }
-
-        parent = folder_id or self.folder_id
-        if parent:
-            file_metadata['parents'] = [parent]
 
         media = MediaFileUpload(
             file_path,
@@ -319,13 +325,21 @@ class GoogleDriveService:
             resumable=True
         )
 
-        file = await asyncio.to_thread(
-            self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, name, webViewLink, size, mimeType'
-            ).execute
-        )
+        try:
+            file = await asyncio.to_thread(
+                self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink, size, mimeType'
+                ).execute
+            )
+        except Exception as e:
+            if 'storageQuotaExceeded' in str(e):
+                raise RuntimeError(
+                    "Storage quota exceeded. Make sure the folder is shared with "
+                    "the service account as Editor."
+                )
+            raise
 
         return {
             'id': file.get('id'),
@@ -347,13 +361,18 @@ class GoogleDriveService:
 
         from googleapiclient.http import MediaInMemoryUpload
 
+        # Always use shared folder - service accounts have no storage quota
+        parent = folder_id or self.folder_id
+        if not parent:
+            raise RuntimeError(
+                "GOOGLE_DRIVE_FOLDER_ID not configured. "
+                "Service accounts have no storage quota."
+            )
+
         file_metadata = {
             'name': file_name,
+            'parents': [parent]
         }
-
-        parent = folder_id or self.folder_id
-        if parent:
-            file_metadata['parents'] = [parent]
 
         media = MediaInMemoryUpload(
             content,
@@ -361,13 +380,21 @@ class GoogleDriveService:
             resumable=True
         )
 
-        file = await asyncio.to_thread(
-            self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, name, webViewLink, size'
-            ).execute
-        )
+        try:
+            file = await asyncio.to_thread(
+                self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink, size'
+                ).execute
+            )
+        except Exception as e:
+            if 'storageQuotaExceeded' in str(e):
+                raise RuntimeError(
+                    "Storage quota exceeded. Make sure the folder is shared with "
+                    "the service account as Editor."
+                )
+            raise
 
         return {
             'id': file.get('id'),
@@ -388,13 +415,18 @@ class GoogleDriveService:
 
         from googleapiclient.http import MediaIoBaseUpload
 
+        # Always use shared folder - service accounts have no storage quota
+        parent = folder_id or self.folder_id
+        if not parent:
+            raise RuntimeError(
+                "GOOGLE_DRIVE_FOLDER_ID not configured. "
+                "Service accounts have no storage quota."
+            )
+
         file_metadata = {
             'name': file_name,
+            'parents': [parent]
         }
-
-        parent = folder_id or self.folder_id
-        if parent:
-            file_metadata['parents'] = [parent]
 
         media = MediaIoBaseUpload(
             file_stream,
@@ -402,13 +434,21 @@ class GoogleDriveService:
             resumable=True
         )
 
-        file = await asyncio.to_thread(
-            self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, name, webViewLink, size, mimeType'
-            ).execute
-        )
+        try:
+            file = await asyncio.to_thread(
+                self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink, size, mimeType'
+                ).execute
+            )
+        except Exception as e:
+            if 'storageQuotaExceeded' in str(e):
+                raise RuntimeError(
+                    "Storage quota exceeded. Make sure the folder is shared with "
+                    "the service account as Editor."
+                )
+            raise
 
         return {
             'id': file.get('id'),
@@ -649,16 +689,21 @@ class GoogleDriveService:
         """دریافت یا ایجاد پوشه"""
         await self._ensure_initialized()
 
+        # Always use shared folder - service accounts have no storage quota
         parent = parent_id or self.folder_id
+        if not parent:
+            raise RuntimeError(
+                "GOOGLE_DRIVE_FOLDER_ID not configured. "
+                "Service accounts have no storage quota. "
+                "Please share a folder with the service account and set GOOGLE_DRIVE_FOLDER_ID."
+            )
 
         q_parts = [
             f"name = '{folder_name}'",
             "mimeType = 'application/vnd.google-apps.folder'",
-            "trashed = false"
+            "trashed = false",
+            f"'{parent}' in parents"
         ]
-
-        if parent:
-            q_parts.append(f"'{parent}' in parents")
 
         q = " and ".join(q_parts)
 
@@ -670,24 +715,13 @@ class GoogleDriveService:
                 ).execute
             )
         except Exception as e:
-            # If parent folder not found, try without parent filter
-            if 'File not found' in str(e) and parent:
-                print(f"Parent folder {parent} not found, searching in root")
-                q_parts = [
-                    f"name = '{folder_name}'",
-                    "mimeType = 'application/vnd.google-apps.folder'",
-                    "trashed = false"
-                ]
-                q = " and ".join(q_parts)
-                result = await asyncio.to_thread(
-                    self.service.files().list(
-                        q=q,
-                        fields="files(id, name, webViewLink)"
-                    ).execute
+            error_msg = str(e)
+            if 'storageQuotaExceeded' in error_msg:
+                raise RuntimeError(
+                    f"Storage quota exceeded. Make sure the folder is shared with "
+                    f"the service account as Editor."
                 )
-                parent = None  # Create at root level if needed
-            else:
-                raise
+            raise
 
         files = result.get('files', [])
         if files:
@@ -699,8 +733,8 @@ class GoogleDriveService:
                 'created': False
             }
 
-        # Create folder - use None for parent if original parent was not found
-        folder = await self.create_folder(folder_name, parent if parent != self.folder_id else None)
+        # Create folder inside the shared parent folder
+        folder = await self.create_folder(folder_name, parent)
         folder['created'] = True
         return folder
 
