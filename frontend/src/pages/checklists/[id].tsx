@@ -423,10 +423,26 @@ export default function ChecklistDetailPage() {
                 <h2 className="text-lg font-semibold">Add Checklist Item</h2>
               </div>
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault()
-                  toast.success('Item adding coming soon')
-                  setShowAddItem(false)
+                  if (!newItemTitle.trim()) {
+                    toast.error('Item title is required')
+                    return
+                  }
+                  try {
+                    await checklistsApi.addItem(id as string, {
+                      title: newItemTitle.trim(),
+                      due_date: newItemDueDate || undefined
+                    })
+                    toast.success('Item added successfully')
+                    setShowAddItem(false)
+                    setNewItemTitle('')
+                    setNewItemDueDate('')
+                    // Refresh checklist data
+                    await fetchChecklist()
+                  } catch (error: any) {
+                    toast.error(error.response?.data?.detail || 'Failed to add item')
+                  }
                 }}
                 className="p-4 space-y-4"
               >

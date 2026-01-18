@@ -182,131 +182,29 @@ export default function AIUploadCenter() {
       } catch (error: any) {
         console.error('Error processing file:', error)
 
-        // Mock data for demo if API fails
-        const mockExtractedData = generateMockExtraction(uploadedFile)
+        // Show actual error instead of mock data
+        const errorMessage = error.response?.data?.detail || error.message || 'Failed to extract data'
 
         setFiles(prev => prev.map(f =>
           f.id === uploadedFile.id
-            ? { ...f, status: 'completed', progress: 100, extractedData: mockExtractedData }
+            ? { ...f, status: 'error', progress: 0, error: errorMessage }
             : f
         ))
-        setExpandedFiles(prev => {
-          const newSet = new Set(Array.from(prev))
-          newSet.add(uploadedFile.id)
-          return newSet
-        })
+
+        toast.error(`Error processing ${uploadedFile.name}: ${errorMessage}`)
       }
     }
 
     setProcessing(false)
-    toast.success('All files processed!')
-  }
 
-  // Generate mock extraction for demo
-  const generateMockExtraction = (file: UploadedFile): ExtractedData => {
-    const items: ExtractedItem[] = []
-    const isExcel = file.type.includes('spreadsheet') || file.type.includes('excel') || file.name.endsWith('.xlsx')
+    // Only show success if at least one file completed
+    const completedFiles = files.filter(f => f.status === 'completed').length
+    const errorFiles = files.filter(f => f.status === 'error').length
 
-    if (isExcel) {
-      // Simulate extracting multiple records from Excel
-      items.push(
-        {
-          id: '1',
-          category: 'customer',
-          confidence: 0.95,
-          selected: true,
-          data: {
-            full_name: 'ABC Trading LLC',
-            customer_type: 'corporate',
-            email: 'info@abctrading.ae',
-            phone: '+971 4 123 4567',
-            trade_license: 'TL-2024-12345',
-            emirates_id: '784-1990-1234567-1',
-          },
-          originalText: 'Row 2: ABC Trading LLC, Corporate, info@abctrading.ae...'
-        },
-        {
-          id: '2',
-          category: 'facility',
-          confidence: 0.88,
-          selected: true,
-          data: {
-            facility_type: 'OD',
-            approved_amount: 5000000,
-            currency: 'AED',
-            expiry_date: '2025-06-30',
-            customer_ref: 'ABC Trading LLC',
-          },
-          originalText: 'Row 5: OD Facility, 5,000,000 AED, Expiry: 30-Jun-2025'
-        },
-        {
-          id: '3',
-          category: 'property',
-          confidence: 0.82,
-          selected: true,
-          data: {
-            property_type: 'commercial',
-            title: 'Office Unit 305, Business Bay',
-            location_country: 'UAE',
-            location_city: 'Dubai',
-            estimated_value: 2500000,
-          },
-          originalText: 'Row 8: Property - Office Unit 305, Business Bay, Dubai'
-        },
-        {
-          id: '4',
-          category: 'checklist',
-          confidence: 0.75,
-          selected: true,
-          data: {
-            title: 'Trade License Renewal',
-            due_date: '2025-03-15',
-            priority: 'high',
-            status: 'pending',
-          },
-          originalText: 'Row 12: Pending - Trade License Renewal, Due: 15-Mar-2025'
-        }
-      )
-    } else {
-      // PDF or Word document
-      items.push(
-        {
-          id: '1',
-          category: 'customer',
-          confidence: 0.78,
-          selected: true,
-          data: {
-            full_name: 'Mohammad Ali Hassan',
-            customer_type: 'individual',
-            passport_number: 'A12345678',
-            nationality: 'UAE',
-          },
-          originalText: 'Extracted from page 1: Customer details section'
-        },
-        {
-          id: '2',
-          category: 'checklist',
-          confidence: 0.65,
-          selected: false,
-          data: {
-            title: 'Document Verification Required',
-            notes: 'Passport copy needs verification',
-          },
-          originalText: 'Extracted from page 2: Notes section'
-        }
-      )
-    }
-
-    const categories: Record<string, number> = {}
-    items.forEach(item => {
-      categories[item.category] = (categories[item.category] || 0) + 1
-    })
-
-    return {
-      items,
-      summary: `Extracted ${items.length} items from ${file.name}`,
-      totalItems: items.length,
-      categories,
+    if (completedFiles > 0 && errorFiles === 0) {
+      toast.success('All files processed successfully!')
+    } else if (completedFiles > 0) {
+      toast(`${completedFiles} files processed, ${errorFiles} failed`, { icon: '⚠️' })
     }
   }
 

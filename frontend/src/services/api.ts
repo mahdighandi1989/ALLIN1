@@ -101,6 +101,9 @@ export const checklistsApi = {
   list: (params?: any) => api.get('/checklists', { params }),
   get: (id: string) => api.get(`/checklists/${id}`),
   create: (data: any) => api.post('/checklists', data),
+  delete: (id: string) => api.delete(`/checklists/${id}`),
+  addItem: (checklistId: string, data: { title: string; description?: string; category?: string; is_required?: boolean; due_date?: string }) =>
+    api.post(`/checklists/${checklistId}/items`, data),
   updateItem: (checklistId: string, itemId: string, data: any) =>
     api.put(`/checklists/${checklistId}/items/${itemId}`, data),
   getPendingTasks: (params?: any) => api.get('/checklists/tasks/pending', { params }),

@@ -5,9 +5,14 @@ Settings API Routes
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.security import get_current_user, TokenData, require_role
 from app.core.config import settings as app_settings
+from app.core.database import get_db
+from app.models.settings import SystemSetting, UserSetting, SettingType, DEFAULT_SYSTEM_SETTINGS, DEFAULT_USER_SETTINGS
 
 router = APIRouter()
 
@@ -45,76 +50,64 @@ class GoogleDriveConfig(BaseModel):
     sync_interval: int = 300
 
 
+# ========== Helper Functions ==========
+async def ensure_default_settings(db: AsyncSession):
+    """Ensure default system settings exist in database"""
+    for setting_def in DEFAULT_SYSTEM_SETTINGS:
+        result = await db.execute(
+            select(SystemSetting).where(SystemSetting.key == setting_def["key"])
+        )
+        if not result.scalars().first():
+            new_setting = SystemSetting(
+                key=setting_def["key"],
+                value=setting_def["value"],
+                value_type=SettingType(setting_def["value_type"]),
+                label=setting_def.get("label"),
+                description=setting_def.get("description"),
+                category=setting_def.get("category"),
+                allowed_values=setting_def.get("allowed_values")
+            )
+            db.add(new_setting)
+    await db.commit()
+
+
 # ========== System Settings (Admin Only) ==========
 @router.get("/system")
 async def get_system_settings(
     category: Optional[str] = None,
-    current_user: TokenData = Depends(require_role(["admin", "manager"]))
+    current_user: TokenData = Depends(require_role(["admin", "manager"])),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     دریافت تنظیمات سیستم (فقط ادمین)
     """
-    settings_list = [
-        {
-            "key": "expiry_alert_days",
-            "value": "30",
-            "value_type": "int",
-            "label": "Expiry Alert Days",
-            "description": "Number of days before expiry to show alert",
-            "category": "alerts"
-        },
-        {
-            "key": "expiry_warning_days",
-            "value": "60",
-            "value_type": "int",
-            "label": "Expiry Warning Days",
-            "category": "alerts"
-        },
-        {
-            "key": "profile_completion_minimum",
-            "value": "70",
-            "value_type": "int",
-            "label": "Minimum Profile Completion %",
-            "category": "profile"
-        },
-        {
-            "key": "default_ai_provider",
-            "value": "openai",
-            "value_type": "string",
-            "label": "Default AI Provider",
-            "category": "ai",
-            "allowed_values": ["openai", "anthropic", "google"]
-        },
-        {
-            "key": "ai_enabled",
-            "value": "true",
-            "value_type": "bool",
-            "label": "AI Features Enabled",
-            "category": "ai"
-        },
-        {
-            "key": "google_drive_sync_enabled",
-            "value": "false",
-            "value_type": "bool",
-            "label": "Google Drive Sync",
-            "category": "sync"
-        },
-        {
-            "key": "session_timeout_minutes",
-            "value": "30",
-            "value_type": "int",
-            "label": "Session Timeout (minutes)",
-            "category": "security"
-        }
-    ]
+    # Ensure default settings exist
+    await ensure_default_settings(db)
 
+    # Build query
+    query = select(SystemSetting).where(SystemSetting.is_active == True)
     if category:
-        settings_list = [s for s in settings_list if s["category"] == category]
+        query = query.where(SystemSetting.category == category)
+
+    result = await db.execute(query)
+    settings_rows = result.scalars().all()
+
+    settings_list = []
+    for s in settings_rows:
+        settings_list.append({
+            "key": s.key,
+            "value": s.value,
+            "value_type": s.value_type.value if isinstance(s.value_type, SettingType) else s.value_type,
+            "label": s.label,
+            "description": s.description,
+            "category": s.category,
+            "allowed_values": s.allowed_values
+        })
 
     # Group by category
     grouped = {}
     for s in settings_list:
-        cat = s["category"]
+        cat = s["category"] or "general"
         if cat not in grouped:
             grouped[cat] = []
         grouped[cat].append(s)
@@ -126,11 +119,32 @@ async def get_system_settings(
 async def update_system_setting(
     key: str,
     setting: SystemSettingUpdate,
-    current_user: TokenData = Depends(require_role(["admin"]))
+    current_user: TokenData = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     بروزرسانی تنظیم سیستم (فقط ادمین)
     """
+    result = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == key)
+    )
+    db_setting = result.scalars().first()
+
+    if not db_setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Setting '{key}' not found"
+        )
+
+    if not db_setting.is_editable:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This setting cannot be modified"
+        )
+
+    db_setting.value = setting.value
+    await db.commit()
+
     return {
         "key": key,
         "value": setting.value,
@@ -140,36 +154,123 @@ async def update_system_setting(
 
 
 # ========== User Settings ==========
+async def ensure_user_settings(db: AsyncSession, user_id: str):
+    """Ensure default user settings exist for a user"""
+    for setting_def in DEFAULT_USER_SETTINGS:
+        result = await db.execute(
+            select(UserSetting).where(
+                UserSetting.user_id == user_id,
+                UserSetting.key == setting_def["key"]
+            )
+        )
+        if not result.scalars().first():
+            new_setting = UserSetting(
+                user_id=user_id,
+                key=setting_def["key"],
+                value=setting_def["value"],
+                value_type=SettingType(setting_def["value_type"]),
+                label=setting_def.get("label"),
+                category=setting_def.get("category")
+            )
+            db.add(new_setting)
+    await db.commit()
+
+
 @router.get("/user")
-async def get_user_settings():
+async def get_user_settings(
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
     دریافت تنظیمات کاربر فعلی
-    این endpoint عمومی است و تنظیمات پیش‌فرض برمی‌گرداند
     """
-    return {
-        "settings": {
-            "theme": "light",
-            "language": "en",
-            "primary_color": "#2563eb",
-            "sidebar_collapsed": False,
-            "dense_mode": False,
-            "notifications_enabled": True,
-            "email_notifications": True,
-            "dashboard_widgets": ["pending_tasks", "expiring_docs", "recent_activity"],
-            "default_view": "dashboard",
-            "items_per_page": 20
-        }
+    # Ensure default settings exist for user
+    await ensure_user_settings(db, current_user.user_id)
+
+    # Get all user settings
+    result = await db.execute(
+        select(UserSetting).where(UserSetting.user_id == current_user.user_id)
+    )
+    settings_rows = result.scalars().all()
+
+    # Convert to dictionary
+    settings_dict = {}
+    for s in settings_rows:
+        settings_dict[s.key] = s.get_typed_value()
+
+    # Add default values if not present
+    defaults = {
+        "theme": "light",
+        "language": "en",
+        "primary_color": "#2563eb",
+        "sidebar_collapsed": False,
+        "dense_mode": False,
+        "notifications_enabled": True,
+        "email_notifications": True,
+        "dashboard_widgets": ["pending_tasks", "expiring_docs", "recent_activity"],
+        "default_view": "dashboard",
+        "items_per_page": 20
     }
+
+    for key, value in defaults.items():
+        if key not in settings_dict:
+            settings_dict[key] = value
+
+    return {"settings": settings_dict}
 
 
 @router.put("/user")
 async def update_user_settings(
     settings: Dict[str, Any],
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     بروزرسانی تنظیمات کاربر
     """
+    import json
+
+    for key, value in settings.items():
+        # Check if setting exists
+        result = await db.execute(
+            select(UserSetting).where(
+                UserSetting.user_id == current_user.user_id,
+                UserSetting.key == key
+            )
+        )
+        existing = result.scalars().first()
+
+        # Determine value type
+        if isinstance(value, bool):
+            value_type = SettingType.BOOLEAN
+            str_value = "true" if value else "false"
+        elif isinstance(value, int):
+            value_type = SettingType.INTEGER
+            str_value = str(value)
+        elif isinstance(value, float):
+            value_type = SettingType.FLOAT
+            str_value = str(value)
+        elif isinstance(value, (list, dict)):
+            value_type = SettingType.JSON
+            str_value = json.dumps(value)
+        else:
+            value_type = SettingType.STRING
+            str_value = str(value)
+
+        if existing:
+            existing.value = str_value
+            existing.value_type = value_type
+        else:
+            new_setting = UserSetting(
+                user_id=current_user.user_id,
+                key=key,
+                value=str_value,
+                value_type=value_type
+            )
+            db.add(new_setting)
+
+    await db.commit()
+
     return {
         "message": "Settings updated successfully",
         "settings": settings
@@ -177,55 +278,34 @@ async def update_user_settings(
 
 
 # ========== AI Configuration ==========
+# Note: AI Provider management has been moved to /api/v1/ai-providers endpoint
+# These endpoints are kept for backwards compatibility but redirect to the new endpoints
 @router.get("/ai/providers")
 async def get_ai_providers(
-    current_user: TokenData = Depends(require_role(["admin"]))
+    current_user: TokenData = Depends(require_role(["admin"])),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     دریافت تنظیمات ارائه‌دهندگان AI
+    Note: Use /api/v1/ai-providers/providers for full functionality
     """
+    from app.api.v1.ai_providers import list_ai_providers
+    providers = await list_ai_providers(current_user, db)
+
+    # Format response for backwards compatibility
     return {
         "providers": [
             {
-                "id": "openai",
-                "name": "OpenAI",
-                "enabled": bool(app_settings.OPENAI_API_KEY),
-                "models": ["gpt-4-turbo-preview", "gpt-4", "gpt-3.5-turbo"],
-                "default_model": app_settings.OPENAI_MODEL
-            },
-            {
-                "id": "anthropic",
-                "name": "Anthropic (Claude)",
-                "enabled": bool(app_settings.ANTHROPIC_API_KEY),
-                "models": ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
-                "default_model": app_settings.ANTHROPIC_MODEL
-            },
-            {
-                "id": "google",
-                "name": "Google (Gemini)",
-                "enabled": bool(app_settings.GOOGLE_AI_API_KEY),
-                "models": ["gemini-pro", "gemini-pro-vision"],
-                "default_model": app_settings.GOOGLE_AI_MODEL
+                "id": p.provider_id,
+                "name": p.name,
+                "enabled": p.enabled,
+                "models": p.available_models,
+                "default_model": p.default_model
             }
+            for p in providers
         ],
         "default_provider": app_settings.DEFAULT_AI_PROVIDER,
         "enabled_features": app_settings.AI_ENABLED_FEATURES
-    }
-
-
-@router.put("/ai/providers/{provider_id}")
-async def update_ai_provider(
-    provider_id: str,
-    config: AIProviderConfig,
-    current_user: TokenData = Depends(require_role(["admin"]))
-):
-    """
-    بروزرسانی تنظیمات ارائه‌دهنده AI
-    """
-    return {
-        "provider": provider_id,
-        "config": config.model_dump(),
-        "message": "AI provider configuration updated"
     }
 
 

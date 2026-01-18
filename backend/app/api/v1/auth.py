@@ -7,6 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.security import (
     verify_password, get_password_hash,
@@ -14,6 +16,8 @@ from app.core.security import (
     verify_token, get_current_user, TokenData
 )
 from app.core.config import settings
+from app.core.database import get_db
+from app.models.user import User, UserRole
 
 router = APIRouter()
 
@@ -61,34 +65,54 @@ class PasswordChange(BaseModel):
     new_password: str
 
 
-# ========== Mock Database (برای تست - در production از دیتابیس واقعی استفاده شود) ==========
-# این فقط برای نمایش است - در عمل از SQLAlchemy استفاده می‌شود
-mock_users = {
-    "admin": {
-        "id": "user-001",
-        "username": "admin",
-        "email": "admin@example.com",
-        "hashed_password": get_password_hash("admin123"),
-        "first_name": "Admin",
-        "last_name": "User",
-        "role": "admin",
-        "is_active": True,
-        "permissions": ["*"]
-    }
-}
+# ========== Helper Functions ==========
+async def get_or_create_admin(db: AsyncSession) -> User:
+    """Create default admin user if no users exist"""
+    # Check if any users exist
+    result = await db.execute(select(User).limit(1))
+    existing_user = result.scalars().first()
+
+    if existing_user is None:
+        # Create default admin user
+        admin_user = User(
+            username="admin",
+            email="admin@system.local",
+            hashed_password=get_password_hash("admin123"),
+            first_name="System",
+            last_name="Administrator",
+            role=UserRole.ADMIN,
+            permissions=["*"],
+            is_active=True,
+            is_superuser=True
+        )
+        db.add(admin_user)
+        await db.commit()
+        await db.refresh(admin_user)
+        return admin_user
+    return None
 
 
 # ========== Routes ==========
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db)
+):
     """
     ورود به سیستم
 
     Returns:
         Token با access_token و refresh_token
     """
-    # بررسی کاربر
-    user = mock_users.get(form_data.username)
+    # Ensure at least one admin exists
+    await get_or_create_admin(db)
+
+    # Find user by username
+    result = await db.execute(
+        select(User).where(User.username == form_data.username)
+    )
+    user = result.scalars().first()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -96,27 +120,35 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # بررسی رمز عبور
-    if not verify_password(form_data.password, user["hashed_password"]):
+    # Verify password
+    if not verify_password(form_data.password, user.hashed_password):
+        # Increment failed login attempts
+        user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # بررسی فعال بودن
-    if not user["is_active"]:
+    # Check if user is active
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled"
         )
 
-    # ایجاد توکن‌ها
+    # Reset failed attempts and update last login
+    user.failed_login_attempts = 0
+    user.last_login = datetime.utcnow()
+    await db.commit()
+
+    # Create tokens
     token_data = {
-        "sub": user["id"],
-        "username": user["username"],
-        "role": user["role"],
-        "permissions": user["permissions"]
+        "sub": user.id,
+        "username": user.username,
+        "role": user.role.value if isinstance(user.role, UserRole) else user.role,
+        "permissions": user.permissions or ["*"] if user.is_superuser else user.permissions or []
     }
 
     access_token = create_access_token(token_data)
@@ -130,41 +162,58 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate):
+async def register(
+    user_data: UserCreate,
+    db: AsyncSession = Depends(get_db)
+):
     """
     ثبت‌نام کاربر جدید
     """
-    # بررسی تکراری نبودن
-    if user_data.username in mock_users:
+    # Check if username exists
+    result = await db.execute(
+        select(User).where(User.username == user_data.username)
+    )
+    if result.scalars().first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
 
-    # بررسی ایمیل
-    for u in mock_users.values():
-        if u["email"] == user_data.email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
+    # Check if email exists
+    result = await db.execute(
+        select(User).where(User.email == user_data.email)
+    )
+    if result.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
 
-    # ایجاد کاربر
-    new_user = {
-        "id": f"user-{len(mock_users) + 1:03d}",
-        "username": user_data.username,
-        "email": user_data.email,
-        "hashed_password": get_password_hash(user_data.password),
-        "first_name": user_data.first_name,
-        "last_name": user_data.last_name,
-        "role": "viewer",  # نقش پیش‌فرض
-        "is_active": True,
-        "permissions": ["read:all"]
-    }
+    # Create new user
+    new_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=get_password_hash(user_data.password),
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        role=UserRole.VIEWER,
+        permissions=["read:all"],
+        is_active=True
+    )
 
-    mock_users[user_data.username] = new_user
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
 
-    return UserResponse(**new_user)
+    return UserResponse(
+        id=new_user.id,
+        username=new_user.username,
+        email=new_user.email,
+        first_name=new_user.first_name,
+        last_name=new_user.last_name,
+        role=new_user.role.value if isinstance(new_user.role, UserRole) else new_user.role,
+        is_active=new_user.is_active
+    )
 
 
 @router.post("/refresh", response_model=Token)
@@ -198,18 +247,32 @@ async def refresh_token(token_data: TokenRefresh):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: TokenData = Depends(get_current_user)):
+async def get_current_user_info(
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
     """
     دریافت اطلاعات کاربر فعلی
     """
-    # در عمل از دیتابیس بخوانید
-    for user in mock_users.values():
-        if user["id"] == current_user.user_id:
-            return UserResponse(**user)
+    result = await db.execute(
+        select(User).where(User.id == current_user.user_id)
+    )
+    user = result.scalars().first()
 
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="User not found"
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role=user.role.value if isinstance(user.role, UserRole) else user.role,
+        is_active=user.is_active
     )
 
 
@@ -225,17 +288,17 @@ async def logout(current_user: TokenData = Depends(get_current_user)):
 @router.post("/change-password")
 async def change_password(
     password_data: PasswordChange,
-    current_user: TokenData = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     تغییر رمز عبور
     """
-    # پیدا کردن کاربر
-    user = None
-    for u in mock_users.values():
-        if u["id"] == current_user.user_id:
-            user = u
-            break
+    # Find user in database
+    result = await db.execute(
+        select(User).where(User.id == current_user.user_id)
+    )
+    user = result.scalars().first()
 
     if not user:
         raise HTTPException(
@@ -243,14 +306,16 @@ async def change_password(
             detail="User not found"
         )
 
-    # بررسی رمز فعلی
-    if not verify_password(password_data.current_password, user["hashed_password"]):
+    # Verify current password
+    if not verify_password(password_data.current_password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect"
         )
 
-    # تغییر رمز
-    user["hashed_password"] = get_password_hash(password_data.new_password)
+    # Change password
+    user.hashed_password = get_password_hash(password_data.new_password)
+    user.password_changed_at = datetime.utcnow()
+    await db.commit()
 
     return {"message": "Password changed successfully"}
