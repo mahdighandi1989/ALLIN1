@@ -138,16 +138,6 @@ export default function LoginPage() {
               </button>
             </form>
 
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600 font-medium mb-2">Demo Credentials:</p>
-              <p className="text-sm text-gray-500">
-                Username: <code className="bg-gray-200 px-1 rounded">admin</code>
-              </p>
-              <p className="text-sm text-gray-500">
-                Password: <code className="bg-gray-200 px-1 rounded">admin123</code>
-              </p>
-            </div>
           </div>
 
           {/* Footer */}

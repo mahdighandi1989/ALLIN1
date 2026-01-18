@@ -476,22 +476,65 @@ async def extract_document_data(
             records = df.to_dict('records')
 
         elif filename.endswith('.pdf'):
-            # Use pdfplumber or PyPDF2
+            # Use pdfplumber for PDF extraction
             try:
                 import pdfplumber
                 with pdfplumber.open(BytesIO(content)) as pdf:
-                    text_content = "\n".join([page.extract_text() or "" for page in pdf.pages])
-            except ImportError:
-                text_content = f"[PDF file: {file.filename}]"
+                    pages_text = []
+                    for i, page in enumerate(pdf.pages):
+                        page_text = page.extract_text()
+                        if page_text:
+                            pages_text.append(f"--- Page {i+1} ---\n{page_text}")
+                        # Also try to extract tables
+                        tables = page.extract_tables()
+                        for table in tables:
+                            if table:
+                                table_str = "\n".join(["\t".join([str(cell) if cell else "" for cell in row]) for row in table])
+                                pages_text.append(f"--- Table on Page {i+1} ---\n{table_str}")
+                    text_content = "\n\n".join(pages_text)
+                    if not text_content.strip():
+                        text_content = "[PDF file contains no extractable text - may be scanned/image-based]"
+                    logger.info(f"Extracted {len(pages_text)} sections from PDF")
+            except ImportError as e:
+                logger.error(f"pdfplumber not installed: {e}")
+                raise HTTPException(status_code=500, detail="PDF library (pdfplumber) not installed on server")
+            except Exception as e:
+                logger.error(f"PDF extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to extract PDF: {str(e)}")
             records = []
 
         elif filename.endswith(('.doc', '.docx')):
             try:
                 from docx import Document
                 doc = Document(BytesIO(content))
-                text_content = "\n".join([para.text for para in doc.paragraphs])
-            except ImportError:
-                text_content = f"[Word file: {file.filename}]"
+                text_parts = []
+
+                # Extract paragraphs
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        text_parts.append(para.text)
+
+                # Extract tables
+                for table in doc.tables:
+                    table_rows = []
+                    for row in table.rows:
+                        cells = [cell.text.strip() for cell in row.cells]
+                        if any(cells):
+                            table_rows.append("\t".join(cells))
+                    if table_rows:
+                        text_parts.append("--- Table ---")
+                        text_parts.extend(table_rows)
+
+                text_content = "\n".join(text_parts)
+                if not text_content.strip():
+                    text_content = "[Word document appears to be empty or contains only images]"
+                logger.info(f"Extracted {len(text_parts)} sections from Word document")
+            except ImportError as e:
+                logger.error(f"python-docx not installed: {e}")
+                raise HTTPException(status_code=500, detail="Word document library (python-docx) not installed on server")
+            except Exception as e:
+                logger.error(f"Word extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to extract Word document: {str(e)}")
             records = []
 
         elif filename.endswith('.txt'):

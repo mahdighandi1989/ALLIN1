@@ -277,6 +277,77 @@ async def delete_checklist(
     return {"message": f"Checklist {checklist_id} deleted successfully", "success": True}
 
 
+class ChecklistItemCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    is_required: bool = True
+    due_date: Optional[date] = None
+
+
+@router.post("/{checklist_id}/items")
+async def add_checklist_item(
+    checklist_id: str,
+    item: ChecklistItemCreate,
+    current_user: TokenData = Depends(require_permission("write:checklists")),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    افزودن آیتم جدید به چک‌لیست
+    Add a new item to an existing checklist
+    """
+    # Verify checklist exists
+    result = await db.execute(
+        select(Checklist).options(selectinload(Checklist.items)).where(
+            and_(Checklist.id == checklist_id, Checklist.is_deleted == False)
+        )
+    )
+    checklist = result.scalar_one_or_none()
+
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Checklist not found")
+
+    # Determine order (add at end)
+    max_order = max([i.order or 0 for i in checklist.items], default=0) if checklist.items else 0
+
+    # Create new item
+    new_item = ChecklistItem(
+        checklist_id=checklist_id,
+        title=item.title,
+        description=item.description,
+        category=item.category,
+        is_required=item.is_required,
+        due_date=item.due_date,
+        order=max_order + 1,
+        is_completed=False,
+        is_applicable=True,
+        created_by=current_user.user_id
+    )
+
+    db.add(new_item)
+
+    # Update checklist total items
+    checklist.total_items = (checklist.total_items or 0) + 1
+    checklist.calculate_progress()
+
+    await db.commit()
+    await db.refresh(new_item)
+
+    return {
+        "id": new_item.id,
+        "checklist_id": checklist_id,
+        "title": new_item.title,
+        "description": new_item.description,
+        "category": new_item.category,
+        "is_required": new_item.is_required,
+        "is_completed": new_item.is_completed,
+        "is_applicable": new_item.is_applicable,
+        "due_date": new_item.due_date.isoformat() if new_item.due_date else None,
+        "order": new_item.order,
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+
 @router.put("/{checklist_id}/items/{item_id}")
 async def update_checklist_item(
     checklist_id: str,
