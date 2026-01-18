@@ -2,9 +2,10 @@
 Database Configuration and Session Management
 تنظیمات دیتابیس و مدیریت سشن
 """
+import os
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 
 from app.core.config import settings
 
@@ -29,14 +30,30 @@ def get_async_database_url() -> str:
     return url
 
 
-# Create async engine
-# Use NullPool for serverless environments like Render
-engine = create_async_engine(
-    get_async_database_url(),
-    echo=settings.DEBUG,
-    pool_pre_ping=True,
-    poolclass=NullPool,  # Better for serverless
-)
+# Determine pool configuration based on environment
+# For paid Render plans, use connection pooling for better performance
+# For free tier or serverless, use NullPool
+USE_CONNECTION_POOL = os.getenv('USE_CONNECTION_POOL', 'true').lower() == 'true'
+
+if USE_CONNECTION_POOL:
+    # Connection pooling for better performance on paid plans
+    engine = create_async_engine(
+        get_async_database_url(),
+        echo=settings.DEBUG,
+        pool_pre_ping=True,
+        pool_size=5,  # Number of permanent connections
+        max_overflow=10,  # Additional connections when pool is exhausted
+        pool_timeout=30,  # Seconds to wait for connection
+        pool_recycle=1800,  # Recycle connections after 30 minutes
+    )
+else:
+    # NullPool for serverless/free tier
+    engine = create_async_engine(
+        get_async_database_url(),
+        echo=settings.DEBUG,
+        pool_pre_ping=True,
+        poolclass=NullPool,
+    )
 
 # Create async session factory
 async_session_maker = async_sessionmaker(
