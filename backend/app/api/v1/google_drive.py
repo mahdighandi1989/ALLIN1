@@ -481,6 +481,21 @@ async def create_backup(
 
         logger.info("Starting backup process...")
 
+        # First check if Google Drive is properly configured
+        status_info = drive_service.get_status()
+        if not status_info.get('connected'):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google Drive is not connected. Please configure Google Drive credentials first."
+            )
+
+        # Check if folder ID is configured
+        if not drive_service.folder_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GOOGLE_DRIVE_FOLDER_ID not configured. Please set the environment variable and share the folder with the service account."
+            )
+
         # Create sample backup data
         backup_data = {
             "created_at": datetime.utcnow().isoformat(),
@@ -496,6 +511,8 @@ async def create_backup(
             "success": True,
             "backup": result
         }
+    except HTTPException:
+        raise
     except RuntimeError as e:
         logger.error(f"RuntimeError in backup: {str(e)}")
         raise HTTPException(
