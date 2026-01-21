@@ -450,20 +450,12 @@ async def sync_customer_documents(
 ):
     """
     Sync all documents for a customer to Google Drive
+    Note: This feature requires document management to be fully implemented
     """
-    try:
-        # This would need database access to get customer files
-        # For now, return a placeholder
-        return {
-            "message": "Customer sync initiated",
-            "customer_id": customer_id,
-            "status": "pending"
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Customer document sync is not yet implemented. Use manual file uploads instead."
+    )
 
 
 @router.post("/backup")

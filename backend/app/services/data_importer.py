@@ -13,9 +13,10 @@ import structlog
 
 import pandas as pd
 from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.database import async_session_maker
 from app.models.base import generate_uuid, generate_short_id
 
 # Core models
@@ -100,17 +101,8 @@ async def auto_import_data():
     Auto-import data from Excel files on startup
     Only imports if database is empty (no customers)
     """
-    # Create database connection
-    database_url = settings.DATABASE_URL
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif database_url.startswith("postgresql://") and "+asyncpg" not in database_url:
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    engine = create_async_engine(database_url, echo=False)
-    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async with async_session() as db:
+    # Use shared database session from core.database
+    async with async_session_maker() as db:
         # Check if data already exists
         result = await db.execute(select(func.count(Customer.id)))
         customer_count = result.scalar() or 0

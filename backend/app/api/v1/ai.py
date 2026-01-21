@@ -372,15 +372,41 @@ async def analyze_uploaded_document(
     """
     تحلیل فایل آپلود شده
     """
+    from io import BytesIO
+
     content = await file.read()
     filename = file.filename.lower()
 
     if filename.endswith('.txt'):
         text_content = content.decode('utf-8')
     elif filename.endswith('.pdf'):
-        text_content = "PDF content extraction would go here"
+        try:
+            import pdfplumber
+            with pdfplumber.open(BytesIO(content)) as pdf:
+                pages_text = []
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        pages_text.append(page_text)
+                text_content = "\n\n".join(pages_text)
+                if not text_content.strip():
+                    text_content = "[PDF contains no extractable text]"
+        except ImportError:
+            raise HTTPException(status_code=500, detail="PDF library not installed")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PDF extraction failed: {str(e)}")
     elif filename.endswith(('.doc', '.docx')):
-        text_content = "Word document content extraction would go here"
+        try:
+            from docx import Document
+            doc = Document(BytesIO(content))
+            text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
+            text_content = "\n".join(text_parts)
+            if not text_content.strip():
+                text_content = "[Word document appears empty]"
+        except ImportError:
+            raise HTTPException(status_code=500, detail="Word document library not installed")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Word extraction failed: {str(e)}")
     else:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
