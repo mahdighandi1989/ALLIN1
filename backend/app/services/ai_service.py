@@ -31,11 +31,11 @@ async def get_db_providers() -> Dict[str, Dict[str, Any]]:
         return _db_providers_cache
 
     try:
-        from app.core.database import async_session
+        from app.core.database import async_session_maker
         from app.models.settings import SystemSetting
         from sqlalchemy import select
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             result = await session.execute(
                 select(SystemSetting).where(
                     SystemSetting.key.like("ai_provider_%"),
