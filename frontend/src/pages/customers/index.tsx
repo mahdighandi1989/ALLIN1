@@ -67,7 +67,7 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<any>(null)
   const [stats, setStats] = useState({ total: 0, active: 0, corporate: 0, branches: 0 })
   const [searchTerm, setSearchTerm] = useState('')
-  const [pagination, setPagination] = useState({ skip: 0, limit: 50, total: 0 })
+  const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0 })
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -75,10 +75,10 @@ export default function CustomersPage() {
     }
   }, [isLoading, isAuthenticated, router])
 
-  const fetchCustomers = async (skip = 0, search = searchTerm) => {
+  const fetchCustomers = async (page = 1, search = searchTerm) => {
     setLoading(true)
     try {
-      const response = await customersApi.list({ skip, limit: pagination.limit, search: search || undefined })
+      const response = await customersApi.list({ page, page_size: pagination.page_size, search: search || undefined })
       const data = response.data
 
       const items = data.items || data || []
@@ -86,7 +86,7 @@ export default function CustomersPage() {
 
       setPagination(prev => ({
         ...prev,
-        skip,
+        page,
         total: data.total || items.length,
       }))
 
@@ -107,12 +107,12 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchCustomers(0)
+      fetchCustomers(1)
     }
   }, [isAuthenticated])
 
   const handleSearch = () => {
-    fetchCustomers(0, searchTerm)
+    fetchCustomers(1, searchTerm)
   }
 
   const handleAdd = () => {
@@ -135,7 +135,7 @@ export default function CustomersPage() {
     try {
       await customersApi.delete(customer.id)
       toast.success('Customer deleted successfully')
-      fetchCustomers(pagination.skip)
+      fetchCustomers(pagination.page)
     } catch (error) {
       toast.error('Failed to delete customer')
     }
@@ -151,7 +151,7 @@ export default function CustomersPage() {
         toast.success('Customer created successfully')
       }
       setShowForm(false)
-      fetchCustomers(pagination.skip)
+      fetchCustomers(pagination.page)
     } catch (error: any) {
       throw new Error(error.response?.data?.detail || 'Failed to save customer')
     }
@@ -169,8 +169,8 @@ export default function CustomersPage() {
     return null
   }
 
-  const currentPage = Math.floor(pagination.skip / pagination.limit) + 1
-  const totalPages = Math.ceil(pagination.total / pagination.limit)
+  const currentPage = pagination.page
+  const totalPages = Math.ceil(pagination.total / pagination.page_size)
 
   return (
     <Layout>
@@ -271,12 +271,12 @@ export default function CustomersPage() {
         {pagination.total > 0 && (
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-gray-600">
             <span>
-              Showing {pagination.skip + 1} to {Math.min(pagination.skip + pagination.limit, pagination.total)} of {pagination.total}
+              Showing {(pagination.page - 1) * pagination.page_size + 1} to {Math.min(pagination.page * pagination.page_size, pagination.total)} of {pagination.total}
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => fetchCustomers(pagination.skip - pagination.limit)}
-                disabled={pagination.skip === 0}
+                onClick={() => fetchCustomers(pagination.page - 1)}
+                disabled={pagination.page === 1}
                 className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
               >
                 Previous
@@ -285,8 +285,8 @@ export default function CustomersPage() {
                 Page {currentPage} of {totalPages}
               </span>
               <button
-                onClick={() => fetchCustomers(pagination.skip + pagination.limit)}
-                disabled={pagination.skip + pagination.limit >= pagination.total}
+                onClick={() => fetchCustomers(pagination.page + 1)}
+                disabled={pagination.page >= totalPages}
                 className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
               >
                 Next

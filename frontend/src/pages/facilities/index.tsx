@@ -86,8 +86,8 @@ export default function FacilitiesPage() {
     setLoading(true)
     try {
       const [facilitiesRes, customersRes] = await Promise.all([
-        facilitiesApi.list({ limit: 100 }),
-        customersApi.list({ limit: 100 })
+        facilitiesApi.list({ page_size: 100 }),
+        customersApi.list({ page_size: 100 })
       ])
 
       const facilitiesData = facilitiesRes.data.items || facilitiesRes.data || []

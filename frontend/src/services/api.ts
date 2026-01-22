@@ -94,26 +94,26 @@ export const authApi = {
 // Customers API
 // ========================================
 export const customersApi = {
-  list: (params?: { skip?: number; limit?: number; search?: string; status?: string }) =>
+  list: (params?: { page?: number; page_size?: number; search?: string; status?: string; account_type?: string; branch?: string }) =>
     api.get('/customers', { params }),
   get: (id: string) => api.get(`/customers/${id}`),
   create: (data: any) => api.post('/customers', data),
   update: (id: string, data: any) => api.put(`/customers/${id}`, data),
   delete: (id: string) => api.delete(`/customers/${id}`),
-  stats: () => api.get('/customers/stats'),
+  stats: () => api.get('/customers/stats/summary'),
 }
 
 // ========================================
 // Facilities API
 // ========================================
 export const facilitiesApi = {
-  list: (params?: { skip?: number; limit?: number; customer_id?: string; facility_type?: string; status?: string }) =>
+  list: (params?: { page?: number; page_size?: number; customer_id?: string; facility_type?: string; status?: string }) =>
     api.get('/facilities', { params }),
   get: (id: string) => api.get(`/facilities/${id}`),
   create: (data: any) => api.post('/facilities', data),
   update: (id: string, data: any) => api.put(`/facilities/${id}`, data),
   delete: (id: string) => api.delete(`/facilities/${id}`),
-  stats: () => api.get('/facilities/stats'),
+  stats: () => api.get('/facilities/stats/summary'),
   expiring: (days?: number) => api.get('/facilities/expiring', { params: { days } }),
 }
 
