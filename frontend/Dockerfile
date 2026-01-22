@@ -1,21 +1,19 @@
-# Banking Operations System - Frontend Dockerfile
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
-# Set work directory
 WORKDIR /app
-
-# Install dependencies
 COPY package*.json ./
-RUN npm install
-
-# Copy application code
+RUN npm ci
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Expose port
-EXPOSE 3000
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-# Run the application
-CMD ["npm", "start"]
+ENV NODE_ENV=production
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+EXPOSE 3000
+CMD ["node", "server.js"]
