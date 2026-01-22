@@ -1,8 +1,8 @@
 /**
- * API Service
- * سرویس ارتباط با Backend
+ * API Service v2.0
+ * سرویس ارتباط با Backend - نسخه جدید
  */
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
+import axios, { AxiosInstance } from 'axios'
 
 const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const API_URL = baseUrl.endsWith('/api/v1') ? baseUrl : `${baseUrl}/api/v1`
@@ -24,12 +24,10 @@ api.interceptors.request.use(
     }
     return config
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// Response interceptor - handle errors
+// Response interceptor - handle errors and token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -42,23 +40,19 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refresh_token')
       if (refreshToken) {
         try {
-          console.log('Attempting to refresh token...')
           const response = await axios.post(`${API_URL}/auth/refresh`, {
             refresh_token: refreshToken,
           })
 
-          console.log('Token refreshed successfully')
           localStorage.setItem('access_token', response.data.access_token)
           localStorage.setItem('refresh_token', response.data.refresh_token)
 
           originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`
           return api(originalRequest)
-        } catch (refreshError: any) {
-          console.error('Token refresh failed:', refreshError.response?.data || refreshError.message)
+        } catch {
           // Refresh failed, redirect to login
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
-          // Only redirect if not already on login page
           if (window.location.pathname !== '/login') {
             window.location.href = '/login'
           }
@@ -77,208 +71,96 @@ api.interceptors.response.use(
 
 export default api
 
-// API functions
+// ========================================
+// Auth API
+// ========================================
+export const authApi = {
+  login: (username: string, password: string) => {
+    const params = new URLSearchParams()
+    params.append('username', username)
+    params.append('password', password)
+    return api.post('/auth/login', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    })
+  },
+  register: (data: { username: string; email: string; password: string; first_name?: string; last_name?: string }) =>
+    api.post('/auth/register', data),
+  refresh: (refresh_token: string) => api.post('/auth/refresh', { refresh_token }),
+  me: () => api.get('/auth/me'),
+  logout: () => api.post('/auth/logout'),
+}
+
+// ========================================
+// Customers API
+// ========================================
 export const customersApi = {
-  list: (params?: any) => api.get('/customers', { params }),
+  list: (params?: { skip?: number; limit?: number; search?: string; status?: string }) =>
+    api.get('/customers', { params }),
   get: (id: string) => api.get(`/customers/${id}`),
   create: (data: any) => api.post('/customers', data),
   update: (id: string, data: any) => api.put(`/customers/${id}`, data),
   delete: (id: string) => api.delete(`/customers/${id}`),
-  getProfile: (id: string) => api.get(`/customers/${id}/profile`),
-  getSummary: (id: string) => api.get(`/customers/${id}/summary`),
+  stats: () => api.get('/customers/stats'),
 }
 
+// ========================================
+// Facilities API
+// ========================================
 export const facilitiesApi = {
-  list: (params?: any) => api.get('/facilities', { params }),
+  list: (params?: { skip?: number; limit?: number; customer_id?: string; facility_type?: string; status?: string }) =>
+    api.get('/facilities', { params }),
   get: (id: string) => api.get(`/facilities/${id}`),
   create: (data: any) => api.post('/facilities', data),
   update: (id: string, data: any) => api.put(`/facilities/${id}`, data),
   delete: (id: string) => api.delete(`/facilities/${id}`),
-  getGuarantors: (id: string) => api.get(`/facilities/${id}/guarantors`),
+  stats: () => api.get('/facilities/stats'),
+  expiring: (days?: number) => api.get('/facilities/expiring', { params: { days } }),
 }
 
-export const checklistsApi = {
-  list: (params?: any) => api.get('/checklists', { params }),
-  get: (id: string) => api.get(`/checklists/${id}`),
-  create: (data: any) => api.post('/checklists', data),
-  delete: (id: string) => api.delete(`/checklists/${id}`),
-  addItem: (checklistId: string, data: { title: string; description?: string; category?: string; is_required?: boolean; due_date?: string }) =>
-    api.post(`/checklists/${checklistId}/items`, data),
-  updateItem: (checklistId: string, itemId: string, data: any) =>
-    api.put(`/checklists/${checklistId}/items/${itemId}`, data),
-  getPendingTasks: (params?: any) => api.get('/checklists/tasks/pending', { params }),
-}
-
+// ========================================
+// AI API
+// ========================================
 export const aiApi = {
   status: () => api.get('/ai/status'),
-  generate: (data: any) => api.post('/ai/generate', data),
-  analyze: (data: any) => api.post('/ai/analyze', data),
-  riskAssessment: (data: any) => api.post('/ai/risk-assessment', data),
-  generateSummary: (data: any) => api.post('/ai/generate-summary', data),
+  providers: () => api.get('/ai/providers'),
+  generate: (data: { prompt: string; provider?: string; system_prompt?: string; max_tokens?: number; temperature?: number }) =>
+    api.post('/ai/generate', data),
+  analyze: (data: { content: string; analysis_type?: string; provider?: string }) =>
+    api.post('/ai/analyze', data),
+  extractDocument: (file: File, provider?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (provider) {
+      formData.append('provider', provider)
+    }
+    return api.post('/ai/extract-document', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  addProvider: (providerId: string, apiKey: string, model?: string) =>
+    api.post(`/ai/providers/${providerId}`, null, { params: { api_key: apiKey, model } }),
 }
 
-export const personalApi = {
-  getNotes: (params?: any) => api.get('/personal/notes', { params }),
-  createNote: (data: any) => api.post('/personal/notes', data),
-  updateNote: (id: string, data: any) => api.put(`/personal/notes/${id}`, data),
-  deleteNote: (id: string) => api.delete(`/personal/notes/${id}`),
-  toggleNoteDone: (id: string) => api.post(`/personal/notes/${id}/toggle-done`),
-  getReminders: () => api.get('/personal/reminders'),
-  getDashboard: () => api.get('/personal/dashboard'),
-  quickNote: (content: string) => api.post('/personal/quick-note', null, { params: { content } }),
-}
-
+// ========================================
+// Settings API
+// ========================================
 export const settingsApi = {
   getSystem: (category?: string) => api.get('/settings/system', { params: { category } }),
   updateSystem: (key: string, value: string) => api.put(`/settings/system/${key}`, { value }),
   getUser: () => api.get('/settings/user'),
   updateUser: (settings: any) => api.put('/settings/user', settings),
-  getAIProviders: () => api.get('/settings/ai/providers'),
 }
 
-// AI Providers Management API
-export const aiProvidersApi = {
-  // Get all configured providers
-  list: () => api.get('/ai-providers/providers'),
-
-  // Get known/preset providers
-  getKnown: () => api.get('/ai-providers/providers/known'),
-
-  // Get single provider details
-  get: (providerId: string) => api.get(`/ai-providers/providers/${providerId}`),
-
-  // Create custom provider
-  create: (data: {
-    provider_id: string
-    name: string
-    api_key?: string
-    base_url?: string
-    default_model?: string
-    enabled?: boolean
-    provider_type?: string
-  }) => api.post('/ai-providers/providers', data),
-
-  // Update provider config
-  update: (providerId: string, data: {
-    name?: string
-    api_key?: string
-    base_url?: string
-    default_model?: string
-    enabled?: boolean
-  }) => api.put(`/ai-providers/providers/${providerId}`, data),
-
-  // Delete provider
-  delete: (providerId: string) => api.delete(`/ai-providers/providers/${providerId}`),
-
-  // Test provider connection
-  test: (providerId: string, apiKey?: string) =>
-    api.post(`/ai-providers/providers/${providerId}/test`, null, {
-      params: apiKey ? { api_key: apiKey } : undefined
-    }),
-
-  // Get available models for provider
-  getModels: (providerId: string, refresh?: boolean) =>
-    api.get(`/ai-providers/providers/${providerId}/models`, {
-      params: { refresh }
-    }),
-
-  // Fetch models from provider API
-  fetchModels: (providerId: string, apiKey?: string) =>
-    api.post(`/ai-providers/providers/${providerId}/fetch-models`, null, {
-      params: apiKey ? { api_key: apiKey } : undefined
-    }),
-
-  // Get default provider
-  getDefault: () => api.get('/ai-providers/default-provider'),
-
-  // Set default provider
-  setDefault: (providerId: string) => api.put(`/ai-providers/default-provider/${providerId}`),
-}
-
-// Google Drive API
-export const googleDriveApi = {
-  // Get connection status
-  getStatus: () => api.get('/google-drive/status'),
-
-  // Test connection
-  testConnection: () => api.post('/google-drive/test'),
-
-  // Disconnect
-  disconnect: () => api.post('/google-drive/disconnect'),
-
-  // Initialize OAuth flow
-  initOAuth: (redirectUri: string) => api.post('/google-drive/oauth/init', { redirect_uri: redirectUri }),
-
-  // Handle OAuth callback
-  oauthCallback: (code: string, redirectUri: string) =>
-    api.post('/google-drive/oauth/callback', { code, redirect_uri: redirectUri }),
-
-  // List files
-  listFiles: (params?: { folder_id?: string; query?: string; page_size?: number; page_token?: string }) =>
-    api.get('/google-drive/files', { params }),
-
-  // Get file details
-  getFile: (fileId: string) => api.get(`/google-drive/files/${fileId}`),
-
-  // Download file
-  downloadFile: (fileId: string) => api.get(`/google-drive/files/${fileId}/download`, { responseType: 'blob' }),
-
-  // Upload file
-  uploadFile: (file: File, folderId?: string) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    if (folderId) {
-      formData.append('folder_id', folderId)
-    }
-    return api.post('/google-drive/files/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-  },
-
-  // Delete file
-  deleteFile: (fileId: string, permanent: boolean = false) =>
-    api.delete(`/google-drive/files/${fileId}`, { params: { permanent } }),
-
-  // Create folder
-  createFolder: (name: string, parentId?: string) =>
-    api.post('/google-drive/folders', { name, parent_id: parentId }),
-
-  // Get or create folder
-  getOrCreateFolder: (name: string, parentId?: string) =>
-    api.post('/google-drive/folders/get-or-create', { name, parent_id: parentId }),
-
-  // Move file
-  moveFile: (fileId: string, newFolderId: string) =>
-    api.post('/google-drive/files/move', { file_id: fileId, new_folder_id: newFolderId }),
-
-  // Rename file
-  renameFile: (fileId: string, newName: string) =>
-    api.post('/google-drive/files/rename', { file_id: fileId, new_name: newName }),
-
-  // Share file
-  shareFile: (fileId: string, email?: string, role: string = 'reader', anyoneWithLink: boolean = false) =>
-    api.post('/google-drive/files/share', {
-      file_id: fileId,
-      email,
-      role,
-      anyone_with_link: anyoneWithLink
-    }),
-
-  // Create backup
-  createBackup: () => api.post('/google-drive/backup'),
-
-  // Sync customer documents
-  syncCustomer: (customerId: string) => api.post(`/google-drive/sync/customer/${customerId}`),
-}
-
+// ========================================
 // Reports API
+// ========================================
 export const reportsApi = {
-  getDashboard: () => api.get('/reports/dashboard'),
-  getCustomers: (params?: { format?: string; status?: string }) =>
+  dashboard: () => api.get('/reports/dashboard'),
+  customers: (params?: { format?: string; status?: string }) =>
     api.get('/reports/customers', { params }),
-  getFacilities: (params?: { format?: string; facility_type?: string }) =>
+  facilities: (params?: { format?: string; facility_type?: string }) =>
     api.get('/reports/facilities', { params }),
-  getExpiring: (days?: number) => api.get('/reports/expiring', { params: { days } }),
-  createBackup: () => api.post('/reports/backup'),
-  getBackupStatus: () => api.get('/reports/backup/status'),
+  expiring: (days?: number) => api.get('/reports/expiring', { params: { days } }),
+  backup: () => api.post('/reports/backup'),
+  backupStatus: () => api.get('/reports/backup/status'),
 }

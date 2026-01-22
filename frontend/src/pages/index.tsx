@@ -1,6 +1,6 @@
 /**
- * Dashboard Page - صفحه اصلی داشبورد
- * Uses real API data
+ * Dashboard Page v2.0
+ * صفحه اصلی داشبورد
  */
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
@@ -8,61 +8,50 @@ import Head from 'next/head'
 import Link from 'next/link'
 import {
   Users,
-  FileText,
   AlertTriangle,
   CheckCircle,
-  Clock,
-  TrendingUp,
-  Building,
   Wallet,
-  ArrowRight
+  ArrowRight,
+  TrendingUp,
+  Calendar
 } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
 import Layout from '@/components/Layout'
-import { customersApi, facilitiesApi, checklistsApi, personalApi } from '@/services/api'
+import { reportsApi } from '@/services/api'
 
-interface DashboardStats {
-  totalCustomers: number
-  activeFacilities: number
-  pendingTasks: number
-  expiringDocs: number
-  totalFacilityAmount: number
-  customerChange: number
-  facilityChange: number
+interface DashboardData {
+  customers: {
+    total: number
+    active: number
+  }
+  facilities: {
+    total: number
+    total_exposure: number
+    expiring_soon: number
+  }
+  recent_customers: Array<{
+    id: string
+    name: string
+    account_no: string
+  }>
 }
 
-interface Task {
+interface ExpiringFacility {
   id: string
-  title: string
-  customer: string
-  priority: string
-  dueDate: string
-  daysOverdue: number
-}
-
-interface ExpiringDoc {
-  id: string
-  title: string
-  customer: string
-  expiryDate: string
-  daysLeft: number
+  customer_id: string
+  customer_name: string
+  facility_type: string
+  amount: number
+  expiry_date: string
+  days_until_expiry: number
 }
 
 export default function Dashboard() {
   const { user, isLoading, isAuthenticated } = useAuth()
   const router = useRouter()
-  const [stats, setStats] = useState<DashboardStats>({
-    totalCustomers: 0,
-    activeFacilities: 0,
-    pendingTasks: 0,
-    expiringDocs: 0,
-    totalFacilityAmount: 0,
-    customerChange: 0,
-    facilityChange: 0,
-  })
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [expiringDocs, setExpiringDocs] = useState<ExpiringDoc[]>([])
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [expiring, setExpiring] = useState<ExpiringFacility[]>([])
   const [loadingData, setLoadingData] = useState(true)
 
   useEffect(() => {
@@ -80,59 +69,17 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoadingData(true)
     try {
-      const [customersRes, facilitiesRes, checklistsRes] = await Promise.all([
-        customersApi.list().catch(() => ({ data: [] })),
-        facilitiesApi.list().catch(() => ({ data: [] })),
-        checklistsApi.getPendingTasks().catch(() => ({ data: [] })),
+      const [dashboardRes, expiringRes] = await Promise.all([
+        reportsApi.dashboard().catch(() => ({ data: null })),
+        reportsApi.expiring(30).catch(() => ({ data: { items: [] } }))
       ])
 
-      const customers = customersRes.data?.items || customersRes.data || []
-      const facilities = facilitiesRes.data?.items || facilitiesRes.data || []
-      const pendingTasks = checklistsRes.data?.items || checklistsRes.data || []
-
-      // Calculate stats
-      const activeFacilities = facilities.filter((f: any) => f.status === 'active')
-      const totalAmount = facilities.reduce((sum: number, f: any) => sum + (f.approved_amount || 0), 0)
-
-      // Find expiring documents (within 30 days)
-      const now = new Date()
-      const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-      const expiring = facilities
-        .filter((f: any) => {
-          const expiry = new Date(f.expiry_date)
-          return f.status === 'active' && expiry <= thirtyDays && expiry >= now
-        })
-        .map((f: any) => ({
-          id: f.id,
-          title: `${f.facility_type} - ${f.facility_number || f.id}`,
-          customer: f.customer_name || 'Unknown',
-          expiryDate: f.expiry_date,
-          daysLeft: Math.ceil((new Date(f.expiry_date).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-        }))
-
-      // Map tasks
-      const mappedTasks = pendingTasks.slice(0, 5).map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        customer: t.customer_name || 'Unknown',
-        priority: t.priority || 'medium',
-        dueDate: t.due_date,
-        daysOverdue: t.due_date ? Math.max(0, Math.ceil((now.getTime() - new Date(t.due_date).getTime()) / (1000 * 60 * 60 * 24))) : 0
-      }))
-
-      setStats({
-        totalCustomers: customers.length,
-        activeFacilities: activeFacilities.length,
-        pendingTasks: pendingTasks.length,
-        expiringDocs: expiring.length,
-        totalFacilityAmount: totalAmount,
-        customerChange: 0,
-        facilityChange: 0,
-      })
-
-      setTasks(mappedTasks)
-      setExpiringDocs(expiring.slice(0, 5))
+      if (dashboardRes.data) {
+        setData(dashboardRes.data)
+      }
+      if (expiringRes.data?.items) {
+        setExpiring(expiringRes.data.items.slice(0, 5))
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -142,8 +89,11 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-500">Loading...</p>
+        </div>
       </div>
     )
   }
@@ -152,10 +102,14 @@ export default function Dashboard() {
     return null
   }
 
-  const priorityColors: Record<string, string> = {
-    high: 'bg-red-100 text-red-800',
-    medium: 'bg-yellow-100 text-yellow-800',
-    low: 'bg-green-100 text-green-800',
+  const formatCurrency = (amount: number) => {
+    if (amount >= 1000000) {
+      return `${(amount / 1000000).toFixed(1)}M`
+    }
+    if (amount >= 1000) {
+      return `${(amount / 1000).toFixed(0)}K`
+    }
+    return amount.toLocaleString()
   }
 
   return (
@@ -166,12 +120,13 @@ export default function Dashboard() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-gray-500">Welcome back, {user?.first_name || user?.username || 'User'}</p>
           </div>
-          <div className="text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-gray-500 bg-white px-4 py-2 rounded-lg shadow-sm">
+            <Calendar size={16} />
             {new Date().toLocaleDateString('en-US', {
               weekday: 'long',
               year: 'numeric',
@@ -182,59 +137,67 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href="/customers" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Link href="/customers" className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100 group">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Customers</p>
-                <p className="text-3xl font-bold mt-1">
-                  {loadingData ? '...' : stats.totalCustomers.toLocaleString()}
+                <p className="text-sm font-medium text-gray-500">Total Customers</p>
+                <p className="text-3xl font-bold mt-2 text-gray-900">
+                  {loadingData ? '...' : data?.customers?.total?.toLocaleString() || 0}
+                </p>
+                <p className="text-sm text-green-600 mt-1 flex items-center gap-1">
+                  <span className="font-medium">{data?.customers?.active || 0}</span> active
                 </p>
               </div>
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Users className="w-6 h-6 text-blue-600" />
+              <div className="p-4 bg-blue-50 rounded-xl group-hover:bg-blue-100 transition-colors">
+                <Users className="w-7 h-7 text-blue-600" />
               </div>
             </div>
           </Link>
 
-          <Link href="/facilities" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+          <Link href="/facilities" className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100 group">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Active Facilities</p>
-                <p className="text-3xl font-bold mt-1">
-                  {loadingData ? '...' : stats.activeFacilities.toLocaleString()}
+                <p className="text-sm font-medium text-gray-500">Total Facilities</p>
+                <p className="text-3xl font-bold mt-2 text-gray-900">
+                  {loadingData ? '...' : data?.facilities?.total?.toLocaleString() || 0}
+                </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Active facilities
                 </p>
               </div>
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Wallet className="w-6 h-6 text-green-600" />
+              <div className="p-4 bg-green-50 rounded-xl group-hover:bg-green-100 transition-colors">
+                <Wallet className="w-7 h-7 text-green-600" />
               </div>
             </div>
           </Link>
 
-          <Link href="/checklists" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Pending Tasks</p>
-                <p className="text-3xl font-bold mt-1">
-                  {loadingData ? '...' : stats.pendingTasks.toLocaleString()}
+                <p className="text-sm font-medium text-gray-500">Total Exposure</p>
+                <p className="text-3xl font-bold mt-2 text-gray-900">
+                  {loadingData ? '...' : formatCurrency(data?.facilities?.total_exposure || 0)}
                 </p>
+                <p className="text-sm text-gray-500 mt-1">AED</p>
               </div>
-              <div className="p-3 bg-orange-100 rounded-lg">
-                <Clock className="w-6 h-6 text-orange-600" />
+              <div className="p-4 bg-purple-50 rounded-xl">
+                <TrendingUp className="w-7 h-7 text-purple-600" />
               </div>
             </div>
-          </Link>
+          </div>
 
-          <div className="bg-white p-6 rounded-lg shadow">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Expiring (30d)</p>
-                <p className="text-3xl font-bold mt-1">
-                  {loadingData ? '...' : stats.expiringDocs.toLocaleString()}
+                <p className="text-sm font-medium text-gray-500">Expiring (30d)</p>
+                <p className="text-3xl font-bold mt-2 text-gray-900">
+                  {loadingData ? '...' : data?.facilities?.expiring_soon?.toLocaleString() || 0}
                 </p>
+                <p className="text-sm text-orange-600 mt-1">Requires attention</p>
               </div>
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
+              <div className="p-4 bg-orange-50 rounded-xl">
+                <AlertTriangle className="w-7 h-7 text-orange-600" />
               </div>
             </div>
           </div>
@@ -242,107 +205,91 @@ export default function Dashboard() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Pending Tasks */}
-          <div className="lg:col-span-2 bg-white rounded-lg shadow">
-            <div className="p-4 border-b flex justify-between items-center">
-              <h3 className="font-semibold">Pending Tasks</h3>
-              <Link href="/checklists" className="text-blue-600 text-sm hover:underline flex items-center gap-1">
+          {/* Recent Customers */}
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-5 border-b flex justify-between items-center">
+              <h3 className="font-semibold text-gray-900">Recent Customers</h3>
+              <Link href="/customers" className="text-blue-600 text-sm hover:text-blue-700 flex items-center gap-1 font-medium">
                 View All <ArrowRight size={14} />
               </Link>
             </div>
-            <div className="p-4">
+            <div className="p-5">
               {loadingData ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
                 </div>
-              ) : tasks.length === 0 ? (
+              ) : !data?.recent_customers?.length ? (
                 <div className="text-center py-8 text-gray-500">
-                  <CheckCircle className="mx-auto mb-2 text-green-500" size={32} />
-                  <p>No pending tasks</p>
+                  <Users className="mx-auto mb-2 text-gray-300" size={40} />
+                  <p>No customers yet</p>
+                  <Link href="/customers" className="text-blue-600 text-sm mt-2 inline-block hover:underline">
+                    Add your first customer
+                  </Link>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {tasks.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">{task.title}</p>
-                        <p className="text-sm text-gray-500">{task.customer}</p>
+                  {data.recent_customers.map((customer) => (
+                    <Link
+                      key={customer.id}
+                      href={`/customers/${customer.id}`}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-semibold">
+                          {customer.name?.[0] || 'C'}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{customer.name}</p>
+                          <p className="text-sm text-gray-500">{customer.account_no}</p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <span className={`badge ${priorityColors[task.priority] || priorityColors.medium}`}>
-                          {task.priority}
-                        </span>
-                        {task.daysOverdue > 0 && (
-                          <p className="text-xs text-red-600 mt-1">{task.daysOverdue} days overdue</p>
-                        )}
-                      </div>
-                    </div>
+                      <ArrowRight size={16} className="text-gray-400" />
+                    </Link>
                   ))}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Expiring Documents */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b flex items-center gap-2">
+          {/* Expiring Facilities */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-5 border-b flex items-center gap-2">
               <AlertTriangle className="text-orange-500" size={20} />
-              <h3 className="font-semibold">Expiring Soon</h3>
+              <h3 className="font-semibold text-gray-900">Expiring Soon</h3>
             </div>
-            <div className="p-4">
+            <div className="p-5">
               {loadingData ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
                 </div>
-              ) : expiringDocs.length === 0 ? (
+              ) : expiring.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <CheckCircle className="mx-auto mb-2 text-green-500" size={32} />
-                  <p>No expiring documents</p>
+                  <CheckCircle className="mx-auto mb-2 text-green-400" size={40} />
+                  <p className="font-medium text-gray-700">All clear!</p>
+                  <p className="text-sm">No expiring facilities</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {expiringDocs.map((doc) => (
-                    <div key={doc.id} className="p-3 border-l-4 border-orange-400 bg-orange-50 rounded-r-lg">
-                      <p className="font-medium text-orange-900">{doc.title}</p>
-                      <p className="text-sm text-orange-700">{doc.customer}</p>
-                      <p className="text-xs text-orange-600 mt-1">
-                        Expires in {doc.daysLeft} days ({new Date(doc.expiryDate).toLocaleDateString()})
-                      </p>
-                    </div>
+                  {expiring.map((facility) => (
+                    <Link
+                      key={facility.id}
+                      href={`/facilities/${facility.id}`}
+                      className="block p-4 border-l-4 border-orange-400 bg-orange-50 rounded-r-lg hover:bg-orange-100 transition-colors"
+                    >
+                      <p className="font-medium text-orange-900">{facility.facility_type}</p>
+                      <p className="text-sm text-orange-700">{facility.customer_name}</p>
+                      <div className="flex justify-between items-center mt-2">
+                        <p className="text-xs text-orange-600">
+                          {facility.days_until_expiry} days left
+                        </p>
+                        <p className="text-xs font-medium text-orange-800">
+                          {formatCurrency(facility.amount)} AED
+                        </p>
+                      </div>
+                    </Link>
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-
-        {/* Facility Summary */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="font-semibold mb-4">Portfolio Summary</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-600">Total Facility Amount</p>
-              <p className="text-2xl font-bold text-blue-900">
-                AED {loadingData ? '...' : (stats.totalFacilityAmount / 1000000).toFixed(1)}M
-              </p>
-            </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-600">Active Facilities</p>
-              <p className="text-2xl font-bold text-green-900">
-                {loadingData ? '...' : stats.activeFacilities}
-              </p>
-            </div>
-            <div className="p-4 bg-purple-50 rounded-lg">
-              <p className="text-sm text-purple-600">Total Customers</p>
-              <p className="text-2xl font-bold text-purple-900">
-                {loadingData ? '...' : stats.totalCustomers}
-              </p>
-            </div>
-            <div className="p-4 bg-orange-50 rounded-lg">
-              <p className="text-sm text-orange-600">Pending Actions</p>
-              <p className="text-2xl font-bold text-orange-900">
-                {loadingData ? '...' : stats.pendingTasks + stats.expiringDocs}
-              </p>
             </div>
           </div>
         </div>
