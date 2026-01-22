@@ -100,9 +100,10 @@ async def error_handler(request: Request, exc: Exception):
 
 
 # Include routers
-from app.api.v1 import auth, customers, facilities, ai, settings as settings_api, reports
+from app.api.v1 import auth, customers, facilities, ai, settings as settings_api, reports, profile
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(profile.router, prefix="/api/v1/profile", tags=["Profile"])
 app.include_router(customers.router, prefix="/api/v1/customers", tags=["Customers"])
 app.include_router(facilities.router, prefix="/api/v1/facilities", tags=["Facilities"])
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI"])
