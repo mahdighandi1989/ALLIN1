@@ -66,14 +66,23 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS
+# CORS - Allow specific origins
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "https://banking-ops-frontend.onrender.com",
+    "https://banking-ops.onrender.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["X-Process-Time"],
 )
 
 # Compression
