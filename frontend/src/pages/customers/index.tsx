@@ -1,19 +1,19 @@
 /**
- * Customers Page
+ * Customers Page v2.0
  * صفحه مدیریت مشتریان
  */
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import Head from 'next/head'
 import Layout from '@/components/Layout'
 import DataTable, { Column } from '@/components/ui/DataTable'
 import DynamicForm, { FormField } from '@/components/ui/DynamicForm'
 import { customersApi } from '@/services/api'
 import { toast } from 'react-hot-toast'
-import { Users, Building2, User, MapPin } from 'lucide-react'
+import { Users, Building2, User, MapPin, Search, Plus } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
 
-// Customer form fields - matching API structure
 const customerFields: FormField[] = [
-  // Basic Info
   { key: 'account_no', label: 'Account Number', type: 'text', required: true, group: 'Basic Information' },
   { key: 'customer_name', label: 'Customer Name', type: 'text', required: true, group: 'Basic Information' },
   { key: 'customer_name_ar', label: 'Name (Arabic/Persian)', type: 'text', group: 'Basic Information' },
@@ -24,14 +24,10 @@ const customerFields: FormField[] = [
   ]},
   { key: 'branch', label: 'Branch', type: 'text', group: 'Basic Information' },
   { key: 'relationship_manager', label: 'Relationship Manager', type: 'text', group: 'Basic Information' },
-
-  // Contact Info
   { key: 'email', label: 'Email', type: 'email', group: 'Contact Information' },
   { key: 'phone', label: 'Phone', type: 'tel', group: 'Contact Information' },
   { key: 'mobile', label: 'Mobile', type: 'tel', group: 'Contact Information' },
   { key: 'address', label: 'Address', type: 'textarea', width: 'full', group: 'Contact Information' },
-
-  // Notes
   { key: 'notes', label: 'Notes', type: 'textarea', width: 'full', group: 'Additional' },
 ]
 
@@ -59,54 +55,47 @@ const tableColumns: Column[] = [
       {value}
     </span>
   )},
-  { key: 'profile_completeness', label: 'Profile %', render: (value) => (
-    <div className="flex items-center gap-2">
-      <div className="w-16 bg-gray-200 rounded-full h-2">
-        <div
-          className={`h-2 rounded-full ${
-            value >= 70 ? 'bg-green-500' :
-            value >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-          }`}
-          style={{ width: `${value || 0}%` }}
-        />
-      </div>
-      <span className="text-xs text-gray-600">{value || 0}%</span>
-    </div>
-  )},
   { key: 'actions', label: 'Actions', type: 'actions', width: '100px' },
 ]
 
 export default function CustomersPage() {
   const router = useRouter()
+  const { isLoading, isAuthenticated } = useAuth()
   const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<any>(null)
   const [stats, setStats] = useState({ total: 0, active: 0, corporate: 0, branches: 0 })
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 50, total: 0, pages: 1 })
+  const [searchTerm, setSearchTerm] = useState('')
+  const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0 })
 
-  const fetchCustomers = async (page = 1, pageSize = pagination.pageSize) => {
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/login')
+    }
+  }, [isLoading, isAuthenticated, router])
+
+  const fetchCustomers = async (page = 1, search = searchTerm) => {
     setLoading(true)
     try {
-      const response = await customersApi.list({ page, page_size: pageSize })
+      const response = await customersApi.list({ page, page_size: pagination.page_size, search: search || undefined })
       const data = response.data
 
-      const items = data.items || []
+      const items = data.items || data || []
       setCustomers(items)
 
-      setPagination({
-        page: data.page || 1,
-        pageSize: data.page_size || pageSize,
-        total: data.total || 0,
-        pages: data.pages || 1,
-      })
+      setPagination(prev => ({
+        ...prev,
+        page,
+        total: data.total || items.length,
+      }))
 
-      // Calculate stats from total API response
+      // Calculate stats
       setStats({
         total: data.total || items.length,
-        active: data.active_count || items.filter((c: any) => c.status === 'active').length,
-        corporate: data.corporate_count || items.filter((c: any) => c.account_type === 'corporate').length,
-        branches: data.branch_count || new Set(items.map((c: any) => c.branch).filter(Boolean)).size,
+        active: items.filter((c: any) => c.status === 'active').length,
+        corporate: items.filter((c: any) => c.account_type === 'corporate').length,
+        branches: new Set(items.map((c: any) => c.branch).filter(Boolean)).size,
       })
     } catch (error: any) {
       console.error('Error fetching customers:', error)
@@ -117,8 +106,14 @@ export default function CustomersPage() {
   }
 
   useEffect(() => {
-    fetchCustomers(1, 50)
-  }, [])
+    if (isAuthenticated) {
+      fetchCustomers(1)
+    }
+  }, [isAuthenticated])
+
+  const handleSearch = () => {
+    fetchCustomers(1, searchTerm)
+  }
 
   const handleAdd = () => {
     setEditingCustomer(null)
@@ -162,52 +157,103 @@ export default function CustomersPage() {
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return null
+  }
+
+  const currentPage = pagination.page
+  const totalPages = Math.ceil(pagination.total / pagination.page_size)
+
   return (
     <Layout>
+      <Head>
+        <title>Customers | Banking Operations System</title>
+      </Head>
+
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
-          <p className="text-gray-600">Manage your customer database</p>
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+            <p className="text-gray-500">Manage your customer database</p>
+          </div>
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus size={20} />
+            Add Customer
+          </button>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
-            <div className="p-3 bg-blue-100 rounded-lg">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-blue-50 rounded-xl">
               <Users className="text-blue-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Customers</p>
-              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-sm text-gray-500">Total</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
             </div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
-            <div className="p-3 bg-green-100 rounded-lg">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-green-50 rounded-xl">
               <User className="text-green-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Active</p>
-              <p className="text-2xl font-bold">{stats.active}</p>
+              <p className="text-sm text-gray-500">Active</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
             </div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
-            <div className="p-3 bg-purple-100 rounded-lg">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-purple-50 rounded-xl">
               <Building2 className="text-purple-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Corporate</p>
-              <p className="text-2xl font-bold">{stats.corporate}</p>
+              <p className="text-sm text-gray-500">Corporate</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.corporate}</p>
             </div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow flex items-center gap-4">
-            <div className="p-3 bg-orange-100 rounded-lg">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div className="p-3 bg-orange-50 rounded-xl">
               <MapPin className="text-orange-600" size={24} />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Branches</p>
-              <p className="text-2xl font-bold">{stats.branches}</p>
+              <p className="text-sm text-gray-500">Branches</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.branches}</p>
             </div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search by name, account number, or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <button
+              onClick={handleSearch}
+              className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+            >
+              Search
+            </button>
           </div>
         </div>
 
@@ -216,49 +262,32 @@ export default function CustomersPage() {
           columns={tableColumns}
           data={customers}
           loading={loading}
-          onAdd={handleAdd}
           onEdit={handleEdit}
           onView={handleView}
           onDelete={handleDelete}
-          addButtonText="Add Customer"
         />
 
-        {/* Pagination Info */}
+        {/* Pagination */}
         {pagination.total > 0 && (
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-4">
-              <span>
-                Showing {((pagination.page - 1) * pagination.pageSize) + 1} to {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} customers
-              </span>
-              <select
-                value={pagination.pageSize}
-                onChange={(e) => {
-                  const newSize = parseInt(e.target.value)
-                  setPagination(prev => ({ ...prev, pageSize: newSize }))
-                  fetchCustomers(1, newSize)
-                }}
-                className="px-2 py-1 border rounded text-sm"
-              >
-                <option value={20}>20 per page</option>
-                <option value={50}>50 per page</option>
-                <option value={100}>100 per page</option>
-              </select>
-            </div>
+            <span>
+              Showing {(pagination.page - 1) * pagination.page_size + 1} to {Math.min(pagination.page * pagination.page_size, pagination.total)} of {pagination.total}
+            </span>
             <div className="flex gap-2">
               <button
                 onClick={() => fetchCustomers(pagination.page - 1)}
-                disabled={pagination.page <= 1}
-                className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-100"
+                disabled={pagination.page === 1}
+                className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
               >
                 Previous
               </button>
-              <span className="px-3 py-1">
-                Page {pagination.page} of {pagination.pages}
+              <span className="px-4 py-2 bg-gray-100 rounded-lg">
+                Page {currentPage} of {totalPages}
               </span>
               <button
                 onClick={() => fetchCustomers(pagination.page + 1)}
-                disabled={pagination.page >= pagination.pages}
-                className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-100"
+                disabled={pagination.page >= totalPages}
+                className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50 transition-colors"
               >
                 Next
               </button>

@@ -99,9 +99,10 @@ export default function CustomerDetailPage() {
 
     setLoading(true)
     try {
+      const customerId = Array.isArray(id) ? id[0] : id
       const [customerRes, facilitiesRes] = await Promise.all([
-        customersApi.get(id as string),
-        facilitiesApi.list({ customer_id: id })
+        customersApi.get(customerId),
+        facilitiesApi.list({ customer_id: customerId })
       ])
 
       setCustomer(customerRes.data)
