@@ -56,33 +56,24 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown complete")
 
 
-# Create app
+# Create app - disable redirect_slashes to prevent CORS issues
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Professional Banking Operations Management System",
     lifespan=lifespan,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    redirect_slashes=False
 )
 
-# CORS - Allow specific origins
-cors_origins = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3000",
-    "https://banking-ops-frontend.onrender.com",
-    "https://banking-ops.onrender.com",
-]
-
+# CORS - Allow all origins for now (fix CORS issues)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_origin_regex=r"https://.*\.onrender\.com",
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Process-Time"],
 )
 
 # Compression
