@@ -61,6 +61,8 @@ class Facility(Base, TimestampMixin, SoftDeleteMixin, AuditMixin):
     available_amount = Column(Numeric(18, 2), nullable=True)
 
     # تاریخ‌ها
+    start_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
     sanction_date = Column(Date, nullable=True)
     disbursement_date = Column(Date, nullable=True)
     maturity_date = Column(Date, nullable=True)
