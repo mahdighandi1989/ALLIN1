@@ -34,10 +34,7 @@ services:
     startCommand: cd frontend && npm start
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: banking-ops-api
-          envVarKey: RENDER_EXTERNAL_URL
+        value: "https://banking-ops-api.onrender.com"
     healthCheckPath: /
     autoDeploy: true
 
