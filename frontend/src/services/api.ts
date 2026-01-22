@@ -270,3 +270,15 @@ export const googleDriveApi = {
   // Sync customer documents
   syncCustomer: (customerId: string) => api.post(`/google-drive/sync/customer/${customerId}`),
 }
+
+// Reports API
+export const reportsApi = {
+  getDashboard: () => api.get('/reports/dashboard'),
+  getCustomers: (params?: { format?: string; status?: string }) =>
+    api.get('/reports/customers', { params }),
+  getFacilities: (params?: { format?: string; facility_type?: string }) =>
+    api.get('/reports/facilities', { params }),
+  getExpiring: (days?: number) => api.get('/reports/expiring', { params: { days } }),
+  createBackup: () => api.post('/reports/backup'),
+  getBackupStatus: () => api.get('/reports/backup/status'),
+}
