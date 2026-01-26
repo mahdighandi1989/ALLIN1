@@ -51,3 +51,6 @@ htmlcov/
 # Build
 *.egg
 *.whl
+
+# TypeScript build info
+*.tsbuildinfo

@@ -5,6 +5,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 30000, // 30 second timeout to prevent indefinite hanging
   headers: {
     'Content-Type': 'application/json',
   },
@@ -21,10 +22,19 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 errors
+// Handle errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Handle network errors and timeouts
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED') {
+        error.message = 'Request timed out. Please check your connection and try again.'
+      } else if (error.message === 'Network Error') {
+        error.message = 'Unable to connect to server. Please check your connection.'
+      }
+    }
+    // Handle 401 unauthorized
     if (error.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('token')
       window.location.href = '/login'
@@ -36,10 +46,12 @@ api.interceptors.response.use(
 // Auth
 export const authApi = {
   login: async (username: string, password: string) => {
-    const formData = new FormData()
-    formData.append('username', username)
-    formData.append('password', password)
-    const res = await api.post('/api/auth/login', formData, {
+    // Use URLSearchParams for proper application/x-www-form-urlencoded encoding
+    // FormData is for multipart/form-data, not URL-encoded form data
+    const params = new URLSearchParams()
+    params.append('username', username)
+    params.append('password', password)
+    const res = await api.post('/api/auth/login', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     })
     return res.data
