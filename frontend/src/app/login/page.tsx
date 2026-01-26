@@ -17,7 +17,9 @@ export default function LoginPage() {
       await login(username, password)
       toast.success('Login successful')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Login failed')
+      // Handle both API errors and network errors
+      const errorMessage = error.response?.data?.detail || error.message || 'Login failed'
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
