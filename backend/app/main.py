@@ -1,8 +1,13 @@
 """Banking Operations API - Main Entry Point"""
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.database import init_db, close_db
@@ -60,9 +65,23 @@ def get_cors_headers(request: Request) -> dict:
     return {}
 
 
-# Global exception handler to ensure CORS headers on errors
+# HTTPException handler - preserve status code and add CORS headers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions with proper status codes and CORS headers"""
+    headers = get_cors_headers(request)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers,
+    )
+
+
+# Global exception handler for unexpected errors only
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions - log the actual error for debugging"""
+    logger.error(f"Unexpected error on {request.method} {request.url}: {type(exc).__name__}: {exc}")
     headers = get_cors_headers(request)
     return JSONResponse(
         status_code=500,
