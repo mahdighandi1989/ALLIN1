@@ -1,9 +1,12 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
+import logging
 from typing import AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 # Database URL configuration
 DATABASE_URL = os.getenv(
@@ -56,27 +59,77 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception as e:
             await session.rollback()
+            logger.error(f"Database session error: {e}")
             raise
         finally:
             await session.close()
 
 # Function to create all tables (for development)
 async def create_tables():
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Create all database tables"""
+    try:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create tables: {e}")
+        raise
 
 # Function to drop all tables (for development)
 async def drop_tables():
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    """Drop all database tables"""
+    try:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        logger.info("Database tables dropped successfully")
+    except Exception as e:
+        logger.error(f"Failed to drop tables: {e}")
+        raise
+
+# Initialize database
+async def init_db():
+    """Initialize database connection and create tables if needed"""
+    try:
+        # Test connection
+        async with async_engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        
+        # Import models to ensure they're registered
+        from app.models import User, Customer, Facility
+        
+        # Create tables
+        await create_tables()
+        
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+
+# Close database connections
+async def close_db():
+    """Close database connections"""
+    try:
+        await async_engine.dispose()
+        sync_engine.dispose()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing database connections: {e}")
 
 # Health check function
 async def check_database_health() -> bool:
+    """Check database connection health"""
     try:
         async with async_engine.begin() as conn:
-            await conn.execute("SELECT 1")
-        return True
-    except Exception:
+            result = await conn.execute(text("SELECT 1 as health_check"))
+            row = result.fetchone()
+            if row and row[0] == 1:
+                logger.debug("Database health check passed")
+                return True
+            else:
+                logger.warning("Database health check failed - unexpected result")
+                return False
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
         return False
