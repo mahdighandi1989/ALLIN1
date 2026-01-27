@@ -1,102 +1,131 @@
-from pydantic import BaseModel, Field, validator, EmailStr
-from typing import Optional, List
-from datetime import datetime, date
-from enum import Enum
-
-class CustomerType(str, Enum):
-    INDIVIDUAL = "INDIVIDUAL"
-    CORPORATE = "CORPORATE"
-
-class CustomerStatus(str, Enum):
-    ACTIVE = "ACTIVE"
-    INACTIVE = "INACTIVE"
-    SUSPENDED = "SUSPENDED"
-
-class MaritalStatus(str, Enum):
-    SINGLE = "SINGLE"
-    MARRIED = "MARRIED"
-    DIVORCED = "DIVORCED"
-    WIDOWED = "WIDOWED"
+from pydantic import BaseModel, validator
+from typing import Optional
+from datetime import datetime
+import re
 
 class CustomerBase(BaseModel):
-    first_name: str = Field(..., min_length=1, max_length=100)
-    last_name: str = Field(..., min_length=1, max_length=100)
-    national_id: str = Field(..., min_length=10, max_length=10)
-    birth_date: date
-    email: Optional[EmailStr] = None
-    phone: str = Field(..., min_length=11, max_length=11)
-    mobile: Optional[str] = Field(None, min_length=11, max_length=11)
-    address: str = Field(..., min_length=10, max_length=500)
-    postal_code: str = Field(..., min_length=10, max_length=10)
-    city: str = Field(..., min_length=2, max_length=50)
-    province: str = Field(..., min_length=2, max_length=50)
-    customer_type: CustomerType
-    marital_status: Optional[MaritalStatus] = None
-    education_level: Optional[str] = Field(None, max_length=50)
-    occupation: Optional[str] = Field(None, max_length=100)
-    monthly_income: Optional[float] = Field(None, ge=0)
-    company_name: Optional[str] = Field(None, max_length=200)
-    job_title: Optional[str] = Field(None, max_length=100)
-    work_experience_years: Optional[int] = Field(None, ge=0, le=50)
-    emergency_contact_name: Optional[str] = Field(None, max_length=100)
-    emergency_contact_phone: Optional[str] = Field(None, min_length=11, max_length=11)
-    risk_level: Optional[str] = Field("LOW", max_length=20)
+    first_name: str
+    last_name: str
+    national_id: str
+    phone_number: str
+    address: Optional[str] = None
+    birth_date: Optional[datetime] = None
+    email: Optional[str] = None
+    customer_type: str = "individual"
+    status: str = "active"
+
+class CustomerCreate(CustomerBase):
     
     @validator('national_id')
     def validate_national_id(cls, v):
-        if not v.isdigit():
-            raise ValueError('شناسه ملی باید فقط شامل اعداد باشد')
+        # بررسی کد ملی ایرانی (10 رقم)
+        if not re.match(r'^\d{10}$', v):
+            raise ValueError('کد ملی باید 10 رقم باشد')
+        
+        # الگوریتم اعتبارسنجی کد ملی ایرانی
+        check_digit = int(v[9])
+        sum_digits = sum(int(v[i]) * (10 - i) for i in range(9))
+        remainder = sum_digits % 11
+        
+        if remainder < 2:
+            expected_check = remainder
+        else:
+            expected_check = 11 - remainder
+            
+        if check_digit != expected_check:
+            raise ValueError('کد ملی معتبر نیست')
+        
         return v
     
-    @validator('phone', 'mobile', 'emergency_contact_phone')
-    def validate_phone(cls, v):
-        if v and not v.isdigit():
-            raise ValueError('شماره تلفن باید فقط شامل اعداد باشد')
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        # بررسی شماره تلفن ایرانی
+        if not re.match(r'^(\+98|0)?9\d{9}$', v):
+            raise ValueError('شماره تلفن معتبر نیست')
         return v
     
-    @validator('postal_code')
-    def validate_postal_code(cls, v):
-        if not v.isdigit():
-            raise ValueError('کد پستی باید فقط شامل اعداد باشد')
+    @validator('customer_type')
+    def validate_customer_type(cls, v):
+        if v not in ['individual', 'corporate']:
+            raise ValueError('نوع مشتری باید individual یا corporate باشد')
         return v
-
-class CustomerCreate(CustomerBase):
-    pass
+    
+    @validator('status')
+    def validate_status(cls, v):
+        if v not in ['active', 'inactive', 'suspended']:
+            raise ValueError('وضعیت باید active، inactive یا suspended باشد')
+        return v
+    
+    @validator('email')
+    def validate_email(cls, v):
+        if v is not None and v != "":
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, v):
+                raise ValueError('ایمیل معتبر نیست')
+        return v
 
 class CustomerUpdate(BaseModel):
-    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = Field(None, min_length=11, max_length=11)
-    mobile: Optional[str] = Field(None, min_length=11, max_length=11)
-    address: Optional[str] = Field(None, min_length=10, max_length=500)
-    postal_code: Optional[str] = Field(None, min_length=10, max_length=10)
-    city: Optional[str] = Field(None, min_length=2, max_length=50)
-    province: Optional[str] = Field(None, min_length=2, max_length=50)
-    marital_status: Optional[MaritalStatus] = None
-    education_level: Optional[str] = Field(None, max_length=50)
-    occupation: Optional[str] = Field(None, max_length=100)
-    monthly_income: Optional[float] = Field(None, ge=0)
-    company_name: Optional[str] = Field(None, max_length=200)
-    job_title: Optional[str] = Field(None, max_length=100)
-    work_experience_years: Optional[int] = Field(None, ge=0, le=50)
-    emergency_contact_name: Optional[str] = Field(None, max_length=100)
-    emergency_contact_phone: Optional[str] = Field(None, min_length=11, max_length=11)
-    risk_level: Optional[str] = Field(None, max_length=20)
-    status: Optional[CustomerStatus] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    national_id: Optional[str] = None
+    phone_number: Optional[str] = None
+    address: Optional[str] = None
+    birth_date: Optional[datetime] = None
+    email: Optional[str] = None
+    customer_type: Optional[str] = None
+    status: Optional[str] = None
+    
+    @validator('national_id')
+    def validate_national_id(cls, v):
+        if v is not None:
+            if not re.match(r'^\d{10}$', v):
+                raise ValueError('کد ملی باید 10 رقم باشد')
+            
+            check_digit = int(v[9])
+            sum_digits = sum(int(v[i]) * (10 - i) for i in range(9))
+            remainder = sum_digits % 11
+            
+            if remainder < 2:
+                expected_check = remainder
+            else:
+                expected_check = 11 - remainder
+                
+            if check_digit != expected_check:
+                raise ValueError('کد ملی معتبر نیست')
+        
+        return v
+    
+    @validator('phone_number')
+    def validate_phone_number(cls, v):
+        if v is not None and not re.match(r'^(\+98|0)?9\d{9}$', v):
+            raise ValueError('شماره تلفن معتبر نیست')
+        return v
+    
+    @validator('customer_type')
+    def validate_customer_type(cls, v):
+        if v is not None and v not in ['individual', 'corporate']:
+            raise ValueError('نوع مشتری باید individual یا corporate باشد')
+        return v
+    
+    @validator('status')
+    def validate_status(cls, v):
+        if v is not None and v not in ['active', 'inactive', 'suspended']:
+            raise ValueError('وضعیت باید active، inactive یا suspended باشد')
+        return v
+    
+    @validator('email')
+    def validate_email(cls, v):
+        if v is not None and v != "":
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_pattern, v):
+                raise ValueError('ایمیل معتبر نیست')
+        return v
 
 class CustomerResponse(CustomerBase):
-    id: str
-    customer_id: str
-    status: CustomerStatus
+    id: int
+    customer_code: str
     created_at: datetime
     updated_at: datetime
     
     class Config:
         from_attributes = True
-
-class CustomerListResponse(BaseModel):
-    customers: List[CustomerResponse]
-    total: int
-    page: int
-    page_size: int
