@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.customers import Customer
 from app.schemas.customers import CustomerCreate, CustomerUpdate, CustomerResponse
 from app.utils.auth import get_current_user
-from app.models.users import User
+from app.schemas.users import UserResponse
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -20,8 +20,8 @@ async def get_customers(
     national_id: Optional[str] = None,
     phone: Optional[str] = None,
     is_active: Optional[bool] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Get list of customers with pagination and filtering.
@@ -37,7 +37,7 @@ async def get_customers(
     if is_active is not None:
         query = query.where(Customer.is_active == is_active)
     
-    query = query.offset(skip).limit(limit)
+    query = query.offset(skip).limit(limit).order_by(Customer.created_at.desc())
     
     result = await db.execute(query)
     customers = result.scalars().all()
@@ -47,8 +47,8 @@ async def get_customers(
 @router.get("/{customer_id}", response_model=CustomerResponse)
 async def get_customer(
     customer_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Get customer details by ID.
@@ -74,8 +74,8 @@ async def get_customer(
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     customer_data: CustomerCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Create a new customer.
@@ -97,23 +97,24 @@ async def create_customer(
         )
     
     # Create new customer
-    customer_dict = customer_data.dict()
-    customer = Customer(**customer_dict)
-    customer.created_by = current_user.id
+    db_customer = Customer(
+        **customer_data.dict(),
+        created_by=current_user.id
+    )
     
-    db.add(customer)
+    db.add(db_customer)
     await db.commit()
-    await db.refresh(customer)
+    await db.refresh(db_customer)
     
-    return customer
+    return db_customer
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
 async def update_customer(
     customer_id: str,
     customer_data: CustomerUpdate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Update customer information.
@@ -134,19 +135,19 @@ async def update_customer(
             detail="Customer not found"
         )
     
-    # Check if national_id is being changed and conflicts with existing customer
+    # Check if national_id is being changed and if it already exists
     if customer_data.national_id and customer_data.national_id != customer.national_id:
-        conflict_query = select(Customer).where(
+        query = select(Customer).where(
             and_(
                 Customer.national_id == customer_data.national_id,
                 Customer.id != customer_id,
                 Customer.deleted_at.is_(None)
             )
         )
-        conflict_result = await db.execute(conflict_query)
-        conflicting_customer = conflict_result.scalar_one_or_none()
+        result = await db.execute(query)
+        existing_customer = result.scalar_one_or_none()
         
-        if conflicting_customer:
+        if existing_customer:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Another customer with this national ID already exists"
@@ -154,30 +155,39 @@ async def update_customer(
     
     # Update customer
     update_data = customer_data.dict(exclude_unset=True)
-    if update_data:
-        update_data["updated_by"] = current_user.id
-        stmt = (
-            update(Customer)
-            .where(Customer.id == customer_id)
-            .values(**update_data)
-        )
-        await db.execute(stmt)
-        await db.commit()
-        
-        # Refresh and return updated customer
-        result = await db.execute(
-            select(Customer).where(Customer.id == customer_id)
-        )
-        customer = result.scalar_one()
+    update_data["updated_by"] = current_user.id
     
-    return customer
+    stmt = (
+        update(Customer)
+        .where(
+            and_(
+                Customer.id == customer_id,
+                Customer.deleted_at.is_(None)
+            )
+        )
+        .values(**update_data)
+        .returning(Customer)
+    )
+    
+    result = await db.execute(stmt)
+    await db.commit()
+    
+    updated_customer = result.scalar_one_or_none()
+    
+    if not updated_customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
+    return updated_customer
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_customer(
     customer_id: str,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Soft delete a customer.
@@ -198,16 +208,25 @@ async def delete_customer(
             detail="Customer not found"
         )
     
-    # Soft delete the customer
+    # Soft delete customer
     from datetime import datetime
+    
     stmt = (
         update(Customer)
-        .where(Customer.id == customer_id)
+        .where(
+            and_(
+                Customer.id == customer_id,
+                Customer.deleted_at.is_(None)
+            )
+        )
         .values(
             deleted_at=datetime.utcnow(),
             deleted_by=current_user.id,
             is_active=False
         )
     )
+    
     await db.execute(stmt)
     await db.commit()
+    
+    return None
