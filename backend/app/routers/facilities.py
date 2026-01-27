@@ -1,53 +1,64 @@
 ```python
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func, desc
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
-from ..database import get_db
-from ..models.facility import Facility
-from ..schemas.facility import (
-    FacilityCreate, 
-    FacilityUpdate, 
-    FacilityResponse,
-    FacilityListResponse
-)
-from ..utils.auth import get_current_user
-from ..models.user import User
+from app.database import get_db
+from app.models.facility import Facility, FacilityType, FacilityStatus
+from app.models.customer import Customer
+from app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityResponse
+from app.utils.security import get_current_user, TokenData
 
-router = APIRouter()
+router = APIRouter(prefix="/api/facilities", tags=["facilities"])
 
-@router.post("/", response_model=FacilityResponse)
+
+@router.post("/", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
 async def create_facility(
     facility_data: FacilityCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """ایجاد تسهیلات جدید"""
+    """Create a new facility"""
     try:
-        # بررسی وجود تسهیلات با همان شماره قرارداد
-        existing_facility = await db.execute(
-            select(Facility).where(Facility.contract_number == facility_data.contract_number)
-        )
-        if existing_facility.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="تسهیلاتی با این شماره قرارداد قبلاً ثبت شده است"
+        # Verify customer exists
+        customer_query = select(Customer).where(
+            and_(
+                Customer.id == facility_data.customer_id,
+                Customer.is_deleted == False
             )
-
-        # ایجاد تسهیلات جدید
-        facility = Facility(
-            **facility_data.model_dump(),
-            created_by=current_user.id,
+        )
+        customer_result = await db.execute(customer_query)
+        customer = customer_result.scalar_one_or_none()
+        
+        if not customer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Customer not found"
+            )
+        
+        # Create facility
+        db_facility = Facility(
+            customer_id=facility_data.customer_id,
+            facility_type=facility_data.facility_type,
+            name=facility_data.name,
+            amount=facility_data.amount,
+            currency=facility_data.currency,
+            start_date=facility_data.start_date,
+            expiry_date=facility_data.expiry_date,
+            interest_rate=facility_data.interest_rate,
+            tenor_months=facility_data.tenor_months,
+            notes=facility_data.notes,
+            status=FacilityStatus.ACTIVE,
             created_at=datetime.utcnow()
         )
         
-        db.add(facility)
+        db.add(db_facility)
         await db.commit()
-        await db.refresh(facility)
+        await db.refresh(db_facility)
         
-        return facility
+        return FacilityResponse.from_orm(db_facility)
         
     except HTTPException:
         raise
@@ -55,159 +66,176 @@ async def create_facility(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در ایجاد تسهیلات: {str(e)}"
+            detail=f"Failed to create facility: {str(e)}"
         )
 
-@router.get("/", response_model=FacilityListResponse)
+
+@router.get("/", response_model=dict)
 async def get_facilities(
-    skip: int = 0,
-    limit: int = 100,
-    customer_name: Optional[str] = None,
-    facility_type: Optional[str] = None,
-    status: Optional[str] = None,
-    branch_code: Optional[str] = None,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Page size"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    facility_type: Optional[FacilityType] = Query(None, description="Filter by facility type"),
+    status: Optional[FacilityStatus] = Query(None, description="Filter by status"),
+    search: Optional[str] = Query(None, description="Search in facility name"),
+    sort_by: str = Query("created_at", description="Sort field"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """دریافت لیست تسهیلات با فیلتر"""
+    """Get list of facilities with filtering, pagination and sorting"""
     try:
-        query = select(Facility)
+        # Use page-based pagination if provided
+        if page > 1:
+            skip = (page - 1) * page_size
+            limit = page_size
         
-        # اعمال فیلترها
-        conditions = []
+        # Build base query
+        query = select(Facility).where(Facility.is_deleted == False)
+        count_query = select(func.count()).select_from(Facility).where(Facility.is_deleted == False)
         
-        if customer_name:
-            conditions.append(Facility.customer_name.ilike(f"%{customer_name}%"))
+        # Apply filters
+        filters = []
+        
+        if customer_id:
+            filters.append(Facility.customer_id == customer_id)
         
         if facility_type:
-            conditions.append(Facility.facility_type == facility_type)
-            
+            filters.append(Facility.facility_type == facility_type)
+        
         if status:
-            conditions.append(Facility.status == status)
-            
-        if branch_code:
-            conditions.append(Facility.branch_code == branch_code)
+            filters.append(Facility.status == status)
         
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ببیند
-        if current_user.role != "admin":
-            conditions.append(Facility.created_by == current_user.id)
+        if search:
+            search_filter = f"%{search.strip()}%"
+            filters.append(Facility.name.ilike(search_filter))
         
-        if conditions:
-            query = query.where(and_(*conditions))
+        if filters:
+            filter_condition = and_(*filters)
+            query = query.where(filter_condition)
+            count_query = count_query.where(filter_condition)
         
-        # اعمال pagination
-        query = query.offset(skip).limit(limit).order_by(Facility.created_at.desc())
+        # Get total count
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
         
+        # Apply sorting
+        sort_column = getattr(Facility, sort_by, Facility.created_at)
+        if sort_order == "desc":
+            query = query.order_by(desc(sort_column))
+        else:
+            query = query.order_by(sort_column)
+        
+        # Apply pagination
+        query = query.offset(skip).limit(limit)
+        
+        # Execute query
         result = await db.execute(query)
         facilities = result.scalars().all()
         
-        # شمارش کل رکوردها
-        count_query = select(Facility)
-        if conditions:
-            count_query = count_query.where(and_(*conditions))
+        # Get customer names for facilities
+        customer_ids = list(set(f.customer_id for f in facilities))
+        customer_names = {}
+        if customer_ids:
+            customers_query = select(Customer).where(Customer.id.in_(customer_ids))
+            customers_result = await db.execute(customers_query)
+            for customer in customers_result.scalars():
+                customer_names[customer.id] = customer.name
         
-        count_result = await db.execute(count_query)
-        total = len(count_result.scalars().all())
+        # Add customer names to facility data
+        facility_responses = []
+        for facility in facilities:
+            facility_dict = facility.__dict__.copy()
+            facility_dict['customer_name'] = customer_names.get(facility.customer_id)
+            facility_responses.append(facility_dict)
         
-        return FacilityListResponse(
-            facilities=facilities,
-            total=total,
-            skip=skip,
-            limit=limit
-        )
+        return {
+            "items": facility_responses,
+            "total": total,
+            "page": (skip // limit) + 1 if limit > 0 else 1,
+            "page_size": limit,
+            "pages": (total + limit - 1) // limit if limit > 0 else 1
+        }
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در دریافت لیست تسهیلات: {str(e)}"
+            detail=f"Failed to retrieve facilities: {str(e)}"
         )
+
 
 @router.get("/{facility_id}", response_model=FacilityResponse)
 async def get_facility(
-    facility_id: int,
+    facility_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """دریافت اطلاعات یک تسهیلات"""
+    """Get facility details by ID"""
     try:
-        query = select(Facility).where(Facility.id == facility_id)
-        
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ببیند
-        if current_user.role != "admin":
-            query = query.where(Facility.created_by == current_user.id)
-        
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
         
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="تسهیلات مورد نظر یافت نشد"
+                detail="Facility not found"
             )
         
-        return facility
+        return FacilityResponse.from_orm(facility)
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در دریافت اطلاعات تسهیلات: {str(e)}"
+            detail=f"Failed to retrieve facility: {str(e)}"
         )
+
 
 @router.put("/{facility_id}", response_model=FacilityResponse)
 async def update_facility(
-    facility_id: int,
+    facility_id: str,
     facility_data: FacilityUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """ویرایش تسهیلات"""
+    """Update facility information"""
     try:
-        query = select(Facility).where(Facility.id == facility_id)
-        
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ویرایش کند
-        if current_user.role != "admin":
-            query = query.where(Facility.created_by == current_user.id)
-        
+        # Check if facility exists
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
         
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="تسهیلات مورد نظر یافت نشد"
+                detail="Facility not found"
             )
         
-        # بررسی تغییر شماره قرارداد
-        if (facility_data.contract_number and 
-            facility_data.contract_number != facility.contract_number):
-            existing_facility = await db.execute(
-                select(Facility).where(
-                    and_(
-                        Facility.contract_number == facility_data.contract_number,
-                        Facility.id != facility_id
-                    )
-                )
-            )
-            if existing_facility.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="تسهیلاتی با این شماره قرارداد قبلاً ثبت شده است"
-                )
-        
-        # ویرایش فیلدها
+        # Update facility fields
         update_data = facility_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(facility, field, value)
         
         facility.updated_at = datetime.utcnow()
-        facility.updated_by = current_user.id
         
         await db.commit()
         await db.refresh(facility)
         
-        return facility
+        return FacilityResponse.from_orm(facility)
         
     except HTTPException:
         raise
@@ -215,39 +243,46 @@ async def update_facility(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در ویرایش تسهیلات: {str(e)}"
+            detail=f"Failed to update facility: {str(e)}"
         )
 
-@router.delete("/{facility_id}")
+
+@router.delete("/{facility_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_facility(
-    facility_id: int,
+    facility_id: str,
+    permanent: bool = Query(False, description="Permanently delete (admin only)"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """حذف تسهیلات"""
+    """Delete a facility (soft delete by default)"""
     try:
-        # فقط admin می‌تواند تسهیلات را حذف کند
-        if current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="شما مجوز حذف تسهیلات را ندارید"
+        # Check if facility exists
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
             )
-        
-        result = await db.execute(
-            select(Facility).where(Facility.id == facility_id)
         )
+        result = await db.execute(query)
         facility = result.scalar_one_or_none()
         
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="تسهیلات مورد نظر یافت نشد"
+                detail="Facility not found"
             )
         
-        await db.delete(facility)
-        await db.commit()
+        if permanent:
+            # Permanent delete (would need admin role check)
+            await db.delete(facility)
+        else:
+            # Soft delete
+            facility.is_deleted = True
+            facility.status = FacilityStatus.CLOSED
+            facility.updated_at = datetime.utcnow()
         
-        return {"message": "تسهیلات با موفقیت حذف شد"}
+        await db.commit()
+        return None
         
     except HTTPException:
         raise
@@ -255,32 +290,124 @@ async def delete_facility(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در حذف تسهیلات: {str(e)}"
+            detail=f"Failed to delete facility: {str(e)}"
         )
+
+
+@router.post("/{facility_id}/restore", response_model=FacilityResponse)
+async def restore_facility(
+    facility_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Restore a soft-deleted facility"""
+    try:
+        # Find soft-deleted facility
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == True
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+        
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deleted facility not found"
+            )
+        
+        # Restore facility
+        facility.is_deleted = False
+        facility.status = FacilityStatus.ACTIVE
+        facility.updated_at = datetime.utcnow()
+        
+        await db.commit()
+        await db.refresh(facility)
+        
+        return FacilityResponse.from_orm(facility)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to restore facility: {str(e)}"
+        )
+
+
+@router.patch("/{facility_id}/status")
+async def update_facility_status(
+    facility_id: str,
+    new_status: FacilityStatus,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Update facility status"""
+    try:
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+        
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facility not found"
+            )
+        
+        facility.status = new_status
+        facility.updated_at = datetime.utcnow()
+        
+        await db.commit()
+        await db.refresh(facility)
+        
+        return {"message": f"Facility status updated to {new_status.value}"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update facility status: {str(e)}"
+        )
+
 
 @router.get("/search/advanced")
 async def advanced_search_facilities(
-    contract_number: Optional[str] = None,
-    customer_national_id: Optional[str] = None,
-    amount_from: Optional[float] = None,
-    amount_to: Optional[float] = None,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
-    skip: int = 0,
-    limit: int = 100,
+    customer_name: Optional[str] = Query(None, description="Search by customer name"),
+    amount_from: Optional[float] = Query(None, description="Minimum amount"),
+    amount_to: Optional[float] = Query(None, description="Maximum amount"),
+    date_from: Optional[date] = Query(None, description="Start date filter"),
+    date_to: Optional[date] = Query(None, description="End date filter"),
+    expiry_from: Optional[date] = Query(None, description="Expiry date from"),
+    expiry_to: Optional[date] = Query(None, description="Expiry date to"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: TokenData = Depends(get_current_user)
 ):
-    """جستجوی پیشرفته تسهیلات"""
+    """Advanced search for facilities"""
     try:
-        query = select(Facility)
+        # Build query with joins
+        query = select(Facility).join(Customer, Facility.customer_id == Customer.id).where(
+            and_(
+                Facility.is_deleted == False,
+                Customer.is_deleted == False
+            )
+        )
+        
         conditions = []
         
-        if contract_number:
-            conditions.append(Facility.contract_number.ilike(f"%{contract_number}%"))
-        
-        if customer_national_id:
-            conditions.append(Facility.customer_national_id == customer_national_id)
+        if customer_name:
+            conditions.append(Customer.name.ilike(f"%{customer_name}%"))
         
         if amount_from is not None:
             conditions.append(Facility.amount >= amount_from)
@@ -289,112 +416,27 @@ async def advanced_search_facilities(
             conditions.append(Facility.amount <= amount_to)
         
         if date_from:
-            conditions.append(Facility.contract_date >= date_from)
+            conditions.append(Facility.start_date >= date_from)
         
         if date_to:
-            conditions.append(Facility.contract_date <= date_to)
+            conditions.append(Facility.start_date <= date_to)
         
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ببیند
-        if current_user.role != "admin":
-            conditions.append(Facility.created_by == current_user.id)
+        if expiry_from:
+            conditions.append(Facility.expiry_date >= expiry_from)
+        
+        if expiry_to:
+            conditions.append(Facility.expiry_date <= expiry_to)
         
         if conditions:
             query = query.where(and_(*conditions))
         
-        query = query.offset(skip).limit(limit).order_by(Facility.created_at.desc())
+        # Apply pagination and ordering
+        query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
         
         result = await db.execute(query)
         facilities = result.scalars().all()
         
-        return {
-            "facilities": facilities,
-            "total": len(facilities),
-            "skip": skip,
-            "limit": limit
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در جستجوی پیشرفته: {str(e)}"
-        )
-
-@router.get("/statistics/summary")
-async def get_facilities_statistics(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """آمار کلی تسهیلات"""
-    try:
-        query = select(Facility)
-        
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ببیند
-        if current_user.role != "admin":
-            query = query.where(Facility.created_by == current_user.id)
-        
-        result = await db.execute(query)
-        facilities = result.scalars().all()
-        
-        total_count = len(facilities)
-        total_amount = sum(f.amount for f in facilities if f.amount)
-        
-        # آمار بر اساس وضعیت
-        status_stats = {}
-        for facility in facilities:
-            status = facility.status or "نامشخص"
-            status_stats[status] = status_stats.get(status, 0) + 1
-        
-        # آمار بر اساس نوع تسهیلات
-        type_stats = {}
-        for facility in facilities:
-            facility_type = facility.facility_type or "نامشخص"
-            type_stats[facility_type] = type_stats.get(facility_type, 0) + 1
-        
-        return {
-            "total_count": total_count,
-            "total_amount": total_amount,
-            "status_statistics": status_stats,
-            "type_statistics": type_stats
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"خطا در دریافت آمار: {str(e)}"
-        )
-
-@router.patch("/{facility_id}/status")
-async def update_facility_status(
-    facility_id: int,
-    new_status: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """تغییر وضعیت تسهیلات"""
-    try:
-        query = select(Facility).where(Facility.id == facility_id)
-        
-        # اگر کاربر admin نیست، فقط تسهیلات خودش را ویرایش کند
-        if current_user.role != "admin":
-            query = query.where(Facility.created_by == current_user.id)
-        
-        result = await db.execute(query)
-        facility = result.scalar_one_or_none()
-        
-        if not facility:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="تسهیلات مورد نظر یافت نشد"
-            )
-        
-        # لیست وضعیت‌های مجاز
-        valid_statuses = ["فعال", "غیرفعال", "تسویه", "معوق", "مشکوک", "معدوم"]
-        if new_status not in valid_statuses:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"وضعیت نامعتبر. وضعیت‌های مجاز: {', '.join(valid_statuses)}"
-            )
-        
-        facility.status = new_status
-        facility.updated_at = datetime.utcnow()
-        facility.updated_by = current_user.id
+        # Get customer names
+        customer_ids = list(set(f.customer_id for f in facilities))
+        customer_names = {}
+        if customer_ids:
