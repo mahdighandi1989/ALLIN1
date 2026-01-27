@@ -18,6 +18,7 @@ async def get_customers(
     limit: int = Query(100, ge=1, le=1000),
     name: Optional[str] = None,
     national_id: Optional[str] = None,
+    phone: Optional[str] = None,
     is_active: Optional[bool] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -30,11 +31,13 @@ async def get_customers(
     if name:
         query = query.where(Customer.name.ilike(f"%{name}%"))
     if national_id:
-        query = query.where(Customer.national_id == national_id)
+        query = query.where(Customer.national_id.ilike(f"%{national_id}%"))
+    if phone:
+        query = query.where(Customer.phone.ilike(f"%{phone}%"))
     if is_active is not None:
         query = query.where(Customer.is_active == is_active)
     
-    query = query.offset(skip).limit(limit).order_by(Customer.created_at.desc())
+    query = query.offset(skip).limit(limit)
     
     result = await db.execute(query)
     customers = result.scalars().all()
@@ -95,10 +98,9 @@ async def create_customer(
     
     # Create new customer
     customer_dict = customer_data.dict()
-    customer_dict["created_by"] = current_user.id
-    customer_dict["updated_by"] = current_user.id
-    
     customer = Customer(**customer_dict)
+    customer.created_by = current_user.id
+    
     db.add(customer)
     await db.commit()
     await db.refresh(customer)
@@ -152,22 +154,23 @@ async def update_customer(
     
     # Update customer
     update_data = customer_data.dict(exclude_unset=True)
-    update_data["updated_by"] = current_user.id
+    if update_data:
+        update_data["updated_by"] = current_user.id
+        stmt = (
+            update(Customer)
+            .where(Customer.id == customer_id)
+            .values(**update_data)
+        )
+        await db.execute(stmt)
+        await db.commit()
+        
+        # Refresh and return updated customer
+        result = await db.execute(
+            select(Customer).where(Customer.id == customer_id)
+        )
+        customer = result.scalar_one()
     
-    stmt = (
-        update(Customer)
-        .where(Customer.id == customer_id)
-        .values(**update_data)
-    )
-    await db.execute(stmt)
-    await db.commit()
-    
-    # Get updated customer
-    query = select(Customer).where(Customer.id == customer_id)
-    result = await db.execute(query)
-    updated_customer = result.scalar_one()
-    
-    return updated_customer
+    return customer
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -195,14 +198,14 @@ async def delete_customer(
             detail="Customer not found"
         )
     
-    # Soft delete customer
+    # Soft delete the customer
     from datetime import datetime
     stmt = (
         update(Customer)
         .where(Customer.id == customer_id)
         .values(
             deleted_at=datetime.utcnow(),
-            updated_by=current_user.id,
+            deleted_by=current_user.id,
             is_active=False
         )
     )
