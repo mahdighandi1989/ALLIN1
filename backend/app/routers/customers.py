@@ -1,183 +1,210 @@
-"""Customers Router"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, update, and_
 
 from app.database import get_db
-from app.models import Customer, AccountType, CustomerStatus
-from app.schemas import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerList
-from app.utils.security import get_current_user, TokenData
+from app.models.customers import Customer
+from app.schemas.customers import CustomerCreate, CustomerUpdate, CustomerResponse
+from app.utils.auth import get_current_user
+from app.models.users import User
 
-router = APIRouter(prefix="/api/customers", tags=["Customers"])
-
-
-def customer_to_response(c: Customer) -> dict:
-    return {
-        "id": c.id,
-        "account_no": c.account_no,
-        "name": c.name,
-        "name_ar": c.name_ar,
-        "account_type": c.account_type.value if c.account_type else "retail",
-        "status": c.status.value if c.status else "active",
-        "email": c.email,
-        "phone": c.phone,
-        "mobile": c.mobile,
-        "address": c.address,
-        "branch": c.branch,
-        "relationship_manager": c.relationship_manager,
-        "notes": c.notes,
-        "created_at": c.created_at,
-        "updated_at": c.updated_at,
-    }
+router = APIRouter(prefix="/api/customers", tags=["customers"])
 
 
-@router.get("", response_model=CustomerList)
-async def list_customers(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    search: str = None,
-    status: str = None,
-    account_type: str = None,
-    current_user: TokenData = Depends(get_current_user),
+@router.get("/", response_model=List[CustomerResponse])
+async def get_customers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    name: Optional[str] = None,
+    national_id: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List customers with pagination"""
-    query = select(Customer).where(Customer.is_deleted == False)
-
-    if search:
-        query = query.where(
-            Customer.name.ilike(f"%{search}%") |
-            Customer.account_no.ilike(f"%{search}%")
-        )
-
-    if status:
-        try:
-            query = query.where(Customer.status == CustomerStatus(status))
-        except ValueError:
-            pass
-
-    if account_type:
-        try:
-            query = query.where(Customer.account_type == AccountType(account_type))
-        except ValueError:
-            pass
-
-    # Count
-    count_q = select(func.count()).select_from(query.subquery())
-    total = (await db.execute(count_q)).scalar() or 0
-
-    # Paginate
-    query = query.order_by(Customer.created_at.desc())
-    query = query.offset((page - 1) * page_size).limit(page_size)
-
+    """
+    Get list of customers with pagination and filtering.
+    """
+    query = select(Customer).where(Customer.deleted_at.is_(None))
+    
+    if name:
+        query = query.where(Customer.name.ilike(f"%{name}%"))
+    if national_id:
+        query = query.where(Customer.national_id == national_id)
+    if is_active is not None:
+        query = query.where(Customer.is_active == is_active)
+    
+    query = query.offset(skip).limit(limit).order_by(Customer.created_at.desc())
+    
     result = await db.execute(query)
     customers = result.scalars().all()
-
-    return CustomerList(
-        items=[customer_to_response(c) for c in customers],
-        total=total,
-        page=page,
-        page_size=page_size
-    )
+    return customers
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 async def get_customer(
     customer_id: str,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get customer by ID"""
-    result = await db.execute(
-        select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
+    """
+    Get customer details by ID.
+    """
+    query = select(Customer).where(
+        and_(
+            Customer.id == customer_id,
+            Customer.deleted_at.is_(None)
+        )
     )
-    customer = result.scalars().first()
-
+    result = await db.execute(query)
+    customer = result.scalar_one_or_none()
+    
     if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
+    return customer
 
-    return customer_to_response(customer)
 
-
-@router.post("", response_model=CustomerResponse)
+@router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
-    data: CustomerCreate,
-    current_user: TokenData = Depends(get_current_user),
+    customer_data: CustomerCreate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create new customer"""
-    # Check account_no
-    result = await db.execute(select(Customer).where(Customer.account_no == data.account_no))
-    if result.scalars().first():
-        raise HTTPException(status_code=400, detail="Account number already exists")
-
-    customer = Customer(
-        account_no=data.account_no,
-        name=data.name,
-        name_ar=data.name_ar,
-        account_type=AccountType(data.account_type) if data.account_type else AccountType.RETAIL,
-        email=data.email,
-        phone=data.phone,
-        mobile=data.mobile,
-        address=data.address,
-        branch=data.branch,
-        relationship_manager=data.relationship_manager,
-        notes=data.notes
+    """
+    Create a new customer.
+    """
+    # Check if national_id already exists
+    query = select(Customer).where(
+        and_(
+            Customer.national_id == customer_data.national_id,
+            Customer.deleted_at.is_(None)
+        )
     )
+    result = await db.execute(query)
+    existing_customer = result.scalar_one_or_none()
+    
+    if existing_customer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer with this national ID already exists"
+        )
+    
+    # Create new customer
+    customer_dict = customer_data.dict()
+    customer_dict["created_by"] = current_user.id
+    customer_dict["updated_by"] = current_user.id
+    
+    customer = Customer(**customer_dict)
     db.add(customer)
     await db.commit()
     await db.refresh(customer)
-
-    return customer_to_response(customer)
+    
+    return customer
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
 async def update_customer(
     customer_id: str,
-    data: CustomerUpdate,
-    current_user: TokenData = Depends(get_current_user),
+    customer_data: CustomerUpdate,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update customer"""
-    result = await db.execute(
-        select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
+    """
+    Update customer information.
+    """
+    # Check if customer exists and is not deleted
+    query = select(Customer).where(
+        and_(
+            Customer.id == customer_id,
+            Customer.deleted_at.is_(None)
+        )
     )
-    customer = result.scalars().first()
-
+    result = await db.execute(query)
+    customer = result.scalar_one_or_none()
+    
     if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    update_data = data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        if value is not None:
-            if field == "status":
-                value = CustomerStatus(value)
-            elif field == "account_type":
-                value = AccountType(value)
-            setattr(customer, field, value)
-
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
+    # Check if national_id is being changed and conflicts with existing customer
+    if customer_data.national_id and customer_data.national_id != customer.national_id:
+        conflict_query = select(Customer).where(
+            and_(
+                Customer.national_id == customer_data.national_id,
+                Customer.id != customer_id,
+                Customer.deleted_at.is_(None)
+            )
+        )
+        conflict_result = await db.execute(conflict_query)
+        conflicting_customer = conflict_result.scalar_one_or_none()
+        
+        if conflicting_customer:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Another customer with this national ID already exists"
+            )
+    
+    # Update customer
+    update_data = customer_data.dict(exclude_unset=True)
+    update_data["updated_by"] = current_user.id
+    
+    stmt = (
+        update(Customer)
+        .where(Customer.id == customer_id)
+        .values(**update_data)
+    )
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(customer)
+    
+    # Get updated customer
+    query = select(Customer).where(Customer.id == customer_id)
+    result = await db.execute(query)
+    updated_customer = result.scalar_one()
+    
+    return updated_customer
 
-    return customer_to_response(customer)
 
-
-@router.delete("/{customer_id}")
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_customer(
     customer_id: str,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete customer (soft delete)"""
-    result = await db.execute(
-        select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
+    """
+    Soft delete a customer.
+    """
+    # Check if customer exists and is not already deleted
+    query = select(Customer).where(
+        and_(
+            Customer.id == customer_id,
+            Customer.deleted_at.is_(None)
+        )
     )
-    customer = result.scalars().first()
-
+    result = await db.execute(query)
+    customer = result.scalar_one_or_none()
+    
     if not customer:
-        raise HTTPException(status_code=404, detail="Customer not found")
-
-    customer.is_deleted = True
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
+    # Soft delete customer
+    from datetime import datetime
+    stmt = (
+        update(Customer)
+        .where(Customer.id == customer_id)
+        .values(
+            deleted_at=datetime.utcnow(),
+            updated_by=current_user.id,
+            is_active=False
+        )
+    )
+    await db.execute(stmt)
     await db.commit()
-
-    return {"message": "Customer deleted"}
