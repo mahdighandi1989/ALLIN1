@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, and_, func, desc
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
@@ -463,5 +463,4 @@ async def get_customers_summary(
         by_status = {row[0].value: row[1] for row in status_result.fetchall()}
         
         # Recent customers (last 30 days)
-        from datetime import timedelta
-        recent_date = datetime.
+        recent_date = datetime.utcnow
