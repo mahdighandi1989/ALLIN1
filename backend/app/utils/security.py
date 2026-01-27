@@ -2,18 +2,21 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.config import settings
+from app.database import get_db
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+security = HTTPBearer()
 
 
 class TokenData(BaseModel):
@@ -22,43 +25,97 @@ class TokenData(BaseModel):
 
 
 def hash_password(password: str) -> str:
+    """Hash a password using bcrypt"""
     return pwd_context.hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Verify a password against its hash"""
     return pwd_context.verify(plain, hashed)
 
 
-def create_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create a JWT access token"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
 
 
-def verify_token(token: str) -> Optional[dict]:
+def verify_access_token(token: str) -> Optional[dict]:
+    """Verify and decode JWT token"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return payload
-    except JWTError:
-        return None
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current authenticated user"""
+    from app.models.user import User
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid credentials",
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-    payload = verify_token(token)
-    if not payload:
+    
+    try:
+        payload = verify_access_token(credentials.credentials)
+        user_id: str = payload.get("user_id")
+        username: str = payload.get("username")
+        if user_id is None or username is None:
+            raise credentials_exception
+    except HTTPException:
         raise credentials_exception
-
-    user_id = payload.get("sub")
-    username = payload.get("username")
-
-    if not user_id or not username:
+    
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if user is None:
         raise credentials_exception
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Inactive user"
+        )
+    
+    return user
 
-    return TokenData(user_id=user_id, username=username)
+
+async def get_current_active_user(current_user = Depends(get_current_user)):
+    """Get current active user"""
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+    return current_user
+
+
+def get_token_data(current_user = Depends(get_current_user)) -> TokenData:
+    """Get token data from current user"""
+    return TokenData(
+        user_id=current_user.id,
+        username=current_user.username
+    )
