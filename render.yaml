@@ -21,6 +21,8 @@ services:
         fromDatabase:
           name: banking-ops-db
           property: connectionString
+      - key: CORS_ORIGINS
+        value: "https://banking-ops-frontend.onrender.com,http://localhost:3000"
     healthCheckPath: /health
     autoDeploy: true
 
