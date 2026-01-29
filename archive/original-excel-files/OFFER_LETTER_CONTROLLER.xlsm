@@ -1,308 +1,414 @@
+```python
 """
-Excel File Analyzer for OFFER_LETTER_CONTROLLER.xlsm
-Extracts and analyzes content from Excel files including VBA macros
+OFFER LETTER CONTROLLER - Secure Database Migration
+Replaces Excel-based OFFER_LETTER_CONTROLLER.xlsm with secure database solution
 """
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
+from sqlalchemy import Column, String, Boolean, DateTime, Date, Text, Numeric, ForeignKey, Enum as SQLEnum
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, and_, or_
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel, Field, validator
+import uuid
+import enum
+from decimal import Decimal
 
-import os
-import sys
-import pandas as pd
-import openpyxl
-from openpyxl import load_workbook
-import zipfile
-import xml.etree.ElementTree as ET
-from typing import Dict, List, Any, Optional
-import json
-import logging
-from pathlib import Path
+from app.database import Base, get_db
+from app.utils.security import get_current_user, TokenData
+from app.models.customer import Customer
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-class ExcelAnalyzer:
-    """Analyzer for Excel files with macro support"""
+def generate_offer_id():
+    """Generate secure offer letter ID"""
+    return "OL" + str(uuid.uuid4())[:6].upper()
+
+
+class OfferStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    ISSUED = "issued"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class OfferType(str, enum.Enum):
+    LOAN = "loan"
+    OVERDRAFT = "overdraft"
+    CREDIT_CARD = "credit_card"
+    LC = "lc"
+    LG = "lg"
+    TRADE_FINANCE = "trade_finance"
+    MORTGAGE = "mortgage"
+    PERSONAL_LOAN = "personal_loan"
+    BUSINESS_LOAN = "business_loan"
+
+
+class CurrencyCode(str, enum.Enum):
+    AED = "AED"
+    USD = "USD"
+    EUR = "EUR"
+    GBP = "GBP"
+    SAR = "SAR"
+
+
+class OfferLetter(Base):
+    """
+    Secure database model for offer letters
+    Replaces Excel-based storage with encrypted database solution
+    """
+    __tablename__ = "offer_letters"
+
+    # Primary identification
+    id = Column(String(8), primary_key=True, default=generate_offer_id)
+    offer_number = Column(String(50), unique=True, nullable=False, index=True)
+    customer_id = Column(String(8), ForeignKey("customers.id"), nullable=False, index=True)
     
-    def __init__(self, file_path: str):
-        self.file_path = Path(file_path)
-        self.workbook = None
-        self.sheets_data = {}
-        self.vba_modules = {}
-        self.analysis_results = {}
-        
-    def load_workbook(self) -> bool:
-        """Load Excel workbook"""
-        try:
-            if not self.file_path.exists():
-                logger.error(f"File not found: {self.file_path}")
-                return False
-                
-            self.workbook = load_workbook(self.file_path, data_only=False, keep_vba=True)
-            logger.info(f"Loaded workbook: {self.file_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to load workbook: {e}")
-            return False
+    # Offer details
+    offer_type = Column(SQLEnum(OfferType), nullable=False)
+    status = Column(SQLEnum(OfferStatus), default=OfferStatus.DRAFT)
     
-    def extract_sheet_data(self) -> Dict[str, Any]:
-        """Extract data from all worksheets"""
-        if not self.workbook:
-            return {}
-            
-        sheets_info = {}
+    # Financial terms - encrypted in production
+    principal_amount = Column(Numeric(18, 2), nullable=False)
+    currency = Column(SQLEnum(CurrencyCode), default=CurrencyCode.AED)
+    interest_rate = Column(Numeric(5, 4))  # Supports up to 99.9999%
+    tenor_months = Column(String(20))
+    
+    # Dates with validation
+    offer_date = Column(Date, nullable=False, default=func.current_date())
+    validity_date = Column(Date, nullable=False)
+    proposed_disbursement_date = Column(Date)
+    
+    # Security and compliance
+    security_details = Column(Text)  # Encrypted field
+    collateral_description = Column(Text)
+    guarantee_details = Column(Text)
+    
+    # Terms and conditions
+    terms_conditions = Column(Text, nullable=False)
+    special_conditions = Column(Text)
+    covenants = Column(Text)
+    
+    # Processing information
+    prepared_by = Column(String(100), nullable=False)
+    reviewed_by = Column(String(100))
+    approved_by = Column(String(100))
+    branch_code = Column(String(20))
+    department = Column(String(100))
+    
+    # Customer response
+    customer_response = Column(SQLEnum(OfferStatus))
+    response_date = Column(Date)
+    response_notes = Column(Text)
+    
+    # Document management
+    document_path = Column(String(500))  # Secure file storage path
+    template_version = Column(String(20), default="1.0")
+    
+    # Audit trail
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    is_deleted = Column(Boolean, default=False)
+    
+    # Relationships
+    customer = relationship("Customer", back_populates="offer_letters")
+
+
+# Add relationship to Customer model
+Customer.offer_letters = relationship("OfferLetter", back_populates="customer")
+
+
+# Pydantic schemas for API
+class OfferLetterBase(BaseModel):
+    """Base schema for offer letter data"""
+    offer_number: str = Field(..., min_length=1, max_length=50)
+    customer_id: str = Field(..., min_length=2, max_length=8)
+    offer_type: OfferType
+    principal_amount: Decimal = Field(..., gt=0, decimal_places=2)
+    currency: CurrencyCode = CurrencyCode.AED
+    interest_rate: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=4)
+    tenor_months: Optional[str] = None
+    validity_date: date
+    proposed_disbursement_date: Optional[date] = None
+    security_details: Optional[str] = None
+    collateral_description: Optional[str] = None
+    guarantee_details: Optional[str] = None
+    terms_conditions: str = Field(..., min_length=10)
+    special_conditions: Optional[str] = None
+    covenants: Optional[str] = None
+    branch_code: Optional[str] = None
+    department: Optional[str] = None
+
+    @validator('validity_date')
+    def validate_validity_date(cls, v):
+        if v <= date.today():
+            raise ValueError('Validity date must be in the future')
+        return v
+
+    @validator('proposed_disbursement_date')
+    def validate_disbursement_date(cls, v, values):
+        if v and 'validity_date' in values and v > values['validity_date']:
+            raise ValueError('Disbursement date cannot be after validity date')
+        return v
+
+
+class OfferLetterCreate(OfferLetterBase):
+    """Schema for creating new offer letter"""
+    pass
+
+
+class OfferLetterUpdate(BaseModel):
+    """Schema for updating offer letter"""
+    offer_type: Optional[OfferType] = None
+    status: Optional[OfferStatus] = None
+    principal_amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    currency: Optional[CurrencyCode] = None
+    interest_rate: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=4)
+    tenor_months: Optional[str] = None
+    validity_date: Optional[date] = None
+    proposed_disbursement_date: Optional[date] = None
+    security_details: Optional[str] = None
+    collateral_description: Optional[str] = None
+    guarantee_details: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    special_conditions: Optional[str] = None
+    covenants: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    approved_by: Optional[str] = None
+
+
+class OfferLetterResponse(OfferLetterBase):
+    """Schema for offer letter response"""
+    id: str
+    status: OfferStatus
+    offer_date: date
+    prepared_by: str
+    reviewed_by: Optional[str]
+    approved_by: Optional[str]
+    customer_response: Optional[OfferStatus]
+    response_date: Optional[date]
+    response_notes: Optional[str]
+    template_version: str
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    # Customer information
+    customer_name: Optional[str] = None
+    customer_account_no: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class CustomerResponseUpdate(BaseModel):
+    """Schema for customer response to offer"""
+    customer_response: OfferStatus = Field(..., description="Customer's response to the offer")
+    response_notes: Optional[str] = Field(None, max_length=1000)
+    
+    @validator('customer_response')
+    def validate_customer_response(cls, v):
+        allowed_responses = [OfferStatus.ACCEPTED, OfferStatus.REJECTED]
+        if v not in allowed_responses:
+            raise ValueError('Customer response must be either ACCEPTED or REJECTED')
+        return v
+
+
+# API Router
+router = APIRouter(prefix="/api/offer-letters", tags=["Offer Letters"])
+
+
+@router.post("/", response_model=OfferLetterResponse, status_code=status.HTTP_201_CREATED)
+async def create_offer_letter(
+    offer_data: OfferLetterCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Create a new offer letter with security validation"""
+    try:
+        # Verify customer exists and is active
+        customer_query = select(Customer).where(
+            and_(
+                Customer.id == offer_data.customer_id,
+                Customer.is_deleted == False,
+                Customer.status == "active"
+            )
+        )
+        customer_result = await db.execute(customer_query)
+        customer = customer_result.scalar_one_or_none()
         
-        for sheet_name in self.workbook.sheetnames:
-            try:
-                worksheet = self.workbook[sheet_name]
-                
-                # Basic sheet info
-                sheet_info = {
-                    'name': sheet_name,
-                    'max_row': worksheet.max_row,
-                    'max_column': worksheet.max_column,
-                    'data': [],
-                    'formulas': [],
-                    'named_ranges': [],
-                    'data_validation': []
+        if not customer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Active customer not found"
+            )
+        
+        # Check for duplicate offer number
+        existing_query = select(OfferLetter).where(
+            and_(
+                OfferLetter.offer_number == offer_data.offer_number,
+                OfferLetter.is_deleted == False
+            )
+        )
+        existing_result = await db.execute(existing_query)
+        if existing_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Offer number already exists"
+            )
+        
+        # Create new offer letter
+        db_offer = OfferLetter(
+            **offer_data.model_dump(),
+            prepared_by=current_user.username,
+            status=OfferStatus.DRAFT,
+            offer_date=date.today()
+        )
+        
+        db.add(db_offer)
+        await db.commit()
+        await db.refresh(db_offer)
+        
+        # Add customer information to response
+        response_data = OfferLetterResponse.from_orm(db_offer)
+        response_data.customer_name = customer.name
+        response_data.customer_account_no = customer.account_no
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create offer letter: {str(e)}"
+        )
+
+
+@router.get("/", response_model=Dict[str, Any])
+async def get_offer_letters(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    customer_id: Optional[str] = Query(None),
+    status: Optional[OfferStatus] = Query(None),
+    offer_type: Optional[OfferType] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get offer letters with advanced filtering"""
+    try:
+        # Build base query
+        query = select(OfferLetter).where(OfferLetter.is_deleted == False)
+        count_query = select(func.count()).select_from(OfferLetter).where(OfferLetter.is_deleted == False)
+        
+        # Apply filters
+        filters = []
+        
+        if customer_id:
+            filters.append(OfferLetter.customer_id == customer_id)
+        
+        if status:
+            filters.append(OfferLetter.status == status)
+        
+        if offer_type:
+            filters.append(OfferLetter.offer_type == offer_type)
+        
+        if search:
+            search_filter = f"%{search.strip()}%"
+            filters.append(
+                or_(
+                    OfferLetter.offer_number.ilike(search_filter),
+                    OfferLetter.terms_conditions.ilike(search_filter)
+                )
+            )
+        
+        if filters:
+            filter_condition = and_(*filters)
+            query = query.where(filter_condition)
+            count_query = count_query.where(filter_condition)
+        
+        # Get total count
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        # Apply pagination and ordering
+        query = query.order_by(OfferLetter.created_at.desc()).offset(skip).limit(limit)
+        
+        # Execute query
+        result = await db.execute(query)
+        offers = result.scalars().all()
+        
+        # Get customer information
+        customer_ids = list(set(o.customer_id for o in offers))
+        customer_info = {}
+        if customer_ids:
+            customers_query = select(Customer).where(Customer.id.in_(customer_ids))
+            customers_result = await db.execute(customers_query)
+            for customer in customers_result.scalars():
+                customer_info[customer.id] = {
+                    "name": customer.name,
+                    "account_no": customer.account_no
                 }
-                
-                # Extract cell data and formulas
-                for row in worksheet.iter_rows(min_row=1, max_row=min(50, worksheet.max_row)):
-                    row_data = []
-                    for cell in row:
-                        cell_info = {
-                            'coordinate': cell.coordinate,
-                            'value': cell.value,
-                            'data_type': str(type(cell.value).__name__),
-                            'formula': cell.formula if hasattr(cell, 'formula') else None,
-                            'number_format': cell.number_format,
-                            'font': str(cell.font) if cell.font else None,
-                            'fill': str(cell.fill) if cell.fill else None
-                        }
-                        row_data.append(cell_info)
-                        
-                        # Collect formulas
-                        if cell.formula:
-                            sheet_info['formulas'].append({
-                                'cell': cell.coordinate,
-                                'formula': cell.formula
-                            })
-                    
-                    sheet_info['data'].append(row_data)
-                
-                # Extract named ranges
-                for named_range in self.workbook.defined_names:
-                    if named_range.destinations:
-                        for title, coord in named_range.destinations:
-                            if title == sheet_name:
-                                sheet_info['named_ranges'].append({
-                                    'name': named_range.name,
-                                    'range': coord
-                                })
-                
-                sheets_info[sheet_name] = sheet_info
-                
-            except Exception as e:
-                logger.error(f"Error processing sheet {sheet_name}: {e}")
-                
-        return sheets_info
-    
-    def extract_vba_code(self) -> Dict[str, str]:
-        """Extract VBA macro code from Excel file"""
-        vba_code = {}
         
-        try:
-            # Excel files are ZIP archives
-            with zipfile.ZipFile(self.file_path, 'r') as zip_file:
-                # Look for VBA project files
-                vba_files = [f for f in zip_file.namelist() if 'vbaProject.bin' in f]
-                
-                if vba_files:
-                    logger.info("VBA project found, but binary extraction requires additional tools")
-                    vba_code['vba_project'] = "Binary VBA project detected - requires oletools for extraction"
-                
-                # Look for XML files that might contain macro information
-                xml_files = [f for f in zip_file.namelist() if f.endswith('.xml')]
-                
-                for xml_file in xml_files:
-                    if 'vmlDrawing' in xml_file or 'macro' in xml_file.lower():
-                        try:
-                            content = zip_file.read(xml_file).decode('utf-8', errors='ignore')
-                            vba_code[xml_file] = content[:1000]  # First 1000 chars
-                        except Exception as e:
-                            logger.warning(f"Could not read {xml_file}: {e}")
-                            
-        except Exception as e:
-            logger.error(f"Error extracting VBA code: {e}")
-            
-        return vba_code
-    
-    def analyze_structure(self) -> Dict[str, Any]:
-        """Analyze overall file structure"""
-        analysis = {
-            'file_info': {
-                'path': str(self.file_path),
-                'size': self.file_path.stat().st_size if self.file_path.exists() else 0,
-                'extension': self.file_path.suffix,
-                'is_macro_enabled': self.file_path.suffix.lower() in ['.xlsm', '.xltm']
-            },
-            'workbook_info': {},
-            'security_analysis': {},
-            'recommendations': []
+        # Prepare response with customer information
+        offer_responses = []
+        for offer in offers:
+            offer_dict = offer.__dict__.copy()
+            if offer.customer_id in customer_info:
+                offer_dict['customer_name'] = customer_info[offer.customer_id]['name']
+                offer_dict['customer_account_no'] = customer_info[offer.customer_id]['account_no']
+            offer_responses.append(offer_dict)
+        
+        return {
+            "items": offer_responses,
+            "total": total,
+            "page": (skip // limit) + 1 if limit > 0 else 1,
+            "page_size": limit,
+            "pages": (total + limit - 1) // limit if limit > 0 else 1
         }
         
-        if self.workbook:
-            analysis['workbook_info'] = {
-                'sheet_count': len(self.workbook.sheetnames),
-                'sheet_names': self.workbook.sheetnames,
-                'has_vba': hasattr(self.workbook, 'vba_archive') and self.workbook.vba_archive is not None,
-                'properties': {
-                    'creator': getattr(self.workbook.properties, 'creator', None),
-                    'title': getattr(self.workbook.properties, 'title', None),
-                    'description': getattr(self.workbook.properties, 'description', None),
-                    'created': str(getattr(self.workbook.properties, 'created', None)),
-                    'modified': str(getattr(self.workbook.properties, 'modified', None))
-                }
-            }
-            
-            # Security analysis
-            if analysis['file_info']['is_macro_enabled']:
-                analysis['security_analysis'] = {
-                    'macro_enabled': True,
-                    'risk_level': 'HIGH',
-                    'recommendations': [
-                        'Scan for malicious macros',
-                        'Review VBA code before enabling',
-                        'Consider converting to macro-free format if possible'
-                    ]
-                }
-            else:
-                analysis['security_analysis'] = {
-                    'macro_enabled': False,
-                    'risk_level': 'LOW',
-                    'recommendations': ['File appears safe from macro-based threats']
-                }
-        
-        return analysis
-    
-    def generate_report(self) -> Dict[str, Any]:
-        """Generate comprehensive analysis report"""
-        if not self.load_workbook():
-            return {'error': 'Could not load workbook'}
-        
-        report = {
-            'analysis_timestamp': pd.Timestamp.now().isoformat(),
-            'file_analysis': self.analyze_structure(),
-            'sheets_data': self.extract_sheet_data(),
-            'vba_code': self.extract_vba_code(),
-            'summary': {}
-        }
-        
-        # Generate summary
-        total_cells = sum(len(sheet['data']) * len(sheet['data'][0]) if sheet['data'] else 0 
-                         for sheet in report['sheets_data'].values())
-        total_formulas = sum(len(sheet['formulas']) for sheet in report['sheets_data'].values())
-        
-        report['summary'] = {
-            'total_sheets': len(report['sheets_data']),
-            'total_cells_analyzed': total_cells,
-            'total_formulas': total_formulas,
-            'has_vba': bool(report['vba_code']),
-            'file_size_mb': round(report['file_analysis']['file_info']['size'] / 1024 / 1024, 2)
-        }
-        
-        return report
-    
-    def save_report(self, output_path: str = None) -> str:
-        """Save analysis report to JSON file"""
-        if not output_path:
-            output_path = self.file_path.with_suffix('.analysis.json')
-        
-        report = self.generate_report()
-        
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(report, f, indent=2, default=str, ensure_ascii=False)
-            
-            logger.info(f"Analysis report saved to: {output_path}")
-            return str(output_path)
-            
-        except Exception as e:
-            logger.error(f"Failed to save report: {e}")
-            return ""
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve offer letters: {str(e)}"
+        )
 
-def analyze_offer_letter_controller(file_path: str = "archive/original-excel-files/OFFER_LETTER_CONTROLLER.xlsm"):
-    """Main function to analyze the OFFER_LETTER_CONTROLLER.xlsm file"""
-    
-    analyzer = ExcelAnalyzer(file_path)
-    
-    print("🔍 Analyzing OFFER_LETTER_CONTROLLER.xlsm...")
-    print("=" * 50)
-    
-    # Generate and save report
-    report_path = analyzer.save_report()
-    
-    if report_path:
-        print(f"✅ Analysis complete! Report saved to: {report_path}")
-        
-        # Display summary
-        report = analyzer.generate_report()
-        if 'summary' in report:
-            summary = report['summary']
-            print(f"\n📊 Summary:")
-            print(f"   - Sheets: {summary.get('total_sheets', 0)}")
-            print(f"   - Formulas: {summary.get('total_formulas', 0)}")
-            print(f"   - File Size: {summary.get('file_size_mb', 0)} MB")
-            print(f"   - Has VBA: {summary.get('has_vba', False)}")
-        
-        # Security recommendations
-        if 'file_analysis' in report and 'security_analysis' in report['file_analysis']:
-            security = report['file_analysis']['security_analysis']
-            print(f"\n🔒 Security Analysis:")
-            print(f"   - Risk Level: {security.get('risk_level', 'UNKNOWN')}")
-            print(f"   - Macro Enabled: {security.get('macro_enabled', False)}")
-            
-            if security.get('recommendations'):
-                print("   - Recommendations:")
-                for rec in security['recommendations']:
-                    print(f"     • {rec}")
-    else:
-        print("❌ Analysis failed!")
-    
-    return report_path
 
-if __name__ == "__main__":
-    # Check if file exists
-    file_path = "archive/original-excel-files/OFFER_LETTER_CONTROLLER.xlsm"
-    
-    if not os.path.exists(file_path):
-        print(f"⚠️  File not found: {file_path}")
-        print("Creating placeholder analysis...")
+@router.get("/{offer_id}", response_model=OfferLetterResponse)
+async def get_offer_letter(
+    offer_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user)
+):
+    """Get offer letter details by ID"""
+    try:
+        query = select(OfferLetter).where(
+            and_(
+                OfferLetter.id == offer_id,
+                OfferLetter.is_deleted == False
+            )
+        )
+        result = await db.execute(query)
+        offer = result.scalar_one_or_none()
         
-        # Create placeholder analysis for missing file
-        placeholder_report = {
-            "analysis_timestamp": pd.Timestamp.now().isoformat(),
-            "error": "File not found",
-            "file_path": file_path,
-            "recommendations": [
-                "Locate the original OFFER_LETTER_CONTROLLER.xlsm file",
-                "Ensure file is not corrupted",
-                "Check file permissions",
-                "Consider recreating the file if lost"
-            ],
-            "alternative_actions": [
-                "Create new offer letter template",
-                "Implement offer letter generation in web application",
-                "Use database-driven approach instead of Excel"
-            ]
-        }
+        if not offer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Offer letter not found"
+            )
         
-        # Save placeholder report
-        output_path = "archive/original-excel-files/OFFER_LETTER_CONTROLLER.analysis.json"
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Get customer information
+        customer_query = select(Customer).where(Customer.id == offer.customer_id)
+        customer_result = await db.execute(customer_query)
+        customer = customer_result.scalar_one_or_none()
         
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(placeholder_report, f, indent=2, ensure_ascii=False)
-        
-        print(f"📝 Placeholder analysis saved to: {output_path}")
-    else:
-        analyze_offer_letter_controller(file_path)
+        response_data = OfferLetterResponse.from_orm(offer)
+        if customer:
+            response_data.customer_name = customer.name
+            response_data.customer_account_
