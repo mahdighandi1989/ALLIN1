@@ -172,6 +172,18 @@ update-deps:
 	pip-compile requirements.in
 	pip-compile requirements-dev.in
 
+# Generate requirements files from setup.py or requirements.in
+requirements:
+	@if [ -f requirements.in ]; then \
+		pip-compile requirements.in; \
+	else \
+		echo "Creating requirements.txt from current environment"; \
+		pip freeze > requirements.txt; \
+	fi
+	@if [ -f requirements-dev.in ]; then \
+		pip-compile requirements-dev.in; \
+	fi
+
 # CI/CD helpers
 ci-install:
 	pip install --upgrade pip
@@ -198,8 +210,3 @@ seed:
 # Health check
 health:
 	curl -f http://localhost:8000/api/health || echo "Application is not running"
-
-# Generate requirements files
-requirements:
-	pip-compile --output-file requirements.txt pyproject.toml
-	pip-compile --extra dev --output-file requirements-dev.txt pyproject.toml
