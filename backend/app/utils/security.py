@@ -1,4 +1,4 @@
-"""Security Utilities - Password hashing and JWT"""
+"""Security utilities for password hashing and JWT token management"""
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
@@ -14,14 +14,15 @@ import uuid
 from app.config import settings
 from app.database import get_db
 
-# Password hashing
+# Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# OAuth2
+# OAuth2 security scheme
 security = HTTPBearer()
 
 
 class TokenData(BaseModel):
+    """Token payload data model"""
     user_id: str
     username: str
     
