@@ -81,9 +81,24 @@ run:
 dev:
 	uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
 
-# Database operations
+# Database operations with input validation
 migrate:
-	@read -p "Enter migration message: " msg; \
+	@echo "Creating new database migration..."
+	@echo "Please enter migration message (alphanumeric, spaces, hyphens, underscores only):"
+	@read -r msg; \
+	if [ -z "$$msg" ]; then \
+		echo "Error: Migration message cannot be empty"; \
+		exit 1; \
+	fi; \
+	if ! echo "$$msg" | grep -qE '^[a-zA-Z0-9 _-]+$$'; then \
+		echo "Error: Migration message contains invalid characters. Only alphanumeric, spaces, hyphens, and underscores allowed."; \
+		exit 1; \
+	fi; \
+	if [ $${#msg} -gt 100 ]; then \
+		echo "Error: Migration message too long (max 100 characters)"; \
+		exit 1; \
+	fi; \
+	echo "Creating migration: $$msg"; \
 	alembic revision --autogenerate -m "$$msg"
 
 upgrade:
@@ -123,12 +138,41 @@ logs:
 backup:
 	@echo "Creating database backup..."
 	@mkdir -p backups
-	@pg_dump $(DATABASE_URL) > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@if [ -z "$$DATABASE_URL" ]; then \
+		echo "Error: DATABASE_URL environment variable not set"; \
+		exit 1; \
+	fi
+	@pg_dump "$$DATABASE_URL" > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "Backup created in backups/ directory"
 
 restore:
-	@read -p "Enter backup file path: " backup_file; \
-	psql $(DATABASE_URL) < $$backup_file
+	@echo "Database restore operation"
+	@echo "Please enter backup file path (must exist and end with .sql):"
+	@read -r backup_file; \
+	if [ -z "$$backup_file" ]; then \
+		echo "Error: Backup file path cannot be empty"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$backup_file" ]; then \
+		echo "Error: Backup file does not exist: $$backup_file"; \
+		exit 1; \
+	fi; \
+	if ! echo "$$backup_file" | grep -qE '\.sql$$'; then \
+		echo "Error: Backup file must have .sql extension"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$DATABASE_URL" ]; then \
+		echo "Error: DATABASE_URL environment variable not set"; \
+		exit 1; \
+	fi; \
+	echo "Restoring from: $$backup_file"; \
+	echo "WARNING: This will overwrite the current database. Continue? (y/N)"; \
+	read -r confirm; \
+	if [ "$$confirm" != "y" ] && [ "$$confirm" != "Y" ]; then \
+		echo "Restore cancelled"; \
+		exit 0; \
+	fi; \
+	psql "$$DATABASE_URL" < "$$backup_file"
 
 # Performance testing
 load-test:
@@ -172,18 +216,6 @@ update-deps:
 	pip-compile requirements.in
 	pip-compile requirements-dev.in
 
-# Generate requirements files from setup.py or requirements.in
-requirements:
-	@if [ -f requirements.in ]; then \
-		pip-compile requirements.in; \
-	else \
-		echo "Creating requirements.txt from current environment"; \
-		pip freeze > requirements.txt; \
-	fi
-	@if [ -f requirements-dev.in ]; then \
-		pip-compile requirements-dev.in; \
-	fi
-
 # CI/CD helpers
 ci-install:
 	pip install --upgrade pip
@@ -210,3 +242,8 @@ seed:
 # Health check
 health:
 	curl -f http://localhost:8000/api/health || echo "Application is not running"
+
+# Generate requirements files
+requirements:
+	pip-compile --output-file requirements.txt pyproject.toml
+	pip-compile --extra dev --output-file requirements-dev.txt pyproject.toml
