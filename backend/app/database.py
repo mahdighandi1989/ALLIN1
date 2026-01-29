@@ -1,3 +1,4 @@
+"""Database configuration and session management"""
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
@@ -8,7 +9,7 @@ from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-# Database URL configuration - use environment variable without fallback credentials
+# Database URL configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -59,6 +60,7 @@ Base = declarative_base()
 
 # Dependency for getting async database session
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session dependency for FastAPI"""
     async with AsyncSessionLocal() as session:
         try:
             yield session
