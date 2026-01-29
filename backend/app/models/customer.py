@@ -10,7 +10,8 @@ from app.database import Base
 
 
 def generate_id():
-    return "C" + str(uuid.uuid4())[:7].upper()
+    """Generate unique customer ID with full UUID for collision prevention"""
+    return "C" + str(uuid.uuid4()).replace('-', '').upper()
 
 
 class AccountType(str, enum.Enum):
@@ -28,7 +29,7 @@ class CustomerStatus(str, enum.Enum):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(String(8), primary_key=True, default=generate_id)
+    id = Column(String(33), primary_key=True, default=generate_id)  # C + 32 hex chars
     account_no = Column(String(50), unique=True, nullable=False, index=True)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))  # Arabic/Persian name
