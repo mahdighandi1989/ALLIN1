@@ -9,8 +9,8 @@ import enum
 from app.database import Base
 
 
-def generate_id():
-    """Generate unique customer ID with full UUID for collision prevention"""
+def generate_customer_id():
+    """Generate a unique customer ID with 'C' prefix and full UUID to avoid collisions"""
     return "C" + str(uuid.uuid4()).replace('-', '').upper()
 
 
@@ -29,7 +29,7 @@ class CustomerStatus(str, enum.Enum):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(String(33), primary_key=True, default=generate_id)  # C + 32 hex chars
+    id = Column(String(33), primary_key=True, default=generate_customer_id)
     account_no = Column(String(50), unique=True, nullable=False, index=True)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))  # Arabic/Persian name
