@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://localhost/banking"
 
-    # JWT - Generate secure secret key if not provided
-    SECRET_KEY: str = ""
+    # JWT - Use secure random key generation
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or secrets.token_urlsafe(64)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
@@ -24,35 +24,25 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Generate secure secret key if not provided via environment
-        if not self.SECRET_KEY:
-            # Check if we're in production (common production indicators)
-            is_production = any([
-                os.getenv('ENVIRONMENT') == 'production',
-                os.getenv('ENV') == 'production',
-                os.getenv('FLASK_ENV') == 'production',
-                os.getenv('NODE_ENV') == 'production',
-                not self.DEBUG,
-                'render.com' in os.getenv('RENDER_EXTERNAL_URL', ''),
-                os.getenv('RAILWAY_ENVIRONMENT') == 'production'
-            ])
-            
-            if is_production:
-                # In production, SECRET_KEY must be explicitly set
-                raise ValueError(
-                    "SECRET_KEY must be set in production environment. "
-                    "Generate a secure key using: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
-                )
-            else:
-                # Development only: generate a warning and use a session key
-                print("⚠️  WARNING: Using auto-generated SECRET_KEY for development. Set SECRET_KEY in .env for production!")
-                self.SECRET_KEY = secrets.token_urlsafe(32)
-
     def get_cors_origins(self) -> list[str]:
         """Parse CORS origins from comma-separated string"""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    def model_post_init(self, __context) -> None:
+        """Post-initialization validation"""
+        # Ensure SECRET_KEY is secure in production
+        if not self.DEBUG and (not self.SECRET_KEY or self.SECRET_KEY == "change-me-in-production"):
+            raise ValueError(
+                "SECRET_KEY must be set to a secure value in production environment. "
+                "Set SECRET_KEY environment variable or update the configuration."
+            )
+        
+        # Validate SECRET_KEY length for security
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters long for security. "
+                "Use a cryptographically secure random string."
+            )
 
 
 @lru_cache()
