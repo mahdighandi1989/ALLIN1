@@ -1,0 +1,47 @@
+# Backend
+backend/__pycache__
+backend/.pytest_cache
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.Python
+backend/env
+backend/venv
+backend/.venv
+backend/pip-log.txt
+backend/pip-delete-this-directory.txt
+backend/.tox
+backend/.coverage
+backend/.coverage.*
+backend/.cache
+backend/nosetests.xml
+backend/coverage.xml
+backend/*.cover
+backend/*.log
+backend/.git
+backend/.mypy_cache
+backend/.pytest_cache
+backend/.hypothesis
+
+# Frontend
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/build
+frontend/dist
+frontend/*.log
+frontend/.DS_Store
+frontend/.env*.local
+frontend/.vercel
+frontend/.turbo
+
+# General
+.git
+.gitignore
+README.md
+.env
+.env.local
+.env.production
+.env.development
+docker-compose*.yml
+Dockerfile*
