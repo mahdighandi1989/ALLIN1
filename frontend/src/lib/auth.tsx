@@ -29,19 +29,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const userData = await authApi.me()
         setUser(userData)
-      } catch {
+      } catch (error) {
+        // Clear invalid token and user data
         localStorage.removeItem('token')
+        setUser(null)
+        console.warn('Invalid token detected, clearing authentication state')
       }
     }
     setLoading(false)
   }
 
   const login = async (username: string, password: string) => {
-    const data = await authApi.login(username, password)
-    localStorage.setItem('token', data.access_token)
-    const userData = await authApi.me()
-    setUser(userData)
-    router.push('/dashboard')
+    try {
+      const data = await authApi.login(username, password)
+      localStorage.setItem('token', data.access_token)
+      const userData = await authApi.me()
+      setUser(userData)
+      router.push('/dashboard')
+    } catch (error) {
+      // Ensure no partial state on login failure
+      localStorage.removeItem('token')
+      setUser(null)
+      throw error
+    }
   }
 
   const logout = () => {
