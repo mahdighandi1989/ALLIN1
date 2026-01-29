@@ -1,6 +1,6 @@
 """Security Utilities - Password hashing and JWT"""
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,10 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.database import get_db
+
+# Type checking imports to avoid circular imports
+if TYPE_CHECKING:
+    from app.models.user import User
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -69,8 +73,9 @@ def verify_access_token(token: str) -> Optional[dict]:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
-):
+) -> "User":
     """Get current authenticated user"""
+    # Import here to avoid circular import
     from app.models.user import User
     
     credentials_exception = HTTPException(
@@ -103,7 +108,7 @@ async def get_current_user(
     return user
 
 
-async def get_current_active_user(current_user = Depends(get_current_user)):
+async def get_current_active_user(current_user: "User" = Depends(get_current_user)) -> "User":
     """Get current active user"""
     if not current_user.is_active:
         raise HTTPException(
@@ -113,7 +118,7 @@ async def get_current_active_user(current_user = Depends(get_current_user)):
     return current_user
 
 
-def get_token_data(current_user = Depends(get_current_user)) -> TokenData:
+def get_token_data(current_user: "User" = Depends(get_current_user)) -> TokenData:
     """Get token data from current user"""
     return TokenData(
         user_id=current_user.id,
