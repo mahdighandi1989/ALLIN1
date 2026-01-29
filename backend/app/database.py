@@ -8,20 +8,27 @@ from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-# Database URL configuration
+# Database URL configuration - secure defaults without hardcoded credentials
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql+asyncpg://user:password@localhost/allin1_db"
+    "postgresql+asyncpg://localhost/allin1_db"
 )
+
+# Validate that DATABASE_URL is properly configured
+if not DATABASE_URL or DATABASE_URL == "postgresql+asyncpg://localhost/allin1_db":
+    logger.warning(
+        "DATABASE_URL not configured or using default. "
+        "Please set DATABASE_URL environment variable with proper credentials."
+    )
 
 # Create async engine with connection pool
 async_engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Set to False in production
-    pool_size=20,
-    max_overflow=30,
+    echo=os.getenv("DB_ECHO", "false").lower() == "true",  # Only enable in development
+    pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "30")),
     pool_pre_ping=True,
-    pool_recycle=3600,
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "3600")),
 )
 
 # Create async session maker
@@ -36,11 +43,11 @@ AsyncSessionLocal = async_sessionmaker(
 # Create sync engine for migrations
 sync_engine = create_engine(
     DATABASE_URL.replace("+asyncpg", ""),
-    echo=True,
-    pool_size=20,
-    max_overflow=30,
+    echo=os.getenv("DB_ECHO", "false").lower() == "true",
+    pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "30")),
     pool_pre_ping=True,
-    pool_recycle=3600,
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "3600")),
 )
 
 # Create sync session maker for migrations
