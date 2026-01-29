@@ -1,431 +1,362 @@
-```vba
-' OFFER_LETTER_CONTROLLER.xlsm
-' Banking Offer Letter Management System
-' Author: ALLIN1 Development Team
-' Version: 1.0.0
+"""
+Security Enhancement Module for Banking Data Management
+Replaces Excel-based data handling with secure database operations
+"""
 
-Option Explicit
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, or_, func
+from cryptography.fernet import Fernet
+import json
+import logging
+import hashlib
+import secrets
+from enum import Enum
 
-' Global Variables
-Public Const APP_NAME As String = "Offer Letter Controller"
-Public Const APP_VERSION As String = "1.0.0"
-Public Const API_BASE_URL As String = "http://localhost:8000/api"
+from app.database import get_db
+from app.models.customer import Customer
+from app.models.facility import Facility
+from app.utils.security import get_current_user
 
-' Main Controller Class
-Public Type OfferLetterData
-    CustomerID As String
-    CustomerName As String
-    AccountNumber As String
-    FacilityType As String
-    Amount As Double
-    Currency As String
-    InterestRate As Double
-    Tenor As Integer
-    StartDate As Date
-    ExpiryDate As Date
-    Branch As String
-    RelationshipManager As String
-    Status As String
-    CreatedDate As Date
-    LastModified As Date
-End Type
+logger = logging.getLogger(__name__)
 
-' Initialize Application
-Sub InitializeApplication()
-    On Error GoTo ErrorHandler
-    
-    Application.ScreenUpdating = False
-    Application.Calculation = xlCalculationManual
-    
-    ' Setup worksheets
-    Call SetupWorksheets
-    
-    ' Load configuration
-    Call LoadConfiguration
-    
-    ' Initialize forms
-    Call InitializeForms
-    
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    
-    MsgBox "Offer Letter Controller initialized successfully!", vbInformation, APP_NAME
-    Exit Sub
-    
-ErrorHandler:
-    Application.ScreenUpdating = True
-    Application.Calculation = xlCalculationAutomatic
-    MsgBox "Error initializing application: " & Err.Description, vbCritical, APP_NAME
-End Sub
+class DataClassification(str, Enum):
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"
 
-' Setup Required Worksheets
-Sub SetupWorksheets()
-    On Error Resume Next
+class EncryptionService:
+    """Secure encryption service for sensitive banking data"""
     
-    Dim ws As Worksheet
-    Dim wsNames As Variant
-    Dim i As Integer
+    def __init__(self, encryption_key: Optional[str] = None):
+        if encryption_key:
+            self.cipher = Fernet(encryption_key.encode())
+        else:
+            # Generate a new key for this session
+            key = Fernet.generate_key()
+            self.cipher = Fernet(key)
+            logger.warning("Using session-based encryption key. Set ENCRYPTION_KEY in production.")
     
-    wsNames = Array("Dashboard", "Customers", "Facilities", "OfferLetters", "Templates", "Config")
+    def encrypt_data(self, data: str) -> str:
+        """Encrypt sensitive data"""
+        try:
+            return self.cipher.encrypt(data.encode()).decode()
+        except Exception as e:
+            logger.error(f"Encryption failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Data encryption failed"
+            )
     
-    For i = 0 To UBound(wsNames)
-        Set ws = Nothing
-        Set ws = ThisWorkbook.Worksheets(wsNames(i))
+    def decrypt_data(self, encrypted_data: str) -> str:
+        """Decrypt sensitive data"""
+        try:
+            return self.cipher.decrypt(encrypted_data.encode()).decode()
+        except Exception as e:
+            logger.error(f"Decryption failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Data decryption failed"
+            )
+
+class AuditLogger:
+    """Secure audit logging for banking operations"""
+    
+    @staticmethod
+    async def log_access(
+        user_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        data_classification: DataClassification,
+        db: AsyncSession,
+        additional_info: Optional[Dict] = None
+    ):
+        """Log access to sensitive banking data"""
+        audit_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_id": user_id,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "data_classification": data_classification.value,
+            "ip_address": additional_info.get("ip_address") if additional_info else None,
+            "user_agent": additional_info.get("user_agent") if additional_info else None,
+            "session_id": additional_info.get("session_id") if additional_info else None
+        }
         
-        If ws Is Nothing Then
-            Set ws = ThisWorkbook.Worksheets.Add
-            ws.Name = wsNames(i)
-            Call SetupWorksheetHeaders(ws, wsNames(i))
-        End If
-    Next i
-    
-    ' Set Dashboard as active sheet
-    ThisWorkbook.Worksheets("Dashboard").Activate
-End Sub
+        # In production, this should be sent to a secure audit system
+        logger.info(f"AUDIT: {json.dumps(audit_entry)}")
 
-' Setup Worksheet Headers
-Sub SetupWorksheetHeaders(ws As Worksheet, sheetType As String)
-    On Error GoTo ErrorHandler
+class SecureDataManager:
+    """Secure replacement for Excel-based data management"""
     
-    ws.Cells.Clear
+    def __init__(self, db: AsyncSession, encryption_service: EncryptionService):
+        self.db = db
+        self.encryption = encryption_service
     
-    Select Case sheetType
-        Case "Dashboard"
-            Call SetupDashboardHeaders(ws)
-        Case "Customers"
-            Call SetupCustomersHeaders(ws)
-        Case "Facilities"
-            Call SetupFacilitiesHeaders(ws)
-        Case "OfferLetters"
-            Call SetupOfferLettersHeaders(ws)
-        Case "Templates"
-            Call SetupTemplatesHeaders(ws)
-        Case "Config"
-            Call SetupConfigHeaders(ws)
-    End Select
-    
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Error setting up headers for " & sheetType & ": " & Err.Description, vbCritical
-End Sub
-
-' Setup Dashboard Headers
-Sub SetupDashboardHeaders(ws As Worksheet)
-    With ws
-        .Range("A1").Value = "OFFER LETTER CONTROLLER DASHBOARD"
-        .Range("A1").Font.Size = 16
-        .Range("A1").Font.Bold = True
+    async def secure_customer_export(
+        self,
+        user_id: str,
+        filters: Optional[Dict] = None,
+        include_sensitive: bool = False
+    ) -> Dict[str, Any]:
+        """Securely export customer data with proper access controls"""
         
-        .Range("A3").Value = "Total Customers:"
-        .Range("A4").Value = "Active Facilities:"
-        .Range("A5").Value = "Pending Offers:"
-        .Range("A6").Value = "Last Updated:"
+        # Log access attempt
+        await AuditLogger.log_access(
+            user_id=user_id,
+            action="EXPORT_CUSTOMERS",
+            resource_type="customer_data",
+            resource_id="bulk_export",
+            data_classification=DataClassification.CONFIDENTIAL
+        )
         
-        .Range("C3").Value = "=COUNTA(Customers!A:A)-1"
-        .Range("C4").Value = "=COUNTIF(Facilities!H:H,""Active"")"
-        .Range("C5").Value = "=COUNTIF(OfferLetters!M:M,""Pending"")"
-        .Range("C6").Value = "=NOW()"
+        try:
+            # Build secure query with filters
+            query = select(Customer).where(Customer.is_deleted == False)
+            
+            if filters:
+                if filters.get("account_type"):
+                    query = query.where(Customer.account_type == filters["account_type"])
+                if filters.get("branch"):
+                    query = query.where(Customer.branch == filters["branch"])
+                if filters.get("status"):
+                    query = query.where(Customer.status == filters["status"])
+            
+            result = await self.db.execute(query)
+            customers = result.scalars().all()
+            
+            # Sanitize data based on access level
+            sanitized_data = []
+            for customer in customers:
+                customer_data = {
+                    "id": customer.id,
+                    "account_no": customer.account_no,
+                    "name": customer.name,
+                    "account_type": customer.account_type.value,
+                    "status": customer.status.value,
+                    "branch": customer.branch,
+                    "created_at": customer.created_at.isoformat() if customer.created_at else None
+                }
+                
+                # Include sensitive data only if authorized
+                if include_sensitive:
+                    customer_data.update({
+                        "email": customer.email,
+                        "phone": customer.phone,
+                        "mobile": customer.mobile,
+                        "address": customer.address
+                    })
+                else:
+                    # Mask sensitive information
+                    customer_data.update({
+                        "email": self._mask_email(customer.email) if customer.email else None,
+                        "phone": self._mask_phone(customer.phone) if customer.phone else None
+                    })
+                
+                sanitized_data.append(customer_data)
+            
+            return {
+                "data": sanitized_data,
+                "total_records": len(sanitized_data),
+                "export_timestamp": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.CONFIDENTIAL.value,
+                "includes_sensitive_data": include_sensitive
+            }
+            
+        except Exception as e:
+            logger.error(f"Secure export failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure data export failed"
+            )
+    
+    async def secure_facility_report(
+        self,
+        user_id: str,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        facility_types: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Generate secure facility reports with encryption"""
         
-        .Range("A8").Value = "Quick Actions:"
-        .Range("A9").Value = "• New Customer"
-        .Range("A10").Value = "• New Facility"
-        .Range("A11").Value = "• Generate Offer Letter"
-        .Range("A12").Value = "• View Reports"
-    End With
-End Sub
-
-' Setup Customers Headers
-Sub SetupCustomersHeaders(ws As Worksheet)
-    Dim headers As Variant
-    Dim i As Integer
-    
-    headers = Array("Customer ID", "Customer Name", "Account Number", "Account Type", _
-                   "Status", "Email", "Phone", "Branch", "Relationship Manager", _
-                   "Created Date", "Last Modified")
-    
-    With ws
-        For i = 0 To UBound(headers)
-            .Cells(1, i + 1).Value = headers(i)
-            .Cells(1, i + 1).Font.Bold = True
-            .Cells(1, i + 1).Interior.Color = RGB(200, 200, 200)
-        Next i
+        await AuditLogger.log_access(
+            user_id=user_id,
+            action="GENERATE_FACILITY_REPORT",
+            resource_type="facility_data",
+            resource_id="bulk_report",
+            data_classification=DataClassification.RESTRICTED
+        )
         
-        .Range("A1:K1").AutoFilter
-        .Columns.AutoFit
-    End With
-End Sub
-
-' Setup Facilities Headers
-Sub SetupFacilitiesHeaders(ws As Worksheet)
-    Dim headers As Variant
-    Dim i As Integer
+        try:
+            # Build query with date and type filters
+            query = select(Facility).where(Facility.is_deleted == False)
+            
+            if date_from:
+                query = query.where(Facility.created_at >= date_from)
+            if date_to:
+                query = query.where(Facility.created_at <= date_to)
+            if facility_types:
+                query = query.where(Facility.facility_type.in_(facility_types))
+            
+            result = await self.db.execute(query)
+            facilities = result.scalars().all()
+            
+            # Calculate aggregated metrics
+            total_amount = sum(float(f.amount) for f in facilities if f.amount)
+            total_outstanding = sum(float(f.outstanding) for f in facilities if f.outstanding)
+            
+            # Group by facility type
+            type_breakdown = {}
+            for facility in facilities:
+                f_type = facility.facility_type.value
+                if f_type not in type_breakdown:
+                    type_breakdown[f_type] = {
+                        "count": 0,
+                        "total_amount": 0,
+                        "total_outstanding": 0
+                    }
+                type_breakdown[f_type]["count"] += 1
+                type_breakdown[f_type]["total_amount"] += float(facility.amount) if facility.amount else 0
+                type_breakdown[f_type]["total_outstanding"] += float(facility.outstanding) if facility.outstanding else 0
+            
+            # Encrypt sensitive financial data
+            encrypted_totals = {
+                "total_amount": self.encryption.encrypt_data(str(total_amount)),
+                "total_outstanding": self.encryption.encrypt_data(str(total_outstanding))
+            }
+            
+            return {
+                "summary": {
+                    "total_facilities": len(facilities),
+                    "encrypted_totals": encrypted_totals,
+                    "type_breakdown": type_breakdown
+                },
+                "report_timestamp": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.RESTRICTED.value,
+                "encryption_applied": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Secure facility report failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure facility report generation failed"
+            )
     
-    headers = Array("Facility ID", "Customer ID", "Facility Type", "Amount", _
-                   "Currency", "Interest Rate", "Tenor (Months)", "Status", _
-                   "Start Date", "Expiry Date", "Created Date", "Last Modified")
-    
-    With ws
-        For i = 0 To UBound(headers)
-            .Cells(1, i + 1).Value = headers(i)
-            .Cells(1, i + 1).Font.Bold = True
-            .Cells(1, i + 1).Interior.Color = RGB(200, 200, 200)
-        Next i
+    def _mask_email(self, email: str) -> str:
+        """Mask email address for privacy"""
+        if not email or "@" not in email:
+            return "***@***.***"
         
-        .Range("A1:L1").AutoFilter
-        .Columns.AutoFit
-    End With
-End Sub
-
-' Setup Offer Letters Headers
-Sub SetupOfferLettersHeaders(ws As Worksheet)
-    Dim headers As Variant
-    Dim i As Integer
-    
-    headers = Array("Offer ID", "Customer ID", "Facility ID", "Offer Date", _
-                   "Expiry Date", "Amount", "Currency", "Interest Rate", _
-                   "Terms", "Template Used", "Generated By", "Approved By", _
-                   "Status", "Created Date", "Last Modified")
-    
-    With ws
-        For i = 0 To UBound(headers)
-            .Cells(1, i + 1).Value = headers(i)
-            .Cells(1, i + 1).Font.Bold = True
-            .Cells(1, i + 1).Interior.Color = RGB(200, 200, 200)
-        Next i
+        local, domain = email.split("@", 1)
+        if len(local) <= 2:
+            masked_local = "*" * len(local)
+        else:
+            masked_local = local[0] + "*" * (len(local) - 2) + local[-1]
         
-        .Range("A1:O1").AutoFilter
-        .Columns.AutoFit
-    End With
-End Sub
-
-' Setup Templates Headers
-Sub SetupTemplatesHeaders(ws As Worksheet)
-    Dim headers As Variant
-    Dim i As Integer
-    
-    headers = Array("Template ID", "Template Name", "Facility Type", _
-                   "Template Content", "Variables", "Active", "Created Date", "Last Modified")
-    
-    With ws
-        For i = 0 To UBound(headers)
-            .Cells(1, i + 1).Value = headers(i)
-            .Cells(1, i + 1).Font.Bold = True
-            .Cells(1, i + 1).Interior.Color = RGB(200, 200, 200)
-        Next i
+        domain_parts = domain.split(".")
+        if len(domain_parts) >= 2:
+            masked_domain = "*" * len(domain_parts[0]) + "." + domain_parts[-1]
+        else:
+            masked_domain = "***.***"
         
-        .Range("A1:H1").AutoFilter
-        .Columns.AutoFit
-    End With
-End Sub
-
-' Setup Configuration Headers
-Sub SetupConfigHeaders(ws As Worksheet)
-    With ws
-        .Range("A1").Value = "Configuration Settings"
-        .Range("A1").Font.Size = 14
-        .Range("A1").Font.Bold = True
+        return f"{masked_local}@{masked_domain}"
+    
+    def _mask_phone(self, phone: str) -> str:
+        """Mask phone number for privacy"""
+        if not phone:
+            return "***-***-****"
         
-        .Range("A3").Value = "Setting"
-        .Range("B3").Value = "Value"
-        .Range("C3").Value = "Description"
+        # Remove non-digits
+        digits = ''.join(filter(str.isdigit, phone))
+        if len(digits) < 4:
+            return "*" * len(digits)
         
-        .Range("A3:C3").Font.Bold = True
-        .Range("A3:C3").Interior.Color = RGB(200, 200, 200)
+        # Show last 4 digits only
+        return "*" * (len(digits) - 4) + digits[-4:]
+
+class SecureFileHandler:
+    """Secure file handling to replace Excel operations"""
+    
+    def __init__(self, encryption_service: EncryptionService):
+        self.encryption = encryption_service
+    
+    async def create_secure_backup(
+        self,
+        data: Dict[str, Any],
+        backup_type: str,
+        user_id: str
+    ) -> str:
+        """Create encrypted backup of banking data"""
         
-        .Range("A4").Value = "API_URL"
-        .Range("B4").Value = API_BASE_URL
-        .Range("C4").Value = "Backend API URL"
-        
-        .Range("A5").Value = "DEFAULT_CURRENCY"
-        .Range("B5").Value = "AED"
-        .Range("C5").Value = "Default currency for new facilities"
-        
-        .Range("A6").Value = "DEFAULT_TENOR"
-        .Range("B6").Value = "12"
-        .Range("C6").Value = "Default tenor in months"
-        
-        .Range("A7").Value = "AUTO_SAVE"
-        .Range("B7").Value = "TRUE"
-        .Range("C7").Value = "Enable auto-save functionality"
-    End With
-End Sub
+        try:
+            # Create backup metadata
+            backup_metadata = {
+                "backup_id": secrets.token_hex(16),
+                "backup_type": backup_type,
+                "created_by": user_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.RESTRICTED.value,
+                "checksum": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+            }
+            
+            # Encrypt the entire data payload
+            encrypted_data = self.encryption.encrypt_data(json.dumps(data))
+            
+            # In production, store in secure backup system
+            backup_package = {
+                "metadata": backup_metadata,
+                "encrypted_data": encrypted_data
+            }
+            
+            # Log backup creation
+            await AuditLogger.log_access(
+                user_id=user_id,
+                action="CREATE_BACKUP",
+                resource_type="data_backup",
+                resource_id=backup_metadata["backup_id"],
+                data_classification=DataClassification.RESTRICTED
+            )
+            
+            return backup_metadata["backup_id"]
+            
+        except Exception as e:
+            logger.error(f"Secure backup creation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure backup creation failed"
+            )
 
-' Load Configuration Settings
-Sub LoadConfiguration()
-    On Error GoTo ErrorHandler
+class AccessControlManager:
+    """Role-based access control for banking data"""
     
-    Dim configWs As Worksheet
-    Set configWs = ThisWorkbook.Worksheets("Config")
+    ROLE_PERMISSIONS = {
+        "viewer": ["read"],
+        "operator": ["read", "create", "update"],
+        "manager": ["read", "create", "update", "delete", "export"],
+        "admin": ["read", "create", "update", "delete", "export", "backup", "audit"]
+    }
     
-    ' Load settings into global variables or registry
-    ' Implementation depends on specific requirements
+    @classmethod
+    def check_permission(cls, user_role: str, required_permission: str) -> bool:
+        """Check if user role has required permission"""
+        user_permissions = cls.ROLE_PERMISSIONS.get(user_role, [])
+        return required_permission in user_permissions
     
-    Exit Sub
-    
-ErrorHandler:
-    MsgBox "Error loading configuration: " & Err.Description, vbWarning
-End Sub
+    @classmethod
+    def get_data_access_level(cls, user_role: str) -> DataClassification:
+        """Get maximum data classification level for user role"""
+        if user_role in ["admin", "manager"]:
+            return DataClassification.RESTRICTED
+        elif user_role == "operator":
+            return DataClassification.CONFIDENTIAL
+        else:
+            return DataClassification.INTERNAL
 
-' Initialize Forms and Controls
-Sub InitializeForms()
-    On Error Resume Next
-    
-    ' Initialize any UserForms or ActiveX controls
-    ' This is a placeholder for form initialization
-    
-End Sub
-
-' Customer Management Functions
-Function AddCustomer(customerData As OfferLetterData) As Boolean
-    On Error GoTo ErrorHandler
-    
-    Dim ws As Worksheet
-    Dim nextRow As Long
-    
-    Set ws = ThisWorkbook.Worksheets("Customers")
-    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
-    
-    With ws
-        .Cells(nextRow, 1).Value = GenerateCustomerID()
-        .Cells(nextRow, 2).Value = customerData.CustomerName
-        .Cells(nextRow, 3).Value = customerData.AccountNumber
-        .Cells(nextRow, 4).Value = "Retail" ' Default account type
-        .Cells(nextRow, 5).Value = "Active"
-        .Cells(nextRow, 6).Value = "" ' Email
-        .Cells(nextRow, 7).Value = "" ' Phone
-        .Cells(nextRow, 8).Value = customerData.Branch
-        .Cells(nextRow, 9).Value = customerData.RelationshipManager
-        .Cells(nextRow, 10).Value = Now()
-        .Cells(nextRow, 11).Value = Now()
-    End With
-    
-    AddCustomer = True
-    Exit Function
-    
-ErrorHandler:
-    AddCustomer = False
-    MsgBox "Error adding customer: " & Err.Description, vbCritical
-End Function
-
-' Generate unique Customer ID
-Function GenerateCustomerID() As String
-    Dim ws As Worksheet
-    Dim lastRow As Long
-    Dim lastID As String
-    Dim newNumber As Long
-    
-    Set ws = ThisWorkbook.Worksheets("Customers")
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    
-    If lastRow = 1 Then
-        GenerateCustomerID = "C0001"
-    Else
-        lastID = ws.Cells(lastRow, 1).Value
-        newNumber = Val(Right(lastID, 4)) + 1
-        GenerateCustomerID = "C" & Format(newNumber, "0000")
-    End If
-End Function
-
-' Facility Management Functions
-Function AddFacility(facilityData As OfferLetterData) As Boolean
-    On Error GoTo ErrorHandler
-    
-    Dim ws As Worksheet
-    Dim nextRow As Long
-    
-    Set ws = ThisWorkbook.Worksheets("Facilities")
-    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
-    
-    With ws
-        .Cells(nextRow, 1).Value = GenerateFacilityID()
-        .Cells(nextRow, 2).Value = facilityData.CustomerID
-        .Cells(nextRow, 3).Value = facilityData.FacilityType
-        .Cells(nextRow, 4).Value = facilityData.Amount
-        .Cells(nextRow, 5).Value = facilityData.Currency
-        .Cells(nextRow, 6).Value = facilityData.InterestRate
-        .Cells(nextRow, 7).Value = facilityData.Tenor
-        .Cells(nextRow, 8).Value = "Active"
-        .Cells(nextRow, 9).Value = facilityData.StartDate
-        .Cells(nextRow, 10).Value = facilityData.ExpiryDate
-        .Cells(nextRow, 11).Value = Now()
-        .Cells(nextRow, 12).Value = Now()
-    End With
-    
-    AddFacility = True
-    Exit Function
-    
-ErrorHandler:
-    AddFacility = False
-    MsgBox "Error adding facility: " & Err.Description, vbCritical
-End Function
-
-' Generate unique Facility ID
-Function GenerateFacilityID() As String
-    Dim ws As Worksheet
-    Dim lastRow As Long
-    Dim lastID As String
-    Dim newNumber As Long
-    
-    Set ws = ThisWorkbook.Worksheets("Facilities")
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    
-    If lastRow = 1 Then
-        GenerateFacilityID = "F0001"
-    Else
-        lastID = ws.Cells(lastRow, 1).Value
-        newNumber = Val(Right(lastID, 4)) + 1
-        GenerateFacilityID = "F" & Format(newNumber, "0000")
-    End If
-End Function
-
-' Offer Letter Generation
-Function GenerateOfferLetter(customerID As String, facilityID As String) As Boolean
-    On Error GoTo ErrorHandler
-    
-    Dim customerData As OfferLetterData
-    Dim facilityData As OfferLetterData
-    Dim templateContent As String
-    
-    ' Get customer and facility data
-    If Not GetCustomerData(customerID, customerData) Then
-        MsgBox "Customer not found!", vbCritical
-        GenerateOfferLetter = False
-        Exit Function
-    End If
-    
-    If Not GetFacilityData(facilityID, facilityData) Then
-        MsgBox "Facility not found!", vbCritical
-        GenerateOfferLetter = False
-        Exit Function
-    End If
-    
-    ' Get template
-    templateContent = GetTemplate(facilityData.FacilityType)
-    If templateContent = "" Then
-        MsgBox "Template not found for facility type: " & facilityData.FacilityType, vbCritical
-        GenerateOfferLetter = False
-        Exit Function
-    End If
-    
-    ' Generate offer letter
-    Dim offerContent As String
-    offerContent = ProcessTemplate(templateContent, customerData, facilityData)
-    
-    ' Save offer letter
-    If SaveOfferLetter(customerID, facilityID, offerContent) Then
-        GenerateOfferLetter = True
-        MsgBox "Offer letter generated successfully!", vbInformation
-    Else
-        GenerateOfferLetter = False
-    End If
-    
-    Exit Function
-    
-ErrorHandler:
-    GenerateOfferLetter = False
-    MsgBox "Error generating offer letter: " & Err.Description, vbCritical
-End Function
-
-' Get Customer Data
-Function GetCustomerData(customerID As String, ByRef customerData As
+# Initialize global services
+encryption_service = EncryptionService()
