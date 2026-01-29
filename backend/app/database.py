@@ -8,27 +8,24 @@ from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-# Database URL configuration - secure defaults without hardcoded credentials
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+asyncpg://localhost/allin1_db"
-)
+# Database URL configuration - use environment variable without fallback credentials
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Validate that DATABASE_URL is properly configured
-if not DATABASE_URL or DATABASE_URL == "postgresql+asyncpg://localhost/allin1_db":
-    logger.warning(
-        "DATABASE_URL not configured or using default. "
-        "Please set DATABASE_URL environment variable with proper credentials."
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL environment variable is required. "
+        "Please set it to your PostgreSQL connection string. "
+        "Example: postgresql+asyncpg://username:password@host:port/database"
     )
 
 # Create async engine with connection pool
 async_engine = create_async_engine(
     DATABASE_URL,
-    echo=os.getenv("DB_ECHO", "false").lower() == "true",  # Only enable in development
-    pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "30")),
+    echo=bool(os.getenv("DATABASE_ECHO", "false").lower() == "true"),
+    pool_size=int(os.getenv("DATABASE_POOL_SIZE", "20")),
+    max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "30")),
     pool_pre_ping=True,
-    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "3600")),
+    pool_recycle=int(os.getenv("DATABASE_POOL_RECYCLE", "3600")),
 )
 
 # Create async session maker
@@ -43,11 +40,11 @@ AsyncSessionLocal = async_sessionmaker(
 # Create sync engine for migrations
 sync_engine = create_engine(
     DATABASE_URL.replace("+asyncpg", ""),
-    echo=os.getenv("DB_ECHO", "false").lower() == "true",
-    pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "30")),
+    echo=bool(os.getenv("DATABASE_ECHO", "false").lower() == "true"),
+    pool_size=int(os.getenv("DATABASE_POOL_SIZE", "20")),
+    max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "30")),
     pool_pre_ping=True,
-    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "3600")),
+    pool_recycle=int(os.getenv("DATABASE_POOL_RECYCLE", "3600")),
 )
 
 # Create sync session maker for migrations
