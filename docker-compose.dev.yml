@@ -1,0 +1,39 @@
+# Development override
+version: '3.8'
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      target: development
+    environment:
+      - DEBUG=true
+      - DATABASE_ECHO=true
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - ./backend:/app:rw
+      - backend_dev_logs:/app/logs
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
+
+  frontend:
+    build:
+      target: development
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app:rw
+      - /app/node_modules
+      - /app/.next
+    command: ["npm", "run", "dev"]
+
+volumes:
+  postgres_dev_data:
+  backend_dev_logs:
