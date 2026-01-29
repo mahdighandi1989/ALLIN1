@@ -58,9 +58,6 @@ export default function LoginPage() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        <p className="mt-4 text-center text-sm text-gray-500">
-          Default: admin / admin123
-        </p>
       </div>
     </div>
   )
