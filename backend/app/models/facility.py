@@ -60,3 +60,19 @@ class Facility(Base):
 
     # Relationships
     customer = relationship("Customer", back_populates="facilities")
+
+    def __repr__(self) -> str:
+        """String representation for debugging and logging"""
+        return (
+            f"<Facility(id='{self.id}', "
+            f"customer_id='{self.customer_id}', "
+            f"type='{self.facility_type.value if self.facility_type else None}', "
+            f"amount={self.amount}, "
+            f"currency='{self.currency}', "
+            f"status='{self.status.value if self.status else None}')>"
+        )
+
+    def __str__(self) -> str:
+        """Human-readable string representation"""
+        name_part = f" - {self.name}" if self.name else ""
+        return f"Facility {self.id} ({self.facility_type.value if self.facility_type else 'Unknown'}){name_part}"
