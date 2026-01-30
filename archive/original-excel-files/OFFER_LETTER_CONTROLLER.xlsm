@@ -1,362 +1,417 @@
+```python
 """
-Security Enhancement Module for Banking Data Management
-Replaces Excel-based data handling with secure database operations
+Offer Letter Controller Module
+Replacement for Excel-based offer letter management with secure database operations
 """
 
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from fastapi import HTTPException, status
+from datetime import datetime, date, timedelta
+from typing import Dict, List, Optional, Any, Union
+from fastapi import HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
-from cryptography.fernet import Fernet
+from sqlalchemy import select, and_, or_, func, text
+from sqlalchemy.orm import selectinload
+from pydantic import BaseModel, Field, validator
+from decimal import Decimal
 import json
 import logging
-import hashlib
-import secrets
+import uuid
 from enum import Enum
 
 from app.database import get_db
-from app.models.customer import Customer
-from app.models.facility import Facility
-from app.utils.security import get_current_user
+from app.models.customer import Customer, AccountType, CustomerStatus
+from app.models.facility import Facility, FacilityType, FacilityStatus
+from app.utils.security import get_current_user, TokenData
 
 logger = logging.getLogger(__name__)
 
-class DataClassification(str, Enum):
-    PUBLIC = "public"
-    INTERNAL = "internal"
-    CONFIDENTIAL = "confidential"
-    RESTRICTED = "restricted"
 
-class EncryptionService:
-    """Secure encryption service for sensitive banking data"""
-    
-    def __init__(self, encryption_key: Optional[str] = None):
-        if encryption_key:
-            self.cipher = Fernet(encryption_key.encode())
-        else:
-            # Generate a new key for this session
-            key = Fernet.generate_key()
-            self.cipher = Fernet(key)
-            logger.warning("Using session-based encryption key. Set ENCRYPTION_KEY in production.")
-    
-    def encrypt_data(self, data: str) -> str:
-        """Encrypt sensitive data"""
-        try:
-            return self.cipher.encrypt(data.encode()).decode()
-        except Exception as e:
-            logger.error(f"Encryption failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Data encryption failed"
-            )
-    
-    def decrypt_data(self, encrypted_data: str) -> str:
-        """Decrypt sensitive data"""
-        try:
-            return self.cipher.decrypt(encrypted_data.encode()).decode()
-        except Exception as e:
-            logger.error(f"Decryption failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Data decryption failed"
-            )
+class OfferLetterStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
 
-class AuditLogger:
-    """Secure audit logging for banking operations"""
-    
-    @staticmethod
-    async def log_access(
-        user_id: str,
-        action: str,
-        resource_type: str,
-        resource_id: str,
-        data_classification: DataClassification,
-        db: AsyncSession,
-        additional_info: Optional[Dict] = None
-    ):
-        """Log access to sensitive banking data"""
-        audit_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "user_id": user_id,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "data_classification": data_classification.value,
-            "ip_address": additional_info.get("ip_address") if additional_info else None,
-            "user_agent": additional_info.get("user_agent") if additional_info else None,
-            "session_id": additional_info.get("session_id") if additional_info else None
-        }
-        
-        # In production, this should be sent to a secure audit system
-        logger.info(f"AUDIT: {json.dumps(audit_entry)}")
 
-class SecureDataManager:
-    """Secure replacement for Excel-based data management"""
-    
-    def __init__(self, db: AsyncSession, encryption_service: EncryptionService):
+class OfferLetterType(str, Enum):
+    NEW_FACILITY = "new_facility"
+    RENEWAL = "renewal"
+    ENHANCEMENT = "enhancement"
+    RESTRUCTURE = "restructure"
+    AMENDMENT = "amendment"
+
+
+class DocumentType(str, Enum):
+    OFFER_LETTER = "offer_letter"
+    TERMS_CONDITIONS = "terms_conditions"
+    SECURITY_DOCUMENTS = "security_documents"
+    APPROVAL_MEMO = "approval_memo"
+    CUSTOMER_ACCEPTANCE = "customer_acceptance"
+
+
+class ApprovalLevel(str, Enum):
+    RELATIONSHIP_MANAGER = "relationship_manager"
+    BRANCH_MANAGER = "branch_manager"
+    CREDIT_MANAGER = "credit_manager"
+    REGIONAL_MANAGER = "regional_manager"
+    HEAD_OFFICE = "head_office"
+
+
+class OfferLetterTemplate(BaseModel):
+    """Template for offer letter generation"""
+    template_id: str
+    template_name: str
+    facility_type: FacilityType
+    template_content: str
+    variables: Dict[str, Any]
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OfferLetterCreate(BaseModel):
+    """Schema for creating offer letter"""
+    customer_id: str = Field(..., min_length=1, max_length=50)
+    facility_id: Optional[str] = Field(None, max_length=50)
+    offer_type: OfferLetterType
+    facility_type: FacilityType
+    proposed_amount: Decimal = Field(..., gt=0, decimal_places=2)
+    currency: str = Field(default="AED", max_length=10)
+    proposed_rate: Optional[Decimal] = Field(None, ge=0, decimal_places=3)
+    tenor_months: Optional[int] = Field(None, ge=1, le=360)
+    security_details: Optional[str] = Field(None, max_length=2000)
+    special_conditions: Optional[str] = Field(None, max_length=2000)
+    expiry_date: date = Field(..., description="Offer validity date")
+    template_id: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = Field(None, max_length=1000)
+
+    @validator('expiry_date')
+    def validate_expiry_date(cls, v):
+        if v <= date.today():
+            raise ValueError('Expiry date must be in the future')
+        if v > date.today() + timedelta(days=90):
+            raise ValueError('Expiry date cannot be more than 90 days in the future')
+        return v
+
+
+class OfferLetterUpdate(BaseModel):
+    """Schema for updating offer letter"""
+    proposed_amount: Optional[Decimal] = Field(None, gt=0, decimal_places=2)
+    proposed_rate: Optional[Decimal] = Field(None, ge=0, decimal_places=3)
+    tenor_months: Optional[int] = Field(None, ge=1, le=360)
+    security_details: Optional[str] = Field(None, max_length=2000)
+    special_conditions: Optional[str] = Field(None, max_length=2000)
+    expiry_date: Optional[date] = None
+    notes: Optional[str] = Field(None, max_length=1000)
+
+    @validator('expiry_date')
+    def validate_expiry_date(cls, v):
+        if v and v <= date.today():
+            raise ValueError('Expiry date must be in the future')
+        return v
+
+
+class ApprovalAction(BaseModel):
+    """Schema for approval actions"""
+    action: str = Field(..., regex="^(approve|reject|return)$")
+    comments: Optional[str] = Field(None, max_length=1000)
+    conditions: Optional[str] = Field(None, max_length=2000)
+
+
+class OfferLetterResponse(BaseModel):
+    """Response schema for offer letter"""
+    id: str
+    offer_number: str
+    customer_id: str
+    customer_name: Optional[str]
+    facility_id: Optional[str]
+    offer_type: OfferLetterType
+    facility_type: FacilityType
+    status: OfferLetterStatus
+    proposed_amount: Decimal
+    currency: str
+    proposed_rate: Optional[Decimal]
+    tenor_months: Optional[int]
+    security_details: Optional[str]
+    special_conditions: Optional[str]
+    expiry_date: date
+    generated_date: datetime
+    approved_date: Optional[datetime]
+    sent_date: Optional[datetime]
+    accepted_date: Optional[datetime]
+    created_by: str
+    approved_by: Optional[str]
+    current_approval_level: Optional[ApprovalLevel]
+    notes: Optional[str]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class OfferLetterController:
+    """Controller for offer letter management operations"""
+
+    def __init__(self, db: AsyncSession):
         self.db = db
-        self.encryption = encryption_service
-    
-    async def secure_customer_export(
-        self,
-        user_id: str,
-        filters: Optional[Dict] = None,
-        include_sensitive: bool = False
+
+    async def create_offer_letter(
+        self, 
+        offer_data: OfferLetterCreate, 
+        current_user: TokenData
     ) -> Dict[str, Any]:
-        """Securely export customer data with proper access controls"""
-        
-        # Log access attempt
-        await AuditLogger.log_access(
-            user_id=user_id,
-            action="EXPORT_CUSTOMERS",
-            resource_type="customer_data",
-            resource_id="bulk_export",
-            data_classification=DataClassification.CONFIDENTIAL
-        )
-        
+        """Create new offer letter"""
         try:
-            # Build secure query with filters
-            query = select(Customer).where(Customer.is_deleted == False)
-            
-            if filters:
-                if filters.get("account_type"):
-                    query = query.where(Customer.account_type == filters["account_type"])
-                if filters.get("branch"):
-                    query = query.where(Customer.branch == filters["branch"])
-                if filters.get("status"):
-                    query = query.where(Customer.status == filters["status"])
-            
-            result = await self.db.execute(query)
-            customers = result.scalars().all()
-            
-            # Sanitize data based on access level
-            sanitized_data = []
-            for customer in customers:
-                customer_data = {
-                    "id": customer.id,
-                    "account_no": customer.account_no,
-                    "name": customer.name,
-                    "account_type": customer.account_type.value,
-                    "status": customer.status.value,
-                    "branch": customer.branch,
-                    "created_at": customer.created_at.isoformat() if customer.created_at else None
-                }
-                
-                # Include sensitive data only if authorized
-                if include_sensitive:
-                    customer_data.update({
-                        "email": customer.email,
-                        "phone": customer.phone,
-                        "mobile": customer.mobile,
-                        "address": customer.address
-                    })
-                else:
-                    # Mask sensitive information
-                    customer_data.update({
-                        "email": self._mask_email(customer.email) if customer.email else None,
-                        "phone": self._mask_phone(customer.phone) if customer.phone else None
-                    })
-                
-                sanitized_data.append(customer_data)
-            
-            return {
-                "data": sanitized_data,
-                "total_records": len(sanitized_data),
-                "export_timestamp": datetime.utcnow().isoformat(),
-                "data_classification": DataClassification.CONFIDENTIAL.value,
-                "includes_sensitive_data": include_sensitive
+            # Verify customer exists
+            customer_query = select(Customer).where(
+                and_(
+                    Customer.id == offer_data.customer_id,
+                    Customer.is_deleted == False
+                )
+            )
+            customer_result = await self.db.execute(customer_query)
+            customer = customer_result.scalar_one_or_none()
+
+            if not customer:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Customer not found"
+                )
+
+            # Verify facility if provided
+            facility = None
+            if offer_data.facility_id:
+                facility_query = select(Facility).where(
+                    and_(
+                        Facility.id == offer_data.facility_id,
+                        Facility.customer_id == offer_data.customer_id,
+                        Facility.is_deleted == False
+                    )
+                )
+                facility_result = await self.db.execute(facility_query)
+                facility = facility_result.scalar_one_or_none()
+
+                if not facility:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Facility not found for this customer"
+                    )
+
+            # Generate offer number
+            offer_number = await self._generate_offer_number()
+
+            # Create offer letter record
+            offer_letter_data = {
+                "id": str(uuid.uuid4())[:8].upper(),
+                "offer_number": offer_number,
+                "customer_id": offer_data.customer_id,
+                "facility_id": offer_data.facility_id,
+                "offer_type": offer_data.offer_type,
+                "facility_type": offer_data.facility_type,
+                "status": OfferLetterStatus.DRAFT,
+                "proposed_amount": offer_data.proposed_amount,
+                "currency": offer_data.currency,
+                "proposed_rate": offer_data.proposed_rate,
+                "tenor_months": offer_data.tenor_months,
+                "security_details": offer_data.security_details,
+                "special_conditions": offer_data.special_conditions,
+                "expiry_date": offer_data.expiry_date,
+                "generated_date": datetime.utcnow(),
+                "created_by": current_user.user_id,
+                "current_approval_level": ApprovalLevel.RELATIONSHIP_MANAGER,
+                "notes": offer_data.notes,
+                "created_at": datetime.utcnow()
             }
-            
+
+            # Insert into database (would need actual OfferLetter model)
+            insert_query = text("""
+                INSERT INTO offer_letters (
+                    id, offer_number, customer_id, facility_id, offer_type, 
+                    facility_type, status, proposed_amount, currency, proposed_rate,
+                    tenor_months, security_details, special_conditions, expiry_date,
+                    generated_date, created_by, current_approval_level, notes, created_at
+                ) VALUES (
+                    :id, :offer_number, :customer_id, :facility_id, :offer_type,
+                    :facility_type, :status, :proposed_amount, :currency, :proposed_rate,
+                    :tenor_months, :security_details, :special_conditions, :expiry_date,
+                    :generated_date, :created_by, :current_approval_level, :notes, :created_at
+                )
+            """)
+
+            await self.db.execute(insert_query, offer_letter_data)
+            await self.db.commit()
+
+            # Log offer letter creation
+            logger.info(f"Offer letter {offer_number} created by {current_user.user_id}")
+
+            return {
+                "id": offer_letter_data["id"],
+                "offer_number": offer_number,
+                "status": OfferLetterStatus.DRAFT,
+                "message": "Offer letter created successfully"
+            }
+
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Secure export failed: {e}")
+            await self.db.rollback()
+            logger.error(f"Failed to create offer letter: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Secure data export failed"
+                detail="Failed to create offer letter"
             )
-    
-    async def secure_facility_report(
+
+    async def get_offer_letters(
         self,
-        user_id: str,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
-        facility_types: Optional[List[str]] = None
+        customer_id: Optional[str] = None,
+        status: Optional[OfferLetterStatus] = None,
+        offer_type: Optional[OfferLetterType] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        skip: int = 0,
+        limit: int = 100,
+        current_user: TokenData = None
     ) -> Dict[str, Any]:
-        """Generate secure facility reports with encryption"""
-        
-        await AuditLogger.log_access(
-            user_id=user_id,
-            action="GENERATE_FACILITY_REPORT",
-            resource_type="facility_data",
-            resource_id="bulk_report",
-            data_classification=DataClassification.RESTRICTED
-        )
-        
+        """Get offer letters with filtering"""
         try:
-            # Build query with date and type filters
-            query = select(Facility).where(Facility.is_deleted == False)
+            # Build base query
+            base_query = """
+                SELECT ol.*, c.name as customer_name, c.account_no
+                FROM offer_letters ol
+                JOIN customers c ON ol.customer_id = c.id
+                WHERE ol.is_deleted = FALSE AND c.is_deleted = FALSE
+            """
             
+            params = {}
+            conditions = []
+
+            # Apply filters
+            if customer_id:
+                conditions.append("ol.customer_id = :customer_id")
+                params["customer_id"] = customer_id
+
+            if status:
+                conditions.append("ol.status = :status")
+                params["status"] = status.value
+
+            if offer_type:
+                conditions.append("ol.offer_type = :offer_type")
+                params["offer_type"] = offer_type.value
+
             if date_from:
-                query = query.where(Facility.created_at >= date_from)
+                conditions.append("ol.generated_date >= :date_from")
+                params["date_from"] = date_from
+
             if date_to:
-                query = query.where(Facility.created_at <= date_to)
-            if facility_types:
-                query = query.where(Facility.facility_type.in_(facility_types))
-            
-            result = await self.db.execute(query)
-            facilities = result.scalars().all()
-            
-            # Calculate aggregated metrics
-            total_amount = sum(float(f.amount) for f in facilities if f.amount)
-            total_outstanding = sum(float(f.outstanding) for f in facilities if f.outstanding)
-            
-            # Group by facility type
-            type_breakdown = {}
-            for facility in facilities:
-                f_type = facility.facility_type.value
-                if f_type not in type_breakdown:
-                    type_breakdown[f_type] = {
-                        "count": 0,
-                        "total_amount": 0,
-                        "total_outstanding": 0
-                    }
-                type_breakdown[f_type]["count"] += 1
-                type_breakdown[f_type]["total_amount"] += float(facility.amount) if facility.amount else 0
-                type_breakdown[f_type]["total_outstanding"] += float(facility.outstanding) if facility.outstanding else 0
-            
-            # Encrypt sensitive financial data
-            encrypted_totals = {
-                "total_amount": self.encryption.encrypt_data(str(total_amount)),
-                "total_outstanding": self.encryption.encrypt_data(str(total_outstanding))
-            }
-            
+                conditions.append("ol.generated_date <= :date_to")
+                params["date_to"] = date_to
+
+            if conditions:
+                base_query += " AND " + " AND ".join(conditions)
+
+            # Get total count
+            count_query = f"SELECT COUNT(*) FROM ({base_query}) as counted"
+            count_result = await self.db.execute(text(count_query), params)
+            total = count_result.scalar() or 0
+
+            # Apply pagination and ordering
+            query = f"{base_query} ORDER BY ol.generated_date DESC LIMIT :limit OFFSET :skip"
+            params.update({"limit": limit, "skip": skip})
+
+            result = await self.db.execute(text(query), params)
+            offer_letters = [dict(row._mapping) for row in result.fetchall()]
+
             return {
-                "summary": {
-                    "total_facilities": len(facilities),
-                    "encrypted_totals": encrypted_totals,
-                    "type_breakdown": type_breakdown
-                },
-                "report_timestamp": datetime.utcnow().isoformat(),
-                "data_classification": DataClassification.RESTRICTED.value,
-                "encryption_applied": True
+                "items": offer_letters,
+                "total": total,
+                "page": (skip // limit) + 1,
+                "page_size": limit,
+                "pages": (total + limit - 1) // limit
             }
-            
+
         except Exception as e:
-            logger.error(f"Secure facility report failed: {e}")
+            logger.error(f"Failed to retrieve offer letters: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Secure facility report generation failed"
+                detail="Failed to retrieve offer letters"
             )
-    
-    def _mask_email(self, email: str) -> str:
-        """Mask email address for privacy"""
-        if not email or "@" not in email:
-            return "***@***.***"
-        
-        local, domain = email.split("@", 1)
-        if len(local) <= 2:
-            masked_local = "*" * len(local)
-        else:
-            masked_local = local[0] + "*" * (len(local) - 2) + local[-1]
-        
-        domain_parts = domain.split(".")
-        if len(domain_parts) >= 2:
-            masked_domain = "*" * len(domain_parts[0]) + "." + domain_parts[-1]
-        else:
-            masked_domain = "***.***"
-        
-        return f"{masked_local}@{masked_domain}"
-    
-    def _mask_phone(self, phone: str) -> str:
-        """Mask phone number for privacy"""
-        if not phone:
-            return "***-***-****"
-        
-        # Remove non-digits
-        digits = ''.join(filter(str.isdigit, phone))
-        if len(digits) < 4:
-            return "*" * len(digits)
-        
-        # Show last 4 digits only
-        return "*" * (len(digits) - 4) + digits[-4:]
 
-class SecureFileHandler:
-    """Secure file handling to replace Excel operations"""
-    
-    def __init__(self, encryption_service: EncryptionService):
-        self.encryption = encryption_service
-    
-    async def create_secure_backup(
-        self,
-        data: Dict[str, Any],
-        backup_type: str,
-        user_id: str
-    ) -> str:
-        """Create encrypted backup of banking data"""
-        
+    async def get_offer_letter(
+        self, 
+        offer_id: str, 
+        current_user: TokenData
+    ) -> Dict[str, Any]:
+        """Get specific offer letter"""
         try:
-            # Create backup metadata
-            backup_metadata = {
-                "backup_id": secrets.token_hex(16),
-                "backup_type": backup_type,
-                "created_by": user_id,
-                "created_at": datetime.utcnow().isoformat(),
-                "data_classification": DataClassification.RESTRICTED.value,
-                "checksum": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
-            }
-            
-            # Encrypt the entire data payload
-            encrypted_data = self.encryption.encrypt_data(json.dumps(data))
-            
-            # In production, store in secure backup system
-            backup_package = {
-                "metadata": backup_metadata,
-                "encrypted_data": encrypted_data
-            }
-            
-            # Log backup creation
-            await AuditLogger.log_access(
-                user_id=user_id,
-                action="CREATE_BACKUP",
-                resource_type="data_backup",
-                resource_id=backup_metadata["backup_id"],
-                data_classification=DataClassification.RESTRICTED
-            )
-            
-            return backup_metadata["backup_id"]
-            
+            query = text("""
+                SELECT ol.*, c.name as customer_name, c.account_no,
+                       f.name as facility_name
+                FROM offer_letters ol
+                JOIN customers c ON ol.customer_id = c.id
+                LEFT JOIN facilities f ON ol.facility_id = f.id
+                WHERE ol.id = :offer_id AND ol.is_deleted = FALSE
+            """)
+
+            result = await self.db.execute(query, {"offer_id": offer_id})
+            offer_letter = result.fetchone()
+
+            if not offer_letter:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Offer letter not found"
+                )
+
+            return dict(offer_letter._mapping)
+
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Secure backup creation failed: {e}")
+            logger.error(f"Failed to retrieve offer letter {offer_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Secure backup creation failed"
+                detail="Failed to retrieve offer letter"
             )
 
-class AccessControlManager:
-    """Role-based access control for banking data"""
-    
-    ROLE_PERMISSIONS = {
-        "viewer": ["read"],
-        "operator": ["read", "create", "update"],
-        "manager": ["read", "create", "update", "delete", "export"],
-        "admin": ["read", "create", "update", "delete", "export", "backup", "audit"]
-    }
-    
-    @classmethod
-    def check_permission(cls, user_role: str, required_permission: str) -> bool:
-        """Check if user role has required permission"""
-        user_permissions = cls.ROLE_PERMISSIONS.get(user_role, [])
-        return required_permission in user_permissions
-    
-    @classmethod
-    def get_data_access_level(cls, user_role: str) -> DataClassification:
-        """Get maximum data classification level for user role"""
-        if user_role in ["admin", "manager"]:
-            return DataClassification.RESTRICTED
-        elif user_role == "operator":
-            return DataClassification.CONFIDENTIAL
-        else:
-            return DataClassification.INTERNAL
+    async def update_offer_letter(
+        self,
+        offer_id: str,
+        update_data: OfferLetterUpdate,
+        current_user: TokenData
+    ) -> Dict[str, Any]:
+        """Update offer letter"""
+        try:
+            # Check if offer letter exists and is editable
+            check_query = text("""
+                SELECT status, created_by FROM offer_letters 
+                WHERE id = :offer_id AND is_deleted = FALSE
+            """)
+            result = await self.db.execute(check_query, {"offer_id": offer_id})
+            offer_info = result.fetchone()
 
-# Initialize global services
-encryption_service = EncryptionService()
+            if not offer_info:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Offer letter not found"
+                )
+
+            # Check if offer letter can be edited
+            if offer_info.status not in [OfferLetterStatus.DRAFT, OfferLetterStatus.REJECTED]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Offer letter cannot be edited in current status"
+                )
+
+            # Build update query
+            update_fields = []
+            params = {"offer_id": offer_id, "updated_at": datetime.utcnow()}
+
+            update_data_dict = update_data.model_dump(exclude_unset=True)
+            for field, value in update_data_dict.items():
+                if value is not None:
+                    update_fields.append(f"{field} = :{field}")
+                    params[field] = value
+
+            if not update_fields:
