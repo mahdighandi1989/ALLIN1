@@ -4,7 +4,8 @@ version: '3.8'
 services:
   db:
     environment:
-      - POSTGRES_HOST_AUTH_METHOD=md5
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     restart: always
@@ -13,8 +14,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - allin1_network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
 
   backend:
     build:
@@ -22,6 +27,7 @@ services:
     environment:
       - DEBUG=false
       - DATABASE_ECHO=false
+      - POSTGRES_SSLMODE=require
     volumes:
       - backend_prod_logs:/app/logs
     command: ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--access-logfile", "-", "--error-logfile", "-"]
@@ -31,8 +37,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - allin1_network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "1000:1000"
 
   frontend:
     build:
@@ -45,8 +55,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - allin1_network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+    user: "1000:1000"
 
   # Nginx reverse proxy for production
   nginx:
@@ -64,6 +79,14 @@ services:
     networks:
       - allin1_network
     restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    user: "1000:1000"
 
 volumes:
   postgres_prod_data:
