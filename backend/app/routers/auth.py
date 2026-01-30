@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -40,10 +40,6 @@ class UserRegister(BaseModel):
         if not any(char.isalpha() for char in v):
             raise ValueError('Password must contain at least one letter')
         return v
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
 
 class UserResponse(BaseModel):
     id: str
@@ -208,17 +204,21 @@ async def register_user(user_data: UserRegister, db: AsyncSession = Depends(get_
             detail="Registration failed"
         )
 
-@router.post("/login", response_model=TokenResponse)
-async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get_db)):
-    """Authenticate user and return access token"""
+@router.post("/simple-login", response_model=TokenResponse)
+async def simple_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Simple login endpoint with form data"""
     try:
         # Find user by username
         result = await db.execute(
-            select(User).where(User.username == user_credentials.username.lower())
+            select(User).where(User.username == username.lower())
         )
         user = result.scalar_one_or_none()
         
-        if not user or not verify_password(user_credentials.password, user.hashed_password):
+        if not user or not verify_password(password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password"
@@ -253,6 +253,15 @@ async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
         )
+
+@router.post("/login", response_model=TokenResponse)
+async def login_user(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Standard login endpoint"""
+    return await simple_login(username, password, db)
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
