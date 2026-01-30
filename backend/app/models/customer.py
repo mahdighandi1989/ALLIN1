@@ -54,3 +54,17 @@ class Customer(Base):
 
     # Relationships
     facilities = relationship("Facility", back_populates="customer")
+
+    def __repr__(self) -> str:
+        """String representation for debugging and logging"""
+        return (
+            f"<Customer(id='{self.id}', "
+            f"account_no='{self.account_no}', "
+            f"name='{self.name}', "
+            f"type='{self.account_type.value if self.account_type else None}', "
+            f"status='{self.status.value if self.status else None}')>"
+        )
+
+    def __str__(self) -> str:
+        """Human-readable string representation"""
+        return f"Customer {self.account_no} - {self.name}"
