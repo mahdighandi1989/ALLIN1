@@ -25,18 +25,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     const token = localStorage.getItem('token')
-    if (token) {
-      try {
-        const userData = await authApi.me()
-        setUser(userData)
-      } catch (error) {
-        // Clear invalid token and user data
-        localStorage.removeItem('token')
-        setUser(null)
-        console.warn('Invalid token detected, clearing authentication state')
-      }
+    if (!token) {
+      setLoading(false)
+      return
     }
-    setLoading(false)
+
+    try {
+      const userData = await authApi.me()
+      setUser(userData)
+    } catch (error: any) {
+      // Token is invalid or expired - clean up
+      console.warn('Authentication check failed:', error.response?.data?.detail || error.message)
+      localStorage.removeItem('token')
+      setUser(null)
+      
+      // Only redirect to login if we're on a protected route
+      if (typeof window !== 'undefined') {
+        const currentPath = window.location.pathname
+        const publicPaths = ['/login', '/']
+        if (!publicPaths.includes(currentPath)) {
+          router.push('/login')
+        }
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const login = async (username: string, password: string) => {
@@ -46,8 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = await authApi.me()
       setUser(userData)
       router.push('/dashboard')
-    } catch (error) {
-      // Ensure no partial state on login failure
+    } catch (error: any) {
+      // Ensure any invalid tokens are cleaned up on login failure
       localStorage.removeItem('token')
       setUser(null)
       throw error
