@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-# Database URL configuration - must be provided via environment variable
+# Database URL configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -17,13 +17,6 @@ if not DATABASE_URL:
         "DATABASE_URL environment variable is required. "
         "Please set it to your PostgreSQL connection string. "
         "Example: postgresql+asyncpg://username:password@host:port/database"
-    )
-
-# Validate DATABASE_URL format
-if not DATABASE_URL.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite://", "sqlite+aiosqlite://")):
-    raise ValueError(
-        "DATABASE_URL must be a valid database connection string. "
-        "Supported formats: postgresql://, postgresql+asyncpg://, sqlite://, sqlite+aiosqlite://"
     )
 
 # Create async engine with connection pool
@@ -65,6 +58,7 @@ SessionLocal = sessionmaker(
 # Base class for all models
 Base = declarative_base()
 
+
 # Dependency for getting async database session
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get database session dependency for FastAPI"""
@@ -79,6 +73,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
 
+
 # Function to create all tables (for development)
 async def create_tables():
     """Create all database tables"""
@@ -89,6 +84,7 @@ async def create_tables():
     except Exception as e:
         logger.error(f"Failed to create tables: {e}")
         raise
+
 
 # Function to drop all tables (for development)
 async def drop_tables():
@@ -101,6 +97,7 @@ async def drop_tables():
         logger.error(f"Failed to drop tables: {e}")
         raise
 
+
 # Initialize database
 async def init_db():
     """Initialize database connection and create tables if needed"""
@@ -109,16 +106,17 @@ async def init_db():
         async with async_engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         
-        # Import models to ensure they're registered
+        # Import models to ensure they're registered with Base metadata
         from app.models import User, Customer, Facility
         
-        # Create tables
+        # Create tables if they don't exist
         await create_tables()
         
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+
 
 # Close database connections
 async def close_db():
@@ -129,6 +127,7 @@ async def close_db():
         logger.info("Database connections closed")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
+
 
 # Health check function
 async def check_database_health() -> bool:
@@ -146,3 +145,64 @@ async def check_database_health() -> bool:
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return False
+
+
+# Database utilities
+async def execute_raw_query(query: str, params: dict = None) -> list:
+    """Execute raw SQL query and return results"""
+    try:
+        async with async_engine.begin() as conn:
+            result = await conn.execute(text(query), params or {})
+            return [dict(row._mapping) for row in result.fetchall()]
+    except Exception as e:
+        logger.error(f"Raw query execution failed: {e}")
+        raise
+
+
+async def get_table_info(table_name: str) -> dict:
+    """Get information about a specific table"""
+    try:
+        query = """
+        SELECT 
+            column_name,
+            data_type,
+            is_nullable,
+            column_default
+        FROM information_schema.columns 
+        WHERE table_name = :table_name
+        ORDER BY ordinal_position
+        """
+        columns = await execute_raw_query(query, {"table_name": table_name})
+        
+        count_query = f"SELECT COUNT(*) as row_count FROM {table_name}"
+        count_result = await execute_raw_query(count_query)
+        row_count = count_result[0]["row_count"] if count_result else 0
+        
+        return {
+            "table_name": table_name,
+            "columns": columns,
+            "row_count": row_count
+        }
+    except Exception as e:
+        logger.error(f"Failed to get table info for {table_name}: {e}")
+        raise
+
+
+async def backup_table(table_name: str, backup_suffix: str = None) -> str:
+    """Create a backup of a table"""
+    try:
+        if backup_suffix is None:
+            from datetime import datetime
+            backup_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        backup_table_name = f"{table_name}_backup_{backup_suffix}"
+        
+        async with async_engine.begin() as conn:
+            query = f"CREATE TABLE {backup_table_name} AS SELECT * FROM {table_name}"
+            await conn.execute(text(query))
+        
+        logger.info(f"Table {table_name} backed up to {backup_table_name}")
+        return backup_table_name
+    except Exception as e:
+        logger.error(f"Failed to backup table {table_name}: {e}")
+        raise
