@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -15,16 +15,16 @@ class UserCreate(UserBase):
     """Schema for creating a new user"""
     password: str = Field(..., min_length=8, max_length=100)
     
-    @validator('password')
-    def validate_password_strength(cls, v):
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
         if not any(char.isdigit() for char in v):
             raise ValueError('Password must contain at least one digit')
         if not any(char.isalpha() for char in v):
             raise ValueError('Password must contain at least one letter')
         return v
     
-    class Config:
-        extra = 'forbid'
+    model_config = {"extra": "forbid"}
 
 
 class UserUpdate(BaseModel):
@@ -34,8 +34,9 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     is_active: Optional[bool] = None
     
-    @validator('password')
-    def validate_password_strength(cls, v):
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
             if not any(char.isdigit() for char in v):
                 raise ValueError('Password must contain at least one digit')
@@ -43,8 +44,7 @@ class UserUpdate(BaseModel):
                 raise ValueError('Password must contain at least one letter')
         return v
     
-    class Config:
-        extra = 'forbid'
+    model_config = {"extra": "forbid"}
 
 
 class UserResponse(UserBase):
@@ -53,8 +53,7 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class Token(BaseModel):
