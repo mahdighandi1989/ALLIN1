@@ -243,7 +243,7 @@ seed:
 health:
 	curl -f http://localhost:8000/api/health || echo "Application is not running"
 
-# Generate requirements files
+# Generate requirements files from setup.py/setup.cfg
 requirements:
-	pip-compile --output-file requirements.txt pyproject.toml
-	pip-compile --extra dev --output-file requirements-dev.txt pyproject.toml
+	pip-compile --output-file requirements.txt requirements.in
+	pip-compile --output-file requirements-dev.txt requirements-dev.in
