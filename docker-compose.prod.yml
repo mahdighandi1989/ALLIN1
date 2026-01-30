@@ -13,6 +13,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - allin1_network
 
   backend:
     build:
@@ -29,6 +31,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - allin1_network
 
   frontend:
     build:
@@ -41,6 +45,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - allin1_network
 
   # Nginx reverse proxy for production
   nginx:
@@ -62,3 +68,7 @@ services:
 volumes:
   postgres_prod_data:
   backend_prod_logs:
+
+networks:
+  allin1_network:
+    driver: bridge
