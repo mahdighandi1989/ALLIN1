@@ -46,13 +46,10 @@ api.interceptors.response.use(
 // Auth
 export const authApi = {
   login: async (username: string, password: string) => {
-    // Use URLSearchParams for proper application/x-www-form-urlencoded encoding
-    // FormData is for multipart/form-data, not URL-encoded form data
-    const params = new URLSearchParams()
-    params.append('username', username)
-    params.append('password', password)
-    const res = await api.post('/api/auth/token', params, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    // Send JSON data instead of form data to match backend UserLogin schema
+    const res = await api.post('/api/auth/login', {
+      username,
+      password
     })
     return res.data
   },
