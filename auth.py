@@ -1,3 +1,4 @@
+```python
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -7,11 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import jwt
 from pydantic import BaseModel, EmailStr, validator
+import logging
 
 from ..database import get_db
 from ..models.user import User
 from ..utils.security import hash_password, verify_password
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 security = HTTPBearer()
@@ -94,19 +98,57 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def verify_access_token(token: str) -> Optional[dict]:
+    """Verify JWT token with specific error handling for different JWT errors"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
+        logger.warning(f"JWT token expired for token ending in: ...{token[-10:] if len(token) > 10 else 'short_token'}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.JWTError:
+    except jwt.InvalidTokenError:
+        logger.warning(f"Invalid JWT token format for token ending in: ...{token[-10:] if len(token) > 10 else 'short_token'}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="Invalid token format",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidSignatureError:
+        logger.warning(f"JWT signature verification failed for token ending in: ...{token[-10:] if len(token) > 10 else 'short_token'}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token signature invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.DecodeError:
+        logger.warning(f"JWT decode error for token ending in: ...{token[-10:] if len(token) > 10 else 'short_token'}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token decode failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidKeyError:
+        logger.error("JWT key configuration error - check SECRET_KEY")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token verification configuration error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidAlgorithmError:
+        logger.error("JWT algorithm configuration error")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token algorithm configuration error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Unexpected JWT error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token verification failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -124,17 +166,30 @@ async def get_current_user(
         payload = verify_access_token(credentials.credentials)
         user_id: str = payload.get("user_id")
         if user_id is None:
+            logger.warning("JWT payload missing user_id")
             raise credentials_exception
     except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in token verification: {type(e).__name__}: {str(e)}")
         raise credentials_exception
     
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+    except Exception as e:
+        logger.error(f"Database error while fetching user {user_id}: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error during authentication"
+        )
     
     if user is None:
+        logger.warning(f"User not found for ID: {user_id}")
         raise credentials_exception
     
     if not user.is_active:
+        logger.warning(f"Inactive user attempted access: {user.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Inactive user"
@@ -187,6 +242,8 @@ async def register_user(user_data: UserRegister, db: AsyncSession = Depends(get_
         await db.commit()
         await db.refresh(new_user)
         
+        logger.info(f"New user registered: {new_user.username}")
+        
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
@@ -203,6 +260,7 @@ async def register_user(user_data: UserRegister, db: AsyncSession = Depends(get_
         raise
     except Exception as e:
         await db.rollback()
+        logger.error(f"Registration failed for {user_data.username}: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed"
@@ -219,12 +277,14 @@ async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get
         user = result.scalar_one_or_none()
         
         if not user or not verify_password(user_credentials.password, user.hashed_password):
+            logger.warning(f"Failed login attempt for username: {user_credentials.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password"
             )
         
         if not user.is_active:
+            logger.warning(f"Inactive user login attempt: {user.username}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Account is inactive"
@@ -233,6 +293,8 @@ async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get
         # Update last login
         user.last_login = datetime.utcnow()
         await db.commit()
+        
+        logger.info(f"Successful login: {user.username}")
         
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -249,6 +311,7 @@ async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Login error for {user_credentials.username}: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
@@ -289,12 +352,15 @@ async def update_profile(
         await db.commit()
         await db.refresh(current_user)
         
+        logger.info(f"Profile updated for user: {current_user.username}")
+        
         return UserResponse.from_orm(current_user)
         
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        logger.error(f"Profile update failed for {current_user.username}: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Profile update failed"
@@ -310,6 +376,7 @@ async def change_password(
     try:
         # Verify current password
         if not verify_password(password_data.current_password, current_user.hashed_password):
+            logger.warning(f"Incorrect current password for user: {current_user.username}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current password is incorrect"
@@ -327,12 +394,15 @@ async def change_password(
         
         await db.commit()
         
+        logger.info(f"Password changed for user: {current_user.username}")
+        
         return {"message": "Password changed successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
         await db.rollback()
+        logger.error(f"Password change failed for {current_user.username}: {type(e).__name__}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Password change failed"
@@ -341,42 +411,4 @@ async def change_password(
 @router.post("/logout", response_model=dict)
 async def logout_user(current_user: User = Depends(get_current_active_user)):
     """Logout user (client-side token removal)"""
-    return {"message": "Successfully logged out"}
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Refresh access token"""
-    try:
-        # Update last login
-        current_user.last_login = datetime.utcnow()
-        await db.commit()
-        
-        # Create new access token
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"user_id": current_user.id, "username": current_user.username},
-            expires_delta=access_token_expires
-        )
-        
-        return TokenResponse(
-            access_token=access_token,
-            user=UserResponse.from_orm(current_user)
-        )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Token refresh failed"
-        )
-
-@router.post("/verify", response_model=dict)
-async def verify_token(current_user: User = Depends(get_current_active_user)):
-    """Verify if token is valid"""
-    return {
-        "valid": True,
-        "user_id": current_user.id,
-        "username": current_user.username
-    }
+    logger.info(f"User logged out:
