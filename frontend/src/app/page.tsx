@@ -7,29 +7,45 @@ import { useAuth } from '@/lib/auth'
 export default function HomePage() {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const [redirected, setRedirected] = useState(false)
+  const [hasRedirected, setHasRedirected] = useState(false)
 
   useEffect(() => {
-    if (loading || redirected) return
+    // Prevent multiple redirects and race conditions
+    if (loading || hasRedirected) return
 
-    const performRedirect = () => {
-      setRedirected(true)
-      if (user) {
-        router.push('/dashboard')
-      } else {
-        router.push('/login')
+    const handleRedirect = async () => {
+      try {
+        if (user) {
+          setHasRedirected(true)
+          await router.push('/dashboard')
+        } else {
+          setHasRedirected(true)
+          await router.push('/login')
+        }
+      } catch (error) {
+        // Reset redirect flag if navigation fails
+        setHasRedirected(false)
       }
     }
 
-    // Use setTimeout to ensure state is stable
-    const timeoutId = setTimeout(performRedirect, 0)
-    
-    return () => clearTimeout(timeoutId)
-  }, [user, loading, router, redirected])
+    handleRedirect()
+  }, [user, loading, router, hasRedirected])
+
+  // Reset redirect flag when auth state changes
+  useEffect(() => {
+    if (loading) {
+      setHasRedirected(false)
+    }
+  }, [loading])
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">
+          {loading ? 'Loading...' : hasRedirected ? 'Redirecting...' : 'Initializing...'}
+        </p>
+      </div>
     </div>
   )
 }
