@@ -1,3 +1,4 @@
+```python
 """Tests for customer endpoints"""
 import pytest
 from httpx import AsyncClient
@@ -79,11 +80,18 @@ class TestCustomerEndpoints:
             db_session.add(customer)
         await db_session.commit()
 
-        # Search by name
+        # Search by name - only John Doe contains 'John'
         response = await client.get("/api/customers/?search=John", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert len(data["items"]) == 2  # John Doe and Bob Johnson
+        assert len(data["items"]) == 1  # Fixed: Only John Doe matches
+        assert data["items"][0]["name"] == "John Doe"
+
+        # Search by partial name that matches multiple
+        response = await client.get("/api/customers/?search=J", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2  # John Doe and Jane Smith
 
         # Search by account number
         response = await client.get("/api/customers/?search=ACC001", headers=auth_headers)
@@ -91,6 +99,13 @@ class TestCustomerEndpoints:
         data = response.json()
         assert len(data["items"]) == 1
         assert data["items"][0]["account_no"] == "ACC001"
+
+        # Search by email
+        response = await client.get("/api/customers/?search=jane@example.com", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["email"] == "jane@example.com"
 
     async def test_get_customers_filter_by_type(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
         """Test filtering customers by account type"""
@@ -313,3 +328,43 @@ class TestCustomerEndpoints:
         
         response = await client.post("/api/customers/", json={"account_no": "TEST", "name": "Test"})
         assert response.status_code == 401
+
+    async def test_search_case_insensitive(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
+        """Test search is case insensitive"""
+        customer = Customer(
+            account_no="SEARCH001",
+            name="Mixed Case Customer",
+            email="MixedCase@Example.Com",
+            account_type=AccountType.RETAIL,
+            status=CustomerStatus.ACTIVE
+        )
+        db_session.add(customer)
+        await db_session.commit()
+
+        # Search with different cases
+        for search_term in ["mixed", "MIXED", "Mixed", "case", "CASE"]:
+            response = await client.get(f"/api/customers/?search={search_term}", headers=auth_headers)
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data["items"]) == 1
+            assert data["items"][0]["name"] == "Mixed Case Customer"
+
+    async def test_search_empty_results(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
+        """Test search with no matching results"""
+        customer = Customer(
+            account_no="EMPTY001",
+            name="Test Customer",
+            account_type=AccountType.RETAIL,
+            status=CustomerStatus.ACTIVE
+        )
+        db_session.add(customer)
+        await db_session.commit()
+
+        response = await client.get("/api/customers/?search=nonexistent", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
+        assert len(data["items"]) == 0
+
+    async def test_search_special_characters(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
+        """Test search handles
