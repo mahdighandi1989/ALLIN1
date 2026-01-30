@@ -12,10 +12,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Import your models here
 from app.database import Base
+
 # Import all models to ensure they are registered with Base
-# from app.models.customer import Customer
-# from app.models.account import Account
-# Add other model imports as they are created
+from app.models.user import User
+from app.models.customer import Customer
+from app.models.facility import Facility
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
