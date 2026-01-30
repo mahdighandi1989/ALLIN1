@@ -1,3 +1,4 @@
+```python
 """Tests for facility endpoints"""
 import pytest
 from httpx import AsyncClient
@@ -6,6 +7,7 @@ from datetime import date, datetime
 
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.customer import Customer, AccountType, CustomerStatus
+from app.models.user import User
 
 
 class TestFacilityEndpoints:
@@ -330,6 +332,7 @@ class TestFacilityEndpoints:
         data = response.json()
         assert len(data["items"]) >= 3
 
+    # Authorization tests for different user roles
     async def test_facilities_unauthorized(self, client: AsyncClient):
         """Test accessing facilities without authentication"""
         response = await client.get("/api/facilities/")
@@ -337,3 +340,14 @@ class TestFacilityEndpoints:
         
         response = await client.post("/api/facilities/", json={"customer_id": "TEST", "facility_type": "loan", "amount": 1000})
         assert response.status_code == 401
+        
+        response = await client.put("/api/facilities/TEST123", json={"amount": 2000})
+        assert response.status_code == 401
+        
+        response = await client.delete("/api/facilities/TEST123")
+        assert response.status_code == 401
+
+    async def test_regular_user_can_read_facilities(self, client: AsyncClient, auth_headers: dict, test_facility: Facility):
+        """Test regular user can read facilities"""
+        # Regular user should be able to read facilities
+        response = await client.get("/api/facilities/", headers
