@@ -16,6 +16,10 @@ from ..config import settings
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 security = HTTPBearer()
 
+# JWT Configuration
+JWT_ISSUER = "allin1-banking-system"
+JWT_AUDIENCE = "allin1-api-users"
+
 # Schemas
 class UserRegister(BaseModel):
     username: str
@@ -89,18 +93,79 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire, "iat": datetime.utcnow()})
+    # Add JWT standard claims for security
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "iss": JWT_ISSUER,
+        "aud": JWT_AUDIENCE,
+        "sub": data.get("user_id"),
+        "jti": f"{data.get('user_id')}_{int(datetime.utcnow().timestamp())}"  # JWT ID for token uniqueness
+    })
+    
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 def verify_access_token(token: str) -> Optional[dict]:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # Verify with issuer and audience validation
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "verify_iss": True,
+                "verify_aud": True,
+                "require_exp": True,
+                "require_iat": True,
+                "require_iss": True,
+                "require_aud": True,
+                "require_sub": True
+            }
+        )
+        
+        # Additional validation for required claims
+        if not payload.get("sub"):
+            raise jwt.InvalidTokenError("Missing subject claim")
+        
+        if not payload.get("jti"):
+            raise jwt.InvalidTokenError("Missing JWT ID claim")
+            
         return payload
+        
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidIssuerError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token issuer",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidAudienceError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token audience",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token signature",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.JWTError:
@@ -122,7 +187,7 @@ async def get_current_user(
     
     try:
         payload = verify_access_token(credentials.credentials)
-        user_id: str = payload.get("user_id")
+        user_id: str = payload.get("sub")  # Use 'sub' claim instead of custom 'user_id'
         if user_id is None:
             raise credentials_exception
     except HTTPException:
