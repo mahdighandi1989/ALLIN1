@@ -9,7 +9,7 @@ from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-# Database URL configuration
+# Database URL configuration - must be provided via environment variable
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -17,6 +17,13 @@ if not DATABASE_URL:
         "DATABASE_URL environment variable is required. "
         "Please set it to your PostgreSQL connection string. "
         "Example: postgresql+asyncpg://username:password@host:port/database"
+    )
+
+# Validate DATABASE_URL format
+if not DATABASE_URL.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite://", "sqlite+aiosqlite://")):
+    raise ValueError(
+        "DATABASE_URL must be a valid database connection string. "
+        "Supported formats: postgresql://, postgresql+asyncpg://, sqlite://, sqlite+aiosqlite://"
     )
 
 # Create async engine with connection pool
