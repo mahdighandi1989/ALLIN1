@@ -36,4 +36,12 @@
 - **State**: Zustand + React Query
 - **UI**: Radix UI primitives
 
-## Project Structure
+## Installation
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 14+
+- Redis (optional)
+
+### Backend Setup
