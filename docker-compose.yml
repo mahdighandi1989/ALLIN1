@@ -8,8 +8,8 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-allin1_db}
       POSTGRES_USER: ${POSTGRES_USER:-allin1_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-allin1_pass}
-      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-$(openssl rand -base64 32)}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
@@ -22,6 +22,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
 
   # Backend API Service
   backend:
@@ -30,15 +37,17 @@ services:
       target: ${BUILD_TARGET:-development}
     container_name: allin1_backend
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-allin1_user}:${POSTGRES_PASSWORD:-allin1_pass}@db:5432/${POSTGRES_DB:-allin1_db}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
-      - DEBUG=${DEBUG:-true}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-allin1_user}:${POSTGRES_PASSWORD:-$(openssl rand -base64 32)}@db:5432/${POSTGRES_DB:-allin1_db}
+      - SECRET_KEY=${SECRET_KEY:-$(openssl rand -base64 64)}
+      - DEBUG=${DEBUG:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./backend:/app:${VOLUME_MODE:-rw}
+      - ./backend:/app:${VOLUME_MODE:-ro}
       - backend_logs:/app/logs
     depends_on:
       db:
@@ -51,6 +60,13 @@ services:
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/logs
+    user: "1000:1000"
 
   # Frontend Service
   frontend:
@@ -59,12 +75,13 @@ services:
       target: ${BUILD_TARGET:-development}
     container_name: allin1_frontend
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      - NODE_ENV=${NODE_ENV:-development}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://api.yourdomain.com}
+      - NODE_ENV=${NODE_ENV:-production}
+      - NEXT_TELEMETRY_DISABLED=1
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     volumes:
-      - ./frontend:/app:${VOLUME_MODE:-rw}
+      - ./frontend:/app:${VOLUME_MODE:-ro}
       - /app/node_modules
       - /app/.next
     depends_on:
@@ -72,33 +89,96 @@ services:
     networks:
       - allin1_network
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    user: "1000:1000"
 
-  # Redis (Optional - for caching)
+  # Redis (Optional - for caching and rate limiting)
   redis:
     image: redis:7-alpine
     container_name: allin1_redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-$(openssl rand -base64 32)} --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
       - allin1_network
-    command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-$(openssl rand -base64 32)}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    user: "999:999"
+
+  # Nginx Reverse Proxy (Production)
+  nginx:
+    image: nginx:alpine
+    container_name: allin1_nginx
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - allin1_network
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    profiles:
+      - production
 
 volumes:
   postgres_data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/postgres
   redis_data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/redis
   backend_logs:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/logs
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/nginx
 
 networks:
   allin1_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    driver_opts:
+      com.docker.network.bridge.name: allin1_br
