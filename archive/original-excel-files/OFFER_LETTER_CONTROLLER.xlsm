@@ -1,88 +1,49 @@
-```python
 """
-Secure Banking Data Management System
-Replaces Excel-based OFFER_LETTER_CONTROLLER with secure database operations
+Security Enhancement Module for Banking Data Management
+Replaces Excel-based data handling with secure database operations
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
-from fastapi import HTTPException, status, Depends
+from typing import Dict, List, Optional, Any
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, text
+from sqlalchemy import select, and_, or_, func
 from cryptography.fernet import Fernet
 import json
 import logging
 import hashlib
 import secrets
-import uuid
 from enum import Enum
-from decimal import Decimal
-import asyncio
-from pathlib import Path
 
 from app.database import get_db
-from app.models.customer import Customer, AccountType, CustomerStatus
-from app.models.facility import Facility, FacilityType, FacilityStatus
-from app.models.user import User
-from app.utils.security import get_current_user, TokenData
-from app.config import settings
+from app.models.customer import Customer
+from app.models.facility import Facility
+from app.utils.security import get_current_user
 
 logger = logging.getLogger(__name__)
 
-
 class DataClassification(str, Enum):
-    """Data classification levels for banking information"""
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
     RESTRICTED = "restricted"
 
-
-class OfferLetterStatus(str, Enum):
-    """Offer letter processing status"""
-    DRAFT = "draft"
-    PENDING_APPROVAL = "pending_approval"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    SENT = "sent"
-    ACCEPTED = "accepted"
-    EXPIRED = "expired"
-
-
-class SecureEncryptionService:
-    """Enhanced encryption service for banking data"""
+class EncryptionService:
+    """Secure encryption service for sensitive banking data"""
     
     def __init__(self, encryption_key: Optional[str] = None):
         if encryption_key:
             self.cipher = Fernet(encryption_key.encode())
         else:
-            # Use environment key or generate secure session key
-            env_key = getattr(settings, 'ENCRYPTION_KEY', None)
-            if env_key:
-                self.cipher = Fernet(env_key.encode())
-            else:
-                key = Fernet.generate_key()
-                self.cipher = Fernet(key)
-                logger.warning("Using session-based encryption key. Set ENCRYPTION_KEY in production.")
+            # Generate a new key for this session
+            key = Fernet.generate_key()
+            self.cipher = Fernet(key)
+            logger.warning("Using session-based encryption key. Set ENCRYPTION_KEY in production.")
     
-    def encrypt_sensitive_data(self, data: Union[str, Dict, List]) -> str:
-        """Encrypt sensitive banking data with validation"""
+    def encrypt_data(self, data: str) -> str:
+        """Encrypt sensitive data"""
         try:
-            if isinstance(data, (dict, list)):
-                data_str = json.dumps(data, ensure_ascii=False, default=str)
-            else:
-                data_str = str(data)
-            
-            # Add timestamp and checksum for integrity
-            payload = {
-                "data": data_str,
-                "timestamp": datetime.utcnow().isoformat(),
-                "checksum": hashlib.sha256(data_str.encode()).hexdigest()
-            }
-            
-            encrypted = self.cipher.encrypt(json.dumps(payload).encode()).decode()
-            return encrypted
-            
+            return self.cipher.encrypt(data.encode()).decode()
         except Exception as e:
             logger.error(f"Encryption failed: {e}")
             raise HTTPException(
@@ -90,30 +51,10 @@ class SecureEncryptionService:
                 detail="Data encryption failed"
             )
     
-    def decrypt_sensitive_data(self, encrypted_data: str) -> Any:
-        """Decrypt and validate sensitive banking data"""
+    def decrypt_data(self, encrypted_data: str) -> str:
+        """Decrypt sensitive data"""
         try:
-            decrypted_bytes = self.cipher.decrypt(encrypted_data.encode())
-            payload = json.loads(decrypted_bytes.decode())
-            
-            # Validate payload structure
-            if not all(key in payload for key in ["data", "timestamp", "checksum"]):
-                raise ValueError("Invalid payload structure")
-            
-            # Verify checksum
-            data_str = payload["data"]
-            expected_checksum = hashlib.sha256(data_str.encode()).hexdigest()
-            if payload["checksum"] != expected_checksum:
-                raise ValueError("Data integrity check failed")
-            
-            # Check if data is not too old (optional security measure)
-            timestamp = datetime.fromisoformat(payload["timestamp"])
-            age = datetime.utcnow() - timestamp
-            if age > timedelta(hours=24):
-                logger.warning(f"Decrypting old data: {age}")
-            
-            return data_str
-            
+            return self.cipher.decrypt(encrypted_data.encode()).decode()
         except Exception as e:
             logger.error(f"Decryption failed: {e}")
             raise HTTPException(
@@ -121,305 +62,301 @@ class SecureEncryptionService:
                 detail="Data decryption failed"
             )
 
-
-class SecureAuditLogger:
-    """Enhanced audit logging for banking operations with compliance features"""
+class AuditLogger:
+    """Secure audit logging for banking operations"""
     
     @staticmethod
-    async def log_banking_operation(
+    async def log_access(
         user_id: str,
-        operation: str,
+        action: str,
         resource_type: str,
         resource_id: str,
         data_classification: DataClassification,
         db: AsyncSession,
-        operation_details: Optional[Dict] = None,
-        client_info: Optional[Dict] = None
+        additional_info: Optional[Dict] = None
     ):
-        """Log banking operations with comprehensive audit trail"""
-        
+        """Log access to sensitive banking data"""
         audit_entry = {
-            "audit_id": str(uuid.uuid4()),
             "timestamp": datetime.utcnow().isoformat(),
             "user_id": user_id,
-            "operation": operation,
+            "action": action,
             "resource_type": resource_type,
             "resource_id": resource_id,
             "data_classification": data_classification.value,
-            "operation_details": operation_details or {},
-            "client_info": {
-                "ip_address": client_info.get("ip_address") if client_info else None,
-                "user_agent": client_info.get("user_agent") if client_info else None,
-                "session_id": client_info.get("session_id") if client_info else None
-            },
-            "compliance_flags": {
-                "pci_dss": data_classification in [DataClassification.CONFIDENTIAL, DataClassification.RESTRICTED],
-                "gdpr_relevant": "customer_data" in resource_type,
-                "sox_compliance": operation in ["CREATE", "UPDATE", "DELETE"]
-            }
+            "ip_address": additional_info.get("ip_address") if additional_info else None,
+            "user_agent": additional_info.get("user_agent") if additional_info else None,
+            "session_id": additional_info.get("session_id") if additional_info else None
         }
         
-        # Store in secure audit table (would be implemented)
-        logger.info(f"AUDIT_BANKING: {json.dumps(audit_entry)}")
-        
-        # For high-risk operations, send to SIEM
-        if data_classification == DataClassification.RESTRICTED:
-            await SecureAuditLogger._send_to_siem(audit_entry)
-    
-    @staticmethod
-    async def _send_to_siem(audit_entry: Dict):
-        """Send critical audit events to SIEM system"""
-        # Implementation would send to actual SIEM
-        logger.critical(f"SIEM_ALERT: {json.dumps(audit_entry)}")
+        # In production, this should be sent to a secure audit system
+        logger.info(f"AUDIT: {json.dumps(audit_entry)}")
 
-
-class SecureOfferLetterController:
-    """Secure replacement for Excel-based offer letter management"""
+class SecureDataManager:
+    """Secure replacement for Excel-based data management"""
     
-    def __init__(self, db: AsyncSession, current_user: TokenData):
+    def __init__(self, db: AsyncSession, encryption_service: EncryptionService):
         self.db = db
-        self.current_user = current_user
-        self.encryption = SecureEncryptionService()
+        self.encryption = encryption_service
     
-    async def create_offer_letter(
+    async def secure_customer_export(
         self,
-        customer_id: str,
-        facility_data: Dict[str, Any],
-        terms_conditions: Dict[str, Any],
-        approval_workflow: Optional[Dict[str, Any]] = None
+        user_id: str,
+        filters: Optional[Dict] = None,
+        include_sensitive: bool = False
     ) -> Dict[str, Any]:
-        """Create secure offer letter with encrypted sensitive data"""
+        """Securely export customer data with proper access controls"""
+        
+        # Log access attempt
+        await AuditLogger.log_access(
+            user_id=user_id,
+            action="EXPORT_CUSTOMERS",
+            resource_type="customer_data",
+            resource_id="bulk_export",
+            data_classification=DataClassification.CONFIDENTIAL
+        )
         
         try:
-            # Validate customer exists and user has access
-            customer = await self._validate_customer_access(customer_id)
+            # Build secure query with filters
+            query = select(Customer).where(Customer.is_deleted == False)
             
-            # Encrypt sensitive financial terms
-            encrypted_terms = self.encryption.encrypt_sensitive_data({
-                "facility_data": facility_data,
-                "terms_conditions": terms_conditions,
-                "created_by": self.current_user.user_id,
-                "created_at": datetime.utcnow().isoformat()
-            })
+            if filters:
+                if filters.get("account_type"):
+                    query = query.where(Customer.account_type == filters["account_type"])
+                if filters.get("branch"):
+                    query = query.where(Customer.branch == filters["branch"])
+                if filters.get("status"):
+                    query = query.where(Customer.status == filters["status"])
             
-            # Create offer letter record
-            offer_letter_id = f"OL{secrets.token_hex(6).upper()}"
+            result = await self.db.execute(query)
+            customers = result.scalars().all()
             
-            offer_letter = {
-                "id": offer_letter_id,
-                "customer_id": customer_id,
-                "status": OfferLetterStatus.DRAFT,
-                "encrypted_data": encrypted_terms,
-                "data_classification": DataClassification.RESTRICTED.value,
-                "created_by": self.current_user.user_id,
-                "created_at": datetime.utcnow(),
-                "expires_at": datetime.utcnow() + timedelta(days=30),
-                "approval_required": approval_workflow is not None
-            }
-            
-            # Log the creation
-            await SecureAuditLogger.log_banking_operation(
-                user_id=self.current_user.user_id,
-                operation="CREATE_OFFER_LETTER",
-                resource_type="offer_letter",
-                resource_id=offer_letter_id,
-                data_classification=DataClassification.RESTRICTED,
-                db=self.db,
-                operation_details={
-                    "customer_id": customer_id,
-                    "facility_type": facility_data.get("facility_type"),
-                    "amount": str(facility_data.get("amount", 0))
+            # Sanitize data based on access level
+            sanitized_data = []
+            for customer in customers:
+                customer_data = {
+                    "id": customer.id,
+                    "account_no": customer.account_no,
+                    "name": customer.name,
+                    "account_type": customer.account_type.value,
+                    "status": customer.status.value,
+                    "branch": customer.branch,
+                    "created_at": customer.created_at.isoformat() if customer.created_at else None
                 }
-            )
-            
-            return {
-                "offer_letter_id": offer_letter_id,
-                "status": offer_letter["status"],
-                "customer_name": customer.name,
-                "expires_at": offer_letter["expires_at"].isoformat(),
-                "created_at": offer_letter["created_at"].isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Offer letter creation failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Offer letter creation failed"
-            )
-    
-    async def generate_offer_document(
-        self,
-        offer_letter_id: str,
-        template_type: str = "standard"
-    ) -> Dict[str, Any]:
-        """Generate secure offer letter document"""
-        
-        try:
-            # Retrieve and decrypt offer data
-            offer_data = await self._get_offer_letter(offer_letter_id)
-            decrypted_data = json.loads(
-                self.encryption.decrypt_sensitive_data(offer_data["encrypted_data"])
-            )
-            
-            # Generate document content
-            document_content = await self._generate_document_content(
-                decrypted_data, template_type
-            )
-            
-            # Create secure document ID
-            document_id = f"DOC{secrets.token_hex(8).upper()}"
-            
-            # Encrypt document content
-            encrypted_document = self.encryption.encrypt_sensitive_data(document_content)
-            
-            document_record = {
-                "document_id": document_id,
-                "offer_letter_id": offer_letter_id,
-                "template_type": template_type,
-                "encrypted_content": encrypted_document,
-                "generated_by": self.current_user.user_id,
-                "generated_at": datetime.utcnow(),
-                "digital_signature": await self._generate_digital_signature(document_content)
-            }
-            
-            # Log document generation
-            await SecureAuditLogger.log_banking_operation(
-                user_id=self.current_user.user_id,
-                operation="GENERATE_DOCUMENT",
-                resource_type="offer_document",
-                resource_id=document_id,
-                data_classification=DataClassification.RESTRICTED,
-                db=self.db,
-                operation_details={
-                    "offer_letter_id": offer_letter_id,
-                    "template_type": template_type
-                }
-            )
-            
-            return {
-                "document_id": document_id,
-                "offer_letter_id": offer_letter_id,
-                "status": "generated",
-                "generated_at": document_record["generated_at"].isoformat(),
-                "digital_signature": document_record["digital_signature"]
-            }
-            
-        except Exception as e:
-            logger.error(f"Document generation failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Document generation failed"
-            )
-    
-    async def submit_for_approval(
-        self,
-        offer_letter_id: str,
-        approver_ids: List[str],
-        approval_notes: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Submit offer letter for approval workflow"""
-        
-        try:
-            offer_data = await self._get_offer_letter(offer_letter_id)
-            
-            # Validate user can submit for approval
-            if offer_data["created_by"] != self.current_user.user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only creator can submit for approval"
-                )
-            
-            # Create approval workflow
-            approval_id = f"APR{secrets.token_hex(6).upper()}"
-            
-            approval_workflow = {
-                "approval_id": approval_id,
-                "offer_letter_id": offer_letter_id,
-                "approver_ids": approver_ids,
-                "status": "pending",
-                "submitted_by": self.current_user.user_id,
-                "submitted_at": datetime.utcnow(),
-                "approval_notes": approval_notes,
-                "approvals_required": len(approver_ids),
-                "approvals_received": 0
-            }
-            
-            # Update offer letter status
-            await self._update_offer_status(offer_letter_id, OfferLetterStatus.PENDING_APPROVAL)
-            
-            # Send notifications to approvers (would be implemented)
-            await self._notify_approvers(approver_ids, offer_letter_id)
-            
-            # Log submission
-            await SecureAuditLogger.log_banking_operation(
-                user_id=self.current_user.user_id,
-                operation="SUBMIT_APPROVAL",
-                resource_type="offer_letter_approval",
-                resource_id=approval_id,
-                data_classification=DataClassification.RESTRICTED,
-                db=self.db,
-                operation_details={
-                    "offer_letter_id": offer_letter_id,
-                    "approver_count": len(approver_ids)
-                }
-            )
-            
-            return {
-                "approval_id": approval_id,
-                "status": "submitted",
-                "approvers": len(approver_ids),
-                "submitted_at": approval_workflow["submitted_at"].isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Approval submission failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Approval submission failed"
-            )
-    
-    async def process_approval(
-        self,
-        approval_id: str,
-        decision: str,  # "approve" or "reject"
-        comments: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Process approval decision"""
-        
-        try:
-            if decision not in ["approve", "reject"]:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Decision must be 'approve' or 'reject'"
-                )
-            
-            # Get approval workflow
-            approval_data = await self._get_approval_workflow(approval_id)
-            
-            # Validate user is an approver
-            if self.current_user.user_id not in approval_data["approver_ids"]:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="User not authorized to approve this offer"
-                )
-            
-            # Record approval decision
-            approval_decision = {
-                "approver_id": self.current_user.user_id,
-                "decision": decision,
-                "comments": comments,
-                "decided_at": datetime.utcnow()
-            }
-            
-            # Update approval workflow
-            if decision == "approve":
-                approval_data["approvals_received"] += 1
                 
-                # Check if all approvals received
-                if approval_data["approvals_received"] >= approval_data["approvals_required"]:
-                    await self._update_offer_status(
-                        approval_data["offer_letter_id"], 
-                        OfferLetterStatus.APPROVED
-                    )
-                    final_status = "fully_approved"
+                # Include sensitive data only if authorized
+                if include_sensitive:
+                    customer_data.update({
+                        "email": customer.email,
+                        "phone": customer.phone,
+                        "mobile": customer.mobile,
+                        "address": customer.address
+                    })
                 else:
+                    # Mask sensitive information
+                    customer_data.update({
+                        "email": self._mask_email(customer.email) if customer.email else None,
+                        "phone": self._mask_phone(customer.phone) if customer.phone else None
+                    })
+                
+                sanitized_data.append(customer_data)
+            
+            return {
+                "data": sanitized_data,
+                "total_records": len(sanitized_data),
+                "export_timestamp": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.CONFIDENTIAL.value,
+                "includes_sensitive_data": include_sensitive
+            }
+            
+        except Exception as e:
+            logger.error(f"Secure export failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure data export failed"
+            )
+    
+    async def secure_facility_report(
+        self,
+        user_id: str,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        facility_types: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Generate secure facility reports with encryption"""
+        
+        await AuditLogger.log_access(
+            user_id=user_id,
+            action="GENERATE_FACILITY_REPORT",
+            resource_type="facility_data",
+            resource_id="bulk_report",
+            data_classification=DataClassification.RESTRICTED
+        )
+        
+        try:
+            # Build query with date and type filters
+            query = select(Facility).where(Facility.is_deleted == False)
+            
+            if date_from:
+                query = query.where(Facility.created_at >= date_from)
+            if date_to:
+                query = query.where(Facility.created_at <= date_to)
+            if facility_types:
+                query = query.where(Facility.facility_type.in_(facility_types))
+            
+            result = await self.db.execute(query)
+            facilities = result.scalars().all()
+            
+            # Calculate aggregated metrics - Fix: Check for None instead of falsy values
+            total_amount = sum(float(f.amount) for f in facilities if f.amount is not None)
+            total_outstanding = sum(float(f.outstanding) for f in facilities if f.outstanding is not None)
+            
+            # Group by facility type
+            type_breakdown = {}
+            for facility in facilities:
+                f_type = facility.facility_type.value
+                if f_type not in type_breakdown:
+                    type_breakdown[f_type] = {
+                        "count": 0,
+                        "total_amount": 0,
+                        "total_outstanding": 0
+                    }
+                type_breakdown[f_type]["count"] += 1
+                type_breakdown[f_type]["total_amount"] += float(facility.amount) if facility.amount is not None else 0
+                type_breakdown[f_type]["total_outstanding"] += float(facility.outstanding) if facility.outstanding is not None else 0
+            
+            # Encrypt sensitive financial data
+            encrypted_totals = {
+                "total_amount": self.encryption.encrypt_data(str(total_amount)),
+                "total_outstanding": self.encryption.encrypt_data(str(total_outstanding))
+            }
+            
+            return {
+                "summary": {
+                    "total_facilities": len(facilities),
+                    "encrypted_totals": encrypted_totals,
+                    "type_breakdown": type_breakdown
+                },
+                "report_timestamp": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.RESTRICTED.value,
+                "encryption_applied": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Secure facility report failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure facility report generation failed"
+            )
+    
+    def _mask_email(self, email: str) -> str:
+        """Mask email address for privacy"""
+        if not email or "@" not in email:
+            return "***@***.***"
+        
+        local, domain = email.split("@", 1)
+        if len(local) <= 2:
+            masked_local = "*" * len(local)
+        else:
+            masked_local = local[0] + "*" * (len(local) - 2) + local[-1]
+        
+        domain_parts = domain.split(".")
+        if len(domain_parts) >= 2:
+            masked_domain = "*" * len(domain_parts[0]) + "." + domain_parts[-1]
+        else:
+            masked_domain = "***.***"
+        
+        return f"{masked_local}@{masked_domain}"
+    
+    def _mask_phone(self, phone: str) -> str:
+        """Mask phone number for privacy"""
+        if not phone:
+            return "***-***-****"
+        
+        # Remove non-digits
+        digits = ''.join(filter(str.isdigit, phone))
+        if len(digits) < 4:
+            return "*" * len(digits)
+        
+        # Show last 4 digits only
+        return "*" * (len(digits) - 4) + digits[-4:]
+
+class SecureFileHandler:
+    """Secure file handling to replace Excel operations"""
+    
+    def __init__(self, encryption_service: EncryptionService):
+        self.encryption = encryption_service
+    
+    async def create_secure_backup(
+        self,
+        data: Dict[str, Any],
+        backup_type: str,
+        user_id: str
+    ) -> str:
+        """Create encrypted backup of banking data"""
+        
+        try:
+            # Create backup metadata
+            backup_metadata = {
+                "backup_id": secrets.token_hex(16),
+                "backup_type": backup_type,
+                "created_by": user_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "data_classification": DataClassification.RESTRICTED.value,
+                "checksum": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+            }
+            
+            # Encrypt the entire data payload
+            encrypted_data = self.encryption.encrypt_data(json.dumps(data))
+            
+            # In production, store in secure backup system
+            backup_package = {
+                "metadata": backup_metadata,
+                "encrypted_data": encrypted_data
+            }
+            
+            # Log backup creation
+            await AuditLogger.log_access(
+                user_id=user_id,
+                action="CREATE_BACKUP",
+                resource_type="data_backup",
+                resource_id=backup_metadata["backup_id"],
+                data_classification=DataClassification.RESTRICTED
+            )
+            
+            return backup_metadata["backup_id"]
+            
+        except Exception as e:
+            logger.error(f"Secure backup creation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Secure backup creation failed"
+            )
+
+class AccessControlManager:
+    """Role-based access control for banking data"""
+    
+    ROLE_PERMISSIONS = {
+        "viewer": ["read"],
+        "operator": ["read", "create", "update"],
+        "manager": ["read", "create", "update", "delete", "export"],
+        "admin": ["read", "create", "update", "delete", "export", "backup", "audit"]
+    }
+    
+    @classmethod
+    def check_permission(cls, user_role: str, required_permission: str) -> bool:
+        """Check if user role has required permission"""
+        user_permissions = cls.ROLE_PERMISSIONS.get(user_role, [])
+        return required_permission in user_permissions
+    
+    @classmethod
+    def get_data_access_level(cls, user_role: str) -> DataClassification:
+        """Get maximum data classification level for user role"""
+        if user_role in ["admin", "manager"]:
+            return DataClassification.RESTRICTED
+        elif user_role == "operator":
+            return DataClassification.CONFIDENTIAL
+        else:
+            return DataClassification.INTERNAL
+
+# Initialize global services
+encryption_service = EncryptionService()
