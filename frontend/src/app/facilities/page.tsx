@@ -1,12 +1,184 @@
-```tsx
 'use client'
 
 import { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
 import { facilitiesApi, customersApi } from '@/lib/api'
 import { Facility, FacilityList, Customer } from '@/types'
-import { Plus, Edit, Trash2, X, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+interface FacilityFormProps {
+  facility: Facility | null
+  customers: Customer[]
+  onClose: () => void
+  onSaved: () => void
+}
+
+function FacilityForm({ facility, customers, onClose, onSaved }: FacilityFormProps) {
+  const [form, setForm] = useState({
+    customer_id: facility?.customer_id || '',
+    facility_type: facility?.facility_type || 'loan',
+    name: facility?.name || '',
+    amount: facility?.amount?.toString() || '',
+    currency: facility?.currency || 'AED',
+    start_date: facility?.start_date || '',
+    expiry_date: facility?.expiry_date || '',
+    interest_rate: facility?.interest_rate?.toString() || '',
+    notes: facility?.notes || '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const data = {
+        ...form,
+        amount: parseFloat(form.amount),
+        interest_rate: form.interest_rate ? parseFloat(form.interest_rate) : null,
+        start_date: form.start_date || null,
+        expiry_date: form.expiry_date || null,
+      }
+      if (facility) {
+        await facilitiesApi.update(facility.id, data)
+        toast.success('Facility updated')
+      } else {
+        await facilitiesApi.create(data)
+        toast.success('Facility created')
+      }
+      onSaved()
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="p-4 border-b sticky top-0 bg-white">
+          <h3 className="text-lg font-semibold">{facility ? 'Edit Facility' : 'New Facility'}</h3>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Customer *</label>
+            <select
+              value={form.customer_id}
+              onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+              required
+              disabled={!!facility}
+            >
+              <option value="">Select Customer</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.account_no})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Facility Type *</label>
+            <select
+              value={form.facility_type}
+              onChange={(e) => setForm({ ...form, facility_type: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+              required
+            >
+              <option value="loan">Loan</option>
+              <option value="overdraft">Overdraft</option>
+              <option value="lc">LC</option>
+              <option value="lg">LG</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Amount *</label>
+              <input
+                type="number"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                required
+                min="0"
+                step="0.01"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Currency</label>
+              <select
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="AED">AED</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Start Date</label>
+              <input
+                type="date"
+                value={form.start_date}
+                onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Expiry Date</label>
+              <input
+                type="date"
+                value={form.expiry_date}
+                onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Interest Rate (%)</label>
+            <input
+              type="number"
+              value={form.interest_rate}
+              onChange={(e) => setForm({ ...form, interest_rate: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg"
+              min="0"
+              max="100"
+              step="0.01"
+            />
+          </div>
+          <div className="flex gap-2 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
 
 export default function FacilitiesPage() {
   const [data, setData] = useState<FacilityList | null>(null)
@@ -15,10 +187,6 @@ export default function FacilitiesPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editingFacility, setEditingFacility] = useState<Facility | null>(null)
-  const [deleteModal, setDeleteModal] = useState<{ show: boolean; facility: Facility | null }>({
-    show: false,
-    facility: null
-  })
 
   useEffect(() => {
     loadData()
@@ -39,25 +207,15 @@ export default function FacilitiesPage() {
     }
   }
 
-  const handleDeleteClick = (facility: Facility) => {
-    setDeleteModal({ show: true, facility })
-  }
-
-  const handleDeleteConfirm = async () => {
-    if (!deleteModal.facility) return
-    
+  const handleDelete = async (facility: Facility) => {
+    if (!confirm(`Delete this facility?`)) return
     try {
-      await facilitiesApi.delete(deleteModal.facility.id)
-      toast.success('Facility deleted successfully')
-      setDeleteModal({ show: false, facility: null })
+      await facilitiesApi.delete(facility.id)
+      toast.success('Facility deleted')
       loadData()
     } catch (error) {
-      toast.error('Failed to delete facility')
+      toast.error('Failed to delete')
     }
-  }
-
-  const handleDeleteCancel = () => {
-    setDeleteModal({ show: false, facility: null })
   }
 
   const formatCurrency = (amount: number, currency: string) => {
@@ -127,14 +285,12 @@ export default function FacilitiesPage() {
                       <button
                         onClick={() => { setEditingFacility(facility); setShowForm(true) }}
                         className="text-gray-500 hover:text-blue-600 mr-2"
-                        title="Edit facility"
                       >
                         <Edit size={16} />
                       </button>
                       <button
-                        onClick={() => handleDeleteClick(facility)}
+                        onClick={() => handleDelete(facility)}
                         className="text-gray-500 hover:text-red-600"
-                        title="Delete facility"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -172,58 +328,6 @@ export default function FacilitiesPage() {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {deleteModal.show && deleteModal.facility && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="p-3 bg-red-100 rounded-full">
-                  <AlertTriangle className="text-red-600" size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Delete Facility</h3>
-                  <p className="text-sm text-gray-500">This action cannot be undone</p>
-                </div>
-              </div>
-              
-              <div className="mb-6">
-                <p className="text-gray-700">
-                  Are you sure you want to delete the facility{' '}
-                  <span className="font-medium">
-                    {deleteModal.facility.name || `${deleteModal.facility.facility_type} - ${deleteModal.facility.customer_name || deleteModal.facility.customer_id}`}
-                  </span>
-                  ?
-                </p>
-                {deleteModal.facility.outstanding > 0 && (
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      <strong>Warning:</strong> This facility has an outstanding balance of{' '}
-                      {formatCurrency(deleteModal.facility.outstanding, deleteModal.facility.currency)}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={handleDeleteCancel}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteConfirm}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
-                >
-                  Delete Facility
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Form Modal */}
       {showForm && (
         <FacilityForm
@@ -236,122 +340,3 @@ export default function FacilitiesPage() {
     </Layout>
   )
 }
-
-function FacilityForm({
-  facility,
-  customers,
-  onClose,
-  onSaved,
-}: {
-  facility: Facility | null
-  customers: Customer[]
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState({
-    customer_id: facility?.customer_id || '',
-    facility_type: facility?.facility_type || 'loan',
-    name: facility?.name || '',
-    amount: facility?.amount?.toString() || '',
-    currency: facility?.currency || 'AED',
-    start_date: facility?.start_date || '',
-    expiry_date: facility?.expiry_date || '',
-    interest_rate: facility?.interest_rate?.toString() || '',
-    notes: facility?.notes || '',
-  })
-  const [saving, setSaving] = useState(false)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const data = {
-        ...form,
-        amount: parseFloat(form.amount),
-        interest_rate: form.interest_rate ? parseFloat(form.interest_rate) : null,
-        start_date: form.start_date || null,
-        expiry_date: form.expiry_date || null,
-      }
-      if (facility) {
-        await facilitiesApi.update(facility.id, data)
-        toast.success('Facility updated successfully')
-      } else {
-        await facilitiesApi.create(data)
-        toast.success('Facility created successfully')
-      }
-      onSaved()
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save facility')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      onClose()
-    }
-  }
-
-  return (
-    <div 
-      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-      onClick={handleOverlayClick}
-    >
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b sticky top-0 bg-white flex justify-between items-center">
-          <h3 className="text-lg font-semibold">{facility ? 'Edit Facility' : 'New Facility'}</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded"
-            title="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Customer *</label>
-            <select
-              value={form.customer_id}
-              onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              disabled={!!facility}
-            >
-              <option value="">Select Customer</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.account_no})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Facility Type *</label>
-            <select
-              value={form.facility_type}
-              onChange={(e) => setForm({ ...form, facility_type: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="loan">Loan</option>
-              <option value="overdraft">Overdraft</option>
-              <option value="lc">LC</option>
-              <option value="lg">LG</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter facility name"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Amount *</label>
-              <input
-                type="
