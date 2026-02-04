@@ -107,6 +107,7 @@ class OfferLetter(Base):
     # Relationships
     customer = relationship("Customer", back_populates="offer_letters")
     facility = relationship("Facility", back_populates="offer_letters")
+    attachments = relationship("OfferAttachment", back_populates="offer_letter", cascade="all, delete-orphan")
     calculations = relationship("OfferCalculation", back_populates="offer_letter", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
@@ -116,6 +117,31 @@ class OfferLetter(Base):
             f"amount={self.principal_amount}, "
             f"status='{self.status.value if self.status else None}')>"
         )
+
+
+class OfferAttachment(Base):
+    __tablename__ = "offer_attachments"
+    
+    id = Column(String(10), primary_key=True, default=lambda: str(uuid.uuid4())[:10])
+    offer_letter_id = Column(String(10), ForeignKey("offer_letters.id"), nullable=False)
+    
+    # File Information
+    filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer)
+    mime_type = Column(String(100))
+    
+    # Metadata
+    uploaded_by = Column(String(100))
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+    description = Column(String(500))
+    
+    # Relationships
+    offer_letter = relationship("OfferLetter", back_populates="attachments")
+
+    def __repr__(self) -> str:
+        return f"<OfferAttachment(id='{self.id}', filename='{self.filename}')>"
 
 
 class OfferCalculation(Base):
