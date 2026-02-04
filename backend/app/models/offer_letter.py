@@ -1,0 +1,155 @@
+"""Offer Letter Model"""
+from datetime import date, datetime
+from sqlalchemy import Column, String, Boolean, DateTime, Date, Text, Numeric, ForeignKey, Enum as SQLEnum, Integer
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+import uuid
+import enum
+from decimal import Decimal
+
+from app.database import Base
+
+
+def generate_offer_id():
+    """Generate offer letter ID with OL prefix"""
+    return "OL" + str(uuid.uuid4())[:8].upper()
+
+
+class OfferStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    SENT = "sent"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class CollateralType(str, enum.Enum):
+    PROPERTY = "property"
+    VEHICLE = "vehicle"
+    CASH_DEPOSIT = "cash_deposit"
+    GUARANTEE = "guarantee"
+    SHARES = "shares"
+    OTHER = "other"
+
+
+class RepaymentType(str, enum.Enum):
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    SEMI_ANNUAL = "semi_annual"
+    ANNUAL = "annual"
+    BULLET = "bullet"
+
+
+class OfferLetter(Base):
+    __tablename__ = "offer_letters"
+
+    id = Column(String(10), primary_key=True, default=generate_offer_id)
+    customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False, index=True)
+    facility_id = Column(String(8), ForeignKey("facilities.id"), nullable=True, index=True)
+    
+    # Basic Information
+    offer_date = Column(Date, nullable=False, default=date.today)
+    expiry_date = Column(Date, nullable=False)
+    status = Column(SQLEnum(OfferStatus), default=OfferStatus.DRAFT)
+    
+    # Financial Terms
+    principal_amount = Column(Numeric(18, 2), nullable=False)
+    currency = Column(String(10), default="AED")
+    interest_rate = Column(Numeric(5, 4), nullable=False)  # Annual rate
+    profit_rate = Column(Numeric(5, 4))  # For Islamic banking
+    tenor_months = Column(Integer, nullable=False)
+    grace_period_months = Column(Integer, default=0)
+    
+    # Repayment Details
+    repayment_type = Column(SQLEnum(RepaymentType), default=RepaymentType.MONTHLY)
+    monthly_installment = Column(Numeric(18, 2))
+    total_repayment_amount = Column(Numeric(18, 2))
+    
+    # Fees and Charges
+    processing_fee = Column(Numeric(18, 2), default=0)
+    processing_fee_percentage = Column(Numeric(5, 4))
+    arrangement_fee = Column(Numeric(18, 2), default=0)
+    commitment_fee = Column(Numeric(5, 4))
+    early_settlement_fee = Column(Numeric(5, 4))
+    late_payment_fee = Column(Numeric(18, 2))
+    
+    # Security and Collateral
+    collateral_type = Column(SQLEnum(CollateralType))
+    collateral_value = Column(Numeric(18, 2))
+    collateral_description = Column(Text)
+    guarantee_required = Column(Boolean, default=False)
+    guarantee_amount = Column(Numeric(18, 2))
+    
+    # Terms and Conditions
+    purpose_of_facility = Column(String(500))
+    special_conditions = Column(Text)
+    covenants = Column(Text)
+    
+    # Approval and Workflow
+    prepared_by = Column(String(100))
+    reviewed_by = Column(String(100))
+    approved_by = Column(String(100))
+    approval_date = Column(Date)
+    approval_comments = Column(Text)
+    
+    # Customer Response
+    customer_response_date = Column(Date)
+    customer_comments = Column(Text)
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    is_deleted = Column(Boolean, default=False)
+    
+    # Relationships
+    customer = relationship("Customer", back_populates="offer_letters")
+    facility = relationship("Facility", back_populates="offer_letters")
+    calculations = relationship("OfferCalculation", back_populates="offer_letter", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return (
+            f"<OfferLetter(id='{self.id}', "
+            f"customer_id='{self.customer_id}', "
+            f"amount={self.principal_amount}, "
+            f"status='{self.status.value if self.status else None}')>"
+        )
+
+
+class OfferCalculation(Base):
+    __tablename__ = "offer_calculations"
+    
+    id = Column(String(10), primary_key=True, default=lambda: str(uuid.uuid4())[:10])
+    offer_letter_id = Column(String(10), ForeignKey("offer_letters.id"), nullable=False)
+    
+    # Calculation Details
+    calculation_date = Column(Date, default=date.today)
+    installment_number = Column(Integer, nullable=False)
+    payment_date = Column(Date, nullable=False)
+    
+    # Payment Breakdown
+    opening_balance = Column(Numeric(18, 2), nullable=False)
+    principal_payment = Column(Numeric(18, 2), nullable=False)
+    interest_payment = Column(Numeric(18, 2), nullable=False)
+    total_payment = Column(Numeric(18, 2), nullable=False)
+    closing_balance = Column(Numeric(18, 2), nullable=False)
+    
+    # Additional Details
+    cumulative_principal = Column(Numeric(18, 2))
+    cumulative_interest = Column(Numeric(18, 2))
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    offer_letter = relationship("OfferLetter", back_populates="calculations")
+
+    def __repr__(self) -> str:
+        return (
+            f"<OfferCalculation(id='{self.id}', "
+            f"offer_id='{self.offer_letter_id}', "
+            f"installment={self.installment_number}, "
+            f"payment={self.total_payment})>"
+        )
