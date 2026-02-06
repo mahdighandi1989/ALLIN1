@@ -46,8 +46,28 @@ class Settings(BaseSettings):
         case_sensitive = True
 
     def get_cors_origins(self) -> List[str]:
-        """Parse CORS origins from comma-separated string"""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        """Parse CORS origins from comma-separated string.
+
+        In production, automatically filters out localhost/127.0.0.1 origins
+        to ensure security even if misconfigured.
+        """
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+        # In production, filter out localhost origins for security
+        if self.ENVIRONMENT.lower() == "production":
+            filtered = [
+                origin for origin in origins
+                if "localhost" not in origin.lower() and "127.0.0.1" not in origin
+            ]
+            if len(filtered) < len(origins):
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Filtered out localhost origins in production. "
+                    f"Original: {origins}, Filtered: {filtered}"
+                )
+            return filtered
+
+        return origins
 
     def model_post_init(self, __context) -> None:
         """Post-initialization validation and security checks"""
@@ -143,17 +163,20 @@ def validate_environment_security() -> None:
         # Additional production security checks
         required_env_vars = ["SECRET_KEY", "DATABASE_URL"]
         missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-        
+
         if missing_vars:
             raise ValueError(
                 f"Required environment variables missing in production: {', '.join(missing_vars)}"
             )
-        
-        # Validate CORS origins in production
+
+        # CORS origins are automatically filtered in production by get_cors_origins()
+        # Just ensure we have at least one valid origin
         cors_origins = settings.get_cors_origins()
-        if any("localhost" in origin or "127.0.0.1" in origin for origin in cors_origins):
-            raise ValueError(
-                "CORS origins should not include localhost/127.0.0.1 in production"
+        if not cors_origins:
+            import logging
+            logging.getLogger(__name__).warning(
+                "No valid CORS origins configured for production. "
+                "API requests from web browsers may be blocked."
             )
 
 
