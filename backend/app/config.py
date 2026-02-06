@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # CORS - comma-separated list of allowed origins
-    CORS_ORIGINS: str = "https://banking-ops-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000"
+    # Default to production origins only; add localhost in .env for local development
+    CORS_ORIGINS: str = "https://banking-ops-frontend.onrender.com"
 
     # Security
     BCRYPT_ROUNDS: int = 12
