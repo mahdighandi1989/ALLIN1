@@ -11,7 +11,7 @@ from pydantic import BaseModel, validator
 import re
 import uuid
 
-from app.config import settings
+from app.config import settings, get_settings
 from app.database import get_db
 
 # Password hashing context
@@ -254,6 +254,42 @@ async def get_current_active_user(current_user = Depends(get_current_user)):
             detail="User account is inactive"
         )
     return current_user
+
+
+class FakeUser:
+    """Fake user for development when AUTH_DISABLED is True"""
+    def __init__(self):
+        self.id = "dev12345"
+        self.username = "developer"
+        self.email = "dev@example.com"
+        self.full_name = "Developer Mode"
+        self.is_active = True
+        self.is_admin = True
+
+
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current user, but return fake user if AUTH_DISABLED is True.
+    This allows bypassing authentication for development.
+    """
+    current_settings = get_settings()
+
+    # If auth is disabled, return fake user
+    if current_settings.AUTH_DISABLED:
+        return FakeUser()
+
+    # Otherwise, require authentication
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return await get_current_user(credentials, db)
 
 
 def get_token_data(current_user = Depends(get_current_user)) -> TokenData:

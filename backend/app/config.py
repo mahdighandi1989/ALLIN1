@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
 
+    # Authentication - set to True to disable auth for development
+    AUTH_DISABLED: bool = True
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://localhost/banking"
     DATABASE_POOL_SIZE: int = 20

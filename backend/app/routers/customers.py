@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
-from app.utils.security import get_current_user, TokenData
+from app.utils.security import get_optional_current_user
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -23,7 +23,7 @@ async def get_customers(
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Get list of customers with advanced filtering, pagination and sorting
@@ -95,7 +95,7 @@ async def get_customers(
 async def get_customer(
     customer_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Get customer details by ID
@@ -131,7 +131,7 @@ async def get_customer(
 async def create_customer(
     customer_data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Create a new customer
@@ -180,7 +180,7 @@ async def update_customer(
     customer_id: str,
     customer_data: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Update customer information
@@ -247,7 +247,7 @@ async def delete_customer(
     customer_id: str,
     permanent: bool = Query(False, description="Permanently delete (admin only)"),
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Delete a customer (soft delete by default, permanent if specified)
@@ -312,7 +312,7 @@ async def delete_customer(
 async def restore_customer(
     customer_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Restore a soft-deleted customer
@@ -375,7 +375,7 @@ async def restore_customer(
 async def get_customer_facilities(
     customer_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Get all facilities for a specific customer
@@ -429,7 +429,7 @@ async def get_customer_facilities(
 @router.get("/stats/summary")
 async def get_customers_summary(
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """
     Get customer statistics summary

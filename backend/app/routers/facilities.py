@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.customer import Customer
 from app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityResponse
-from app.utils.security import get_current_user, TokenData
+from app.utils.security import get_optional_current_user
 
 router = APIRouter(prefix="/api/facilities", tags=["facilities"])
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/facilities", tags=["facilities"])
 async def create_facility(
     facility_data: FacilityCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Create a new facility"""
     try:
@@ -82,7 +82,7 @@ async def get_facilities(
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Get list of facilities with filtering, pagination and sorting"""
     try:
@@ -169,7 +169,7 @@ async def get_facilities(
 async def get_facility(
     facility_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Get facility details by ID"""
     try:
@@ -204,7 +204,7 @@ async def update_facility(
     facility_id: str,
     facility_data: FacilityUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Update facility information"""
     try:
@@ -251,7 +251,7 @@ async def delete_facility(
     facility_id: str,
     permanent: bool = Query(False, description="Permanently delete (admin only)"),
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Delete a facility (soft delete by default)"""
     try:
@@ -297,7 +297,7 @@ async def delete_facility(
 async def restore_facility(
     facility_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Restore a soft-deleted facility"""
     try:
@@ -342,7 +342,7 @@ async def update_facility_status(
     facility_id: str,
     new_status: FacilityStatus,
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Update facility status"""
     try:
@@ -391,7 +391,7 @@ async def advanced_search_facilities(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user)
+    current_user = Depends(get_optional_current_user)
 ):
     """Advanced search for facilities"""
     try:
