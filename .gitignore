@@ -19,7 +19,7 @@ yarn-error.log*
 
 # Next.js
 .next/
-out/
+# Note: out/ is NOT ignored - we commit the built frontend for deployment
 next-env.d.ts
 
 # IDE
