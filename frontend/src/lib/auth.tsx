@@ -5,6 +5,18 @@ import { useRouter } from 'next/navigation'
 import { authApi } from './api'
 import { User } from '@/types'
 
+// AUTH DISABLED - Using fake user for development
+const AUTH_DISABLED = true
+
+const FAKE_USER: User = {
+  id: 'dev-user',
+  username: 'developer',
+  email: 'dev@example.com',
+  full_name: 'Developer Mode',
+  is_active: true,
+  is_admin: true,
+}
+
 interface AuthContextType {
   user: User | null
   loading: boolean
@@ -15,15 +27,23 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<User | null>(AUTH_DISABLED ? FAKE_USER : null)
+  const [loading, setLoading] = useState(!AUTH_DISABLED)
   const router = useRouter()
 
   useEffect(() => {
-    checkAuth()
+    if (!AUTH_DISABLED) {
+      checkAuth()
+    }
   }, [])
 
   const checkAuth = async () => {
+    if (AUTH_DISABLED) {
+      setUser(FAKE_USER)
+      setLoading(false)
+      return
+    }
+
     const token = localStorage.getItem('token')
     if (!token) {
       setLoading(false)
@@ -38,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('Authentication check failed:', error.response?.data?.detail || error.message)
       localStorage.removeItem('token')
       setUser(null)
-      
+
       // Only redirect to login if we're on a protected route
       if (typeof window !== 'undefined') {
         const currentPath = window.location.pathname
@@ -53,6 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = async (username: string, password: string) => {
+    if (AUTH_DISABLED) {
+      setUser(FAKE_USER)
+      router.push('/dashboard')
+      return
+    }
+
     try {
       const data = await authApi.login(username, password)
       localStorage.setItem('token', data.access_token)
@@ -68,6 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    if (AUTH_DISABLED) {
+      router.push('/dashboard')
+      return
+    }
     localStorage.removeItem('token')
     setUser(null)
     router.push('/login')
