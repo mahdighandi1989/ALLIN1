@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/customers", tags=["customers"])
 @router.get("/", response_model=dict)
 async def get_customers(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    limit: int = Query(100, ge=1, le=200, description="Number of records to return"),
     search: Optional[str] = Query(None, description="Search in name, account_no"),
     account_type: Optional[AccountType] = Query(None, description="Filter by account type"),
     status: Optional[CustomerStatus] = Query(None, description="Filter by status"),

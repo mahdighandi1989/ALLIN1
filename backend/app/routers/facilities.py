@@ -72,7 +72,7 @@ async def create_facility(
 @router.get("/", response_model=dict)
 async def get_facilities(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    limit: int = Query(100, ge=1, le=100, description="Number of records to return"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
@@ -91,9 +91,25 @@ async def get_facilities(
             skip = (page - 1) * page_size
             limit = page_size
         
-        # Build base query
-        query = select(Facility).where(Facility.is_deleted == False)
-        count_query = select(func.count()).select_from(Facility).where(Facility.is_deleted == False)
+        # Build base query with join to get customer name in single query
+        query = select(Facility, Customer.name.label("customer_name")).join(
+            Customer, Facility.customer_id == Customer.id
+        ).where(
+            and_(
+                Facility.is_deleted == False,
+                Customer.is_deleted == False
+            )
+        )
+        
+        # Build count query with same filters
+        count_query = select(func.count()).select_from(Facility).join(
+            Customer, Facility.customer_id == Customer.id
+        ).where(
+            and_(
+                Facility.is_deleted == False,
+                Customer.is_deleted == False
+            )
+        )
         
         # Apply filters
         filters = []
@@ -132,22 +148,13 @@ async def get_facilities(
         
         # Execute query
         result = await db.execute(query)
-        facilities = result.scalars().all()
+        rows = result.all()
         
-        # Get customer names for facilities
-        customer_ids = list(set(f.customer_id for f in facilities))
-        customer_names = {}
-        if customer_ids:
-            customers_query = select(Customer).where(Customer.id.in_(customer_ids))
-            customers_result = await db.execute(customers_query)
-            for customer in customers_result.scalars():
-                customer_names[customer.id] = customer.name
-        
-        # Add customer names to facility data
+        # Build response
         facility_responses = []
-        for facility in facilities:
+        for facility, customer_name in rows:
             facility_dict = facility.__dict__.copy()
-            facility_dict['customer_name'] = customer_names.get(facility.customer_id)
+            facility_dict['customer_name'] = customer_name
             facility_responses.append(facility_dict)
         
         return {
@@ -393,14 +400,16 @@ async def advanced_search_facilities(
     expiry_from: Optional[date] = Query(None, description="Expiry date from"),
     expiry_to: Optional[date] = Query(None, description="Expiry date to"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(100, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user = Depends(get_optional_current_user)
 ):
     """Advanced search for facilities"""
     try:
-        # Build query with joins
-        query = select(Facility).join(Customer, Facility.customer_id == Customer.id).where(
+        # Build query with joins and select customer name directly
+        query = select(Facility, Customer.name.label("customer_name")).join(
+            Customer, Facility.customer_id == Customer.id
+        ).where(
             and_(
                 Facility.is_deleted == False,
                 Customer.is_deleted == False
@@ -438,22 +447,13 @@ async def advanced_search_facilities(
         query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
         
         result = await db.execute(query)
-        facilities = result.scalars().all()
+        rows = result.all()
         
-        # Get customer names
-        customer_ids = list(set(f.customer_id for f in facilities))
-        customer_names = {}
-        if customer_ids:
-            customers_query = select(Customer).where(Customer.id.in_(customer_ids))
-            customers_result = await db.execute(customers_query)
-            for customer in customers_result.scalars():
-                customer_names[customer.id] = customer.name
-
         # Build response
         facility_responses = []
-        for facility in facilities:
+        for facility, customer_name in rows:
             facility_dict = facility.__dict__.copy()
-            facility_dict['customer_name'] = customer_names.get(facility.customer_id)
+            facility_dict['customer_name'] = customer_name
             facility_responses.append(facility_dict)
 
         return {
