@@ -19,9 +19,33 @@ if not DATABASE_URL:
         "Example: postgresql+asyncpg://username:password@host:port/database"
     )
 
+# Convert DATABASE_URL to async-compatible format
+# Render and other cloud providers use postgres:// or postgresql:// which defaults to psycopg2
+# We need postgresql+asyncpg:// for async SQLAlchemy
+def get_async_database_url(url: str) -> str:
+    """Convert database URL to use asyncpg driver"""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+def get_sync_database_url(url: str) -> str:
+    """Convert database URL to use sync driver (psycopg2)"""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    elif "+asyncpg" in url:
+        return url.replace("+asyncpg", "")
+    return url
+
+ASYNC_DATABASE_URL = get_async_database_url(DATABASE_URL)
+SYNC_DATABASE_URL = get_sync_database_url(DATABASE_URL)
+
+logger.info(f"Database URL configured (async driver: asyncpg)")
+
 # Create async engine with connection pool
 async_engine = create_async_engine(
-    DATABASE_URL,
+    ASYNC_DATABASE_URL,
     echo=bool(os.getenv("DATABASE_ECHO", "false").lower() == "true"),
     pool_size=int(os.getenv("DATABASE_POOL_SIZE", "20")),
     max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "30")),
@@ -40,7 +64,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 # Create sync engine for migrations
 sync_engine = create_engine(
-    DATABASE_URL.replace("+asyncpg", ""),
+    SYNC_DATABASE_URL,
     echo=bool(os.getenv("DATABASE_ECHO", "false").lower() == "true"),
     pool_size=int(os.getenv("DATABASE_POOL_SIZE", "20")),
     max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "30")),
