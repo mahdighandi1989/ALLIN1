@@ -1,11 +1,9 @@
-
-
 import type { Metadata } from 'next'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from '@/lib/auth'
 import './globals.css'
 
-import InspectorBridge from "./InspectorBridge";
+// InspectorBridge removed due to possible navigation issues
 
 export const metadata: Metadata = {
   title: 'Banking Operations',
@@ -21,8 +19,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          {<InspectorBridge />}
-        {children}
+          {children}
           <Toaster position="top-right" />
         </AuthProvider>
       </body>
