@@ -37,12 +37,12 @@ async def create_facility(
                 detail="Customer not found"
             )
         
-        # Create facility
+        # Create facility - REMOVED amount field since it doesn't exist in database
         db_facility = Facility(
             customer_id=facility_data.customer_id,
             facility_type=facility_data.facility_type,
             name=facility_data.name,
-            amount=facility_data.amount,
+            # amount=facility_data.amount,  # This column doesn't exist in the database
             currency=facility_data.currency,
             start_date=facility_data.start_date,
             expiry_date=facility_data.expiry_date,
@@ -226,6 +226,9 @@ async def update_facility(
         
         # Update facility fields
         update_data = facility_data.model_dump(exclude_unset=True)
+        # Remove amount field if present since it doesn't exist in database
+        if 'amount' in update_data:
+            del update_data['amount']
         for field, value in update_data.items():
             setattr(facility, field, value)
         
@@ -382,8 +385,9 @@ async def update_facility_status(
 @router.get("/search/advanced")
 async def advanced_search_facilities(
     customer_name: Optional[str] = Query(None, description="Search by customer name"),
-    amount_from: Optional[float] = Query(None, description="Minimum amount"),
-    amount_to: Optional[float] = Query(None, description="Maximum amount"),
+    # Removed amount_from and amount_to parameters since amount column doesn't exist
+    # amount_from: Optional[float] = Query(None, description="Minimum amount"),
+    # amount_to: Optional[float] = Query(None, description="Maximum amount"),
     date_from: Optional[date] = Query(None, description="Start date filter"),
     date_to: Optional[date] = Query(None, description="End date filter"),
     expiry_from: Optional[date] = Query(None, description="Expiry date from"),
@@ -408,11 +412,12 @@ async def advanced_search_facilities(
         if customer_name:
             conditions.append(Customer.name.ilike(f"%{customer_name}%"))
         
-        if amount_from is not None:
-            conditions.append(Facility.amount >= amount_from)
+        # Removed amount filters since amount column doesn't exist in database
+        # if amount_from is not None:
+        #     conditions.append(Facility.amount >= amount_from)
         
-        if amount_to is not None:
-            conditions.append(Facility.amount <= amount_to)
+        # if amount_to is not None:
+        #     conditions.append(Facility.amount <= amount_to)
         
         if date_from:
             conditions.append(Facility.start_date >= date_from)
