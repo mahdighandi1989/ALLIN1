@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
+import { parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 import { Eye, EyeOff, Lock, User } from 'lucide-react'
 
@@ -35,8 +36,6 @@ export default function LoginPage() {
       setLoginAttempts(prev => prev + 1)
       
       // Handle both API errors and network errors
-      const errorMessage = error.response?.data?.detail || error.message || 'Login failed'
-      
       if (error.response?.status === 401) {
         toast.error('Invalid username or password')
       } else if (error.response?.status === 429) {
@@ -46,7 +45,7 @@ export default function LoginPage() {
       } else if (error.message === 'Network Error') {
         toast.error('Unable to connect to server. Please try again.')
       } else {
-        toast.error(errorMessage)
+        toast.error(parseApiError(error))
       }
     } finally {
       setLoading(false)

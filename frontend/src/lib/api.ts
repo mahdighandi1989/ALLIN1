@@ -4,6 +4,38 @@ import { Customer, CustomerList, Facility, FacilityList, DashboardStats, User } 
 // Use empty string (same origin) when deployed together, or localhost for local dev
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
+// Validation error structure from FastAPI/Pydantic
+interface ValidationError {
+  type: string
+  loc: (string | number)[]
+  msg: string
+  input?: unknown
+  url?: string
+}
+
+// Parse FastAPI validation error response into a user-friendly message
+export function parseApiError(error: any): string {
+  // Check if this is a 422 validation error with detail array
+  if (error.response?.status === 422 && Array.isArray(error.response?.data?.detail)) {
+    const details = error.response.data.detail as ValidationError[]
+    if (details.length > 0) {
+      // Extract field name and message from first error
+      const firstError = details[0]
+      const field = firstError.loc.filter(l => l !== 'body').join('.')
+      const message = firstError.msg
+      return field ? `${field}: ${message}` : message
+    }
+  }
+
+  // Check if detail is a string (other API errors)
+  if (typeof error.response?.data?.detail === 'string') {
+    return error.response.data.detail
+  }
+
+  // Fall back to error message or generic error
+  return error.message || 'An error occurred'
+}
+
 const api = axios.create({
   baseURL: API_URL,
   timeout: 30000, // 30 second timeout to prevent indefinite hanging

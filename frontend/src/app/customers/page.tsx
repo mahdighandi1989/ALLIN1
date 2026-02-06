@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
-import { customersApi } from '@/lib/api'
+import { customersApi, parseApiError } from '@/lib/api'
 import { Customer, CustomerList } from '@/types'
 import { Plus, Search, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -209,7 +209,7 @@ function CustomerForm({
       }
       onSaved()
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save')
+      toast.error(parseApiError(error))
     } finally {
       setSaving(false)
     }
