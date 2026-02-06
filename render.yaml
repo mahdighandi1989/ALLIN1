@@ -1,18 +1,22 @@
 # Render Blueprint Configuration
 # https://render.com/docs/blueprint-spec
+# Single service that serves both API and Frontend
 
 services:
-  # Backend API Service
+  # Combined Backend API + Frontend Service
   - type: web
-    name: banking-ops-api
+    name: banking-ops
     runtime: python
     region: frankfurt
     plan: free
-    buildCommand: cd backend && pip install -r requirements.txt
+    buildCommand: |
+      cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.7"
+      - key: NODE_VERSION
+        value: "20"
       - key: DEBUG
         value: "false"
       - key: SECRET_KEY
@@ -22,22 +26,8 @@ services:
           name: banking-ops-db
           property: connectionString
       - key: CORS_ORIGINS
-        value: "https://banking-ops-frontend.onrender.com,http://localhost:3000"
+        value: ""
     healthCheckPath: /health
-    autoDeploy: true
-
-  # Frontend (Next.js)
-  - type: web
-    name: banking-ops-frontend
-    runtime: node
-    region: frankfurt
-    plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    startCommand: cd frontend && npm start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: "https://banking-ops-api.onrender.com"
-    healthCheckPath: /
     autoDeploy: true
 
 databases:
