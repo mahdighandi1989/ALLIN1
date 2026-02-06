@@ -20,28 +20,67 @@ if not DATABASE_URL:
     )
 
 # Convert DATABASE_URL to async-compatible format
-# Render and other cloud providers use postgres:// or postgresql:// which defaults to psycopg2
+# Render and other cloud providers use various formats:
+# - postgres:// (legacy format)
+# - postgresql:// (defaults to psycopg2)
+# - postgresql+psycopg2:// (explicit psycopg2)
 # We need postgresql+asyncpg:// for async SQLAlchemy
 def get_async_database_url(url: str) -> str:
-    """Convert database URL to use asyncpg driver"""
+    """Convert database URL to use asyncpg driver for async SQLAlchemy"""
+    # Already using asyncpg - no conversion needed
+    if "postgresql+asyncpg://" in url:
+        return url
+
+    # Handle postgresql+psycopg2:// (explicit sync driver)
+    if url.startswith("postgresql+psycopg2://"):
+        return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+
+    # Handle postgresql+psycopg:// (another sync driver variant)
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+
+    # Handle postgres:// (legacy/shorthand format)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+
+    # Handle postgresql:// (defaults to psycopg2)
+    if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
     return url
 
 def get_sync_database_url(url: str) -> str:
-    """Convert database URL to use sync driver (psycopg2)"""
+    """Convert database URL to use sync driver (psycopg2) for migrations"""
+    # Handle postgres:// (legacy format) - convert to standard postgresql://
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
-    elif "+asyncpg" in url:
+
+    # Handle asyncpg driver - convert to sync
+    if "+asyncpg" in url:
         return url.replace("+asyncpg", "")
+
+    # Handle explicit psycopg2 - already sync, just normalize
+    if "+psycopg2" in url:
+        return url.replace("+psycopg2", "")
+
+    # Handle explicit psycopg - already sync, just normalize
+    if "+psycopg" in url:
+        return url.replace("+psycopg", "")
+
     return url
 
 ASYNC_DATABASE_URL = get_async_database_url(DATABASE_URL)
 SYNC_DATABASE_URL = get_sync_database_url(DATABASE_URL)
 
-logger.info(f"Database URL configured (async driver: asyncpg)")
+# Log the URL conversion (hide sensitive parts)
+def _mask_url(url: str) -> str:
+    """Mask password in database URL for logging"""
+    import re
+    return re.sub(r'://[^:]+:[^@]+@', '://***:***@', url)
+
+logger.info(f"Original DATABASE_URL format: {_mask_url(DATABASE_URL)}")
+logger.info(f"Async DATABASE_URL format: {_mask_url(ASYNC_DATABASE_URL)}")
+logger.info(f"Sync DATABASE_URL format: {_mask_url(SYNC_DATABASE_URL)}")
 
 # Create async engine with connection pool
 async_engine = create_async_engine(
