@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { Customer, CustomerList, Facility, FacilityList, DashboardStats, User } from '@/types'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Use empty string (same origin) when deployed together, or localhost for local dev
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 const api = axios.create({
   baseURL: API_URL,

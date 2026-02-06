@@ -60,11 +60,12 @@ class Settings(BaseSettings):
                 )
         
         # Validate SECRET_KEY security in production
+        # Note: Render's generateValue creates ~43-53 char keys which are still cryptographically secure (256+ bits)
         if self.ENVIRONMENT == "production":
-            if len(self.SECRET_KEY) < 64:
+            if len(self.SECRET_KEY) < 32:
                 raise ValueError(
-                    "SECRET_KEY must be at least 64 characters long in production for security. "
-                    "Use: python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+                    "SECRET_KEY must be at least 32 characters long in production for security. "
+                    "Use: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
                 )
             
             # Check for common weak keys
