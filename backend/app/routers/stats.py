@@ -6,14 +6,14 @@ from sqlalchemy import select, func
 
 from app.database import get_db
 from app.models import Customer, Facility, CustomerStatus, FacilityStatus
-from app.utils.security import get_current_user, TokenData
+from app.utils.security import get_optional_current_user
 
 router = APIRouter(prefix="/api/stats", tags=["Stats"])
 
 
 @router.get("/dashboard")
 async def get_dashboard_stats(
-    current_user: TokenData = Depends(get_current_user),
+    current_user = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Get dashboard statistics"""
@@ -83,7 +83,7 @@ async def get_dashboard_stats(
 @router.get("/expiring")
 async def get_expiring_facilities(
     days: int = 30,
-    current_user: TokenData = Depends(get_current_user),
+    current_user = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Get facilities expiring soon"""

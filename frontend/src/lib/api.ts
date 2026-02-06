@@ -4,6 +4,9 @@ import { Customer, CustomerList, Facility, FacilityList, DashboardStats, User } 
 // Use empty string (same origin) when deployed together, or localhost for local dev
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
+// AUTH DISABLED - Skip 401 redirect for development
+const AUTH_DISABLED = true
+
 // Validation error structure from FastAPI/Pydantic
 interface ValidationError {
   type: string
@@ -67,8 +70,8 @@ api.interceptors.response.use(
         error.message = 'Unable to connect to server. Please check your connection.'
       }
     }
-    // Handle 401 unauthorized
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
+    // Handle 401 unauthorized - skip redirect if AUTH_DISABLED
+    if (error.response?.status === 401 && typeof window !== 'undefined' && !AUTH_DISABLED) {
       localStorage.removeItem('token')
       window.location.href = '/login'
     }
