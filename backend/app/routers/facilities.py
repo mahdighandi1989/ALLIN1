@@ -1,4 +1,3 @@
-```python
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, desc
@@ -440,3 +439,25 @@ async def advanced_search_facilities(
         customer_ids = list(set(f.customer_id for f in facilities))
         customer_names = {}
         if customer_ids:
+            customers_query = select(Customer).where(Customer.id.in_(customer_ids))
+            customers_result = await db.execute(customers_query)
+            for customer in customers_result.scalars():
+                customer_names[customer.id] = customer.name
+
+        # Build response
+        facility_responses = []
+        for facility in facilities:
+            facility_dict = facility.__dict__.copy()
+            facility_dict['customer_name'] = customer_names.get(facility.customer_id)
+            facility_responses.append(facility_dict)
+
+        return {
+            "items": facility_responses,
+            "total": len(facility_responses)
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search facilities: {str(e)}"
+        )

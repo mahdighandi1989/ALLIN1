@@ -1,4 +1,3 @@
-```python
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -463,4 +462,24 @@ async def get_customers_summary(
         by_status = {row[0].value: row[1] for row in status_result.fetchall()}
         
         # Recent customers (last 30 days)
-        recent_date = datetime.utcnow
+        recent_date = datetime.utcnow() - timedelta(days=30)
+        recent_query = select(func.count()).select_from(Customer).where(
+            and_(Customer.is_deleted == False, Customer.created_at >= recent_date)
+        )
+        recent_result = await db.execute(recent_query)
+        recent = recent_result.scalar() or 0
+
+        return {
+            "total": total,
+            "active": active,
+            "inactive": total - active,
+            "by_type": by_type,
+            "by_status": by_status,
+            "recent_30_days": recent
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve customer summary: {str(e)}"
+        )
