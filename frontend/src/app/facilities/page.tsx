@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
-import { facilitiesApi, customersApi } from '@/lib/api'
+import { facilitiesApi, customersApi, parseApiError } from '@/lib/api'
 import { Facility, FacilityList, Customer } from '@/types'
 import { Plus, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -212,7 +212,7 @@ function FacilityForm({
       }
       onSaved()
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save')
+      toast.error(parseApiError(error))
     } finally {
       setSaving(false)
     }
