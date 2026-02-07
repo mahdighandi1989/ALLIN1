@@ -55,9 +55,6 @@ export default function DashboardPage() {
     recentCustomers: stats?.recent_customers ?? []
   }
 
-  // Check if we have valid stats data
-  const hasValidStats = stats && stats.customers && stats.facilities
-
   return (
     <Layout>
       <div className="flex justify-between items-center mb-6">
@@ -90,7 +87,7 @@ export default function DashboardPage() {
             Try Again
           </button>
         </div>
-      ) : hasValidStats ? (
+      ) : stats ? (
         <div className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
