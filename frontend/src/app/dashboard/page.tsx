@@ -44,30 +44,19 @@ export default function DashboardPage() {
     }).format(amount)
   }
 
-  // Helper functions to safely get values
-  const getCustomersTotal = () => {
-    return stats?.customers?.total?.toLocaleString() ?? '0'
+  // Get safe values from stats
+  const safeStats = {
+    customersTotal: stats?.customers?.total?.toLocaleString() ?? '0',
+    customersActive: stats?.customers?.active?.toLocaleString() ?? '0',
+    facilitiesTotal: stats?.facilities?.total?.toLocaleString() ?? '0',
+    facilitiesExpiringSoon: stats?.facilities?.expiring_soon ?? 0,
+    facilitiesTotalAmount: stats?.facilities?.total_amount ?? 0,
+    facilitiesOutstanding: stats?.facilities?.outstanding ?? 0,
+    recentCustomers: stats?.recent_customers ?? []
   }
 
-  const getCustomersActive = () => {
-    return stats?.customers?.active?.toLocaleString() ?? '0'
-  }
-
-  const getFacilitiesTotal = () => {
-    return stats?.facilities?.total?.toLocaleString() ?? '0'
-  }
-
-  const getFacilitiesExpiringSoon = () => {
-    return stats?.facilities?.expiring_soon ?? 0
-  }
-
-  const getFacilitiesTotalAmount = () => {
-    return stats?.facilities?.total_amount ?? 0
-  }
-
-  const getFacilitiesOutstanding = () => {
-    return stats?.facilities?.outstanding ?? 0
-  }
+  // Check if we have valid stats data
+  const hasValidStats = stats && stats.customers && stats.facilities
 
   return (
     <Layout>
@@ -101,7 +90,7 @@ export default function DashboardPage() {
             Try Again
           </button>
         </div>
-      ) : stats ? (
+      ) : hasValidStats ? (
         <div className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -112,9 +101,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Customers</p>
-                  <p className="text-2xl font-bold">{getCustomersTotal()}</p>
+                  <p className="text-2xl font-bold">{safeStats.customersTotal}</p>
                   <p className="text-xs text-green-600">
-                    {getCustomersActive()} active
+                    {safeStats.customersActive} active
                   </p>
                 </div>
               </div>
@@ -127,9 +116,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Facilities</p>
-                  <p className="text-2xl font-bold">{getFacilitiesTotal()}</p>
+                  <p className="text-2xl font-bold">{safeStats.facilitiesTotal}</p>
                   <p className="text-xs text-gray-600">
-                    {getFacilitiesExpiringSoon()} expiring soon
+                    {safeStats.facilitiesExpiringSoon} expiring soon
                   </p>
                 </div>
               </div>
@@ -142,9 +131,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Exposure</p>
-                  <p className="text-2xl font-bold">{formatCurrency(getFacilitiesTotalAmount())}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(safeStats.facilitiesTotalAmount)}</p>
                   <p className="text-xs text-gray-600">
-                    Outstanding: {formatCurrency(getFacilitiesOutstanding())}
+                    Outstanding: {formatCurrency(safeStats.facilitiesOutstanding)}
                   </p>
                 </div>
               </div>
@@ -153,18 +142,18 @@ export default function DashboardPage() {
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-lg ${
-                  getFacilitiesExpiringSoon() > 0 ? 'bg-yellow-100' : 'bg-gray-100'
+                  safeStats.facilitiesExpiringSoon > 0 ? 'bg-yellow-100' : 'bg-gray-100'
                 }`}>
                   <AlertTriangle className={`${
-                    getFacilitiesExpiringSoon() > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    safeStats.facilitiesExpiringSoon > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`} size={24} />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Expiring Soon</p>
                   <p className={`text-2xl font-bold ${
-                    getFacilitiesExpiringSoon() > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    safeStats.facilitiesExpiringSoon > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`}>
-                    {getFacilitiesExpiringSoon()}
+                    {safeStats.facilitiesExpiringSoon}
                   </p>
                   <p className="text-xs text-gray-600">Next 30 days</p>
                 </div>
@@ -178,9 +167,9 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold">Recent Customers</h3>
             </div>
             <div className="p-6">
-              {stats.recent_customers && stats.recent_customers.length > 0 ? (
+              {safeStats.recentCustomers.length > 0 ? (
                 <div className="space-y-3">
-                  {stats.recent_customers.map((customer) => (
+                  {safeStats.recentCustomers.map((customer) => (
                     <div key={customer.id} className="flex justify-between items-center py-2 hover:bg-gray-50 rounded px-2">
                       <div>
                         <span className="font-medium text-gray-900">{customer.name}</span>
@@ -205,7 +194,7 @@ export default function DashboardPage() {
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
           <AlertTriangle className="mx-auto text-yellow-500 mb-4" size={48} />
           <h3 className="text-lg font-semibold text-yellow-800 mb-2">No Data Available</h3>
-          <p className="text-yellow-600 mb-4">Dashboard data could not be loaded</p>
+          <p className="text-yellow-600 mb-4">Dashboard data could not be loaded or is incomplete</p>
           <button
             onClick={handleRetry}
             className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
