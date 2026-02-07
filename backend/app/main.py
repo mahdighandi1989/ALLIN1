@@ -16,10 +16,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files from frontend build directory
-frontend_build_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "../frontend/build")
-if os.path.exists(frontend_build_path):
-    app.mount("/static", StaticFiles(directory=frontend_build_path), name="static")
+# Serve static files from frontend output directory (Next.js export)
+frontend_out_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "../frontend/out")
+
+if os.path.exists(frontend_out_path):
+    # Serve _next/static files
+    next_static_path = os.path.join(frontend_out_path, "_next/static")
+    if os.path.exists(next_static_path):
+        app.mount("/_next/static", StaticFiles(directory=next_static_path), name="next-static")
+    
+    # Serve other static files from out directory
+    app.mount("/static", StaticFiles(directory=frontend_out_path), name="static")
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -29,8 +36,8 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 
 @app.get("/")
 async def root():
-    # Serve index.html from frontend build
-    index_path = os.path.join(frontend_build_path, "index.html")
+    # Serve index.html from frontend out directory
+    index_path = os.path.join(frontend_out_path, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Banking Operations API is running"}
@@ -42,7 +49,18 @@ async def health_check():
 # Catch-all route for SPA routing
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    index_path = os.path.join(frontend_build_path, "index.html")
+    # First check if it's an API route
+    if full_path.startswith("api/"):
+        return {"error": "API route not found"}
+    
+    # Check if file exists in out directory
+    file_path = os.path.join(frontend_out_path, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Otherwise serve index.html for SPA routing
+    index_path = os.path.join(frontend_out_path, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
+    
     return {"error": "Frontend not found"}
