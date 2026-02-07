@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, customers, facilities, stats, api
+from app.routers import auth, customers, facilities, stats
 
 app = FastAPI(title="Banking Operations API")
 
@@ -18,7 +18,6 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
-app.include_router(api.router, prefix="/api/api", tags=["api"])
 
 @app.get("/")
 async def root():
