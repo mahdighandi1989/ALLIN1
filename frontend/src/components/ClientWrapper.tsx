@@ -3,7 +3,6 @@
 import { useEffect, useState, ReactNode } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from '@/lib/auth'
-import InspectorBridge from '@/app/InspectorBridge'
 
 export default function ClientWrapper({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false)
@@ -23,7 +22,6 @@ export default function ClientWrapper({ children }: { children: ReactNode }) {
 
   return (
     <AuthProvider>
-      <InspectorBridge />
       {children}
       <Toaster position="top-right" />
     </AuthProvider>
