@@ -1,28 +1,11 @@
-import os
-from typing import Optional, List
-from pydantic_settings import BaseSettings
-from pydantic import validator, Field
+from typing import List, Optional
+from pydantic import BaseSettings, Field, validator
 import secrets
-import logging
-
-logger = logging.getLogger(__name__)
-
 
 class Settings(BaseSettings):
-    # Database settings
-    database_url: str = Field(
-        default="postgresql+asyncpg://user:password@localhost/allin1_db",
-        description="Database connection URL"
-    )
-    database_pool_size: int = Field(default=20, ge=1, le=100)
-    database_max_overflow: int = Field(default=30, ge=0, le=100)
-    database_pool_recycle: int = Field(default=3600, ge=300, le=86400)
-    database_echo: bool = Field(default=False, description="Enable SQL query logging")
+    """Application settings"""
     
-    # Application settings
-    app_name: str = Field(default="ALLIN1 Banking System", min_length=1)
-    app_version: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
-    debug: bool = Field(default=False, description="Enable debug mode")
+    # Core settings
     environment: str = Field(default="development", pattern="^(development|staging|production)$")
     
     # Security settings - Critical security configurations
@@ -136,4 +119,7 @@ class Settings(BaseSettings):
         """Get CORS origins as list"""
         if not self.cors_origins:
             return []
-        return [origin.strip() for origin in self.cors_origins.split(',') if origin.strip()]
+        if isinstance(self.cors_origins, str):
+            return [origin.strip() for origin in self.cors_origins.split(',') if origin.strip()]
+        # Assume it's already a list (converted by validator)
+        return self.cors_origins
