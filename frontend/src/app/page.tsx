@@ -1,3 +1,4 @@
+typescript
 'use client'
 
 import { useEffect } from 'react'
@@ -7,8 +8,15 @@ export default function HomePage() {
   const router = useRouter()
 
   useEffect(() => {
-    // Always redirect to dashboard (auth is disabled)
-    router.push('/dashboard')
+    const redirect = async () => {
+      try {
+        // Always redirect to dashboard (auth is disabled)
+        await router.push('/dashboard')
+      } catch (error) {
+        console.error('Redirect error:', error)
+      }
+    }
+    redirect()
   }, [router])
 
   return (
