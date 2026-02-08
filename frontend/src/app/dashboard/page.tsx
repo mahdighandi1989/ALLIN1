@@ -44,6 +44,17 @@ export default function DashboardPage() {
     }).format(amount)
   }
 
+  // Get safe values from stats
+  const safeStats = {
+    customersTotal: stats?.customers?.total?.toLocaleString() ?? '0',
+    customersActive: stats?.customers?.active?.toLocaleString() ?? '0',
+    facilitiesTotal: stats?.facilities?.total?.toLocaleString() ?? '0',
+    facilitiesExpiringSoon: stats?.facilities?.expiring_soon ?? 0,
+    facilitiesTotalAmount: stats?.facilities?.total_amount ?? 0,
+    facilitiesOutstanding: stats?.facilities?.outstanding ?? 0,
+    recentCustomers: stats?.recent_customers ?? []
+  }
+
   return (
     <Layout>
       <div className="flex justify-between items-center mb-6">
@@ -87,9 +98,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Customers</p>
-                  <p className="text-2xl font-bold">{(stats.customers?.total ?? 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold">{safeStats.customersTotal}</p>
                   <p className="text-xs text-green-600">
-                    {stats.customers?.active ?? 0} active
+                    {safeStats.customersActive} active
                   </p>
                 </div>
               </div>
@@ -102,9 +113,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Facilities</p>
-                  <p className="text-2xl font-bold">{(stats.facilities?.total ?? 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold">{safeStats.facilitiesTotal}</p>
                   <p className="text-xs text-gray-600">
-                    {stats.facilities?.expiring_soon ?? 0} expiring soon
+                    {safeStats.facilitiesExpiringSoon} expiring soon
                   </p>
                 </div>
               </div>
@@ -117,9 +128,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Exposure</p>
-                  <p className="text-2xl font-bold">{formatCurrency(stats.facilities?.total_amount ?? 0)}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(safeStats.facilitiesTotalAmount)}</p>
                   <p className="text-xs text-gray-600">
-                    Outstanding: {formatCurrency(stats.facilities?.outstanding ?? 0)}
+                    Outstanding: {formatCurrency(safeStats.facilitiesOutstanding)}
                   </p>
                 </div>
               </div>
@@ -128,18 +139,18 @@ export default function DashboardPage() {
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-lg ${
-                  (stats.facilities?.expiring_soon ?? 0) > 0 ? 'bg-yellow-100' : 'bg-gray-100'
+                  safeStats.facilitiesExpiringSoon > 0 ? 'bg-yellow-100' : 'bg-gray-100'
                 }`}>
                   <AlertTriangle className={`${
-                    (stats.facilities?.expiring_soon ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    safeStats.facilitiesExpiringSoon > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`} size={24} />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Expiring Soon</p>
                   <p className={`text-2xl font-bold ${
-                    (stats.facilities?.expiring_soon ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    safeStats.facilitiesExpiringSoon > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`}>
-                    {stats.facilities?.expiring_soon ?? 0}
+                    {safeStats.facilitiesExpiringSoon}
                   </p>
                   <p className="text-xs text-gray-600">Next 30 days</p>
                 </div>
@@ -153,9 +164,9 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold">Recent Customers</h3>
             </div>
             <div className="p-6">
-              {stats.recent_customers && stats.recent_customers.length > 0 ? (
+              {safeStats.recentCustomers.length > 0 ? (
                 <div className="space-y-3">
-                  {stats.recent_customers.map((customer) => (
+                  {safeStats.recentCustomers.map((customer) => (
                     <div key={customer.id} className="flex justify-between items-center py-2 hover:bg-gray-50 rounded px-2">
                       <div>
                         <span className="font-medium text-gray-900">{customer.name}</span>
