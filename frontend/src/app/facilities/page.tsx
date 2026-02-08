@@ -130,7 +130,7 @@ export default function FacilitiesPage() {
             {/* Pagination */}
             <div className="px-4 py-3 border-t flex justify-between items-center">
               <span className="text-sm text-gray-500">
-                Page {data.page} of {Math.ceil(data.total / data.page_size)}
+                Page {data.page ?? 1} of {Math.ceil((data.total ?? 0) / (data.page_size || 1)) || 1}
               </span>
               <div className="flex gap-2">
                 <button
@@ -142,7 +142,7 @@ export default function FacilitiesPage() {
                 </button>
                 <button
                   onClick={() => setPage(p => p + 1)}
-                  disabled={page >= Math.ceil(data.total / data.page_size)}
+                  disabled={page >= Math.ceil((data.total ?? 0) / (data.page_size || 1))}
                   className="px-3 py-1 border rounded disabled:opacity-50"
                 >
                   Next

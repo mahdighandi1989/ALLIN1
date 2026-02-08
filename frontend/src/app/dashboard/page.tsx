@@ -87,9 +87,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Customers</p>
-                  <p className="text-2xl font-bold">{stats.customers.total.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">{(stats.customers?.total ?? 0).toLocaleString()}</p>
                   <p className="text-xs text-green-600">
-                    {stats.customers.active} active
+                    {stats.customers?.active ?? 0} active
                   </p>
                 </div>
               </div>
@@ -102,9 +102,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Facilities</p>
-                  <p className="text-2xl font-bold">{stats.facilities.total.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">{(stats.facilities?.total ?? 0).toLocaleString()}</p>
                   <p className="text-xs text-gray-600">
-                    {stats.facilities.expiring_soon} expiring soon
+                    {stats.facilities?.expiring_soon ?? 0} expiring soon
                   </p>
                 </div>
               </div>
@@ -117,9 +117,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Total Exposure</p>
-                  <p className="text-2xl font-bold">{formatCurrency(stats.facilities.total_amount)}</p>
+                  <p className="text-2xl font-bold">{formatCurrency(stats.facilities?.total_amount ?? 0)}</p>
                   <p className="text-xs text-gray-600">
-                    Outstanding: {formatCurrency(stats.facilities.outstanding)}
+                    Outstanding: {formatCurrency(stats.facilities?.outstanding ?? 0)}
                   </p>
                 </div>
               </div>
@@ -128,18 +128,18 @@ export default function DashboardPage() {
             <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
               <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-lg ${
-                  stats.facilities.expiring_soon > 0 ? 'bg-yellow-100' : 'bg-gray-100'
+                  (stats.facilities?.expiring_soon ?? 0) > 0 ? 'bg-yellow-100' : 'bg-gray-100'
                 }`}>
                   <AlertTriangle className={`${
-                    stats.facilities.expiring_soon > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    (stats.facilities?.expiring_soon ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`} size={24} />
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Expiring Soon</p>
                   <p className={`text-2xl font-bold ${
-                    stats.facilities.expiring_soon > 0 ? 'text-yellow-600' : 'text-gray-600'
+                    (stats.facilities?.expiring_soon ?? 0) > 0 ? 'text-yellow-600' : 'text-gray-600'
                   }`}>
-                    {stats.facilities.expiring_soon}
+                    {stats.facilities?.expiring_soon ?? 0}
                   </p>
                   <p className="text-xs text-gray-600">Next 30 days</p>
                 </div>
