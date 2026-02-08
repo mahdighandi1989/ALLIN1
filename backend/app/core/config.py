@@ -21,9 +21,9 @@ class Settings(BaseSettings):
     
     # Application settings
     app_name: str = Field(default="ALLIN1 Banking System", min_length=1)
-    app_version: str = Field(default="1.0.0", regex=r"^\d+\.\d+\.\d+$")
+    app_version: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
     debug: bool = Field(default=False, description="Enable debug mode")
-    environment: str = Field(default="development", regex="^(development|staging|production)$")
+    environment: str = Field(default="development", pattern="^(development|staging|production)$")
     
     # Security settings - Critical security configurations
     secret_key: str = Field(
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         min_length=32,
         description="JWT signing key - must be cryptographically secure"
     )
-    algorithm: str = Field(default="HS256", regex="^(HS256|HS384|HS512|RS256|RS384|RS512)$")
+    algorithm: str = Field(default="HS256", pattern="^(HS256|HS384|HS512|RS256|RS384|RS512)$")
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
     refresh_token_expire_days: int = Field(default=7, ge=1, le=30)
     password_min_length: int = Field(default=8, ge=8, le=128)
@@ -51,13 +51,13 @@ class Settings(BaseSettings):
     rate_limit_burst: int = Field(default=100, ge=20, le=2000)
     
     # Logging settings
-    log_level: str = Field(default="INFO", regex="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
     log_file: Optional[str] = Field(default=None, description="Log file path")
     log_max_bytes: int = Field(default=10485760, ge=1048576)  # 10MB
     log_backup_count: int = Field(default=5, ge=1, le=10)
     
     # API settings
-    api_prefix: str = Field(default="/api", regex="^/[a-zA-Z0-9/_-]*$")
+    api_prefix: str = Field(default="/api", pattern="^/[a-zA-Z0-9/_-]*$")
     docs_url: Optional[str] = Field(default="/docs")
     redoc_url: Optional[str] = Field(default="/redoc")
     openapi_url: Optional[str] = Field(default="/openapi.json")
