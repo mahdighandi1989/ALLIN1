@@ -10,7 +10,11 @@ export default function Error({
   reset: () => void
 }) {
   useEffect(() => {
-    console.error('Application error:', error)
+    if (error && Object.keys(error).length > 0) {
+      console.error('Application error:', error)
+    } else {
+      console.error('Application error occurred but no error object provided')
+    }
   }, [error])
 
   return (
@@ -19,9 +23,9 @@ export default function Error({
         <h2 className="text-xl font-bold text-red-600 mb-4">Something went wrong!</h2>
         <div className="bg-red-50 border border-red-200 rounded p-4 mb-4">
           <p className="text-sm text-red-800 font-mono break-all">
-            {error.message || 'Unknown error occurred'}
+            {error?.message || 'Unknown error occurred'}
           </p>
-          {error.digest && (
+          {error?.digest && (
             <p className="text-xs text-red-600 mt-2">Error ID: {error.digest}</p>
           )}
         </div>
