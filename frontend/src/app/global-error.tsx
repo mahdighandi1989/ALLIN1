@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 export default function GlobalError({
   error,
   reset,
@@ -7,6 +9,14 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    if (error && Object.keys(error).length > 0) {
+      console.error('Global application error:', error)
+    } else {
+      console.error('Global application error occurred but no error object provided')
+    }
+  }, [error])
+
   return (
     <html>
       <body>
@@ -42,9 +52,9 @@ export default function GlobalError({
                 color: '#991b1b',
                 wordBreak: 'break-all'
               }}>
-                {error.message || 'An unexpected error occurred'}
+                {error?.message || 'An unexpected error occurred'}
               </p>
-              {error.stack && (
+              {error?.stack && (
                 <details style={{ marginTop: '8px' }}>
                   <summary style={{ cursor: 'pointer', color: '#b91c1c', fontSize: '12px' }}>
                     Stack trace
