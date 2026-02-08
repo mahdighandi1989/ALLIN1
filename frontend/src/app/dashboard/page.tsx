@@ -180,23 +180,46 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <Users className="mx-auto text-gray-400 mb-4" size={48} />
+                  <Users className="mx-auto text-gray-400 mb-3" size={48} />
                   <p className="text-gray-500">No recent customers</p>
+                  <p className="text-sm text-gray-400">New customers will appear here</p>
                 </div>
               )}
             </div>
           </div>
+
+          {/* Quick Actions */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left">
+                <Users className="text-blue-600 mb-2" size={24} />
+                <h4 className="font-medium">Add Customer</h4>
+                <p className="text-sm text-gray-500">Create new customer record</p>
+              </button>
+              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left">
+                <CreditCard className="text-green-600 mb-2" size={24} />
+                <h4 className="font-medium">New Facility</h4>
+                <p className="text-sm text-gray-500">Add facility for customer</p>
+              </button>
+              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left">
+                <AlertTriangle className="text-yellow-600 mb-2" size={24} />
+                <h4 className="font-medium">Review Expiring</h4>
+                <p className="text-sm text-gray-500">Check facilities expiring soon</p>
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-          <AlertTriangle className="mx-auto text-yellow-500 mb-4" size={48} />
-          <h3 className="text-lg font-semibold text-yellow-800 mb-2">No Data Available</h3>
-          <p className="text-yellow-600 mb-4">Dashboard data could not be loaded or is incomplete</p>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
+          <AlertTriangle className="mx-auto text-gray-400 mb-4" size={48} />
+          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Data Available</h3>
+          <p className="text-gray-500 mb-4">Unable to load dashboard statistics</p>
           <button
             onClick={handleRetry}
-            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Try Again
+            Reload Data
           </button>
         </div>
       )}
