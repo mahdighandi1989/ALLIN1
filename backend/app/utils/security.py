@@ -69,32 +69,42 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token"""
+    """Create a JWT access token with unified structure.
+
+    Token structure includes both standard JWT claims (iss, aud, sub) and custom claims
+    (user_id, username, type) for comprehensive validation and compatibility.
+    """
     if not data or not isinstance(data, dict):
         raise ValueError("Token data must be a non-empty dictionary")
-    
+
     # Validate required fields
     if "user_id" not in data or "username" not in data:
         raise ValueError("Token data must contain user_id and username")
-    
+
     # Validate data using TokenData model
     try:
         TokenData(user_id=data["user_id"], username=data["username"])
     except Exception as e:
         raise ValueError(f"Invalid token data: {e}")
-    
+
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
+    # Unified token structure with both standard and custom claims
     to_encode.update({
         "exp": expire,
         "iat": datetime.utcnow(),
-        "type": "access"
+        "type": "access",
+        # Standard JWT claims
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "sub": data.get("user_id"),
+        "jti": f"{data.get('user_id')}_{int(datetime.utcnow().timestamp())}"
     })
-    
+
     try:
         encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
         return encoded_jwt
@@ -103,36 +113,55 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def verify_access_token(token: str) -> dict:
-    """Verify and decode JWT token with proper validation"""
+    """Verify and decode JWT token with unified validation.
+
+    Supports both old token format (user_id, username, type) and new format
+    (with additional iss, aud, sub claims) for backward compatibility.
+    """
     if not token or not isinstance(token, str):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token format",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        
-        # Validate token type
+        # Decode with issuer and audience validation if present
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "require_exp": True,
+            }
+        )
+
+        # Validate token type (required for all tokens)
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
-        # Validate required fields exist
-        user_id = payload.get("user_id")
+
+        # Try to get user_id from multiple sources for compatibility
+        # New tokens use 'sub', old tokens use 'user_id'
+        user_id = payload.get("user_id") or payload.get("sub")
         username = payload.get("username")
-        
+
         if not user_id or not username:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
+        # Ensure user_id is in payload for downstream consumers
+        payload["user_id"] = user_id
+
         # Validate field formats using TokenData model
         try:
             TokenData(user_id=user_id, username=username)
@@ -142,9 +171,24 @@ def verify_access_token(token: str) -> dict:
                 detail="Invalid token payload format",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
+        # Optional: Validate issuer and audience if present (for new tokens)
+        if payload.get("iss") and payload.get("iss") != settings.JWT_ISSUER:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token issuer",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if payload.get("aud") and payload.get("aud") != settings.JWT_AUDIENCE:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token audience",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         return payload
-        
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

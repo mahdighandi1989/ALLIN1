@@ -5,20 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import jwt
 from pydantic import BaseModel, EmailStr, validator
 
 from ..database import get_db
 from ..models.user import User
-from ..utils.security import hash_password, verify_password
+from ..utils.security import (
+    hash_password,
+    verify_password,
+    create_access_token as create_token,
+    verify_access_token as verify_token
+)
 from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 security = HTTPBearer()
-
-# JWT Configuration
-JWT_ISSUER = "allin1-banking-system"
-JWT_AUDIENCE = "allin1-api-users"
 
 # Schemas
 class UserRegister(BaseModel):
@@ -85,126 +85,41 @@ class UpdateProfile(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
 
-# JWT utilities
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    # Add JWT standard claims for security
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "iss": JWT_ISSUER,
-        "aud": JWT_AUDIENCE,
-        "sub": data.get("user_id"),
-        "jti": f"{data.get('user_id')}_{int(datetime.utcnow().timestamp())}"  # JWT ID for token uniqueness
-    })
-    
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
-
-def verify_access_token(token: str) -> Optional[dict]:
-    try:
-        # Verify with issuer and audience validation
-        payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM],
-            issuer=JWT_ISSUER,
-            audience=JWT_AUDIENCE,
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_iat": True,
-                "verify_iss": True,
-                "verify_aud": True,
-                "require_exp": True,
-                "require_iat": True,
-                "require_iss": True,
-                "require_aud": True,
-                "require_sub": True
-            }
-        )
-        
-        # Additional validation for required claims
-        if not payload.get("sub"):
-            raise jwt.InvalidTokenError("Missing subject claim")
-        
-        if not payload.get("jti"):
-            raise jwt.InvalidTokenError("Missing JWT ID claim")
-            
-        return payload
-        
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidIssuerError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token issuer",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidAudienceError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token audience",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token signature",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+# Use unified token functions from security module
+# create_token and verify_token are imported from utils.security
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
+    """Get current authenticated user using unified token verification."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
-        payload = verify_access_token(credentials.credentials)
-        user_id: str = payload.get("sub")  # Use 'sub' claim instead of custom 'user_id'
+        payload = verify_token(credentials.credentials)
+        # Use 'user_id' which is populated by verify_token from either 'sub' or 'user_id'
+        user_id: str = payload.get("user_id")
         if user_id is None:
             raise credentials_exception
     except HTTPException:
         raise credentials_exception
-    
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise credentials_exception
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Inactive user"
         )
-    
+
     return user
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
@@ -254,7 +169,7 @@ async def register_user(user_data: UserRegister, db: AsyncSession = Depends(get_
         
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
+        access_token = create_token(
             data={"user_id": new_user.id, "username": new_user.username},
             expires_delta=access_token_expires
         )
@@ -301,7 +216,7 @@ async def login_user(user_credentials: UserLogin, db: AsyncSession = Depends(get
         
         # Create access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
+        access_token = create_token(
             data={"user_id": user.id, "username": user.username},
             expires_delta=access_token_expires
         )
@@ -421,7 +336,7 @@ async def refresh_token(
         
         # Create new access token
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
+        access_token = create_token(
             data={"user_id": current_user.id, "username": current_user.username},
             expires_delta=access_token_expires
         )

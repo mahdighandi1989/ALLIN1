@@ -4,18 +4,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 from app.routers import auth, customers, facilities, stats
-from app.core.config import Settings  # Import settings
+from app.config import settings  # Use unified config from app.config
 
-app = FastAPI(title="Banking Operations API")
-
-# Initialize settings
-settings = Settings()
+app = FastAPI(title=settings.APP_NAME)
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins_list(),  # Use configured origins
-    allow_credentials=settings.cors_allow_credentials,  # Use configured credentials
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,  # Use configured credentials
     allow_methods=["*"],
     allow_headers=["*"],
 )

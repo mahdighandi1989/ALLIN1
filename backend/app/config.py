@@ -1,14 +1,18 @@
-"""Application Configuration"""
+"""Application Configuration - Unified settings for the entire application"""
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 import secrets
 import os
-from typing import List
+from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
     # App
     APP_NAME: str = "Banking Operations"
+    APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
 
@@ -26,10 +30,17 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # JWT Claims for token structure consistency
+    JWT_ISSUER: str = "allin1-banking-system"
+    JWT_AUDIENCE: str = "allin1-api-users"
 
     # CORS - comma-separated list of allowed origins
     # Default to production origins only; add localhost in .env for local development
-    CORS_ORIGINS: str = "https://banking-ops-frontend.onrender.com"
+    CORS_ORIGINS: str = "https://banking-ops-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_MAX_AGE: int = 600
 
     # Security
     BCRYPT_ROUNDS: int = 12
@@ -43,6 +54,11 @@ class Settings(BaseSettings):
 
     # Session
     SESSION_TIMEOUT_MINUTES: int = 480  # 8 hours
+
+    # API Settings
+    API_PREFIX: str = "/api"
+    DOCS_URL: Optional[str] = "/docs"
+    REDOC_URL: Optional[str] = "/redoc"
 
     class Config:
         env_file = ".env"
@@ -63,14 +79,17 @@ class Settings(BaseSettings):
                 if "localhost" not in origin.lower() and "127.0.0.1" not in origin
             ]
             if len(filtered) < len(origins):
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     f"Filtered out localhost origins in production. "
                     f"Original: {origins}, Filtered: {filtered}"
                 )
             return filtered
 
         return origins
+
+    def get_cors_origins_list(self) -> List[str]:
+        """Alias for get_cors_origins for compatibility"""
+        return self.get_cors_origins()
 
     def model_post_init(self, __context) -> None:
         """Post-initialization validation and security checks"""
