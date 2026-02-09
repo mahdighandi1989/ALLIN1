@@ -2,9 +2,9 @@
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -13,18 +13,24 @@ from sqlalchemy.future import select
 
 from app.core.config import Settings
 from app.database import get_db
-from app.models.user import User
 
-# Load settings
+# Conditional import for type hinting to avoid circular dependency.
+# This allows type checkers to see the User model without causing an
+# import at runtime, which would lead to a circular dependency.
+if TYPE_CHECKING:
+    from app.models.user import User
+
+# Load settings from the configuration.
 settings = Settings()
 
-# Password hashing context
+# Password hashing context using bcrypt.
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# OAuth2 scheme for token-based authentication
+# OAuth2 scheme for token-based authentication.
+# The tokenUrl points to the login endpoint.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-# JWT settings from config
+# JWT settings from config.
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
@@ -70,50 +76,45 @@ def verify_access_token(token: str) -> dict:
 
 async def get_current_user(
     db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)
-) -> User:
-    """Dependency to get the current user from a JWT token. Raises HTTPException if invalid."""
+) -> "User":
+    """
+    Dependency to get the current user from a JWT token.
+    Raises HTTPException if the user is not found or the token is invalid.
+    """
+    # Local import to break the circular dependency.
+    # This import only runs when the function is called, not at module load time.
+    from app.models.user import User
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: Optional[str] = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
+    
+    payload = verify_access_token(token)
+    username: Optional[str] = payload.get("sub")
+    if username is None:
         raise credentials_exception
 
-    result = await db.execute(select(User).filter(User.username == username))
+    result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
-
+    
     if user is None:
         raise credentials_exception
     return user
 
 async def get_optional_current_user(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> Optional[User]:
+    db: AsyncSession = Depends(get_db), token: Optional[str] = Depends(oauth2_scheme)
+) -> Optional["User"]:
     """
-    Dependency to get the current user if a token is provided, otherwise return None.
-    Does not raise an exception for missing or invalid tokens.
+    Dependency to get the current user if a token is provided.
+    Returns None if no token is provided or the token is invalid.
     """
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if not token:
         return None
-
-    token = auth_header.split("Bearer ")[1]
-    
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: Optional[str] = payload.get("sub")
-        if username is None:
-            return None
-    except JWTError:
+        # Re-use the get_current_user logic
+        return await get_current_user(db=db, token=token)
+    except HTTPException:
+        # If token is invalid, simply return None instead of raising an error
         return None
-
-    result = await db.execute(select(User).filter(User.username == username))
-    user = result.scalar_one_or_none()
-    
-    return user
