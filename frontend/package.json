@@ -2,10 +2,8 @@
   "name": "banking-ops-frontend",
   "version": "3.0.0",
   "private": true,
-  "packageManager": "pnpm@8.15.0",
   "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -46,15 +44,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "pnpm": {
-    "overrides": {
-      "@types/react": "18.2.48",
-      "@types/react-dom": "18.2.18"
-    },
-    "peerDependencyRules": {
-      "ignoreMissing": [],
-      "allowedVersions": {}
-    }
   }
 }

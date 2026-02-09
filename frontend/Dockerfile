@@ -1,56 +1,30 @@
+# Multi-stage build for Next.js static export
+# Stage 1: Build the application
 FROM node:20-alpine AS builder
 
-# Create app directory and user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
-
 WORKDIR /app
 
-# Copy package files with proper ownership
-COPY --chown=nextjs:nodejs package*.json ./
+# Copy package files
+COPY package.json package-lock.json ./
 
-# Switch to non-root user for build
-USER nextjs
+# Install all dependencies (including devDependencies needed for build)
+RUN npm ci
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy source code
+COPY . .
 
-# Copy source code with proper ownership
-COPY --chown=nextjs:nodejs . .
-
-# Build the application
+# Build the application (tsc --noEmit && next build → produces out/)
 RUN npm run build
 
-FROM node:20-alpine AS runner
-WORKDIR /app
+# Stage 2: Serve static files with nginx
+FROM nginx:alpine AS production
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+# Copy built static files to nginx html directory
+COPY --from=builder /app/out /usr/share/nginx/html
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
-
-# Copy built application with proper ownership
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-
-# Create necessary directories with proper ownership
-RUN mkdir -p /app/.next/cache && chown -R nextjs:nodejs /app/.next/cache
-RUN mkdir -p /tmp && chmod 1777 /tmp
-
-# Switch to non-root user before running the application
-USER nextjs
+# Copy custom nginx config for SPA routing
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })" || exit 1
-
-CMD ["node", "server.js"]
+CMD ["nginx", "-g", "daemon off;"]
