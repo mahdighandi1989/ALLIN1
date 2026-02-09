@@ -19,6 +19,17 @@ if not DATABASE_URL:
         "Example: postgresql+asyncpg://username:password@host:port/database"
     )
 
+def _apply_ssl_for_render(url: str) -> str:
+    """
+    Applies sslmode=require for database URLs hosted on Render.com
+    if sslmode is not already specified.
+    """
+    if "onrender.com" in url and "sslmode" not in url:
+        # Check if the URL already has query parameters
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}sslmode=require"
+    return url
+
 # Convert DATABASE_URL to async-compatible format
 # Render and other cloud providers use various formats:
 # - postgres:// (legacy format)
@@ -27,47 +38,45 @@ if not DATABASE_URL:
 # We need postgresql+asyncpg:// for async SQLAlchemy
 def get_async_database_url(url: str) -> str:
     """Convert database URL to use asyncpg driver for async SQLAlchemy"""
+    async_url = url
     # Already using asyncpg - no conversion needed
-    if "postgresql+asyncpg://" in url:
-        return url
-
+    if "postgresql+asyncpg://" in async_url:
+        pass
     # Handle postgresql+psycopg2:// (explicit sync driver)
-    if url.startswith("postgresql+psycopg2://"):
-        return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
-
+    elif async_url.startswith("postgresql+psycopg2://"):
+        async_url = async_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
     # Handle postgresql+psycopg:// (another sync driver variant)
-    if url.startswith("postgresql+psycopg://"):
-        return url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
-
+    elif async_url.startswith("postgresql+psycopg://"):
+        async_url = async_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
     # Handle postgres:// (legacy/shorthand format)
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+asyncpg://", 1)
-
+    elif async_url.startswith("postgres://"):
+        async_url = async_url.replace("postgres://", "postgresql+asyncpg://", 1)
     # Handle postgresql:// (defaults to psycopg2)
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    return url
+    elif async_url.startswith("postgresql://"):
+        async_url = async_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    return _apply_ssl_for_render(async_url)
 
 def get_sync_database_url(url: str) -> str:
     """Convert database URL to use sync driver (psycopg2) for migrations"""
+    sync_url = url
     # Handle postgres:// (legacy format) - convert to standard postgresql://
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
+    if sync_url.startswith("postgres://"):
+        sync_url = sync_url.replace("postgres://", "postgresql://", 1)
 
     # Handle asyncpg driver - convert to sync
-    if "+asyncpg" in url:
-        return url.replace("+asyncpg", "")
+    if "+asyncpg" in sync_url:
+        sync_url = sync_url.replace("+asyncpg", "")
 
     # Handle explicit psycopg2 - already sync, just normalize
-    if "+psycopg2" in url:
-        return url.replace("+psycopg2", "")
+    if "+psycopg2" in sync_url:
+        sync_url = sync_url.replace("+psycopg2", "")
 
     # Handle explicit psycopg - already sync, just normalize
-    if "+psycopg" in url:
-        return url.replace("+psycopg", "")
+    if "+psycopg" in sync_url:
+        sync_url = sync_url.replace("+psycopg", "")
 
-    return url
+    return _apply_ssl_for_render(sync_url)
 
 ASYNC_DATABASE_URL = get_async_database_url(DATABASE_URL)
 SYNC_DATABASE_URL = get_sync_database_url(DATABASE_URL)
@@ -235,37 +244,4 @@ async def get_table_info(table_name: str) -> dict:
         WHERE table_name = :table_name
         ORDER BY ordinal_position
         """
-        columns = await execute_raw_query(query, {"table_name": table_name})
-        
-        count_query = f"SELECT COUNT(*) as row_count FROM {table_name}"
-        count_result = await execute_raw_query(count_query)
-        row_count = count_result[0]["row_count"] if count_result else 0
-        
-        return {
-            "table_name": table_name,
-            "columns": columns,
-            "row_count": row_count
-        }
-    except Exception as e:
-        logger.error(f"Failed to get table info for {table_name}: {e}")
-        raise
-
-
-async def backup_table(table_name: str, backup_suffix: str = None) -> str:
-    """Create a backup of a table"""
-    try:
-        if backup_suffix is None:
-            from datetime import datetime
-            backup_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        backup_table_name = f"{table_name}_backup_{backup_suffix}"
-        
-        async with async_engine.begin() as conn:
-            query = f"CREATE TABLE {backup_table_name} AS SELECT * FROM {table_name}"
-            await conn.execute(text(query))
-        
-        logger.info(f"Table {table_name} backed up to {backup_table_name}")
-        return backup_table_name
-    except Exception as e:
-        logger.error(f"Failed to backup table {table_name}: {e}")
-        raise
+        columns = await execute_raw_query(query, {"tabl
