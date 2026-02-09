@@ -11,7 +11,7 @@ from pydantic import BaseModel, validator
 import re
 import uuid
 
-from app.config import settings, get_settings
+from app.core.config import settings
 from app.database import get_db
 
 # Password hashing context
@@ -139,217 +139,43 @@ def verify_access_token(token: str) -> dict:
         except Exception:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload format",
+                detail="Invalid token data format",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
         return payload
         
-    except jwt.ExpiredSignatureError:
+    except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token verification failed",
+            detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
 
-async def get_current_user(
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get current authenticated user with comprehensive validation"""
-    from app.models.user import User
+    """Get current authenticated user from token"""
+    token = credentials.credentials
+    payload = verify_access_token(token)
     
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    # Fetch user from database
+    query = select(User).where(User.id == payload["user_id"], User.username == payload["username"])
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
     
-    try:
-        # Verify and decode token
-        payload = verify_access_token(credentials.credentials)
-        
-        # Extract and validate user data from payload
-        user_id = payload.get("user_id")
-        username = payload.get("username")
-        
-        # Additional validation (already done in verify_access_token, but double-check)
-        if not user_id or not username:
-            raise credentials_exception
-        
-        # Validate user_id format (8 characters, alphanumeric)
-        if not isinstance(user_id, str) or len(user_id) != 8 or not re.match(r'^[a-zA-Z0-9]{8}$', user_id):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid user ID format",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Validate username format
-        if not isinstance(username, str) or not re.match(r'^[a-zA-Z0-9_-]{3,50}$', username):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username format",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Query database with validated parameters
-        try:
-            result = await db.execute(
-                select(User).where(
-                    User.id == user_id,
-                    User.username == username.lower(),
-                    User.is_active == True
-                )
-            )
-            user = result.scalar_one_or_none()
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database query failed"
-            )
-        
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found or inactive",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Final validation - ensure user is active
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account is inactive"
-            )
-        
-        return user
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise credentials_exception
-
-
-async def get_current_active_user(current_user = Depends(get_current_user)):
-    """Get current active user"""
-    if not current_user.is_active:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User account is inactive"
+            detail="Inactive user"
         )
-    return current_user
-
-
-class FakeUser:
-    """Fake user for development when AUTH_DISABLED is True"""
-    def __init__(self):
-        self.id = "dev12345"
-        self.username = "developer"
-        self.email = "dev@example.com"
-        self.full_name = "Developer Mode"
-        self.is_active = True
-        self.is_admin = True
-
-
-async def get_optional_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Get current user, but return fake user if AUTH_DISABLED is True.
-    This allows bypassing authentication for development.
-    """
-    current_settings = get_settings()
-
-    # If auth is disabled, return fake user
-    if current_settings.AUTH_DISABLED:
-        return FakeUser()
-
-    # Otherwise, require authentication
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return await get_current_user(credentials, db)
-
-
-def get_token_data(current_user = Depends(get_current_user)) -> TokenData:
-    """Get validated token data from current user"""
-    try:
-        return TokenData(
-            user_id=current_user.id,
-            username=current_user.username
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to extract token data"
-        )
-
-
-def validate_uuid_format(value: str) -> bool:
-    """Validate if string is a valid UUID format"""
-    try:
-        uuid.UUID(value)
-        return True
-    except (ValueError, TypeError):
-        return False
-
-
-def sanitize_input(value: str, max_length: int = 255) -> str:
-    """Sanitize string input to prevent injection attacks"""
-    if not isinstance(value, str):
-        raise ValueError("Input must be a string")
     
-    # Remove null bytes and control characters
-    sanitized = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', value)
-    
-    # Trim whitespace and limit length
-    sanitized = sanitized.strip()[:max_length]
-    
-    return sanitized
-
-
-def validate_password_strength(password: str) -> bool:
-    """Validate password meets security requirements"""
-    if not password or not isinstance(password, str):
-        return False
-    
-    if len(password) < 8:
-        return False
-    
-    # Must contain at least one digit
-    if not any(char.isdigit() for char in password):
-        return False
-    
-    # Must contain at least one letter
-    if not any(char.isalpha() for char in password):
-        return False
-    
-    # Must not contain common weak patterns
-    weak_patterns = ['123456', 'password', 'qwerty', 'abc123']
-    password_lower = password.lower()
-    for pattern in weak_patterns:
-        if pattern in password_lower:
-            return False
-    
-    return True
+    return user
