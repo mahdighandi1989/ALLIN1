@@ -1,195 +1,210 @@
-"""Application Configuration"""
-from pydantic_settings import BaseSettings
-from functools import lru_cache
-import secrets
+"""
+Single Source of Truth for all application settings.
+This file defines the configuration for the entire backend application,
+loading values from environment variables and a .env file.
+It includes robust validation to ensure security and correctness.
+"""
 import os
-from typing import List
+from typing import Optional, List
+from pydantic_settings import BaseSettings
+from pydantic import validator, Field
+import secrets
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    # App
-    APP_NAME: str = "Banking Operations"
-    DEBUG: bool = False
-    ENVIRONMENT: str = "production"
+    # Database settings
+    database_url: str = Field(
+        default="postgresql+asyncpg://user:password@localhost/allin1_db",
+        description="Database connection URL"
+    )
+    database_pool_size: int = Field(default=20, ge=1, le=100)
+    database_max_overflow: int = Field(default=30, ge=0, le=100)
+    database_pool_recycle: int = Field(default=3600, ge=300, le=86400)
+    database_echo: bool = Field(default=False, description="Enable SQL query logging")
 
-    # Authentication - set to True to disable auth for development
-    AUTH_DISABLED: bool = True
+    # Application settings
+    app_name: str = Field(default="ALLIN1 Banking System", min_length=1)
+    app_version: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
+    debug: bool = Field(default=False, description="Enable debug mode")
+    environment: str = Field(default="development", pattern="^(development|staging|production)$")
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://localhost/banking"
-    DATABASE_POOL_SIZE: int = 20
-    DATABASE_MAX_OVERFLOW: int = 30
-    DATABASE_POOL_RECYCLE: int = 3600
-    DATABASE_ECHO: bool = False
+    # Security settings - Critical security configurations
+    secret_key: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(64),
+        min_length=32,
+        description="JWT signing key - must be cryptographically secure"
+    )
+    algorithm: str = Field(default="HS256", pattern="^(HS256|HS384|HS512|RS256|RS384|RS512)$")
+    access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
+    refresh_token_expire_days: int = Field(default=7, ge=1, le=30)
+    password_min_length: int = Field(default=8, ge=8, le=128)
+    max_login_attempts: int = Field(default=5, ge=3, le=10)
+    lockout_duration_minutes: int = Field(default=15, ge=5, le=60)
 
-    # JWT - Generate secure random key if not provided
-    SECRET_KEY: str = ""
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-
-    # CORS - comma-separated list of allowed origins
-    # Default to production origins only; add localhost in .env for local development
-    CORS_ORIGINS: str = "https://banking-ops-frontend.onrender.com"
-
-    # Security
-    BCRYPT_ROUNDS: int = 12
-    PASSWORD_MIN_LENGTH: int = 8
-    MAX_LOGIN_ATTEMPTS: int = 5
-    LOCKOUT_DURATION_MINUTES: int = 30
+    # CORS settings
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        description="Comma-separated list of allowed origins"
+    )
+    cors_allow_credentials: bool = Field(default=True)
+    cors_max_age: int = Field(default=600, ge=0, le=86400)
 
     # Rate limiting
-    RATE_LIMIT_PER_MINUTE: int = 100
-    RATE_LIMIT_BURST: int = 200
+    rate_limit_per_minute: int = Field(default=60, ge=10, le=1000)
+    rate_limit_burst: int = Field(default=100, ge=20, le=2000)
 
-    # Session
-    SESSION_TIMEOUT_MINUTES: int = 480  # 8 hours
+    # Logging settings
+    log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    log_file: Optional[str] = Field(default=None, description="Log file path")
+    log_max_bytes: int = Field(default=10485760, ge=1048576)  # 10MB
+    log_backup_count: int = Field(default=5, ge=1, le=10)
+
+    # API settings
+    api_prefix: str = Field(default="/api", pattern="^/[a-zA-Z0-9/_-]*$")
+    docs_url: Optional[str] = Field(default="/docs")
+    redoc_url: Optional[str] = Field(default="/redoc")
+    openapi_url: Optional[str] = Field(default="/openapi.json")
+
+    # File upload settings
+    max_file_size_mb: int = Field(default=10, ge=1, le=100)
+    allowed_file_types: str = Field(
+        default="pdf,doc,docx,xls,xlsx,png,jpg,jpeg",
+        description="Comma-separated list of allowed file extensions"
+    )
+
+    # Email settings (for notifications)
+    smtp_host: Optional[str] = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = Field(default=True)
+
+    # Redis settings (for caching and sessions)
+    redis_url: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL for caching"
+    )
+    redis_expire_seconds: int = Field(default=3600, ge=60, le=86400)
+
+    # Monitoring and health checks
+    health_check_interval: int = Field(default=30, ge=10, le=300)
+    metrics_enabled: bool = Field(default=True)
 
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+        extra = "forbid"  # Prevent unknown environment variables
 
-    def get_cors_origins(self) -> List[str]:
-        """Parse CORS origins from comma-separated string.
+    @validator('secret_key')
+    def validate_secret_key(cls, v, values):
+        """Validate secret key security requirements"""
+        if not v or len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters long for security. "
+                "Use a cryptographically secure random string."
+            )
 
-        In production, automatically filters out localhost/127.0.0.1 origins
-        to ensure security even if misconfigured.
-        """
-        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-
-        # In production, filter out localhost origins for security
-        if self.ENVIRONMENT.lower() == "production":
-            filtered = [
-                origin for origin in origins
-                if "localhost" not in origin.lower() and "127.0.0.1" not in origin
+        # Check for common weak patterns in production
+        environment = values.get('environment', 'development')
+        if environment == 'production':
+            weak_patterns = [
+                'change-me',
+                'secret',
+                'password',
+                'your-secret-key',
+                'development',
+                'test',
+                '123456',
+                'default'
             ]
-            if len(filtered) < len(origins):
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Filtered out localhost origins in production. "
-                    f"Original: {origins}, Filtered: {filtered}"
-                )
-            return filtered
+            v_lower = v.lower()
+            for pattern in weak_patterns:
+                if pattern in v_lower:
+                    raise ValueError(
+                        f"SECRET_KEY contains weak pattern '{pattern}'. "
+                        "Use a cryptographically secure random string in production."
+                    )
 
-        return origins
+        return v
 
-    def model_post_init(self, __context) -> None:
-        """Post-initialization validation and security checks"""
-        # Generate secure SECRET_KEY if not provided
-        if not self.SECRET_KEY:
-            self.SECRET_KEY = secrets.token_urlsafe(64)
-            if self.ENVIRONMENT == "production":
+    @validator('database_url')
+    def validate_database_url(cls, v):
+        """Validate database URL format"""
+        if not v.startswith(('postgresql://', 'postgresql+asyncpg://', 'sqlite://', 'sqlite+aiosqlite://')):
+            raise ValueError(
+                "DATABASE_URL must start with postgresql://, postgresql+asyncpg://, "
+                "sqlite://, or sqlite+aiosqlite://"
+            )
+        return v
+
+    @validator('cors_origins')
+    def validate_cors_origins(cls, v):
+        """Validate CORS origins format"""
+        if not v:
+            return v
+
+        origins = [origin.strip() for origin in v.split(',') if origin.strip()]
+        for origin in origins:
+            if not (origin.startswith(('http://', 'https://')) or origin == '*'):
                 raise ValueError(
-                    "SECRET_KEY environment variable must be explicitly set in production. "
-                    "Generate a secure key using: python -c 'import secrets; print(secrets.token_urlsafe(64))'"
+                    f"Invalid CORS origin '{origin}'. "
+                    "Origins must start with http:// or https://, or be '*'"
                 )
-        
-        # Validate SECRET_KEY security in production
-        # Note: Render's generateValue creates ~43-53 char keys which are still cryptographically secure (256+ bits)
-        if self.ENVIRONMENT == "production":
-            if len(self.SECRET_KEY) < 32:
-                raise ValueError(
-                    "SECRET_KEY must be at least 32 characters long in production for security. "
-                    "Use: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+        return v
+
+    @validator('environment')
+    def validate_environment_security(cls, v, values):
+        """Validate security settings based on environment"""
+        if v == 'production':
+            # Additional production security checks
+            debug = values.get('debug', False)
+            if debug:
+                logger.warning("Debug mode should be disabled in production")
+
+            # Check if docs are exposed in production
+            docs_url = values.get('docs_url')
+            redoc_url = values.get('redoc_url')
+            if docs_url or redoc_url:
+                logger.warning(
+                    "API documentation endpoints should be disabled in production "
+                    "for security reasons"
                 )
-            
-            # Check for common weak keys
-            weak_keys = [
-                "change-me-in-production",
-                "your-secret-key",
-                "secret",
-                "password",
-                "123456",
-                "default-key"
-            ]
-            
-            if self.SECRET_KEY.lower() in [key.lower() for key in weak_keys]:
-                raise ValueError(
-                    "SECRET_KEY appears to be a default/weak value. "
-                    "Generate a cryptographically secure key for production."
-                )
-        
-        # Validate database URL in production
-        if self.ENVIRONMENT == "production":
-            if not self.DATABASE_URL or "localhost" in self.DATABASE_URL:
-                raise ValueError(
-                    "DATABASE_URL must be set to a production database in production environment"
-                )
-        
-        # Security validations
-        if self.BCRYPT_ROUNDS < 10:
-            raise ValueError("BCRYPT_ROUNDS must be at least 10 for security")
-        
-        if self.PASSWORD_MIN_LENGTH < 8:
-            raise ValueError("PASSWORD_MIN_LENGTH must be at least 8 characters")
-        
-        if self.ACCESS_TOKEN_EXPIRE_MINUTES > 60 * 24 * 30:  # 30 days
-            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES should not exceed 30 days for security")
+
+        return v
+
+    def get_cors_origins_list(self) -> List[str]:
+        """Parse CORS origins from comma-separated string"""
+        if not self.cors_origins:
+            return []
+        if isinstance(self.cors_origins, str):
+            return [origin.strip() for origin in self.cors_origins.split(',') if origin.strip()]
+        return self.cors_origins
+
+    def get_allowed_file_types_list(self) -> List[str]:
+        """Parse allowed file types from comma-separated string"""
+        return [ext.strip().lower() for ext in self.allowed_file_types.split(',') if ext.strip()]
 
     def is_production(self) -> bool:
         """Check if running in production environment"""
-        return self.ENVIRONMENT.lower() == "production"
+        return self.environment == 'production'
 
     def is_development(self) -> bool:
         """Check if running in development environment"""
-        return self.ENVIRONMENT.lower() in ["development", "dev"]
+        return self.environment == 'development'
 
     def get_database_config(self) -> dict:
         """Get database configuration dictionary"""
         return {
-            "url": self.DATABASE_URL,
-            "pool_size": self.DATABASE_POOL_SIZE,
-            "max_overflow": self.DATABASE_MAX_OVERFLOW,
-            "pool_recycle": self.DATABASE_POOL_RECYCLE,
-            "echo": self.DATABASE_ECHO and not self.is_production()
+            'url': self.database_url,
+            'pool_size': self.database_pool_size,
+            'max_overflow': self.database_max_overflow,
+            'pool_recycle': self.database_pool_recycle,
+            'echo': self.database_echo and self.debug
         }
 
-
-@lru_cache()
-def get_settings() -> Settings:
-    """Get cached settings instance"""
-    return Settings()
-
-
-# Global settings instance
-settings = get_settings()
-
-
-# Security helper functions
-def generate_secret_key() -> str:
-    """Generate a cryptographically secure secret key"""
-    return secrets.token_urlsafe(64)
-
-
-def validate_environment_security() -> None:
-    """Validate security configuration for current environment"""
-    if settings.is_production():
-        # Additional production security checks
-        required_env_vars = ["SECRET_KEY", "DATABASE_URL"]
-        missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-
-        if missing_vars:
-            raise ValueError(
-                f"Required environment variables missing in production: {', '.join(missing_vars)}"
-            )
-
-        # CORS origins are automatically filtered in production by get_cors_origins()
-        # Just ensure we have at least one valid origin
-        cors_origins = settings.get_cors_origins()
-        if not cors_origins:
-            import logging
-            logging.getLogger(__name__).warning(
-                "No valid CORS origins configured for production. "
-                "API requests from web browsers may be blocked."
-            )
-
-
-# Initialize security validation
-try:
-    validate_environment_security()
-except ValueError as e:
-    if settings.is_production():
-        raise e
-    else:
-        # Log warning in development but don't fail
-        import logging
-        logging.getLogger(__name__).warning(f"Security validation warning: {e}")
+    def get_security_headers(self) -> dict:
+        """Get recommended security
