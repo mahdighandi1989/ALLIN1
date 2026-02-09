@@ -170,7 +170,7 @@ def verify_access_token(token: str) -> Optional[dict]:
         )
 
 # Dependency to get current user
-def get_current_user(
+async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
