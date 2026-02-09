@@ -1,2 +1,2 @@
 javascript
-const AUTH_DISABLED = true
+const AUTH_DISABLED = false

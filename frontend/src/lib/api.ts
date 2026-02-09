@@ -1,4 +1,4 @@
-javascript
+typescript
 dashboard: async (): Promise<DashboardStats> => {
   if (AUTH_DISABLED) {
     // Return fake dashboard data for development
@@ -25,6 +25,15 @@ dashboard: async (): Promise<DashboardStats> => {
       ]
     }
   }
-  const res = await api.get('/api/stats/dashboard')
+  // Get token from localStorage
+  const token = localStorage.getItem('token')
+  if (!token) {
+    throw new Error('No authentication token found')
+  }
+  const res = await api.get('/api/stats/dashboard', {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
   return res.data
 },
