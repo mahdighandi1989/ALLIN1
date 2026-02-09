@@ -1,133 +1,454 @@
-# backend/app/routers/stats.py
+# backend/app/routers/facilities.py
 
-"""Stats Router - Dashboard Data"""
-from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends
+"""Facilities Router - CRUD operations for banking facilities"""
+from datetime import datetime, date
+from typing import Optional, List
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, and_, desc
+from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.models import Customer, Facility, CustomerStatus, FacilityStatus
+from app.models import Customer, Facility
+from app.models.facility import FacilityType, FacilityStatus
 from app.utils.security import get_optional_current_user
 
-router = APIRouter(prefix="/api/stats", tags=["Stats"])
+router = APIRouter()
 
 
-@router.get("/dashboard")
-async def get_dashboard_stats(
-    current_user = Depends(get_optional_current_user),
-    db: AsyncSession = Depends(get_db)
+# Schemas
+class FacilityCreate(BaseModel):
+    customer_id: str
+    facility_type: FacilityType
+    name: Optional[str] = None
+    amount: Decimal = Field(..., description="Facility amount")
+    outstanding: Optional[Decimal] = Field(default=0, description="Outstanding amount")
+    currency: str = Field(default="AED")
+    start_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    interest_rate: Optional[Decimal] = None
+    tenor_months: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FacilityUpdate(BaseModel):
+    facility_type: Optional[FacilityType] = None
+    name: Optional[str] = None
+    amount: Optional[Decimal] = None
+    outstanding: Optional[Decimal] = None
+    currency: Optional[str] = None
+    start_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    interest_rate: Optional[Decimal] = None
+    tenor_months: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[FacilityStatus] = None
+
+
+class FacilityResponse(BaseModel):
+    id: str
+    customer_id: str
+    facility_type: FacilityType
+    name: Optional[str]
+    status: FacilityStatus
+    amount: Decimal
+    outstanding: Decimal
+    currency: str
+    start_date: Optional[date]
+    expiry_date: Optional[date]
+    interest_rate: Optional[Decimal]
+    tenor_months: Optional[str]
+    notes: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    is_deleted: bool
+
+    class Config:
+        from_attributes = True
+
+
+# Routes
+@router.get("/", response_model=List[FacilityResponse])
+async def list_facilities(
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    facility_type: Optional[FacilityType] = Query(None, description="Filter by facility type"),
+    status: Optional[FacilityStatus] = Query(None, description="Filter by status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
 ):
-    """Get dashboard statistics"""
-    # Customers
-    total_customers = (await db.execute(
-        select(func.count()).select_from(Customer).where(Customer.is_deleted == False)
-    )).scalar() or 0
+    """List all facilities with optional filters"""
+    query = select(Facility).where(Facility.is_deleted == False)
 
-    active_customers = (await db.execute(
-        select(func.count()).select_from(Customer).where(
-            Customer.is_deleted == False,
-            Customer.status == CustomerStatus.ACTIVE
-        )
-    )).scalar() or 0
+    if customer_id:
+        query = query.where(Facility.customer_id == customer_id)
+    if facility_type:
+        query = query.where(Facility.facility_type == facility_type)
+    if status:
+        query = query.where(Facility.status == status)
 
-    # Facilities
-    total_facilities = (await db.execute(
-        select(func.count()).select_from(Facility).where(Facility.is_deleted == False)
-    )).scalar() or 0
+    query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
 
-    # FIXME: The 'amount' and 'outstanding' columns do not exist in the Facility model.
-    # These queries caused the endpoint to crash. They are temporarily disabled.
-    # To re-enable, ensure the correct column names are used.
-    # total_amount = (await db.execute(
-    #     select(func.sum(Facility.amount)).where(Facility.is_deleted == False)
-    # )).scalar() or 0
-    total_amount = 0.0
-
-    # total_outstanding = (await db.execute(
-    #     select(func.sum(Facility.outstanding)).where(Facility.is_deleted == False)
-    # )).scalar() or 0
-    total_outstanding = 0.0
-
-    # Expiring soon (30 days)
-    expiry_cutoff = datetime.now().date() + timedelta(days=30)
-    expiring_soon = (await db.execute(
-        select(func.count()).select_from(Facility).where(
-            Facility.is_deleted == False,
-            Facility.status == FacilityStatus.ACTIVE,
-            Facility.expiry_date <= expiry_cutoff,
-            Facility.expiry_date >= datetime.now().date()
-        )
-    )).scalar() or 0
-
-    # Recent customers
-    recent = await db.execute(
-        select(Customer)
-        .where(Customer.is_deleted == False)
-        .order_by(Customer.created_at.desc())
-        .limit(5)
-    )
-    recent_customers = [
-        {"id": c.id, "name": c.name, "account_no": c.account_no}
-        for c in recent.scalars()
-    ]
-
-    return {
-        "customers": {
-            "total": total_customers,
-            "active": active_customers
-        },
-        "facilities": {
-            "total": total_facilities,
-            "total_amount": float(total_amount),
-            "outstanding": float(total_outstanding),
-            "expiring_soon": expiring_soon
-        },
-        "recent_customers": recent_customers
-    }
-
-
-@router.get("/expiring")
-async def get_expiring_facilities(
-    days: int = 30,
-    current_user = Depends(get_optional_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get facilities expiring soon"""
-    cutoff = datetime.now().date() + timedelta(days=days)
-
-    result = await db.execute(
-        select(Facility).where(
-            Facility.is_deleted == False,
-            Facility.status == FacilityStatus.ACTIVE,
-            Facility.expiry_date <= cutoff,
-            Facility.expiry_date >= datetime.now().date()
-        ).order_by(Facility.expiry_date)
-    )
+    result = await db.execute(query)
     facilities = result.scalars().all()
 
-    # Get customer names
-    customer_ids = list(set(f.customer_id for f in facilities))
-    customer_names = {}
-    if customer_ids:
-        customers = await db.execute(select(Customer).where(Customer.id.in_(customer_ids)))
-        for c in customers.scalars():
-            customer_names[c.id] = c.name
+    return [FacilityResponse.from_orm(f) for f in facilities]
 
-    # FIXME: The 'amount' column does not exist in the Facility model.
-    # Returning 0 for now to prevent errors.
-    return {
-        "items": [
-            {
-                "id": f.id,
-                "customer_id": f.customer_id,
-                "customer_name": customer_names.get(f.customer_id),
-                "facility_type": f.facility_type.value,
-                "amount": 0.0, # float(f.amount) if f.amount else 0,
-                "expiry_date": f.expiry_date.isoformat() if f.expiry_date else None,
-                "days_until_expiry": (f.expiry_date - datetime.now().date()).days if f.expiry_date else None
+
+@router.get("/{facility_id}", response_model=FacilityResponse)
+async def get_facility(
+    facility_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Get a specific facility by ID"""
+    query = select(Facility).where(
+        and_(
+            Facility.id == facility_id,
+            Facility.is_deleted == False
+        )
+    )
+    result = await db.execute(query)
+    facility = result.scalar_one_or_none()
+
+    if not facility:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Facility not found"
+        )
+
+    return FacilityResponse.from_orm(facility)
+
+
+@router.post("/", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
+async def create_facility(
+    facility_data: FacilityCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Create a new facility"""
+    try:
+        # Check if customer exists
+        customer_query = select(Customer).where(
+            and_(
+                Customer.id == facility_data.customer_id,
+                Customer.is_deleted == False
+            )
+        )
+        customer_result = await db.execute(customer_query)
+        customer = customer_result.scalar_one_or_none()
+
+        if not customer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Customer not found"
+            )
+
+        # Create facility with all fields including amount
+        db_facility = Facility(
+            customer_id=facility_data.customer_id,
+            facility_type=facility_data.facility_type,
+            name=facility_data.name,
+            amount=facility_data.amount,
+            outstanding=facility_data.outstanding or 0,
+            currency=facility_data.currency,
+            start_date=facility_data.start_date,
+            expiry_date=facility_data.expiry_date,
+            interest_rate=facility_data.interest_rate,
+            tenor_months=facility_data.tenor_months,
+            notes=facility_data.notes,
+            status=FacilityStatus.ACTIVE,
+            created_at=datetime.utcnow()
+        )
+
+        db.add(db_facility)
+        await db.commit()
+        await db.refresh(db_facility)
+
+        return FacilityResponse.from_orm(db_facility)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create facility: {str(e)}"
+        )
+
+
+@router.put("/{facility_id}", response_model=FacilityResponse)
+async def update_facility(
+    facility_id: str,
+    facility_data: FacilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Update facility information"""
+    try:
+        # Check if facility exists
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facility not found"
+            )
+
+        # Update facility fields - amount is now properly supported
+        update_data = facility_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(facility, field, value)
+
+        facility.updated_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(facility)
+
+        return FacilityResponse.from_orm(facility)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update facility: {str(e)}"
+        )
+
+
+@router.delete("/{facility_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_facility(
+    facility_id: str,
+    permanent: bool = Query(False, description="Permanently delete (admin only)"),
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Delete a facility (soft delete by default)"""
+    try:
+        # Check if facility exists
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facility not found"
+            )
+
+        if permanent:
+            # Permanent delete (would need admin role check)
+            await db.delete(facility)
+        else:
+            # Soft delete
+            facility.is_deleted = True
+            facility.status = FacilityStatus.CLOSED
+            facility.updated_at = datetime.utcnow()
+
+        await db.commit()
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete facility: {str(e)}"
+        )
+
+
+@router.post("/{facility_id}/restore", response_model=FacilityResponse)
+async def restore_facility(
+    facility_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Restore a soft-deleted facility"""
+    try:
+        # Find soft-deleted facility
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == True
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deleted facility not found"
+            )
+
+        # Restore facility
+        facility.is_deleted = False
+        facility.status = FacilityStatus.ACTIVE
+        facility.updated_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(facility)
+
+        return FacilityResponse.from_orm(facility)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to restore facility: {str(e)}"
+        )
+
+
+@router.patch("/{facility_id}/status")
+async def update_facility_status(
+    facility_id: str,
+    new_status: FacilityStatus,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Update facility status"""
+    try:
+        query = select(Facility).where(
+            and_(
+                Facility.id == facility_id,
+                Facility.is_deleted == False
+            )
+        )
+        result = await db.execute(query)
+        facility = result.scalar_one_or_none()
+
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facility not found"
+            )
+
+        facility.status = new_status
+        facility.updated_at = datetime.utcnow()
+
+        await db.commit()
+        await db.refresh(facility)
+
+        return {"message": f"Facility status updated to {new_status.value}"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update facility status: {str(e)}"
+        )
+
+
+@router.get("/search/advanced")
+async def advanced_search_facilities(
+    customer_name: Optional[str] = Query(None, description="Search by customer name"),
+    amount_from: Optional[float] = Query(None, description="Minimum amount"),
+    amount_to: Optional[float] = Query(None, description="Maximum amount"),
+    date_from: Optional[date] = Query(None, description="Start date filter"),
+    date_to: Optional[date] = Query(None, description="End date filter"),
+    expiry_from: Optional[date] = Query(None, description="Expiry date from"),
+    expiry_to: Optional[date] = Query(None, description="Expiry date to"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Advanced search for facilities"""
+    try:
+        # Build query with joins and select customer name directly
+        query = select(Facility, Customer.name.label("customer_name")).join(
+            Customer, Facility.customer_id == Customer.id
+        ).where(
+            and_(
+                Facility.is_deleted == False,
+                Customer.is_deleted == False
+            )
+        )
+
+        conditions = []
+
+        if customer_name:
+            conditions.append(Customer.name.ilike(f"%{customer_name}%"))
+
+        # Amount filters - now properly supported
+        if amount_from is not None:
+            conditions.append(Facility.amount >= amount_from)
+
+        if amount_to is not None:
+            conditions.append(Facility.amount <= amount_to)
+
+        if date_from:
+            conditions.append(Facility.start_date >= date_from)
+
+        if date_to:
+            conditions.append(Facility.start_date <= date_to)
+
+        if expiry_from:
+            conditions.append(Facility.expiry_date >= expiry_from)
+
+        if expiry_to:
+            conditions.append(Facility.expiry_date <= expiry_to)
+
+        if conditions:
+            query = query.where(and_(*conditions))
+
+        # Apply pagination and ordering
+        query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
+
+        result = await db.execute(query)
+        rows = result.all()
+
+        # Build response
+        facility_responses = []
+        for facility, cust_name in rows:
+            facility_dict = {
+                "id": facility.id,
+                "customer_id": facility.customer_id,
+                "customer_name": cust_name,
+                "facility_type": facility.facility_type.value if facility.facility_type else None,
+                "name": facility.name,
+                "status": facility.status.value if facility.status else None,
+                "amount": float(facility.amount) if facility.amount else 0,
+                "outstanding": float(facility.outstanding) if facility.outstanding else 0,
+                "currency": facility.currency,
+                "start_date": facility.start_date.isoformat() if facility.start_date else None,
+                "expiry_date": facility.expiry_date.isoformat() if facility.expiry_date else None,
+                "interest_rate": float(facility.interest_rate) if facility.interest_rate else None,
+                "tenor_months": facility.tenor_months,
+                "notes": facility.notes,
+                "created_at": facility.created_at.isoformat() if facility.created_at else None,
+                "updated_at": facility.updated_at.isoformat() if facility.updated_at else None,
             }
-            for f in facilities
-        ],
-        "total": len(facilities)
-    }
+            facility_responses.append(facility_dict)
+
+        return {
+            "items": facility_responses,
+            "total": len(facility_responses)
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search facilities: {str(e)}"
+        )

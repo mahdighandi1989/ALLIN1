@@ -4,20 +4,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 from app.routers import auth, customers, facilities, stats
-from app.core.config import Settings  # Import settings
+from app.config import settings  # Use unified config from app.config
 
-app = FastAPI(title="Banking Operations API")
+app = FastAPI(title=settings.APP_NAME)
 
-# Initialize settings
-settings = Settings()
-
-# CORS middleware - تبدیل رشته CORS_ORIGINS به لیست
-cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else []
-
+# CORS middleware - Use the method from settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,  # Use configured origins as list
-    allow_credentials=settings.CORS_ALLOW_CREDENTIALS if hasattr(settings, 'CORS_ALLOW_CREDENTIALS') else True,
+    allow_origins=settings.get_cors_origins_list(),  # Use configured origins
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,  # Use configured credentials
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,7 +25,7 @@ if os.path.exists(frontend_out_path):
     next_static_path = os.path.join(frontend_out_path, "_next/static")
     if os.path.exists(next_static_path):
         app.mount("/_next/static", StaticFiles(directory=next_static_path), name="next-static")
-    
+
     # Serve other static files from out directory
     app.mount("/static", StaticFiles(directory=frontend_out_path), name="static")
 
@@ -58,15 +53,15 @@ async def serve_spa(full_path: str):
     # First check if it's an API route
     if full_path.startswith("api/"):
         return {"error": "API route not found"}
-    
+
     # Check if file exists in out directory
     file_path = os.path.join(frontend_out_path, full_path)
     if os.path.exists(file_path) and os.path.isfile(file_path):
         return FileResponse(file_path)
-    
+
     # Otherwise serve index.html for SPA routing
     index_path = os.path.join(frontend_out_path, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    
+
     return {"error": "Frontend not found"}

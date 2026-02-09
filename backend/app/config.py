@@ -9,6 +9,7 @@ from typing import Optional, List
 from pydantic_settings import BaseSettings
 from pydantic import validator, Field
 import secrets
+from functools import lru_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,132 +17,106 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # Database settings
-    database_url: str = Field(
+    DATABASE_URL: str = Field(
         default="postgresql+asyncpg://user:password@localhost/allin1_db",
         description="Database connection URL"
     )
-    database_pool_size: int = Field(default=20, ge=1, le=100)
-    database_max_overflow: int = Field(default=30, ge=0, le=100)
-    database_pool_recycle: int = Field(default=3600, ge=300, le=86400)
-    database_echo: bool = Field(default=False, description="Enable SQL query logging")
+    DATABASE_POOL_SIZE: int = Field(default=20, ge=1, le=100)
+    DATABASE_MAX_OVERFLOW: int = Field(default=30, ge=0, le=100)
+    DATABASE_POOL_RECYCLE: int = Field(default=3600, ge=300, le=86400)
+    DATABASE_ECHO: bool = Field(default=False, description="Enable SQL query logging")
 
     # Application settings
-    app_name: str = Field(default="ALLIN1 Banking System", min_length=1)
-    app_version: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
-    debug: bool = Field(default=False, description="Enable debug mode")
-    environment: str = Field(default="development", pattern="^(development|staging|production)$")
+    APP_NAME: str = Field(default="ALLIN1 Banking System", min_length=1)
+    APP_VERSION: str = Field(default="1.0.0")
+    DEBUG: bool = Field(default=False, description="Enable debug mode")
+    ENVIRONMENT: str = Field(default="development")
 
     # Security settings - Critical security configurations
-    secret_key: str = Field(
+    SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(64),
         min_length=32,
         description="JWT signing key - must be cryptographically secure"
     )
-    algorithm: str = Field(default="HS256", pattern="^(HS256|HS384|HS512|RS256|RS384|RS512)$")
-    access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
-    refresh_token_expire_days: int = Field(default=7, ge=1, le=30)
-    password_min_length: int = Field(default=8, ge=8, le=128)
-    max_login_attempts: int = Field(default=5, ge=3, le=10)
-    lockout_duration_minutes: int = Field(default=15, ge=5, le=60)
+    ALGORITHM: str = Field(default="HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24 * 7)  # 7 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30)
+    PASSWORD_MIN_LENGTH: int = Field(default=8, ge=8, le=128)
+    MAX_LOGIN_ATTEMPTS: int = Field(default=5, ge=3, le=10)
+    LOCKOUT_DURATION_MINUTES: int = Field(default=15, ge=5, le=60)
+    BCRYPT_ROUNDS: int = Field(default=12)
+
+    # JWT Claims for token structure consistency
+    JWT_ISSUER: str = "allin1-banking-system"
+    JWT_AUDIENCE: str = "allin1-api-users"
 
     # CORS settings
-    cors_origins: str = Field(
-        default="http://localhost:3000,http://127.0.0.1:3000",
+    CORS_ORIGINS: str = Field(
+        default="https://banking-ops-frontend.onrender.com,http://localhost:3000,http://127.0.0.1:3000",
         description="Comma-separated list of allowed origins"
     )
-    cors_allow_credentials: bool = Field(default=True)
-    cors_max_age: int = Field(default=600, ge=0, le=86400)
+    CORS_ALLOW_CREDENTIALS: bool = Field(default=True)
+    CORS_MAX_AGE: int = Field(default=600, ge=0, le=86400)
 
     # Rate limiting
-    rate_limit_per_minute: int = Field(default=60, ge=10, le=1000)
-    rate_limit_burst: int = Field(default=100, ge=20, le=2000)
+    RATE_LIMIT_PER_MINUTE: int = Field(default=60, ge=10, le=1000)
+    RATE_LIMIT_BURST: int = Field(default=100, ge=20, le=2000)
 
     # Logging settings
-    log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
-    log_file: Optional[str] = Field(default=None, description="Log file path")
-    log_max_bytes: int = Field(default=10485760, ge=1048576)  # 10MB
-    log_backup_count: int = Field(default=5, ge=1, le=10)
+    LOG_LEVEL: str = Field(default="INFO")
+    LOG_FILE: Optional[str] = Field(default=None, description="Log file path")
+    LOG_MAX_BYTES: int = Field(default=10485760, ge=1048576)  # 10MB
+    LOG_BACKUP_COUNT: int = Field(default=5, ge=1, le=10)
 
     # API settings
-    api_prefix: str = Field(default="/api", pattern="^/[a-zA-Z0-9/_-]*$")
-    docs_url: Optional[str] = Field(default="/docs")
-    redoc_url: Optional[str] = Field(default="/redoc")
-    openapi_url: Optional[str] = Field(default="/openapi.json")
+    API_PREFIX: str = Field(default="/api")
+    DOCS_URL: Optional[str] = Field(default="/docs")
+    REDOC_URL: Optional[str] = Field(default="/redoc")
+    OPENAPI_URL: Optional[str] = Field(default="/openapi.json")
 
     # File upload settings
-    max_file_size_mb: int = Field(default=10, ge=1, le=100)
-    allowed_file_types: str = Field(
+    MAX_FILE_SIZE_MB: int = Field(default=10, ge=1, le=100)
+    ALLOWED_FILE_TYPES: str = Field(
         default="pdf,doc,docx,xls,xlsx,png,jpg,jpeg",
         description="Comma-separated list of allowed file extensions"
     )
 
     # Email settings (for notifications)
-    smtp_host: Optional[str] = None
-    smtp_port: int = Field(default=587, ge=1, le=65535)
-    smtp_username: Optional[str] = None
-    smtp_password: Optional[str] = None
-    smtp_use_tls: bool = Field(default=True)
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535)
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = Field(default=True)
 
     # Redis settings (for caching and sessions)
-    redis_url: Optional[str] = Field(
+    REDIS_URL: Optional[str] = Field(
         default=None,
         description="Redis connection URL for caching"
     )
-    redis_expire_seconds: int = Field(default=3600, ge=60, le=86400)
+    REDIS_EXPIRE_SECONDS: int = Field(default=3600, ge=60, le=86400)
 
     # Monitoring and health checks
-    health_check_interval: int = Field(default=30, ge=10, le=300)
-    metrics_enabled: bool = Field(default=True)
+    HEALTH_CHECK_INTERVAL: int = Field(default=30, ge=10, le=300)
+    METRICS_ENABLED: bool = Field(default=True)
+
+    # Authentication
+    AUTH_DISABLED: bool = Field(default=False, description="Disable authentication for development")
 
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
-        extra = "forbid"  # Prevent unknown environment variables
+        extra = "ignore"  # Allow unknown environment variables
 
-    @validator('secret_key')
+    @validator('SECRET_KEY')
     def validate_secret_key(cls, v, values):
         """Validate secret key security requirements"""
         if not v or len(v) < 32:
-            raise ValueError(
-                "SECRET_KEY must be at least 32 characters long for security. "
-                "Use a cryptographically secure random string."
-            )
-
-        # Check for common weak patterns in production
-        environment = values.get('environment', 'development')
-        if environment == 'production':
-            weak_patterns = [
-                'change-me',
-                'secret',
-                'password',
-                'your-secret-key',
-                'development',
-                'test',
-                '123456',
-                'default'
-            ]
-            v_lower = v.lower()
-            for pattern in weak_patterns:
-                if pattern in v_lower:
-                    raise ValueError(
-                        f"SECRET_KEY contains weak pattern '{pattern}'. "
-                        "Use a cryptographically secure random string in production."
-                    )
-
+            # Generate a secure key if not provided
+            return secrets.token_urlsafe(64)
         return v
 
-    @validator('database_url')
-    def validate_database_url(cls, v):
-        """Validate database URL format"""
-        if not v.startswith(('postgresql://', 'postgresql+asyncpg://', 'sqlite://', 'sqlite+aiosqlite://')):
-            raise ValueError(
-                "DATABASE_URL must start with postgresql://, postgresql+asyncpg://, "
-                "sqlite://, or sqlite+aiosqlite://"
-            )
-        return v
-
-    @validator('cors_origins')
+    @validator('CORS_ORIGINS')
     def validate_cors_origins(cls, v):
         """Validate CORS origins format"""
         if not v:
@@ -156,55 +131,78 @@ class Settings(BaseSettings):
                 )
         return v
 
-    @validator('environment')
-    def validate_environment_security(cls, v, values):
-        """Validate security settings based on environment"""
-        if v == 'production':
-            # Additional production security checks
-            debug = values.get('debug', False)
-            if debug:
-                logger.warning("Debug mode should be disabled in production")
+    def get_cors_origins(self) -> List[str]:
+        """Parse and return CORS origins, filtering localhost in production"""
+        if not self.CORS_ORIGINS:
+            return []
 
-            # Check if docs are exposed in production
-            docs_url = values.get('docs_url')
-            redoc_url = values.get('redoc_url')
-            if docs_url or redoc_url:
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(',') if origin.strip()]
+
+        if self.ENVIRONMENT == "production":
+            filtered = [o for o in origins if 'localhost' not in o and '127.0.0.1' not in o]
+            if len(filtered) < len(origins):
                 logger.warning(
-                    "API documentation endpoints should be disabled in production "
-                    "for security reasons"
+                    f"Filtered out localhost origins in production. "
+                    f"Original: {origins}, Filtered: {filtered}"
                 )
+            return filtered
 
-        return v
+        return origins
 
     def get_cors_origins_list(self) -> List[str]:
-        """Parse CORS origins from comma-separated string"""
-        if not self.cors_origins:
-            return []
-        if isinstance(self.cors_origins, str):
-            return [origin.strip() for origin in self.cors_origins.split(',') if origin.strip()]
-        return self.cors_origins
+        """Alias for get_cors_origins for compatibility"""
+        return self.get_cors_origins()
 
     def get_allowed_file_types_list(self) -> List[str]:
         """Parse allowed file types from comma-separated string"""
-        return [ext.strip().lower() for ext in self.allowed_file_types.split(',') if ext.strip()]
+        return [ext.strip().lower() for ext in self.ALLOWED_FILE_TYPES.split(',') if ext.strip()]
 
     def is_production(self) -> bool:
         """Check if running in production environment"""
-        return self.environment == 'production'
+        return self.ENVIRONMENT == 'production'
 
     def is_development(self) -> bool:
         """Check if running in development environment"""
-        return self.environment == 'development'
+        return self.ENVIRONMENT == 'development'
 
     def get_database_config(self) -> dict:
         """Get database configuration dictionary"""
         return {
-            'url': self.database_url,
-            'pool_size': self.database_pool_size,
-            'max_overflow': self.database_max_overflow,
-            'pool_recycle': self.database_pool_recycle,
-            'echo': self.database_echo and self.debug
+            'url': self.DATABASE_URL,
+            'pool_size': self.DATABASE_POOL_SIZE,
+            'max_overflow': self.DATABASE_MAX_OVERFLOW,
+            'pool_recycle': self.DATABASE_POOL_RECYCLE,
+            'echo': self.DATABASE_ECHO and self.DEBUG
         }
 
-    def get_security_headers(self) -> dict:
-        """Get recommended security
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached settings instance"""
+    return Settings()
+
+
+def generate_secret_key() -> str:
+    """Generate a secure secret key"""
+    return secrets.token_urlsafe(64)
+
+
+def validate_environment_security(settings: Settings) -> List[str]:
+    """Validate security settings and return warnings"""
+    warnings = []
+
+    if settings.ENVIRONMENT == 'production':
+        if settings.DEBUG:
+            warnings.append("Debug mode should be disabled in production")
+
+        if settings.DOCS_URL or settings.REDOC_URL:
+            warnings.append("API documentation endpoints should be disabled in production")
+
+        if settings.AUTH_DISABLED:
+            warnings.append("Authentication should not be disabled in production")
+
+    return warnings
+
+
+# Create global settings instance
+settings = get_settings()
