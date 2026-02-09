@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr, validator
 
 from ..database import get_db
 from ..models.user import User
-from ..utils.security import hash_password, verify_password
+from ..utils.security import hash_password, verify_password, create_access_token, verify_access_token
 from ..core.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
@@ -85,97 +85,13 @@ class UpdateProfile(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
 
-# JWT utilities
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    # Add JWT standard claims for security
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "iss": JWT_ISSUER,
-        "aud": JWT_AUDIENCE,
-        "sub": data.get("user_id"),
-        "jti": f"{data.get('user_id')}_{int(datetime.utcnow().timestamp())}"  # JWT ID for token uniqueness
-    })
-    
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
-
-def verify_access_token(token: str) -> Optional[dict]:
-    try:
-        # Verify with issuer and audience validation
-        payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
-            algorithms=[settings.ALGORITHM],
-            issuer=JWT_ISSUER,
-            audience=JWT_AUDIENCE,
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_iat": True,
-                "verify_iss": True,
-                "verify_aud": True,
-                "require_exp": True,
-                "require_iat": True,
-                "require_iss": True,
-                "require_aud": True,
-                "require_sub": True
-            }
-        )
-        
-        # Additional validation for required claims
-        if not payload.get("sub"):
-            raise jwt.InvalidTokenError("Missing subject claim")
-        
-        if not payload.get("jti"):
-            raise jwt.InvalidTokenError("Missing JWT ID claim")
-            
-        return payload
-        
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidIssuerError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token issuer",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidAudienceError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token audience",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token signature",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.PyJWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
 # Dependency to get current user
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     token = credentials.credentials
-    payload = verify_access_token(token)
+    payload = await verify_access_token(token, db)
     
     if payload is None:
         raise HTTPException(
@@ -184,7 +100,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user_id = payload.get("sub")
+    user_id = payload.get("user_id")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -243,7 +159,7 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
     
     # Create access token
-    access_token = create_access_token({"user_id": user.id})
+    access_token = create_access_token({"user_id": user.id, "username": user.username})
     
     return TokenResponse(
         access_token=access_token,
@@ -274,7 +190,7 @@ async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     # Create access token
-    access_token = create_access_token({"user_id": user.id})
+    access_token = create_access_token({"user_id": user.id, "username": user.username})
     
     return TokenResponse(
         access_token=access_token,
