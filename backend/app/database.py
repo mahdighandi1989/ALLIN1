@@ -231,7 +231,7 @@ async def execute_raw_query(query: str, params: dict = None) -> list:
         raise
 
 
-async def get_table_info(table_name: str) -> dict:
+async def get_table_info(table_name: str) -> list:
     """Get information about a specific table"""
     try:
         query = """
@@ -244,4 +244,8 @@ async def get_table_info(table_name: str) -> dict:
         WHERE table_name = :table_name
         ORDER BY ordinal_position
         """
-        columns = await execute_raw_query(query, {"tabl
+        columns = await execute_raw_query(query, {"table_name": table_name})
+        return columns
+    except Exception as e:
+        logger.error(f"Failed to get table info for '{table_name}': {e}")
+        raise
