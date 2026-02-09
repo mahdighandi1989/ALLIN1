@@ -102,7 +102,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         raise ValueError(f"Failed to create token: {e}")
 
 
-def verify_access_token(token: str) -> dict:
+async def verify_access_token(token: str, db: AsyncSession) -> dict:
     """Verify and decode JWT token with proper validation"""
     if not token or not isinstance(token, str):
         raise HTTPException(
@@ -136,46 +136,65 @@ def verify_access_token(token: str) -> dict:
         # Validate field formats using TokenData model
         try:
             TokenData(user_id=user_id, username=username)
-        except Exception:
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token data format",
+                detail=f"Invalid token claims: {e}",
                 headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Verify user exists and is active in database
+        query = select(User).where(User.id == user_id, User.username == username)
+        result = await db.execute(query)
+        user = result.scalar_one_or_none()
+        
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user",
             )
         
         return payload
         
-    except JWTError as e:
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidIssuerError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token issuer",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidAudienceError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token audience",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token signature",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get current authenticated user from token"""
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    
-    # Fetch user from database
-    query = select(User).where(User.id == payload["user_id"], User.username == payload["username"])
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()
-    
-    if not user:
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
         )
-    
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    return user
