@@ -85,6 +85,24 @@ async def get_current_user(
     # This import only runs when the function is called, not at module load time.
     from app.models.user import User
 
+    # If authentication is disabled, return a demo user.
+    if settings.AUTH_DISABLED:
+        result = await db.execute(select(User).where(User.username == "demo"))
+        user = result.scalar_one_or_none()
+        if user is None:
+            # Create a demo user if it doesn't exist.
+            user = User(
+                username="demo",
+                email="demo@example.com",
+                hashed_password=hash_password("demo"),
+                full_name="Demo User",
+                is_active=True,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        return user
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -110,6 +128,25 @@ async def get_optional_current_user(
     Dependency to get the current user if a token is provided.
     Returns None if no token is provided or the token is invalid.
     """
+    # If authentication is disabled, return a demo user.
+    if settings.AUTH_DISABLED:
+        result = await db.execute(select(User).where(User.username == "demo"))
+        user = result.scalar_one_or_none()
+        if user is None:
+            # Create a demo user if it doesn't exist.
+            from app.models.user import User
+            user = User(
+                username="demo",
+                email="demo@example.com",
+                hashed_password=hash_password("demo"),
+                full_name="Demo User",
+                is_active=True,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        return user
+
     if not token:
         return None
     try:
