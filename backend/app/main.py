@@ -11,11 +11,13 @@ app = FastAPI(title="Banking Operations API")
 # Initialize settings
 settings = Settings()
 
-# CORS middleware
+# CORS middleware - تبدیل رشته CORS_ORIGINS به لیست
+cors_origins = settings.CORS_ORIGINS.split(",") if settings.CORS_ORIGINS else []
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins_list(),  # Use configured origins
-    allow_credentials=settings.cors_allow_credentials,  # Use configured credentials
+    allow_origins=cors_origins,  # Use configured origins as list
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS if hasattr(settings, 'CORS_ALLOW_CREDENTIALS') else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
