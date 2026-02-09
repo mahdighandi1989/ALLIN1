@@ -108,6 +108,16 @@ class Settings(BaseSettings):
         case_sensitive = False
         extra = "ignore"  # Allow unknown environment variables
 
+    @validator('DATABASE_URL')
+    def validate_database_url(cls, v):
+        """Ensure DATABASE_URL uses async driver for SQLAlchemy async engine.
+        Render.com and other providers supply postgresql:// but we need postgresql+asyncpg://"""
+        if v and v.startswith('postgresql://'):
+            v = v.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        elif v and v.startswith('postgres://'):
+            v = v.replace('postgres://', 'postgresql+asyncpg://', 1)
+        return v
+
     @validator('SECRET_KEY')
     def validate_secret_key(cls, v, values):
         """Validate secret key security requirements"""
