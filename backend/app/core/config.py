@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import Optional
 
 
 class Settings(BaseSettings):
