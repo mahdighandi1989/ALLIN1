@@ -8,7 +8,7 @@ from app.config import settings  # Use unified config from app.config
 
 app = FastAPI(title=settings.APP_NAME)
 
-# CORS middleware
+# CORS middleware - Use the method from settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins_list(),  # Use configured origins
@@ -25,7 +25,7 @@ if os.path.exists(frontend_out_path):
     next_static_path = os.path.join(frontend_out_path, "_next/static")
     if os.path.exists(next_static_path):
         app.mount("/_next/static", StaticFiles(directory=next_static_path), name="next-static")
-    
+
     # Serve other static files from out directory
     app.mount("/static", StaticFiles(directory=frontend_out_path), name="static")
 
@@ -53,15 +53,15 @@ async def serve_spa(full_path: str):
     # First check if it's an API route
     if full_path.startswith("api/"):
         return {"error": "API route not found"}
-    
+
     # Check if file exists in out directory
     file_path = os.path.join(frontend_out_path, full_path)
     if os.path.exists(file_path) and os.path.isfile(file_path):
         return FileResponse(file_path)
-    
+
     # Otherwise serve index.html for SPA routing
     index_path = os.path.join(frontend_out_path, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    
+
     return {"error": "Frontend not found"}

@@ -1,16 +1,126 @@
+# backend/app/routers/facilities.py
+
+"""Facilities Router - CRUD operations for banking facilities"""
+from datetime import datetime, date
+from typing import Optional, List
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, desc
-from typing import List, Optional
-from datetime import datetime, date
+from sqlalchemy import select, and_, desc
+from pydantic import BaseModel, Field
 
 from app.database import get_db
-from app.models.facility import Facility, FacilityType, FacilityStatus
-from app.models.customer import Customer
-from app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityResponse
+from app.models import Customer, Facility
+from app.models.facility import FacilityType, FacilityStatus
 from app.utils.security import get_optional_current_user
 
-router = APIRouter(prefix="/api/facilities", tags=["facilities"])
+router = APIRouter()
+
+
+# Schemas
+class FacilityCreate(BaseModel):
+    customer_id: str
+    facility_type: FacilityType
+    name: Optional[str] = None
+    amount: Decimal = Field(..., description="Facility amount")
+    outstanding: Optional[Decimal] = Field(default=0, description="Outstanding amount")
+    currency: str = Field(default="AED")
+    start_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    interest_rate: Optional[Decimal] = None
+    tenor_months: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FacilityUpdate(BaseModel):
+    facility_type: Optional[FacilityType] = None
+    name: Optional[str] = None
+    amount: Optional[Decimal] = None
+    outstanding: Optional[Decimal] = None
+    currency: Optional[str] = None
+    start_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    interest_rate: Optional[Decimal] = None
+    tenor_months: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[FacilityStatus] = None
+
+
+class FacilityResponse(BaseModel):
+    id: str
+    customer_id: str
+    facility_type: FacilityType
+    name: Optional[str]
+    status: FacilityStatus
+    amount: Decimal
+    outstanding: Decimal
+    currency: str
+    start_date: Optional[date]
+    expiry_date: Optional[date]
+    interest_rate: Optional[Decimal]
+    tenor_months: Optional[str]
+    notes: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    is_deleted: bool
+
+    class Config:
+        from_attributes = True
+
+
+# Routes
+@router.get("/", response_model=List[FacilityResponse])
+async def list_facilities(
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    facility_type: Optional[FacilityType] = Query(None, description="Filter by facility type"),
+    status: Optional[FacilityStatus] = Query(None, description="Filter by status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """List all facilities with optional filters"""
+    query = select(Facility).where(Facility.is_deleted == False)
+
+    if customer_id:
+        query = query.where(Facility.customer_id == customer_id)
+    if facility_type:
+        query = query.where(Facility.facility_type == facility_type)
+    if status:
+        query = query.where(Facility.status == status)
+
+    query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
+
+    result = await db.execute(query)
+    facilities = result.scalars().all()
+
+    return [FacilityResponse.from_orm(f) for f in facilities]
+
+
+@router.get("/{facility_id}", response_model=FacilityResponse)
+async def get_facility(
+    facility_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_optional_current_user)
+):
+    """Get a specific facility by ID"""
+    query = select(Facility).where(
+        and_(
+            Facility.id == facility_id,
+            Facility.is_deleted == False
+        )
+    )
+    result = await db.execute(query)
+    facility = result.scalar_one_or_none()
+
+    if not facility:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Facility not found"
+        )
+
+    return FacilityResponse.from_orm(facility)
 
 
 @router.post("/", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
@@ -21,7 +131,7 @@ async def create_facility(
 ):
     """Create a new facility"""
     try:
-        # Verify customer exists
+        # Check if customer exists
         customer_query = select(Customer).where(
             and_(
                 Customer.id == facility_data.customer_id,
@@ -30,13 +140,13 @@ async def create_facility(
         )
         customer_result = await db.execute(customer_query)
         customer = customer_result.scalar_one_or_none()
-        
+
         if not customer:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Customer not found"
             )
-        
+
         # Create facility with all fields including amount
         db_facility = Facility(
             customer_id=facility_data.customer_id,
@@ -53,13 +163,13 @@ async def create_facility(
             status=FacilityStatus.ACTIVE,
             created_at=datetime.utcnow()
         )
-        
+
         db.add(db_facility)
         await db.commit()
         await db.refresh(db_facility)
-        
+
         return FacilityResponse.from_orm(db_facility)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -67,143 +177,6 @@ async def create_facility(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create facility: {str(e)}"
-        )
-
-
-@router.get("/", response_model=dict)
-async def get_facilities(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=100, description="Number of records to return"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Page size"),
-    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
-    facility_type: Optional[FacilityType] = Query(None, description="Filter by facility type"),
-    status: Optional[FacilityStatus] = Query(None, description="Filter by status"),
-    search: Optional[str] = Query(None, description="Search in facility name"),
-    sort_by: str = Query("created_at", description="Sort field"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
-    db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_optional_current_user)
-):
-    """Get list of facilities with filtering, pagination and sorting"""
-    try:
-        # Use page-based pagination if provided
-        if page > 1:
-            skip = (page - 1) * page_size
-            limit = page_size
-        
-        # Build base query with join to get customer name in single query
-        query = select(Facility, Customer.name.label("customer_name")).join(
-            Customer, Facility.customer_id == Customer.id
-        ).where(
-            and_(
-                Facility.is_deleted == False,
-                Customer.is_deleted == False
-            )
-        )
-        
-        # Build count query with same filters
-        count_query = select(func.count()).select_from(Facility).join(
-            Customer, Facility.customer_id == Customer.id
-        ).where(
-            and_(
-                Facility.is_deleted == False,
-                Customer.is_deleted == False
-            )
-        )
-        
-        # Apply filters
-        filters = []
-        
-        if customer_id:
-            filters.append(Facility.customer_id == customer_id)
-        
-        if facility_type:
-            filters.append(Facility.facility_type == facility_type)
-        
-        if status:
-            filters.append(Facility.status == status)
-        
-        if search:
-            search_filter = f"%{search.strip()}%"
-            filters.append(Facility.name.ilike(search_filter))
-        
-        if filters:
-            filter_condition = and_(*filters)
-            query = query.where(filter_condition)
-            count_query = count_query.where(filter_condition)
-        
-        # Get total count
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
-        
-        # Apply sorting
-        sort_column = getattr(Facility, sort_by, Facility.created_at)
-        if sort_order == "desc":
-            query = query.order_by(desc(sort_column))
-        else:
-            query = query.order_by(sort_column)
-        
-        # Apply pagination
-        query = query.offset(skip).limit(limit)
-        
-        # Execute query
-        result = await db.execute(query)
-        rows = result.all()
-        
-        # Build response
-        facility_responses = []
-        for facility, customer_name in rows:
-            facility_dict = facility.__dict__.copy()
-            facility_dict['customer_name'] = customer_name
-            facility_responses.append(facility_dict)
-        
-        return {
-            "items": facility_responses,
-            "total": total,
-            "page": (skip // limit) + 1 if limit > 0 else 1,
-            "page_size": limit,
-            "pages": (total + limit - 1) // limit if limit > 0 else 1
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve facilities: {str(e)}"
-        )
-
-
-@router.get("/{facility_id}", response_model=FacilityResponse)
-async def get_facility(
-    facility_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user = Depends(get_optional_current_user)
-):
-    """Get facility details by ID"""
-    try:
-        query = select(Facility).where(
-            and_(
-                Facility.id == facility_id,
-                Facility.is_deleted == False
-            )
-        )
-        result = await db.execute(query)
-        facility = result.scalar_one_or_none()
-        
-        if not facility:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Facility not found"
-            )
-        
-        return FacilityResponse.from_orm(facility)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve facility: {str(e)}"
         )
 
 
@@ -225,25 +198,25 @@ async def update_facility(
         )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
-        
+
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Facility not found"
             )
-        
+
         # Update facility fields - amount is now properly supported
         update_data = facility_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(facility, field, value)
-        
+
         facility.updated_at = datetime.utcnow()
-        
+
         await db.commit()
         await db.refresh(facility)
-        
+
         return FacilityResponse.from_orm(facility)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -272,13 +245,13 @@ async def delete_facility(
         )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
-        
+
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Facility not found"
             )
-        
+
         if permanent:
             # Permanent delete (would need admin role check)
             await db.delete(facility)
@@ -287,10 +260,10 @@ async def delete_facility(
             facility.is_deleted = True
             facility.status = FacilityStatus.CLOSED
             facility.updated_at = datetime.utcnow()
-        
+
         await db.commit()
         return None
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -318,23 +291,23 @@ async def restore_facility(
         )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
-        
+
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Deleted facility not found"
             )
-        
+
         # Restore facility
         facility.is_deleted = False
         facility.status = FacilityStatus.ACTIVE
         facility.updated_at = datetime.utcnow()
-        
+
         await db.commit()
         await db.refresh(facility)
-        
+
         return FacilityResponse.from_orm(facility)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -362,21 +335,21 @@ async def update_facility_status(
         )
         result = await db.execute(query)
         facility = result.scalar_one_or_none()
-        
+
         if not facility:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Facility not found"
             )
-        
+
         facility.status = new_status
         facility.updated_at = datetime.utcnow()
-        
+
         await db.commit()
         await db.refresh(facility)
-        
+
         return {"message": f"Facility status updated to {new_status.value}"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -412,7 +385,7 @@ async def advanced_search_facilities(
                 Customer.is_deleted == False
             )
         )
-        
+
         conditions = []
 
         if customer_name:
@@ -427,30 +400,46 @@ async def advanced_search_facilities(
 
         if date_from:
             conditions.append(Facility.start_date >= date_from)
-        
+
         if date_to:
             conditions.append(Facility.start_date <= date_to)
-        
+
         if expiry_from:
             conditions.append(Facility.expiry_date >= expiry_from)
-        
+
         if expiry_to:
             conditions.append(Facility.expiry_date <= expiry_to)
-        
+
         if conditions:
             query = query.where(and_(*conditions))
-        
+
         # Apply pagination and ordering
         query = query.offset(skip).limit(limit).order_by(desc(Facility.created_at))
-        
+
         result = await db.execute(query)
         rows = result.all()
-        
+
         # Build response
         facility_responses = []
-        for facility, customer_name in rows:
-            facility_dict = facility.__dict__.copy()
-            facility_dict['customer_name'] = customer_name
+        for facility, cust_name in rows:
+            facility_dict = {
+                "id": facility.id,
+                "customer_id": facility.customer_id,
+                "customer_name": cust_name,
+                "facility_type": facility.facility_type.value if facility.facility_type else None,
+                "name": facility.name,
+                "status": facility.status.value if facility.status else None,
+                "amount": float(facility.amount) if facility.amount else 0,
+                "outstanding": float(facility.outstanding) if facility.outstanding else 0,
+                "currency": facility.currency,
+                "start_date": facility.start_date.isoformat() if facility.start_date else None,
+                "expiry_date": facility.expiry_date.isoformat() if facility.expiry_date else None,
+                "interest_rate": float(facility.interest_rate) if facility.interest_rate else None,
+                "tenor_months": facility.tenor_months,
+                "notes": facility.notes,
+                "created_at": facility.created_at.isoformat() if facility.created_at else None,
+                "updated_at": facility.updated_at.isoformat() if facility.updated_at else None,
+            }
             facility_responses.append(facility_dict)
 
         return {
