@@ -1,179 +1,99 @@
-"""Security utilities for password hashing and JWT token management"""
-from datetime import datetime, timedelta
+# backend/app/utils/security.py
+
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, validator
-import re
-import uuid
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-from app.core.config import settings
+from app.core.config import Settings
 from app.database import get_db
+from app.models.user import User
+
+# Load settings
+settings = Settings()
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# OAuth2 security scheme
-security = HTTPBearer()
+# OAuth2 scheme for token-based authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
+# JWT settings from config
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
-class TokenData(BaseModel):
-    """Token payload data model"""
-    user_id: str
-    username: str
-    
-    @validator('user_id')
-    def validate_user_id(cls, v):
-        if not v or not isinstance(v, str):
-            raise ValueError('user_id is required and must be a string')
-        if len(v) != 8:
-            raise ValueError('user_id must be exactly 8 characters')
-        if not re.match(r'^[a-zA-Z0-9]{8}$', v):
-            raise ValueError('user_id contains invalid characters')
-        return v
-    
-    @validator('username')
-    def validate_username(cls, v):
-        if not v or not isinstance(v, str):
-            raise ValueError('username is required and must be a string')
-        if len(v) < 3 or len(v) > 50:
-            raise ValueError('username must be between 3 and 50 characters')
-        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
-            raise ValueError('username contains invalid characters')
-        return v.lower()
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a plain password against its hashed version."""
+    return pwd_context.verify(plain_password, hashed_password)
 
-
-def hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    if not password or not isinstance(password, str):
-        raise ValueError("Password must be a non-empty string")
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters long")
+def get_password_hash(password: str) -> str:
+    """Hash a plain password."""
     return pwd_context.hash(password)
 
-
-def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a password against its hash"""
-    if not plain or not hashed:
-        return False
-    if not isinstance(plain, str) or not isinstance(hashed, str):
-        return False
-    try:
-        return pwd_context.verify(plain, hashed)
-    except Exception:
-        return False
-
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Create a JWT access token"""
-    if not data or not isinstance(data, dict):
-        raise ValueError("Token data must be a non-empty dictionary")
-    
-    # Validate required fields
-    if "user_id" not in data or "username" not in data:
-        raise ValueError("Token data must contain user_id and username")
-    
-    # Validate data using TokenData model
-    try:
-        TokenData(user_id=data["user_id"], username=data["username"])
-    except Exception as e:
-        raise ValueError(f"Invalid token data: {e}")
-    
+    """Create a new JWT access token."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({
-        "exp": expire,
-        "iat": datetime.utcnow(),
-        "type": "access"
-    })
-    
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(
+    db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)
+) -> User:
+    """Dependency to get the current user from a JWT token. Raises HTTPException if invalid."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
-        encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-        return encoded_jwt
-    except Exception as e:
-        raise ValueError(f"Failed to create token: {e}")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: Optional[str] = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
 
+    result = await db.execute(select(User).filter(User.username == username))
+    user = result.scalar_one_or_none()
 
-async def verify_access_token(token: str, db: AsyncSession) -> dict:
-    """Verify and decode JWT token with proper validation"""
-    if not token or not isinstance(token, str):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token format",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        
-        # Validate token type
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Validate required fields exist
-        user_id = payload.get("user_id")
-        username = payload.get("username")
-        
-        if not user_id or not username:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Validate field formats using TokenData
-        try:
-            TokenData(user_id=user_id, username=username)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid token data: {e}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        return payload
-        
-    except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {e}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+    if user is None:
+        raise credentials_exception
+    return user
 
 async def get_optional_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    db: AsyncSession = Depends(get_db)
-) -> Optional[dict]:
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
     """
-    Optional dependency that returns current user if authenticated, otherwise None.
+    Dependency to get the current user if a token is provided, otherwise return None.
+    Does not raise an exception for missing or invalid tokens.
     """
-    if credentials is None:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
         return None
+
+    token = auth_header.split("Bearer ")[1]
     
-    token = credentials.credentials
     try:
-        payload = await verify_access_token(token, db)
-        user_id = payload.get("user_id")
-        if user_id is None:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: Optional[str] = payload.get("sub")
+        if username is None:
             return None
-        
-        # Import here to avoid circular dependency
-        from app.models.user import User
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        return user
-    except HTTPException:
+    except JWTError:
         return None
+
+    result = await db.execute(select(User).filter(User.username == username))
+    user = result.scalar_one_or_none()
+    
+    return user
