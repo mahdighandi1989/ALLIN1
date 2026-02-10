@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
-from datetime import date
+from typing import Optional
 
 from app.database import get_db
 from app.models import Facility, Customer, FacilityType, FacilityStatus
 from app.schemas.facility import (
-    FacilityCreate, 
-    FacilityUpdate, 
-    FacilityResponse, 
+    FacilityCreate,
+    FacilityUpdate,
+    FacilityResponse,
     FacilityListResponse,
     FacilitySearchParams
 )
@@ -82,7 +81,7 @@ async def get_facility(facility_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=FacilityResponse, status_code=201)
 async def create_facility(
-    facility_data: FacilityCreate, 
+    facility_data: FacilityCreate,
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new facility"""
