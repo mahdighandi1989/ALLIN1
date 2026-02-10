@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import ProgrammingError  # برای خطاهای مربوط به SQL
 
 from app.database import get_db
 from app.models import Facility, Customer
@@ -12,9 +13,13 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """
     Get dashboard statistics including total facilities amount, counts, etc.
     """
-    # Total facilities amount
-    total_amount_result = await db.execute(select(func.sum(Facility.amount)))
-    total_amount = total_amount_result.scalar() or 0
+    try:
+        # Total facilities amount
+        total_amount_result = await db.execute(select(func.sum(Facility.amount)))
+        total_amount = total_amount_result.scalar() or 0
+    except ProgrammingError:
+        # اگر ستون amount وجود نداشته باشد، مقدار 0 را قرار می‌دهیم.
+        total_amount = 0
     
     # Facilities count
     facilities_count_result = await db.execute(select(func.count(Facility.id)))
