@@ -39,14 +39,6 @@ export const authApi = {
 // Stats API
 export const statsApi = {
   dashboard: async () => {
-    if (AUTH_DISABLED) {
-      return {
-        total_facilities_amount: 0,
-        facilities_count: 0,
-        customers_count: 0,
-        active_customers: 0,
-      }
-    }
     try {
       const res = await api.get('/api/stats/dashboard')
       return res.data
@@ -60,10 +52,12 @@ export const statsApi = {
         }
       }
       return {
-        total_facilities_amount: 0,
-        facilities_count: 0,
-        customers_count: 0,
+        total_customers: 0,
         active_customers: 0,
+        total_facilities: 0,
+        expiring_soon_facilities: 0,
+        total_exposure: { amount: 0, currency: 'AED' },
+        recent_customers: [],
       }
     }
   },

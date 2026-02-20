@@ -1,39 +1,29 @@
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-from datetime import date
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional
+from datetime import datetime
 
-class CustomerStats(BaseModel):
-    total: int
-    active: int
 
-class FacilityStats(BaseModel):
-    total: int
-    expiring_soon: int
-    total_amount: float
-    outstanding: float
-
-class RecentCustomer(BaseModel):
-    id: str
-    name: str
-    email: str
-    phone: str
-    status: str
-
-class RecentFacility(BaseModel):
-    id: str
-    customer_id: str
-    customer_name: str
-    type: str
+class TotalExposureResponse(BaseModel):
     amount: float
-    status: str
-    issue_date: str
-    expiry_date: str
+    currency: str
 
-class DashboardStats(BaseModel):
-    customers: CustomerStats
-    facilities: FacilityStats
-    recent_customers: List[RecentCustomer]
-    recent_facilities: List[RecentFacility]
-    
-    class Config:
-        from_attributes = True
+
+class RecentCustomerResponse(BaseModel):
+    id: str
+    account_no: Optional[str] = None
+    name: str
+    status: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DashboardStatsResponse(BaseModel):
+    total_customers: int
+    active_customers: int
+    total_facilities: int
+    expiring_soon_facilities: int
+    total_exposure: TotalExposureResponse
+    recent_customers: List[RecentCustomerResponse]
+
+    model_config = ConfigDict(from_attributes=True)
