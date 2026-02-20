@@ -1,13 +1,15 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 import os
 from app.routers import auth, customers, facilities, stats
 from app.config import settings  # Use unified config from app.config
-from app.database import engine, Base
+from app.database import engine, Base, get_db
 
 # Import all models so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -18,9 +20,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables if they don't exist (fallback if migrations didn't run)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables verified/created")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified/created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database tables: {e}")
+        logger.error("App will start but database queries may fail")
     yield
     # Shutdown
     await engine.dispose()
@@ -77,6 +83,30 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/api/debug/db")
+async def db_check(db: AsyncSession = Depends(get_db)):
+    """Diagnostic endpoint to check database connectivity and table status."""
+    try:
+        result = await db.execute(text("SELECT 1"))
+        result.scalar()
+
+        tables_result = await db.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+        )
+        tables = [row[0] for row in tables_result]
+
+        return {
+            "status": "connected",
+            "tables": tables,
+            "database_url_prefix": settings.DATABASE_URL[:30] + "...",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "database_url_prefix": settings.DATABASE_URL[:30] + "...",
+        }
 
 # Catch-all route for SPA routing
 @app.get("/{full_path:path}")
