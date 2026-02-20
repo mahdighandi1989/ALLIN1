@@ -32,6 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!AUTH_DISABLED) {
       checkAuth()
+    } else {
+      setLoading(false)
     }
   }, [])
 
@@ -58,11 +60,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.push('/dashboard')
       return
     }
-    const data = await authApi.login(username, password)
-    localStorage.setItem('token', data.access_token)
-    const userData = await authApi.me()
-    setUser(userData)
-    router.push('/dashboard')
+    try {
+      const data = await authApi.login(username, password)
+      localStorage.setItem('token', data.access_token)
+      const userData = await authApi.me()
+      setUser(userData)
+      router.push('/dashboard')
+    } catch (error) {
+      console.error('Login failed:', error)
+      throw error
+    }
   }
 
   const logout = () => {
