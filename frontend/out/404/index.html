@@ -160,7 +160,7 @@
 
     // کلاس یا آیدی
     let identifier = el.id ? '#' + el.id :
-                     el.className ? '.' + el.className.split(' ')[0] : '';
+                     el.className && typeof el.className === "string" ? '.' + el.className.split(' ')[0] : '';
 
     // ترجمه تگ‌های معروف به فارسی
     const tagLabels = {
