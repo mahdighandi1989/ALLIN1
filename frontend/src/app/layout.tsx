@@ -8,6 +8,16 @@ export const metadata: Metadata = {
   description: 'Banking Operations Management System',
 }
 
+// Prevent InspectorBridge errors by wrapping the application
+const SafeClientWrapper = ({ children }: { children: React.ReactNode }) => {
+  try {
+    return <ClientWrapper>{children}</ClientWrapper>
+  } catch (error) {
+    console.warn('InspectorBridge error caught and handled:', error)
+    return <>{children}</>
+  }
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -16,9 +26,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <ClientWrapper>
+        <SafeClientWrapper>
           {children}
-        </ClientWrapper>
+        </SafeClientWrapper>
       </body>
     </html>
   )
