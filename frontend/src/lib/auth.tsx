@@ -4,8 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { useRouter } from 'next/navigation'
 import { authApi } from './api'
 import { User } from '@/types'
-
-const AUTH_DISABLED = false
+import { AUTH_DISABLED } from '@/config'
 
 const FAKE_USER: User = {
   id: 'dev-user',

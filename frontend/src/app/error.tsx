@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function Error({
   error,
@@ -9,11 +10,11 @@ export default function Error({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const router = useRouter()
+
   useEffect(() => {
-    if (error && Object.keys(error).length > 0) {
-      console.error('Application error:', error)
-    } else {
-      console.error('Application error occurred but no error object provided')
+    if (error?.message) {
+      console.error('Application error:', error.message)
     }
   }, [error])
 
@@ -37,7 +38,7 @@ export default function Error({
             Try again
           </button>
           <button
-            onClick={() => window.location.href = '/'}
+            onClick={() => router.push('/')}
             className="flex-1 px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
           >
             Go home
