@@ -10,10 +10,8 @@ export default function GlobalError({
   reset: () => void
 }) {
   useEffect(() => {
-    if (error && Object.keys(error).length > 0) {
-      console.error('Global application error:', error)
-    } else {
-      console.error('Global application error occurred but no error object provided')
+    if (error?.message) {
+      console.error('Global application error:', error.message)
     }
   }, [error])
 
