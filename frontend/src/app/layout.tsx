@@ -1,3 +1,4 @@
+typescript
 import type { Metadata } from 'next'
 import ClientWrapper from '@/components/ClientWrapper'
 import './globals.css'
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {children}
+        <ClientWrapper>
+          {children}
+        </ClientWrapper>
       </body>
     </html>
   )
