@@ -1,3 +1,4 @@
+typescript
 'use client'
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
@@ -46,7 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userData = await authApi.me()
       setUser(userData)
-    } catch {
+    } catch (error) {
+      console.error('Authentication check failed:', error)
       localStorage.removeItem('token')
       setUser(null)
     } finally {
@@ -67,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData)
       router.push('/dashboard')
     } catch (error) {
-      console.error('Login failed:', error)
+      console.error('Login failed:', error || 'Unknown error')
       throw error
     }
   }
