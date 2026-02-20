@@ -46,6 +46,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={logout}
               className="text-gray-500 hover:text-gray-700"
               title="Logout"
+              type="button"
             >
               <LogOut size={20} />
             </button>
@@ -68,6 +69,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
+                aria-current={isActive ? 'page' : undefined}
               >
                 <Icon size={18} />
                 {item.label}
