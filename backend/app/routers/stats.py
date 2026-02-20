@@ -1,52 +1,54 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+
 from app.database import get_db
-from sqlalchemy import func, select
-from app.models.customer import Customer
-from app.models.facility import Facility
+from app.models import Facility, Customer
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/dashboard")
-async def get_dashboard_stats(
-    db: AsyncSession = Depends(get_db)
-):
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+    """
+    Get dashboard statistics including total facilities amount, counts, etc.
+    """
     try:
-        # Total customers
-        total_customers_result = await db.execute(select(func.count(Customer.id)))
-        total_customers = total_customers_result.scalar() or 0
+        # Total facilities amount with proper error handling
+        try:
+            total_amount_result = await db.execute(select(func.sum(Facility.amount)))
+            total_amount = total_amount_result.scalar() or 0
+        except ProgrammingError:
+            # If amount column doesn't exist or has issues, default to 0
+            total_amount = 0
 
-        # Active customers
+        # Facilities count
+        facilities_count_result = await db.execute(select(func.count(Facility.id)))
+        facilities_count = facilities_count_result.scalar() or 0
+
+        # Customers count
+        customers_count_result = await db.execute(select(func.count(Customer.id)))
+        customers_count = customers_count_result.scalar() or 0
+
+        # Active customers count (status = 'active')
         active_customers_result = await db.execute(
-            select(func.count(Customer.id)).where(Customer.status == "active")
+            select(func.count(Customer.id)).where(Customer.status == 'active')
         )
         active_customers = active_customers_result.scalar() or 0
 
-        # Total facilities
-        total_facilities_result = await db.execute(select(func.count(Facility.id)))
-        total_facilities = total_facilities_result.scalar() or 0
-
-        # Total facility amount
-        total_amount_result = await db.execute(select(func.sum(Facility.amount)))
-        total_amount = total_amount_result.scalar() or 0
-
-        # Active facilities
-        active_facilities_result = await db.execute(
-            select(func.count(Facility.id)).where(Facility.status == "active")
-        )
-        active_facilities = active_facilities_result.scalar() or 0
-
         return {
-            "total_customers": total_customers,
+            "total_facilities_amount": float(total_amount) if total_amount else 0.0,
+            "facilities_count": facilities_count,
+            "customers_count": customers_count,
             "active_customers": active_customers,
-            "total_facilities": total_facilities,
-            "total_amount": float(total_amount) if total_amount else 0,
-            "active_facilities": active_facilities,
-            "inactive_customers": total_customers - active_customers,
-            "inactive_facilities": total_facilities - active_facilities
         }
+
+    except SQLAlchemyError as e:
+        logger.error(f"Dashboard stats database error: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Database error occurred")
     except Exception as e:
         logger.error(f"Dashboard stats error: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred")

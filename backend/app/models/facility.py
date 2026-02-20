@@ -1,19 +1,11 @@
-"""Facility Model"""
-from datetime import date
-from sqlalchemy import Column, String, Boolean, DateTime, Date, Text, Numeric, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Boolean, Date, ForeignKey, Enum
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-import uuid
-import enum
-
 from app.database import Base
-
-
-def generate_id():
-    return "F" + str(uuid.uuid4())[:7].upper()
+import enum
 
 
 class FacilityType(str, enum.Enum):
+    """Facility type enumeration"""
     LOAN = "loan"
     OVERDRAFT = "overdraft"
     LC = "lc"
@@ -22,6 +14,7 @@ class FacilityType(str, enum.Enum):
 
 
 class FacilityStatus(str, enum.Enum):
+    """Facility status enumeration"""
     ACTIVE = "active"
     PENDING = "pending"
     CLOSED = "closed"
@@ -31,48 +24,25 @@ class FacilityStatus(str, enum.Enum):
 class Facility(Base):
     __tablename__ = "facilities"
 
-    id = Column(String(8), primary_key=True, default=generate_id)
-    customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False, index=True)
-
-    # Basic info
-    facility_type = Column(SQLEnum(FacilityType), nullable=False)
-    name = Column(String(200))
-    status = Column(SQLEnum(FacilityStatus), default=FacilityStatus.ACTIVE)
-
-    # Amounts
-    amount = Column(Numeric(18, 2), nullable=False)
-    outstanding = Column(Numeric(18, 2), default=0)
+    id = Column(String, primary_key=True, index=True)
+    customer_id = Column(String, ForeignKey('customers.id'), nullable=False, index=True)
+    facility_type = Column(Enum(FacilityType), nullable=False)
+    name = Column(String(200), nullable=True)
+    amount = Column(Numeric(15, 2), nullable=False)
+    outstanding = Column(Numeric(15, 2), default=0)
     currency = Column(String(10), default="AED")
-
-    # Dates
-    start_date = Column(Date)
-    expiry_date = Column(Date)
-
-    # Terms
-    interest_rate = Column(Numeric(5, 2))
-    tenor_months = Column(String(20))
-
-    # Metadata
-    notes = Column(Text)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
+    start_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
+    interest_rate = Column(Numeric(5, 2), nullable=True)
+    tenor_months = Column(String(20), nullable=True)
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default='now()')
+    updated_at = Column(DateTime, nullable=True, onupdate='now()')
     is_deleted = Column(Boolean, default=False)
 
     # Relationships
     customer = relationship("Customer", back_populates="facilities")
 
-    def __repr__(self) -> str:
-        """String representation for debugging and logging"""
-        return (
-            f"<Facility(id='{self.id}', "
-            f"customer_id='{self.customer_id}', "
-            f"type='{self.facility_type.value if self.facility_type else None}', "
-            f"amount={self.amount}, "
-            f"currency='{self.currency}', "
-            f"status='{self.status.value if self.status else None}')>"
-        )
-
-    def __str__(self) -> str:
-        """Human-readable string representation"""
-        name_part = f" - {self.name}" if self.name else ""
-        return f"Facility {self.id} ({self.facility_type.value if self.facility_type else 'Unknown'}){name_part}"
+    def __repr__(self):
+        return f"<Facility {self.id}: {self.name} ({self.facility_type})>"

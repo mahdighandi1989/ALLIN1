@@ -1,4 +1,3 @@
-```python
 """Tests for facility endpoints"""
 import pytest
 from httpx import AsyncClient
@@ -350,4 +349,5 @@ class TestFacilityEndpoints:
     async def test_regular_user_can_read_facilities(self, client: AsyncClient, auth_headers: dict, test_facility: Facility):
         """Test regular user can read facilities"""
         # Regular user should be able to read facilities
-        response = await client.get("/api/facilities/", headers
+        response = await client.get("/api/facilities/", headers=auth_headers)
+        assert response.status_code == 200
