@@ -1,3 +1,4 @@
+typescript
 import { api } from './axios'
 import { AUTH_DISABLED } from '../config'
 import { Customer, CustomerList, Facility, FacilityList, User } from '@/types'
@@ -50,7 +51,14 @@ export const statsApi = {
       const res = await api.get('/api/stats/dashboard')
       return res.data
     } catch (error) {
-      console.error('Dashboard stats error:', error)
+      // فقط در حالت توسعه خطا را لاگ می‌کنیم
+      if (process.env.NODE_ENV === 'development') {
+        if (error instanceof Error) {
+          console.error('Dashboard stats error:', error.message)
+        } else {
+          console.error('Dashboard stats error:', error)
+        }
+      }
       return {
         total_facilities_amount: 0,
         facilities_count: 0,
