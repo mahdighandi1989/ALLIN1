@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 interface RecentCustomer {
   id: string
   account_no: string | null
-  name: string
+  name: string | null
   status: string | null
   created_at: string | null
 }
@@ -34,8 +34,9 @@ export default function DashboardPage() {
       const data = await statsApi.dashboard()
       setStats(data)
     } catch (err: any) {
-      setError('Failed to load dashboard data')
-      toast.error('Failed to load dashboard data')
+      const errorMessage = err?.response?.data?.detail || err?.message || 'Failed to load dashboard data'
+      setError(errorMessage)
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -124,7 +125,7 @@ export default function DashboardPage() {
                   <tbody>
                     {stats.recent_customers.map((c) => (
                       <tr key={c.id} className="border-b last:border-0">
-                        <td className="py-2 pr-4 font-medium">{c.name}</td>
+                        <td className="py-2 pr-4 font-medium">{c.name || 'Unknown'}</td>
                         <td className="py-2 pr-4 text-gray-600">{c.account_no || '-'}</td>
                         <td className="py-2 pr-4">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
