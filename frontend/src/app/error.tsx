@@ -1,3 +1,4 @@
+typescript
 'use client'
 
 import { useEffect } from 'react'
@@ -14,7 +15,13 @@ export default function Error({
 
   useEffect(() => {
     if (error) {
-      console.error('Application error:', error)
+      if (error.message) {
+        console.error('Application error:', error.message)
+      } else if (error.digest) {
+        console.error('Application error digest:', error.digest)
+      } else if (Object.keys(error).length > 0) {
+        console.error('Application error object:', JSON.stringify(error))
+      }
     }
   }, [error])
 
