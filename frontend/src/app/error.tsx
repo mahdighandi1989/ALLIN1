@@ -13,8 +13,8 @@ export default function Error({
   const router = useRouter()
 
   useEffect(() => {
-    if (error?.message) {
-      console.error('Application error:', error.message)
+    if (error) {
+      console.error('Application error:', error)
     }
   }, [error])
 
