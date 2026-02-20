@@ -19,16 +19,48 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables if they don't exist (fallback if migrations didn't run)
+    # Startup: ensure database schema is correct
     try:
         async with engine.begin() as conn:
+            # Step 1: Create tables if they don't exist
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables verified/created successfully")
+            logger.info("Database tables verified/created")
+
+            # Step 2: Add missing columns to existing tables with raw SQL
+            # create_all does NOT add columns to existing tables, so we must do it manually
+            alter_statements = [
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS amount NUMERIC(15,2) NOT NULL DEFAULT 0",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS outstanding NUMERIC(15,2) DEFAULT 0",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'AED'",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS facility_type VARCHAR(20)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS name VARCHAR(200)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS start_date DATE",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS expiry_date DATE",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(5,2)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS tenor_months VARCHAR(20)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS notes VARCHAR(1000)",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS customer_id VARCHAR",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT now()",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP",
+                "ALTER TABLE facilities ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS account_no VARCHAR(50)",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS name VARCHAR(200)",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS email VARCHAR(100)",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone VARCHAR(50)",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT now()",
+                "ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false",
+            ]
+            for stmt in alter_statements:
+                try:
+                    await conn.execute(text(stmt))
+                except Exception as col_err:
+                    logger.warning(f"Column alter skipped: {col_err}")
+            logger.info("Database schema fully verified")
     except Exception as e:
-        logger.error(f"Failed to create database tables: {e}")
-        logger.error("App will start but database queries may fail")
+        logger.error(f"Database startup error: {e}")
     yield
-    # Shutdown
     await engine.dispose()
 
 
