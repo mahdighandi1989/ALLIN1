@@ -5,11 +5,21 @@ import Layout from '@/components/Layout'
 import { statsApi } from '@/lib/api'
 import toast from 'react-hot-toast'
 
+interface RecentCustomer {
+  id: string
+  account_no: string | null
+  name: string
+  status: string | null
+  created_at: string | null
+}
+
 interface DashboardData {
-  total_facilities_amount: number
-  facilities_count: number
-  customers_count: number
+  total_customers: number
   active_customers: number
+  total_facilities: number
+  expiring_soon_facilities: number
+  total_exposure: { amount: number; currency: string }
+  recent_customers: RecentCustomer[]
 }
 
 export default function DashboardPage() {
@@ -35,10 +45,10 @@ export default function DashboardPage() {
     loadStats()
   }, [])
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency: string = 'AED') => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'AED',
+      currency,
       minimumFractionDigits: 0,
     }).format(amount)
   }
@@ -70,23 +80,68 @@ export default function DashboardPage() {
           </button>
         </div>
       ) : stats ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <p className="text-sm text-gray-500 mb-1">Total Customers</p>
-            <p className="text-3xl font-bold text-gray-900">{stats.customers_count}</p>
+        <div className="space-y-6">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <p className="text-sm text-gray-500 mb-1">Total Customers</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.total_customers}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <p className="text-sm text-gray-500 mb-1">Active Customers</p>
+              <p className="text-3xl font-bold text-green-600">{stats.active_customers}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <p className="text-sm text-gray-500 mb-1">Total Facilities</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.total_facilities}</p>
+              {stats.expiring_soon_facilities > 0 && (
+                <p className="text-xs text-orange-500 mt-1">
+                  {stats.expiring_soon_facilities} expiring soon
+                </p>
+              )}
+            </div>
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <p className="text-sm text-gray-500 mb-1">Total Exposure</p>
+              <p className="text-3xl font-bold text-blue-600">
+                {formatCurrency(stats.total_exposure.amount, stats.total_exposure.currency)}
+              </p>
+            </div>
           </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <p className="text-sm text-gray-500 mb-1">Active Customers</p>
-            <p className="text-3xl font-bold text-green-600">{stats.active_customers}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <p className="text-sm text-gray-500 mb-1">Total Facilities</p>
-            <p className="text-3xl font-bold text-gray-900">{stats.facilities_count}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <p className="text-sm text-gray-500 mb-1">Total Amount</p>
-            <p className="text-3xl font-bold text-blue-600">{formatCurrency(stats.total_facilities_amount)}</p>
-          </div>
+
+          {/* Recent Customers */}
+          {stats.recent_customers.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-semibold mb-4">Recent Customers</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b">
+                      <th className="pb-2 pr-4">Name</th>
+                      <th className="pb-2 pr-4">Account No</th>
+                      <th className="pb-2 pr-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.recent_customers.map((c) => (
+                      <tr key={c.id} className="border-b last:border-0">
+                        <td className="py-2 pr-4 font-medium">{c.name}</td>
+                        <td className="py-2 pr-4 text-gray-600">{c.account_no || '-'}</td>
+                        <td className="py-2 pr-4">
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                            c.status === 'active' ? 'bg-green-100 text-green-700' :
+                            c.status === 'inactive' ? 'bg-gray-100 text-gray-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {c.status || 'unknown'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       ) : null}
     </Layout>
