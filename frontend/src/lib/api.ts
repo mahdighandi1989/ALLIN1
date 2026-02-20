@@ -1,111 +1,110 @@
 import { api } from './axios'
 import { AUTH_DISABLED } from '../config'
+import { Customer, CustomerList, Facility, FacilityList, User } from '@/types'
 
-export interface CustomerStats {
-  total: number
-  active: number
+// Parse API error into user-friendly message
+export function parseApiError(error: any): string {
+  if (error.response?.status === 422 && Array.isArray(error.response?.data?.detail)) {
+    const details = error.response.data.detail
+    if (details.length > 0) {
+      const firstError = details[0]
+      const field = firstError.loc?.filter((l: any) => l !== 'body').join('.')
+      return field ? `${field}: ${firstError.msg}` : firstError.msg
+    }
+  }
+  if (typeof error.response?.data?.detail === 'string') {
+    return error.response.data.detail
+  }
+  return error.message || 'An error occurred'
 }
 
-export interface FacilityStats {
-  total: number
-  expiring_soon: number
-  total_amount: number
-  outstanding: number
+// Auth API
+export const authApi = {
+  login: async (username: string, password: string) => {
+    const params = new URLSearchParams()
+    params.append('username', username)
+    params.append('password', password)
+    const res = await api.post('/api/auth/login', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    })
+    return res.data
+  },
+  me: async (): Promise<User> => {
+    const res = await api.get('/api/auth/me')
+    return res.data
+  },
 }
 
-export interface RecentCustomer {
-  id: string
-  name: string
-  email: string
-  phone: string
-  status: string
-}
-
-export interface RecentFacility {
-  id: string
-  customer_id: string
-  customer_name: string
-  type: string
-  amount: number
-  status: string
-  issue_date: string
-  expiry_date: string
-}
-
-export interface DashboardStats {
-  customers: CustomerStats
-  facilities: FacilityStats
-  recent_customers: RecentCustomer[]
-  recent_facilities: RecentFacility[]
-}
-
+// Stats API
 export const statsApi = {
-  dashboard: async (): Promise<DashboardStats> => {
-    // اگر AUTH_DISABLED true باشد، داده جعلی برگردان
+  dashboard: async () => {
     if (AUTH_DISABLED) {
-      // Return fake dashboard data for development
       return {
-        customers: {
-          total: 150,
-          active: 120,
-        },
-        facilities: {
-          total: 300,
-          expiring_soon: 12,
-          total_amount: 15000000,
-          outstanding: 5000000,
-        },
-        recent_customers: [
-          { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', status: 'active' },
-          { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321', status: 'active' },
-          { id: '3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', status: 'inactive' },
-        ],
-        recent_facilities: [
-          { id: '1', customer_id: '1', customer_name: 'John Doe', type: 'loan', amount: 500000, status: 'active', issue_date: '2024-01-01', expiry_date: '2025-01-01' },
-          { id: '2', customer_id: '2', customer_name: 'Jane Smith', type: 'lc', amount: 300000, status: 'active', issue_date: '2024-02-01', expiry_date: '2025-02-01' },
-          { id: '3', customer_id: '3', customer_name: 'Robert Johnson', type: 'loan', amount: 200000, status: 'expired', issue_date: '2023-12-01', expiry_date: '2024-12-01' },
-        ]
+        total_facilities_amount: 0,
+        facilities_count: 0,
+        customers_count: 0,
+        active_customers: 0,
       }
     }
-
-    // در غیر این صورت، سعی کن از بک‌اند داده بگیر
     try {
-      // Get token from localStorage
-      const token = localStorage.getItem('token')
-      if (!token) {
-        throw new Error('No authentication token found')
-      }
-      const res = await api.get('/api/stats/dashboard', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
+      const res = await api.get('/api/stats/dashboard')
       return res.data
     } catch (error) {
-      // در صورت بروز هر خطا (از جمله خطای 500) داده جعلی برگردان
-      console.error('Failed to fetch dashboard stats, using fallback data:', error)
+      console.error('Dashboard stats error:', error)
       return {
-        customers: {
-          total: 150,
-          active: 120,
-        },
-        facilities: {
-          total: 300,
-          expiring_soon: 12,
-          total_amount: 15000000,
-          outstanding: 5000000,
-        },
-        recent_customers: [
-          { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+1234567890', status: 'active' },
-          { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321', status: 'active' },
-          { id: '3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455', status: 'inactive' },
-        ],
-        recent_facilities: [
-          { id: '1', customer_id: '1', customer_name: 'John Doe', type: 'loan', amount: 500000, status: 'active', issue_date: '2024-01-01', expiry_date: '2025-01-01' },
-          { id: '2', customer_id: '2', customer_name: 'Jane Smith', type: 'lc', amount: 300000, status: 'active', issue_date: '2024-02-01', expiry_date: '2025-02-01' },
-          { id: '3', customer_id: '3', customer_name: 'Robert Johnson', type: 'loan', amount: 200000, status: 'expired', issue_date: '2023-12-01', expiry_date: '2024-12-01' },
-        ]
+        total_facilities_amount: 0,
+        facilities_count: 0,
+        customers_count: 0,
+        active_customers: 0,
       }
     }
   },
 }
+
+// Customers API
+export const customersApi = {
+  list: async (params?: { page?: number; page_size?: number; search?: string }): Promise<CustomerList> => {
+    const res = await api.get('/api/customers', { params })
+    return res.data
+  },
+  get: async (id: string): Promise<Customer> => {
+    const res = await api.get(`/api/customers/${id}`)
+    return res.data
+  },
+  create: async (data: Partial<Customer>): Promise<Customer> => {
+    const res = await api.post('/api/customers', data)
+    return res.data
+  },
+  update: async (id: string, data: Partial<Customer>): Promise<Customer> => {
+    const res = await api.put(`/api/customers/${id}`, data)
+    return res.data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/api/customers/${id}`)
+  },
+}
+
+// Facilities API
+export const facilitiesApi = {
+  list: async (params?: { page?: number; page_size?: number; customer_id?: string }): Promise<FacilityList> => {
+    const res = await api.get('/api/facilities', { params })
+    return res.data
+  },
+  get: async (id: string): Promise<Facility> => {
+    const res = await api.get(`/api/facilities/${id}`)
+    return res.data
+  },
+  create: async (data: Partial<Facility>): Promise<Facility> => {
+    const res = await api.post('/api/facilities', data)
+    return res.data
+  },
+  update: async (id: string, data: Partial<Facility>): Promise<Facility> => {
+    const res = await api.put(`/api/facilities/${id}`, data)
+    return res.data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/api/facilities/${id}`)
+  },
+}
+
+export default api
