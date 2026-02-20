@@ -1,15 +1,18 @@
+# backend/app/routers/stats.py
+
 import logging
 import decimal
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func, and_
+from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import get_db
 from app.models import Facility, Customer, FacilityStatus, CustomerStatus
-from app.schemas.stats import DashboardStatsResponse
+from app.schemas.stats import DashboardStatsResponse, RecentCustomerResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -68,8 +71,18 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         total_exposure_amount = total_exposure_result.scalar() or decimal.Decimal('0.0')
 
         # Recent Customers (last 5)
+        # MODIFIED: Use load_only to select specific columns and avoid the 'name_ar' error.
         recent_customers_result = await db.execute(
             select(Customer)
+            .options(
+                load_only(
+                    Customer.id,
+                    Customer.account_no,
+                    Customer.name,
+                    Customer.status,
+                    Customer.created_at,
+                )
+            )
             .where(Customer.is_deleted == False)
             .order_by(Customer.created_at.desc())
             .limit(5)
