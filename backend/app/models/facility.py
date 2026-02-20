@@ -1,48 +1,40 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Boolean, Date, ForeignKey, Enum
-from sqlalchemy.orm import relationship
-from app.database import Base
-import enum
+قرار دهید."
 
+من فرض می‌کنم که درخواست کننده انتظار دارد که ما فایل `facility.py` را اصلاح کنیم، اما مشکل در فایل `stats.py` است.
 
-class FacilityType(str, enum.Enum):
-    """Facility type enumeration"""
-    LOAN = "loan"
-    OVERDRAFT = "overdraft"
-    LC = "lc"
-    LG = "lg"
-    OTHER = "other"
+با این حال، یک احتمال دیگر: شاید در مدل `Facility` باید فیلد `end_date` را اضافه کنیم؟ اما گزارش بررسی می‌گوید که در مدل `Facility` ستون `expiry_date` وجود دارد و `end_date` وجود ندارد. و خطا می‌گوید که `Facility` شی type object است که attribute `end_date` را ندارد. بنابراین یا باید در مدل `Facility` فیلد `end_date` را اضافه کنیم یا در کد دیگر (مثلاً `stats.py`) از `expiry_date` استفاده کنیم.
 
+از آنجایی که در مدل `Facility` فیلد `expiry_date` وجود دارد و منطقی است که برای تاریخ انقضا از `expiry_date` استفاده کنیم، پس باید در کد دیگر از `expiry_date` استفاده شود.
 
-class FacilityStatus(str, enum.Enum):
-    """Facility status enumeration"""
-    ACTIVE = "active"
-    PENDING = "pending"
-    CLOSED = "closed"
-    DEFAULTED = "defaulted"
+با توجه به این که ما تنها محتوای `facility.py` را داریم، و این فایل در حال حاضر `expiry_date` دارد، پس فایل `facility.py` نیاز به تغییری ندارد.
 
+اما شاید درخواست کننده می‌خواهد که ما فایل `facility.py` را به گونه‌ای تغییر دهیم که فیلد `end_date` را نیز داشته باشد؟ این کار منطقی نیست زیرا ممکن است در کدهای دیگر از `expiry_date` استفاده شده باشد.
 
-class Facility(Base):
-    __tablename__ = "facilities"
+با توجه به گزارش بررسی، راه‌حل پیشنهادی این است: "تغییر `Facility.end_date` به `Facility.expiry_date`." و این تغییر باید در فایل `stats.py` اعمال شود.
 
-    id = Column(String, primary_key=True, index=True)
-    customer_id = Column(String, ForeignKey('customers.id'), nullable=False, index=True)
-    facility_type = Column(Enum(FacilityType), nullable=False)
-    name = Column(String(200), nullable=True)
-    amount = Column(Numeric(15, 2), nullable=False)
-    outstanding = Column(Numeric(15, 2), default=0)
-    currency = Column(String(10), default="AED")
-    status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
-    start_date = Column(Date, nullable=True)
-    expiry_date = Column(Date, nullable=True)
-    interest_rate = Column(Numeric(5, 2), nullable=True)
-    tenor_months = Column(String(20), nullable=True)
-    notes = Column(String(1000), nullable=True)
-    created_at = Column(DateTime, nullable=False, server_default='now()')
-    updated_at = Column(DateTime, nullable=True, onupdate='now()')
-    is_deleted = Column(Boolean, default=False)
+از آنجایی که ما فایل `stats.py` را نداریم، نمی‌توانیم آن را ارائه دهیم.
 
-    # Relationships
-    customer = relationship("Customer", back_populates="facilities")
+با این حال، اگر درخواست کننده محتوای `facility.py` را داده است، ممکن است به این دلیل باشد که فکر می‌کند باید فیلد `end_date` را به مدل اضافه کند. اما این کار می‌تواند باعث ناسازگاری با کدهای دیگر شود.
 
-    def __repr__(self):
-        return f"<Facility {self.id}: {self.name} ({self.facility_type})>"
+با توجه به دستورالعمل، من فقط باید فایل اصلاح شده را بنویسم. از آنجایی که محتوای فعلی `facility.py` داده شده است، و خطا مربوط به نبود `end_date` است، من فیلد `end_date` را به مدل `Facility` اضافه می‌کنم.
+
+اما آیا این کار صحیح است؟ اگر در کدهای دیگر از `expiry_date` استفاده شده باشد، اضافه کردن `end_date` ممکن است مشکل را برطرف کند، اما ممکن است باعث شود که داده‌ها در دو فیلد مختلف ذخیره شوند. بهتر است که تنها از یک فیلد استفاده شود.
+
+با توجه به گزارش بررسی، می‌گوید که در مدل `Facility` ستون `expiry_date` وجود دارد. بنابراین، کد باید از `expiry_date` استفاده کند. پس اضافه کردن `end_date` راه‌حل مناسبی نیست.
+
+با این حال، ممکن است درخواست کننده بخواهد که ما فایل `facility.py` را تغییر ندهیم، زیرا مشکل در فایل دیگر است. اما در دستورالعمل گفته شده که فایل زیر را اصلاح کنید، و محتوای `facility.py` را داده است.
+
+من شک دارم که آیا باید فایل `facility.py` را تغییر دهم یا خیر. اما با توجه به این که دستورالعمل می‌گوید "فقط محتوای کامل فایل اصلاح شده را بنویسید" و محتوای `facility.py` را داده است، من فرض می‌کنم که باید فایل `facility.py` را اصلاح کنم.
+
+با توجه به خطا، مشکل نبود `end_date` است. من فیلد `end_date` را به مدل `Facility` اضافه می‌کنم، اما باید مطمئن شوم که با فیلد `expiry_date` تداخل نداشته باشد. اگر هر دو فیلد وجود داشته باشند، ممکن است در آینده سردرگمی ایجاد شود.
+
+راه‌حل بهتر این است که فیلد `end_date` را به عنوان یک alias برای `expiry_date` در نظر بگیریم. اما در SQLAlchemy می‌توانیم یک property ایجاد کنیم که به `expiry_date` اشاره کند.
+
+من فایل `facility.py` را به صورت زیر تغییر می‌دهم:
+
+- فیلد `end_date` را به عنوان یک ستون جدید اضافه نکنم، زیرا ممکن است نیاز به migration داشته باشد و همچنین duplicate data شود.
+- در عوض، یک property به نام `end_date` اضافه کنم که به `expiry_date` اشاره کند.
+
+با این کار، وقتی کد به `Facility.end_date` دسترسی پیدا می‌کند، در واقع `expiry_date` را برمی‌گرداند.
+
+بنابراین، من به مدل `Facility` یک property به نام `end_date` اضافه می‌کنم:
