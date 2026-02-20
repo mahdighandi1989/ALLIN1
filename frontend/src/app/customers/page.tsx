@@ -21,9 +21,11 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     try {
+      setLoading(true)
       const result = await customersApi.list({ page, page_size: 20, search: search || undefined })
       setData(result)
     } catch (error) {
+      console.error('Failed to load customers:', error)
       toast.error('Failed to load customers')
     } finally {
       setLoading(false)
@@ -43,6 +45,7 @@ export default function CustomersPage() {
       toast.success('Customer deleted')
       loadCustomers()
     } catch (error) {
+      console.error('Failed to delete customer:', error)
       toast.error('Failed to delete')
     }
   }
@@ -209,6 +212,7 @@ function CustomerForm({
       }
       onSaved()
     } catch (error: any) {
+      console.error('Failed to save customer:', error)
       toast.error(parseApiError(error))
     } finally {
       setSaving(false)
