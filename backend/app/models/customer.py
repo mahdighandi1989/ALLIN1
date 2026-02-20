@@ -31,7 +31,7 @@ class Customer(Base):
 
     id = Column(String(33), primary_key=True, default=generate_customer_id)
     account_no = Column(String(50), unique=True, nullable=False, index=True)
-    name = Column(String(200), nullable=False)
+    name = Column(String(200), nullable=False, default="")
     name_ar = Column(String(200))  # Arabic/Persian name
     account_type = Column(SQLEnum(AccountType), default=AccountType.RETAIL)
     status = Column(SQLEnum(CustomerStatus), default=CustomerStatus.ACTIVE)
@@ -67,4 +67,5 @@ class Customer(Base):
 
     def __str__(self) -> str:
         """Human-readable string representation"""
-        return f"Customer {self.account_no} - {self.name}"
+        customer_name = self.name if self.name else "Unknown"
+        return f"Customer {self.account_no} - {customer_name}"
