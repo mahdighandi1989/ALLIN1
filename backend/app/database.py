@@ -1,9 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from typing import AsyncGenerator
-import os
+import ssl as ssl_module
 
 from app.config import settings
+
+# SSL configuration for remote databases (Render.com, etc.)
+connect_args = {}
+if 'localhost' not in settings.DATABASE_URL and '127.0.0.1' not in settings.DATABASE_URL:
+    ssl_context = ssl_module.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl_module.CERT_NONE
+    connect_args["ssl"] = ssl_context
 
 # Create async engine
 engine = create_async_engine(
@@ -12,6 +20,7 @@ engine = create_async_engine(
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
     pool_recycle=settings.DATABASE_POOL_RECYCLE,
+    connect_args=connect_args,
 )
 
 # Create async session factory
