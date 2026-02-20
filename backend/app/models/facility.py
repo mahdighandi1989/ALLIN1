@@ -23,7 +23,7 @@ class FacilityStatus(str, enum.Enum):
 
 class Facility(Base):
     __tablename__ = "facilities"
-    
+
     id = Column(String, primary_key=True, index=True)
     customer_id = Column(String, ForeignKey('customers.id'), nullable=False, index=True)
     facility_type = Column(Enum(FacilityType), nullable=False)
@@ -40,7 +40,7 @@ class Facility(Base):
     created_at = Column(DateTime, nullable=False, server_default='now()')
     updated_at = Column(DateTime, nullable=True, onupdate='now()')
     is_deleted = Column(Boolean, default=False)
-    
+
     # Relationships
     customer = relationship("Customer", back_populates="facilities")
 
