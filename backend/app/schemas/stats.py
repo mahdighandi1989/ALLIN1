@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -16,6 +16,13 @@ class RecentCustomerResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def validate_name(cls, v):
+        if v is None:
+            return ''
+        return v
 
 
 class DashboardStatsResponse(BaseModel):
