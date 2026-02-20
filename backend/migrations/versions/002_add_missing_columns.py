@@ -31,6 +31,7 @@ def upgrade() -> None:
         ("facilities", "status", "VARCHAR(20) DEFAULT 'active'"),
         ("facilities", "start_date", "DATE"),
         ("facilities", "expiry_date", "DATE"),
+        ("facilities", "end_date", "DATE"),
         ("facilities", "interest_rate", "NUMERIC(5,2)"),
         ("facilities", "tenor_months", "VARCHAR(20)"),
         ("facilities", "notes", "VARCHAR(1000)"),
