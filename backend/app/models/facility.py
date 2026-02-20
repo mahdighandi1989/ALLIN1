@@ -32,7 +32,7 @@ class Facility(Base):
     __tablename__ = "facilities"
 
     id = Column(String(8), primary_key=True, default=generate_id)
-    customer_id = Column(String(8), ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False, index=True)
 
     # Basic info
     facility_type = Column(SQLEnum(FacilityType), nullable=False)

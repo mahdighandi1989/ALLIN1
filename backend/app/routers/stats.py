@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -5,6 +6,7 @@ from sqlalchemy import func, select
 from app.models.customer import Customer
 from app.models.facility import Facility
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/dashboard")
@@ -46,4 +48,5 @@ async def get_dashboard_stats(
             "inactive_facilities": total_facilities - active_facilities
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        logger.error(f"Dashboard stats error: {e}")
+        raise HTTPException(status_code=500, detail="Database error occurred")

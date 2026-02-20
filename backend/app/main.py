@@ -1,12 +1,32 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+import logging
 import os
 from app.routers import auth, customers, facilities, stats
 from app.config import settings  # Use unified config from app.config
+from app.database import engine, Base
 
-app = FastAPI(title=settings.APP_NAME)
+# Import all models so Base.metadata knows about them
+import app.models  # noqa: F401
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: create tables if they don't exist (fallback if migrations didn't run)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables verified/created")
+    yield
+    # Shutdown
+    await engine.dispose()
+
+
+app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
 # CORS middleware - Use the method from settings
 app.add_middleware(
@@ -45,7 +65,7 @@ app.include_router(customers.router, prefix="/api/customers", tags=["customers"]
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     # Serve index.html from frontend out directory
     if frontend_out_path:
