@@ -20,7 +20,7 @@ class CustomerStatus(str, enum.Enum):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(String(33), primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     account_no = Column(String(50), unique=True, index=True, nullable=False)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))
