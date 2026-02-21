@@ -24,9 +24,8 @@ class FacilityStatus(str, enum.Enum):
 class Facility(Base):
     __tablename__ = "facilities"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(33), primary_key=True, index=True)
     customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False)
-    facility_no = Column(String(50), unique=True, index=True, nullable=False)
     amount = Column(Numeric(15, 2), nullable=False)
     currency = Column(String(3), default="USD")
     facility_type = Column(Enum(FacilityType), default=FacilityType.LOAN)
@@ -53,7 +52,7 @@ class Facility(Base):
     customer = relationship("Customer", back_populates="facilities")
 
     def __repr__(self):
-        return f"<Facility(id={self.id}, facility_no='{self.facility_no}', amount={self.amount})>"
+        return f"<Facility(id={self.id}, amount={self.amount})>"
 
 
 # برای backward compatibility
