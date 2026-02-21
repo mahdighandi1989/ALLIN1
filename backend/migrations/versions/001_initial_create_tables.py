@@ -69,6 +69,7 @@ def upgrade() -> None:
             sa.Column('outstanding', sa.Numeric(15, 2), default=0),
             sa.Column('currency', sa.String(10), default='AED'),
             sa.Column('start_date', sa.Date()),
+            sa.Column('end_date', sa.Date()),
             sa.Column('expiry_date', sa.Date()),
             sa.Column('interest_rate', sa.Numeric(5, 2)),
             sa.Column('tenor_months', sa.String(20)),
