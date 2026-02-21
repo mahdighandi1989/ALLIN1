@@ -27,25 +27,30 @@ async def get_facilities(
     search: Optional[str] = None
 ):
     """Get paginated list of facilities with optional filtering"""
-    # Build query
-    query = select(Facility).where(Facility.is_deleted == False)
+    # Build conditions
+    conditions = [Facility.is_deleted == False]
     
     if customer_id:
-        query = query.where(Facility.customer_id == customer_id)
+        conditions.append(Facility.customer_id == customer_id)
     if facility_type:
-        query = query.where(Facility.facility_type == facility_type)
+        conditions.append(Facility.facility_type == facility_type)
     if status:
-        query = query.where(Facility.status == status)
+        conditions.append(Facility.status == status)
     if search:
-        query = query.where(or_(
+        conditions.append(or_(
             Facility.name.ilike(f"%{search}%"),
             Facility.id.ilike(f"%{search}%")
         ))
     
     # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
+    count_query = select(func.count()).select_from(Facility)
+    if conditions:
+        count_query = count_query.where(*conditions)
     total_result = await db.execute(count_query)
     total = total_result.scalar()
+    
+    # Build main query
+    query = select(Facility).where(*conditions)
     
     # Apply pagination
     offset = (page - 1) * page_size
@@ -156,32 +161,38 @@ async def search_facilities_advanced(
     page_size: int = Query(20, ge=1, le=100)
 ):
     """Advanced search for facilities"""
-    query = select(Facility).where(Facility.is_deleted == False)
+    # Build conditions
+    conditions = [Facility.is_deleted == False]
     
     if search_params.customer_id:
-        query = query.where(Facility.customer_id == search_params.customer_id)
+        conditions.append(Facility.customer_id == search_params.customer_id)
     if search_params.facility_type:
-        query = query.where(Facility.facility_type == search_params.facility_type)
+        conditions.append(Facility.facility_type == search_params.facility_type)
     if search_params.status:
-        query = query.where(Facility.status == search_params.status)
+        conditions.append(Facility.status == search_params.status)
     if search_params.search:
-        query = query.where(or_(
+        conditions.append(or_(
             Facility.name.ilike(f"%{search_params.search}%"),
             Facility.id.ilike(f"%{search_params.search}%")
         ))
     if search_params.amount_from is not None:
-        query = query.where(Facility.amount >= search_params.amount_from)
+        conditions.append(Facility.amount >= search_params.amount_from)
     if search_params.amount_to is not None:
-        query = query.where(Facility.amount <= search_params.amount_to)
+        conditions.append(Facility.amount <= search_params.amount_to)
     if search_params.start_date_from:
-        query = query.where(Facility.start_date >= search_params.start_date_from)
+        conditions.append(Facility.start_date >= search_params.start_date_from)
     if search_params.start_date_to:
-        query = query.where(Facility.start_date <= search_params.start_date_to)
+        conditions.append(Facility.start_date <= search_params.start_date_to)
     
     # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
+    count_query = select(func.count()).select_from(Facility)
+    if conditions:
+        count_query = count_query.where(*conditions)
     total_result = await db.execute(count_query)
     total = total_result.scalar()
+    
+    # Build main query
+    query = select(Facility).where(*conditions)
     
     # Apply pagination
     offset = (page - 1) * page_size

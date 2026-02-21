@@ -5,7 +5,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export const api = axios.create({
   baseURL: API_URL,
-  timeout: 60000, // افزایش تایم‌اوت از 30000 به 60000 میلی‌ثانیه
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -18,33 +18,49 @@ api.interceptors.request.use((config) => {
       config.headers.Authorization = `Bearer ${token}`
     }
   }
-  // مقداردهی اولیه تعداد تلاش‌ها
+  
   if (!config._retryCount) {
     config._retryCount = 0
   }
+  
+  if (!config._originalUrl) {
+    config._originalUrl = config.url
+  }
+  
   return config
 })
 
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const originalConfig = error.config
+    
     if (error.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('token')
       window.location.href = '/login'
+      return Promise.reject(error)
     }
-
-    // برای خطاهای 500 و درخواست‌های GET، حداکثر 2 بار تلاش مجدد
-    if (error.response?.status === 500 && error.config && error.config.method?.toLowerCase() === 'get') {
-      const maxRetries = 2
-      if (error.config._retryCount < maxRetries) {
-        error.config._retryCount += 1
-        // تاخیر نمایی با ضریب 2
-        const delay = Math.pow(2, error.config._retryCount) * 1000
+    
+    if (originalConfig && originalConfig.method?.toLowerCase() === 'get') {
+      const maxRetries = 3
+      const retryStatuses = [429, 500, 502, 503, 504]
+      const isNetworkError = !error.response
+      const isRetryableStatus = error.response && retryStatuses.includes(error.response.status)
+      
+      if ((isNetworkError || isRetryableStatus) && originalConfig._retryCount < maxRetries) {
+        originalConfig._retryCount += 1
+        
+        const delay = Math.pow(2, originalConfig._retryCount) * 1000
         await new Promise(resolve => setTimeout(resolve, delay))
-        return api(error.config)
+        
+        return api(originalConfig)
       }
     }
-
+    
+    if (error.response?.status === 404) {
+      console.error('Resource not found:', originalConfig._originalUrl || originalConfig.url)
+    }
+    
     return Promise.reject(error)
   }
 )

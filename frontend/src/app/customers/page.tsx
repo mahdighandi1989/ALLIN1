@@ -220,8 +220,14 @@ function CustomerForm({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-lg shadow-xl w-full max-w-md"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-4 border-b">
           <h3 className="text-lg font-semibold">{customer ? 'Edit Customer' : 'New Customer'}</h3>
         </div>

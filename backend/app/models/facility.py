@@ -25,7 +25,7 @@ class Facility(Base):
     __tablename__ = "facilities"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False)
     facility_no = Column(String(50), unique=True, index=True, nullable=False)
     amount = Column(Numeric(15, 2), nullable=False)
     currency = Column(String(3), default="USD")
