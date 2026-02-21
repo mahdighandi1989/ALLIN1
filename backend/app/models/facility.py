@@ -1,63 +1,60 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import Dict, Any
-
-from app.database import get_db
-from app.models.customer import Customer
-from app.models.facility import Facility
-from app.models.user import User
-from app.models.offer_letter import OfferLetter
-
-router = APIRouter(prefix="/stats", tags=["stats"])
+from sqlalchemy import Column, Integer, String, Numeric, Date, Enum, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+import enum
+from ..database import Base
 
 
-@router.get("/dashboard")
-def get_dashboard_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """
-    Get dashboard statistics including total customers, facilities, offer letters, etc.
-    """
-    try:
-        # Get total customers (excluding deleted)
-        total_customers = db.query(Customer).filter(Customer.is_deleted == False).count()
+class FacilityType(str, enum.Enum):
+    LOAN = "loan"
+    OVERDRAFT = "overdraft"
+    LC = "lc"
+    GUARANTEE = "guarantee"
+    OTHER = "other"
 
-        # Get total facilities (excluding deleted)
-        total_facilities = db.query(Facility).filter(Facility.is_deleted == False).count()
 
-        # Get total offer letters (excluding deleted)
-        total_offer_letters = db.query(OfferLetter).filter(OfferLetter.is_deleted == False).count()
+class FacilityStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    CLOSED = "closed"
+    DEFAULTED = "defaulted"
+    WRITTEN_OFF = "written_off"
 
-        # Get active facilities count
-        active_facilities = db.query(Facility).filter(
-            Facility.is_deleted == False,
-            Facility.status == 'active'
-        ).count()
 
-        # Get recent customers (last 30 days)
-        # from datetime import datetime, timedelta
-        # thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        # recent_customers = db.query(Customer).filter(Customer.created_at >= thirty_days_ago).count()
+class Facility(Base):
+    __tablename__ = "facilities"
 
-        # For now, we'll just use 0 for recent customers
-        recent_customers = 0
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    facility_no = Column(String(50), unique=True, index=True, nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
+    currency = Column(String(3), default="USD")
+    facility_type = Column(Enum(FacilityType), default=FacilityType.LOAN)
+    start_date = Column(Date)
+    end_date = Column(Date)
+    outstanding = Column(Numeric(15, 2), default=0)
+    status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
+    purpose = Column(String(500))
+    interest_rate = Column(Numeric(5, 2))
+    collateral_value = Column(Numeric(15, 2))
+    risk_rating = Column(String(10))
+    relationship_manager = Column(String(255))
+    branch = Column(String(100))
+    approved_by = Column(String(255))
+    approved_date = Column(Date)
+    reviewed_date = Column(Date)
+    next_review_date = Column(Date)
+    comments = Column(String(1000))
+    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-        # Calculate total exposure (sum of outstanding amounts for active facilities)
-        # We need to import func for sum
-        from sqlalchemy import func
-        exposure_result = db.query(func.sum(Facility.outstanding)).filter(
-            Facility.is_deleted == False,
-            Facility.status == 'active'
-        ).scalar()
-        total_exposure = exposure_result if exposure_result else 0
+    # Relationships
+    customer = relationship("Customer", back_populates="facilities")
 
-        return {
-            "total_customers": total_customers,
-            "total_facilities": total_facilities,
-            "total_offer_letters": total_offer_letters,
-            "active_facilities": active_facilities,
-            "recent_customers": recent_customers,
-            "total_exposure": float(total_exposure) if total_exposure else 0.0
-        }
-    except Exception as e:
-        # Log the exception for debugging
-        # You can use a logger here
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    def __repr__(self):
+        return f"<Facility(id={self.id}, facility_no='{self.facility_no}', amount={self.amount})>"
+
+
+# برای backward compatibility
+__all__ = ["Facility", "FacilityType", "FacilityStatus"]
