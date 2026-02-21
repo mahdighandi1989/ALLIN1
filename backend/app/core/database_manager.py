@@ -1,227 +1,219 @@
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import logging
+from datetime import datetime, timedelta
+from backend.app.core.database import get_db
+from backend.app.models import Customer, Facility, User, Transaction
+from backend.app.core.database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/stats", tags=["stats"])
 
 
-class DatabaseManager:
-    """Database manager for common database operations"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def execute_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Execute a raw SQL query and return results"""
+@router.get("/dashboard")
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+    """
+    Get dashboard statistics including counts, recent activity, etc.
+    """
+    try:
+        db_manager = DatabaseManager(db)
+        
+        # Get table counts with error handling for each query
+        stats = {}
+        
+        # Count customers - handle case where table might not exist or query fails
         try:
-            result = await self.session.execute(text(query), params or {})
-            return [dict(row._mapping) for row in result.fetchall()]
+            customers_count = await db.execute(
+                "SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL"
+            )
+            stats["total_customers"] = customers_count.scalar() or 0
         except Exception as e:
-            logger.error(f"Database query error: {e}")
-            raise
-    
-    async def execute_scalar(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute a query and return a single scalar value"""
+            logger.warning(f"Failed to count customers: {e}")
+            stats["total_customers"] = 0
+        
+        # Count facilities - handle different possible table names or schemas
         try:
-            result = await self.session.execute(text(query), params or {})
-            return result.scalar()
+            facilities_count = await db.execute(
+                "SELECT COUNT(*) FROM facilities WHERE status = 'active' AND deleted_at IS NULL"
+            )
+            stats["total_facilities"] = facilities_count.scalar() or 0
         except Exception as e:
-            logger.error(f"Database scalar query error: {e}")
-            raise
-    
-    async def check_table_exists(self, table_name: str) -> bool:
-        """Check if a table exists in the database"""
-        query = """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = :table_name
-        );
-        """
+            logger.warning(f"Failed to count facilities: {e}")
+            stats["total_facilities"] = 0
+        
+        # Count users
         try:
-            result = await self.execute_scalar(query, {"table_name": table_name})
-            return bool(result)
+            users_count = await db.execute(
+                "SELECT COUNT(*) FROM users WHERE is_active = true"
+            )
+            stats["total_users"] = users_count.scalar() or 0
         except Exception as e:
-            logger.error(f"Error checking table existence for '{table_name}': {e}")
-            return False
-    
-    async def get_table_columns(self, table_name: str) -> List[Dict[str, Any]]:
-        """Get column information for a table"""
-        query = """
-        SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns
-        WHERE table_name = :table_name
-        ORDER BY ordinal_position;
-        """
+            logger.warning(f"Failed to count users: {e}")
+            stats["total_users"] = 0
+        
+        # Get recent transactions (last 7 days)
         try:
-            return await self.execute_query(query, {"table_name": table_name})
+            seven_days_ago = datetime.utcnow() - timedelta(days=7)
+            recent_transactions = await db.execute(
+                "SELECT COUNT(*) FROM transactions WHERE created_at >= :date",
+                {"date": seven_days_ago}
+            )
+            stats["recent_transactions"] = recent_transactions.scalar() or 0
         except Exception as e:
-            logger.error(f"Error retrieving columns for table '{table_name}': {e}")
-            return []
-    
-    async def backup_table(self, table_name: str, backup_suffix: str = "backup") -> Optional[str]:
-        """
-        Create a backup of a table
+            logger.warning(f"Failed to count recent transactions: {e}")
+            stats["recent_transactions"] = 0
         
-        Args:
-            table_name: Name of the table to backup
-            backup_suffix: Suffix for the backup table name
-            
-        Returns:
-            Backup table name if successful, None if failed
-            
-        Raises:
-            Exception: If backup operation fails
-        """
-        if not table_name or not isinstance(table_name, str):
-            raise ValueError("Table name must be a non-empty string")
-        
-        if not backup_suffix or not isinstance(backup_suffix, str):
-            raise ValueError("Backup suffix must be a non-empty string")
-        
-        # Sanitize table names to prevent SQL injection
-        sanitized_table_name = table_name.replace('"', '').replace("'", "").replace(";", "")
-        sanitized_backup_suffix = backup_suffix.replace('"', '').replace("'", "").replace(";", "")
-        
-        backup_table_name = f"{sanitized_table_name}_{sanitized_backup_suffix}"
-        
+        # Get total transaction amount (last 30 days)
         try:
-            # Check if source table exists
-            if not await self.check_table_exists(sanitized_table_name):
-                raise ValueError(f"Source table '{sanitized_table_name}' does not exist")
-            
-            # Check if backup table already exists
-            if await self.check_table_exists(backup_table_name):
-                logger.warning(f"Backup table '{backup_table_name}' already exists, dropping it")
-                drop_query = f'DROP TABLE "{backup_table_name}"'
-                await self.session.execute(text(drop_query))
-            
-            # Create backup table
-            backup_query = f'CREATE TABLE "{backup_table_name}" AS SELECT * FROM "{sanitized_table_name}"'
-            await self.session.execute(text(backup_query))
-            
-            # Verify backup was created successfully
-            if not await self.check_table_exists(backup_table_name):
-                raise Exception(f"Failed to create backup table '{backup_table_name}'")
-            
-            logger.info(f"Successfully created backup table '{backup_table_name}' from '{sanitized_table_name}'")
-            return backup_table_name
-            
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            total_amount_result = await db.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE created_at >= :date AND status = 'completed'",
+                {"date": thirty_days_ago}
+            )
+            stats["total_transaction_amount"] = float(total_amount_result.scalar() or 0)
         except Exception as e:
-            logger.error(f"Failed to backup table '{sanitized_table_name}': {e}")
-            # Rollback any partial changes
-            await self.session.rollback()
-            raise Exception(f"Backup operation failed: {e}")
-    
-    async def drop_table(self, table_name: str, if_exists: bool = True) -> bool:
-        """
-        Drop a table safely
+            logger.warning(f"Failed to sum transaction amounts: {e}")
+            stats["total_transaction_amount"] = 0.0
         
-        Args:
-            table_name: Name of the table to drop
-            if_exists: If True, don't raise error if table doesn't exist
-            
-        Returns:
-            True if table was dropped, False if it didn't exist (when if_exists=True)
-            
-        Raises:
-            Exception: If drop operation fails
-        """
-        if not table_name or not isinstance(table_name, str):
-            raise ValueError("Table name must be a non-empty string")
-        
-        # Sanitize table name
-        sanitized_table_name = table_name.replace('"', '').replace("'", "").replace(";", "")
-        
+        # Get pending approvals count
         try:
-            # Check if table exists
-            table_exists = await self.check_table_exists(sanitized_table_name)
-            
-            if not table_exists:
-                if if_exists:
-                    logger.info(f"Table '{sanitized_table_name}' does not exist, skipping drop")
-                    return False
-                else:
-                    raise ValueError(f"Table '{sanitized_table_name}' does not exist")
-            
-            # Drop table
-            drop_query = f'DROP TABLE "{sanitized_table_name}"'
-            await self.session.execute(text(drop_query))
-            
-            logger.info(f"Successfully dropped table '{sanitized_table_name}'")
-            return True
-            
+            pending_approvals = await db.execute(
+                "SELECT COUNT(*) FROM facilities WHERE status = 'pending' AND deleted_at IS NULL"
+            )
+            stats["pending_approvals"] = pending_approvals.scalar() or 0
         except Exception as e:
-            logger.error(f"Failed to drop table '{sanitized_table_name}': {e}")
-            await self.session.rollback()
-            raise Exception(f"Drop table operation failed: {e}")
-    
-    async def get_table_row_count(self, table_name: str) -> int:
-        """
-        Get the number of rows in a table
+            logger.warning(f"Failed to count pending approvals: {e}")
+            stats["pending_approvals"] = 0
         
-        Args:
-            table_name: Name of the table
-            
-        Returns:
-            Number of rows in the table
-            
-        Raises:
-            Exception: If operation fails
-        """
-        if not table_name or not isinstance(table_name, str):
-            raise ValueError("Table name must be a non-empty string")
+        # Add timestamp
+        stats["last_updated"] = datetime.utcnow().isoformat()
         
-        # Sanitize table name
-        sanitized_table_name = table_name.replace('"', '').replace("'", "").replace(";", "")
+        return {
+            "success": True,
+            "data": stats,
+            "message": "Dashboard statistics retrieved successfully"
+        }
         
+    except Exception as e:
+        logger.error(f"Failed to retrieve dashboard statistics: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": "Internal server error while fetching dashboard statistics",
+                "message": "Please try again later"
+            }
+        )
+
+
+@router.get("/facilities/summary")
+async def get_facilities_summary(db: AsyncSession = Depends(get_db)):
+    """
+    Get facilities summary statistics
+    """
+    try:
+        stats = {}
+        
+        # Count by status
         try:
-            # Check if table exists
-            if not await self.check_table_exists(sanitized_table_name):
-                raise ValueError(f"Table '{sanitized_table_name}' does not exist")
-            
-            # Get row count
-            count_query = f'SELECT COUNT(*) FROM "{sanitized_table_name}"'
-            result = await self.execute_scalar(count_query)
-            
-            return int(result) if result is not None else 0
-            
+            status_counts = await db.execute(
+                """
+                SELECT status, COUNT(*) as count 
+                FROM facilities 
+                WHERE deleted_at IS NULL 
+                GROUP BY status
+                """
+            )
+            stats["by_status"] = {row["status"]: row["count"] for row in status_counts.fetchall()}
         except Exception as e:
-            logger.error(f"Failed to get row count for table '{sanitized_table_name}': {e}")
-            raise Exception(f"Row count operation failed: {e}")
-    
-    async def truncate_table(self, table_name: str) -> bool:
-        """
-        Truncate a table (remove all rows)
+            logger.warning(f"Failed to get facilities by status: {e}")
+            stats["by_status"] = {}
         
-        Args:
-            table_name: Name of the table to truncate
-            
-        Returns:
-            True if successful
-            
-        Raises:
-            Exception: If operation fails
-        """
-        if not table_name or not isinstance(table_name, str):
-            raise ValueError("Table name must be a non-empty string")
-        
-        # Sanitize table name
-        sanitized_table_name = table_name.replace('"', '').replace("'", "").replace(";", "")
-        
+        # Count by type
         try:
-            # Check if table exists
-            if not await self.check_table_exists(sanitized_table_name):
-                raise ValueError(f"Table '{sanitized_table_name}' does not exist")
-            
-            # Truncate table
-            truncate_query = f'TRUNCATE TABLE "{sanitized_table_name}"'
-            await self.session.execute(text(truncate_query))
-            
-            logger.info(f"Successfully truncated table '{sanitized_table_name}'")
-            return True
-            
+            type_counts = await db.execute(
+                """
+                SELECT type, COUNT(*) as count 
+                FROM facilities 
+                WHERE deleted_at IS NULL 
+                GROUP BY type
+                """
+            )
+            stats["by_type"] = {row["type"]: row["count"] for row in type_counts.fetchall()}
         except Exception as e:
-            logger.error(f"Failed to truncate table '{sanitized_table_name}': {e}")
-            await self.session.rollback()
-            raise Exception(f"Truncate operation failed: {e}")
+            logger.warning(f"Failed to get facilities by type: {e}")
+            stats["by_type"] = {}
+        
+        return {
+            "success": True,
+            "data": stats,
+            "message": "Facilities summary retrieved successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve facilities summary: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": "Internal server error while fetching facilities summary",
+                "message": "Please try again later"
+            }
+        )
+
+
+@router.get("/customers/summary")
+async def get_customers_summary(db: AsyncSession = Depends(get_db)):
+    """
+    Get customers summary statistics
+    """
+    try:
+        stats = {}
+        
+        # Count by status
+        try:
+            status_counts = await db.execute(
+                """
+                SELECT status, COUNT(*) as count 
+                FROM customers 
+                WHERE deleted_at IS NULL 
+                GROUP BY status
+                """
+            )
+            stats["by_status"] = {row["status"]: row["count"] for row in status_counts.fetchall()}
+        except Exception as e:
+            logger.warning(f"Failed to get customers by status: {e}")
+            stats["by_status"] = {}
+        
+        # Count by customer type
+        try:
+            type_counts = await db.execute(
+                """
+                SELECT customer_type, COUNT(*) as count 
+                FROM customers 
+                WHERE deleted_at IS NULL 
+                GROUP BY customer_type
+                """
+            )
+            stats["by_type"] = {row["customer_type"]: row["count"] for row in type_counts.fetchall()}
+        except Exception as e:
+            logger.warning(f"Failed to get customers by type: {e}")
+            stats["by_type"] = {}
+        
+        return {
+            "success": True,
+            "data": stats,
+            "message": "Customers summary retrieved successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to retrieve customers summary: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "error": "Internal server error while fetching customers summary",
+                "message": "Please try again later"
+            }
+        )
