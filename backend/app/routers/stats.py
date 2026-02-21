@@ -65,8 +65,8 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
                 select(func.count(Facility.id)).where(
                     and_(
                         Facility.is_deleted == False,
-                        Facility.expiry_date >= today,
-                        Facility.expiry_date <= thirty_days_later
+                        Facility.end_date >= today,
+                        Facility.end_date <= thirty_days_later
                     )
                 )
             )

@@ -31,6 +31,7 @@ class Facility(Base):
     facility_type = Column(Enum(FacilityType), default=FacilityType.LOAN)
     start_date = Column(Date)
     end_date = Column(Date)
+    expiry_date = Column(Date)
     outstanding = Column(Numeric(15, 2), default=0)
     status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
     purpose = Column(String(500))
