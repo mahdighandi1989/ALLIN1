@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.routers import auth, customers, facilities, stats
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -36,7 +37,13 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 async def health_check():
     return {"status": "healthy"}
 
+# Ensure the static_frontend directory exists
+static_frontend_dir = "static_frontend"
+if not os.path.exists(static_frontend_dir):
+    os.makedirs(static_frontend_dir, exist_ok=True)
+    logger.info(f"Created directory: {static_frontend_dir}")
+
 # Mount the static directory to serve the frontend.
 # This must be the last thing added to the app so that it doesn't
 # override the API routes.
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory=static_frontend_dir, html=True), name="static_frontend")
