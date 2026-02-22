@@ -37,13 +37,14 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 async def health_check():
     return {"status": "healthy"}
 
-# Ensure the static_frontend directory exists
-static_frontend_dir = "static_frontend"
-if not os.path.exists(static_frontend_dir):
-    os.makedirs(static_frontend_dir, exist_ok=True)
-    logger.info(f"Created directory: {static_frontend_dir}")
+# The static directory should contain the frontend build files.
+static_dir = "static"
 
 # Mount the static directory to serve the frontend.
 # This must be the last thing added to the app so that it doesn't
 # override the API routes.
-app.mount("/", StaticFiles(directory=static_frontend_dir, html=True), name="static_frontend")
+if os.path.exists(static_dir):
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static_frontend")
+    logger.info(f"Serving frontend from directory: {static_dir}")
+else:
+    logger.warning(f"Static directory '{static_dir}' not found. Frontend will not be served.")
