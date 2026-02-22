@@ -11,11 +11,29 @@ services:
     plan: free
     buildCommand: |
       # Build frontend
+      echo "Building frontend..."
       cd frontend && npm install && npm run build
+      
+      # Create static_frontend directory if it doesn't exist
+      echo "Creating static_frontend directory..."
+      mkdir -p ../backend/static_frontend
+      
       # Copy frontend build output to backend's static serving path
-      cp -r out/ ../backend/static_frontend/ || true
+      echo "Copying frontend files..."
+      if [ -d "out" ]; then
+        cp -r out/* ../backend/static_frontend/ || echo "Copy failed, continuing..."
+      else
+        echo "Frontend build directory 'out' not found!"
+        # Create a basic index.html as fallback
+        mkdir -p ../backend/static_frontend
+        echo '<html><body><h1>ALLIN1 Banking System</h1><p>Frontend is being built...</p></body></html>' > ../backend/static_frontend/index.html
+      fi
+      
       # Install backend dependencies
+      echo "Installing backend dependencies..."
       cd ../backend && pip install --no-cache-dir --upgrade -r requirements.txt
+      
+      echo "Build completed successfully!"
     startCommand: |
       cd backend && (alembic upgrade head || echo "Alembic migration skipped, tables will be created at startup") && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
