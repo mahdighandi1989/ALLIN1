@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.routers import auth, customers, facilities, stats
 import logging
@@ -35,6 +36,7 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/")
-async def root():
-    return {"message": f"Welcome to {settings.APP_NAME} API"}
+# Mount the static directory to serve the frontend.
+# This must be the last thing added to the app so that it doesn't
+# override the API routes.
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
