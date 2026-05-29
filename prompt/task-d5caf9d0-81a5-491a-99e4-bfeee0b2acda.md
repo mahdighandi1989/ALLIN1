@@ -4,13 +4,13 @@ title: '[منطق] عدم مدیریت خطاهای دیتابیس در auth pip
 type: logic_audit
 priority: medium
 execution_priority: 3000
-status: suggested
+status: pending
 external_status: pending
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-17T16:07:32.451825+00:00'
-updated_at: '2026-05-29T20:22:53.121954+00:00'
+updated_at: '2026-05-29T21:52:46.798924+00:00'
 ---
 
 # [منطق] عدم مدیریت خطاهای دیتابیس در auth pipeline
@@ -143,7 +143,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی و مستندسازی وضعیت فعلی اتصال دیتابیس در auth pipeline
-**Status:** `pending` (0%)
+**Status:** `partial` (50%)
 **Scope:** این مرحله شامل بررسی کامل فایل backend/app/database.py و تمام فایل‌های مرتبط با auth pipeline برای شناسایی دقیق نحوه اتصال به دیتابیس، مدیریت pool، SSL، و عدم وجود retry/fallback mechanism است. همچنین شامل جستجو برای وجود هرگونه پیاده‌سازی قبلی retry یا health check در repo می‌شود. خروجی این مرحله یک مستند کوتاه از یافته‌ها و تصمیم‌گیری در مورد نیاز به تغییرات است. خارج از این مرحله: هیچ تغییری در کد ایجاد نمی‌شود.
 **Excerpt:**
 ```
@@ -156,7 +156,7 @@ _(مستقل)_
 ```
 
 ### Step 2: ایجاد retry decorator برای session creation با exponential backoff
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل ایجاد یک decorator یا تابع کمکی (مثلاً در فایل backend/app/database.py یا یک فایل جدید backend/app/retry_utils.py) است که عملیات ایجاد session دیتابیس را با ۳ بار تلاش و exponential backoff (مثلاً ۱، ۲، ۴ ثانیه) wrapper کند. این decorator باید خطاهای موقت اتصال (مانند timeout، connection reset، OperationalError) را مدیریت کند. خارج از این مرحله: تغییر در endpoint‌های auth یا frontend انجام نمی‌شود.
 **Excerpt:**
 ```
@@ -166,7 +166,7 @@ _(مستقل)_
 ```
 
 ### Step 3: ایجاد health check endpoint برای دیتابیس در backend
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل ایجاد یک endpoint جدید (مثلاً GET /health/db) در backend (احتمالاً در فایل backend/app/routes/health.py یا مشابه) است که وضعیت اتصال دیتابیس را بررسی کرده و status 200 یا 503 برمی‌گرداند. این endpoint باید از retry decorator ایجاد شده در مرحله قبل استفاده کند. خارج از این مرحله: تغییر در frontend برای نمایش این وضعیت انجام نمی‌شود.
 **Excerpt:**
 ```
@@ -176,7 +176,7 @@ _(مستقل)_
 ```
 
 ### Step 4: اتصال health check endpoint به frontend برای نمایش وضعیت دیتابیس
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل تغییر در frontend (احتمالاً در فایل‌های مربوط به auth مانند login page یا یک کامپوننت وضعیت سیستم) است تا به طور دوره‌ای (مثلاً هر ۳۰ ثانیه) health check endpoint را فراخوانی کرده و در صورت عدم دسترسی به دیتابیس، یک پیام هشدار به کاربر نمایش دهد (مثلاً 'دیتابیس موقتاً در دسترس نیست. لطفاً بعداً تلاش کنید.'). خارج از این مرحله: تغییر در logic auth یا backend انجام نمی‌شود.
 **Excerpt:**
 ```
@@ -186,7 +186,7 @@ _(مستقل)_
 ```
 
 ### Step 5: نوشتن تست‌های واحد برای retry decorator
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های واحد (با pytest یا فریمورک مشابه) برای retry decorator ایجاد شده در مرحله ۲ است. تست‌ها باید موارد زیر را پوشش دهند: تلاش موفق در اولین بار، تلاش موفق پس از ۱ یا ۲ بار شکست، شکست کامل پس از ۳ بار تلاش، و exponential backoff. خارج از این مرحله: تست‌های integration یا end-to-end نوشته نمی‌شوند.
 **Excerpt:**
 ```
@@ -196,7 +196,7 @@ _(مستقل)_
 ```
 
 ### Step 6: نوشتن تست‌های integration برای health check endpoint
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration (با pytest و TestClient از FastAPI) برای health check endpoint ایجاد شده در مرحله ۳ است. تست‌ها باید موارد زیر را پوشش دهند: وضعیت healthy، وضعیت unhealthy (با mock کردن دیتابیس)، و پاسخ صحیح (status code و body). خارج از این مرحله: تست‌های frontend نوشته نمی‌شوند.
 **Excerpt:**
 ```
@@ -206,7 +206,7 @@ _(مستقل)_
 ```
 
 ### Step 7: نوشتن تست‌های end-to-end برای سناریوی قطع دیتابیس در auth
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن یک تست end-to-end (با ابزاری مانند Playwright یا Selenium) است که سناریوی زیر را شبیه‌سازی می‌کند: دیتابیس قطع است، کاربر سعی در لاگین دارد، frontend پیام هشدار را نمایش می‌دهد و backend خطای 503 برمی‌گرداند. خارج از این مرحله: تست‌های performance یا stress نوشته نمی‌شوند.
 **Excerpt:**
 ```
