@@ -1,22 +1,10 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:12:39.791074+00:00",
+  "generated_at": "2026-05-29T22:14:17.612710+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 19,
+  "total": 17,
   "tasks": [
-    {
-      "task_id": "3b6da420-9914-4d33-aaa8-3d169dc50e69",
-      "title": "افزودن تست‌های خودکار احراز هویت و امنیت",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-3b6da420-9914-4d33-aaa8-3d169dc50e69.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:57:38.362402+00:00",
-      "updated_at": "2026-05-29T21:58:12.196200+00:00"
-    },
     {
       "task_id": "task_1f0f55a17f45",
       "title": "تقویت امنیت JWT و مکانیزم‌های احراز هویت",
@@ -55,15 +43,27 @@
     },
     {
       "task_id": "task_e92cd1d0c4b4",
-      "title": "بهینه‌سازی و پاکسازی پیکربندی و وابستگی‌های فرانت‌اند",
+      "title": "پاکسازی اسکریپت‌های تزریقی و URLهای هاردکد فرانت‌اند",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_e92cd1d0c4b4.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-29T22:12:35.442679+00:00",
+      "updated_at": "2026-05-29T22:12:46.766157+00:00"
+    },
+    {
+      "task_id": "task_66febcc9ff9a",
+      "title": "تقویت جامع امنیت و احراز هویت: از اعتبارسنجی ورودی تا تست‌های خودکار و جلوگیری از نشت اطلاعات",
       "priority": "critical",
       "execution_priority": 1000,
       "status": "pending",
       "external_status": "pending",
       "path": null,
       "external_attempts": 0,
-      "created_at": "2026-05-29T22:12:35.442679+00:00",
-      "updated_at": "2026-05-29T22:12:35.442685+00:00"
+      "created_at": "2026-05-29T22:13:50.338007+00:00",
+      "updated_at": "2026-05-29T22:13:50.338011+00:00"
     },
     {
       "task_id": "e155f680-f40b-46f5-a027-217b8a754ba5",
@@ -78,18 +78,6 @@
       "updated_at": "2026-05-29T21:50:05.563746+00:00"
     },
     {
-      "task_id": "f7c14bb3-904f-4da1-b5a0-e8691ee049a4",
-      "title": "Add input validation for customer form fields",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-f7c14bb3-904f-4da1-b5a0-e8691ee049a4.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:57:56.421780+00:00",
-      "updated_at": "2026-05-29T21:58:26.570559+00:00"
-    },
-    {
       "task_id": "39a77dbb-9c7d-40d2-b8e0-b783f00e189f",
       "title": "Fix broken feedback loop anti-pattern",
       "priority": "high",
@@ -100,18 +88,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:57:56.550735+00:00",
       "updated_at": "2026-05-29T21:59:42.876448+00:00"
-    },
-    {
-      "task_id": "6ec6ac9a-3418-48bc-a124-46ca50b1a03d",
-      "title": "جلوگیری از نشت اطلاعات permission در خطاهای API",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-6ec6ac9a-3418-48bc-a124-46ca50b1a03d.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:58:10.836123+00:00",
-      "updated_at": "2026-05-29T22:01:05.934589+00:00"
     },
     {
       "task_id": "7eb31c02-841d-4090-aa7f-29b8f60bc27f",
