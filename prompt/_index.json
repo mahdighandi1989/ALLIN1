@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:40:49.549565+00:00",
+  "generated_at": "2026-05-29T21:41:35.975787+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 8,
+  "total": 10,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -28,6 +28,30 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:02:07.318968+00:00",
       "updated_at": "2026-05-29T21:40:25.015662+00:00"
+    },
+    {
+      "task_id": "2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a",
+      "title": "WebSocket URL هاردکد شده با توکن پروژه در فایل‌های استاتیک فرانت‌اند",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:02:07.326874+00:00",
+      "updated_at": "2026-05-29T21:41:29.035421+00:00"
+    },
+    {
+      "task_id": "42cbcd99-7b21-4491-816e-cad31d6791cf",
+      "title": "فایل backend/app/routers/auth.py فاقد تست برای سناریوهای خطای احراز هویت است",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-42cbcd99-7b21-4491-816e-cad31d6791cf.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:02:07.331582+00:00",
+      "updated_at": "2026-05-29T21:41:30.455091+00:00"
     },
     {
       "task_id": "258b7c7d-6e73-44a0-a1b7-8b7c59a77df2",
