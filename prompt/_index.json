@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:58:30.035721+00:00",
+  "generated_at": "2026-05-29T21:59:08.766918+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 43,
+  "total": 44,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -412,6 +412,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:57:56.389488+00:00",
       "updated_at": "2026-05-29T21:57:58.740244+00:00"
+    },
+    {
+      "task_id": "29f8d56d-7a43-4b0e-8768-564c7963a2d6",
+      "title": "Anti-pattern: Under-engineering",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-29f8d56d-7a43-4b0e-8768-564c7963a2d6.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:57:56.482255+00:00",
+      "updated_at": "2026-05-29T21:59:03.102435+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
