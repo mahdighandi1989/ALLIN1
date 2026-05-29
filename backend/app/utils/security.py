@@ -30,6 +30,31 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
+# Algorithms that must NEVER be accepted. The 'none' algorithm allows tokens
+# without any signature and is the root cause of JWT signature-bypass / token
+# forgery attacks (e.g. CVE-2022-23529). It is hard-blocked everywhere.
+_DISALLOWED_ALGORITHMS = {"none", ""}
+
+
+def get_allowed_algorithms() -> list:
+    """Return the explicit allowlist of permitted JWT signing algorithms.
+
+    The list is derived from the configured ALGORITHM but is *guaranteed* to
+    exclude the insecure 'none' algorithm. If the configuration is somehow
+    empty/invalid, we fall back to the safe default of HS256 rather than
+    accepting an unsigned token.
+    """
+    configured = ALGORITHM if isinstance(ALGORITHM, (list, tuple)) else [ALGORITHM]
+    allowed = [
+        a for a in configured
+        if a and str(a).strip().lower() not in _DISALLOWED_ALGORITHMS
+    ]
+    return allowed or ["HS256"]
+
+
+# Pre-computed allowlist used for every decode call.
+ALLOWED_ALGORITHMS = get_allowed_algorithms()
+
 
 class TokenData(BaseModel):
     """Token data validation model"""
@@ -104,17 +129,51 @@ def verify_access_token(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Defense-in-depth: explicitly inspect the (unverified) header and reject the
+    # insecure 'none' algorithm — or any algorithm outside our allowlist — BEFORE
+    # attempting to decode. This guarantees forged unsigned tokens are rejected
+    # even if the underlying library or configuration changes.
     try:
-        # Decode with issuer and audience validation if present
+        unverified_header = jwt.get_unverified_header(token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_alg = str(unverified_header.get("alg", "")).strip()
+    if token_alg.lower() in _DISALLOWED_ALGORITHMS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token algorithm 'none' is not allowed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if token_alg not in ALLOWED_ALGORITHMS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token algorithm not allowed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        # Decode with issuer and audience validation if present.
+        # The explicit algorithms allowlist (never containing 'none') is the
+        # primary guard enforced by the JWT library itself.
         payload = jwt.decode(
             token,
             SECRET_KEY,
-            algorithms=[ALGORITHM],
+            algorithms=ALLOWED_ALGORITHMS,
             options={
                 "verify_signature": True,
                 "verify_exp": True,
                 "verify_iat": True,
                 "require_exp": True,
+                # Audience is validated manually below (conditionally, for
+                # backward compatibility with tokens that predate the 'aud'
+                # claim). Letting python-jose auto-verify it would reject every
+                # token because we don't pass an explicit audience= argument.
+                "verify_aud": False,
             }
         )
 

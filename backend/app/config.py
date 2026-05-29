@@ -7,7 +7,7 @@ It includes robust validation to ensure security and correctness.
 import os
 from typing import Optional, List
 from pydantic_settings import BaseSettings
-from pydantic import validator, Field
+from pydantic import validator, Field, AliasChoices
 import secrets
 from functools import lru_cache
 import logging
@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(64),
         min_length=32,
-        description="JWT signing key - must be cryptographically secure"
+        validation_alias=AliasChoices("SECRET_KEY", "JWT_SECRET_KEY"),
+        description="JWT signing key - must be cryptographically secure "
+                    "(read from env SECRET_KEY or JWT_SECRET_KEY)"
     )
     ALGORITHM: str = Field(default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60 * 24 * 7)  # 7 days
@@ -120,11 +122,52 @@ class Settings(BaseSettings):
 
     @validator('SECRET_KEY')
     def validate_secret_key(cls, v, values):
-        """Validate secret key security requirements"""
-        if not v or len(v) < 32:
-            # Generate a secure key if not provided
+        """Validate secret key security requirements.
+
+        The key must be supplied via the environment (SECRET_KEY / JWT_SECRET_KEY)
+        and must never be a weak or placeholder value. In production a weak key is
+        a hard error; in development/test a secure ephemeral key is generated so
+        local workflows keep working without shipping a hardcoded secret.
+        """
+        weak_placeholders = {
+            "", "your-secret-key", "changeme", "change_me", "change-me",
+            "change_me_in_production_use_openssl_rand_base64_32",
+            "secret", "secret-key", "secretkey", "test", "password",
+        }
+        is_weak = (
+            (not v)
+            or (len(v) < 32)
+            or (str(v).strip().lower() in weak_placeholders)
+        )
+        if is_weak:
+            if str(values.get('ENVIRONMENT', '')).lower() == 'production':
+                raise ValueError(
+                    "SECRET_KEY (or JWT_SECRET_KEY) must be set to a strong, "
+                    "non-default value of at least 32 characters in production. "
+                    "Generate one with: openssl rand -base64 48"
+                )
+            # Development/test: generate a secure ephemeral key instead of
+            # falling back to any hardcoded value.
             return secrets.token_urlsafe(64)
         return v
+
+    @validator('ALGORITHM')
+    def validate_algorithm(cls, v):
+        """Reject the insecure 'none' algorithm and restrict to a safe allowlist."""
+        if not v or str(v).strip().lower() in {"none", ""}:
+            raise ValueError("JWT ALGORITHM must not be empty or 'none'")
+        safe_algorithms = {
+            "HS256", "HS384", "HS512",
+            "RS256", "RS384", "RS512",
+            "ES256", "ES384", "ES512",
+            "PS256", "PS384", "PS512",
+        }
+        normalized = str(v).strip().upper()
+        if normalized not in safe_algorithms:
+            raise ValueError(
+                f"Unsupported JWT ALGORITHM '{v}'. Allowed: {sorted(safe_algorithms)}"
+            )
+        return normalized
 
     @validator('CORS_ORIGINS')
     def validate_cors_origins(cls, v):

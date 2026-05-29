@@ -1,10 +1,36 @@
 """Tests for authentication endpoints"""
+import base64
+import json
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
+from jose import jwt as jose_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.user import User
-from app.utils.security import verify_password
+from app.utils.security import (
+    verify_password,
+    verify_access_token,
+    create_access_token,
+    ALLOWED_ALGORITHMS,
+)
+
+
+def _make_unsigned_none_token(claims: dict) -> str:
+    """Craft a JWT that uses the insecure 'none' algorithm (empty signature).
+
+    python-jose refuses to *encode* an alg=none token, so we build it by hand
+    exactly as an attacker attempting a signature-bypass forgery would.
+    """
+    def _b64(obj: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+
+    header = _b64({"alg": "none", "typ": "JWT"})
+    payload = _b64(claims)
+    return f"{header}.{payload}."
 
 
 class TestAuthEndpoints:
@@ -142,10 +168,10 @@ class TestAuthEndpoints:
             "new_password": "newpass456"
         }
         
-        response = await client.put("/api/auth/change-password", json=password_data, headers=auth_headers)
-        
+        response = await client.post("/api/auth/change-password", json=password_data, headers=auth_headers)
+
         assert response.status_code == 200
-        assert "Password changed successfully" in response.json()["message"]
+        assert "Password updated successfully" in response.json()["message"]
 
     async def test_change_password_wrong_current(self, client: AsyncClient, auth_headers: dict):
         """Test password change with wrong current password"""
@@ -154,8 +180,8 @@ class TestAuthEndpoints:
             "new_password": "newpass456"
         }
         
-        response = await client.put("/api/auth/change-password", json=password_data, headers=auth_headers)
-        
+        response = await client.post("/api/auth/change-password", json=password_data, headers=auth_headers)
+
         assert response.status_code == 400
         assert "Current password is incorrect" in response.json()["detail"]
 
@@ -179,6 +205,84 @@ class TestAuthEndpoints:
     async def test_logout(self, client: AsyncClient, auth_headers: dict):
         """Test logout endpoint"""
         response = await client.post("/api/auth/logout", headers=auth_headers)
-        
+
         assert response.status_code == 200
         assert "Successfully logged out" in response.json()["message"]
+
+
+class TestJWTSecurity:
+    """Security tests for JWT handling: reject alg=none and enforce key management."""
+
+    def test_jwt_security_none_algorithm_rejected_by_verify(self):
+        """A token forged with the 'none' algorithm must be rejected (401)."""
+        forged = _make_unsigned_none_token({
+            "user_id": "admin",
+            "username": "admin",
+            "type": "access",
+            "sub": "admin",
+        })
+        with pytest.raises(HTTPException) as exc_info:
+            verify_access_token(forged)
+        assert exc_info.value.status_code == 401
+
+    async def test_jwt_security_none_algorithm_rejected_via_api(
+        self, client: AsyncClient, test_user: User
+    ):
+        """A protected endpoint must reject an alg=none token with 401, not 200."""
+        forged = _make_unsigned_none_token({
+            "user_id": test_user.id,
+            "username": test_user.username,
+            "type": "access",
+            "sub": test_user.id,
+        })
+        response = await client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {forged}"}
+        )
+        assert response.status_code == 401
+
+    def test_jwt_security_wrong_signature_rejected(self):
+        """A token signed with a different key must be rejected (401)."""
+        now = datetime.now(timezone.utc)
+        forged = jose_jwt.encode(
+            {
+                "user_id": "x",
+                "username": "x",
+                "type": "access",
+                "sub": "x",
+                "iat": now,
+                "exp": now + timedelta(minutes=5),
+            },
+            "a-totally-different-wrong-signing-key-0123456789abcdef",
+            algorithm="HS256",
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            verify_access_token(forged)
+        assert exc_info.value.status_code == 401
+
+    def test_jwt_security_secret_key_not_hardcoded(self):
+        """The signing key must be strong and not a known weak/placeholder value."""
+        weak_values = {
+            "your-secret-key",
+            "secret",
+            "secret-key",
+            "changeme",
+            "change_me",
+            "change_me_in_production_use_openssl_rand_base64_32",
+            "test",
+            "password",
+        }
+        assert settings.SECRET_KEY, "SECRET_KEY must be set"
+        assert len(settings.SECRET_KEY) >= 32, "SECRET_KEY must be at least 32 chars"
+        assert settings.SECRET_KEY.strip().lower() not in weak_values
+
+    def test_jwt_security_none_not_in_allowed_algorithms(self):
+        """'none' must never appear in the allowed-algorithms list."""
+        assert "none" not in [a.lower() for a in ALLOWED_ALGORITHMS]
+        assert settings.ALGORITHM.lower() != "none"
+
+    def test_jwt_security_valid_token_roundtrip(self):
+        """A properly signed token must still verify successfully."""
+        token = create_access_token({"user_id": "u1", "username": "alice"})
+        payload = verify_access_token(token)
+        assert payload["user_id"] == "u1"
+        assert payload["username"] == "alice"

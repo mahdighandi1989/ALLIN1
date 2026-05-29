@@ -2,7 +2,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import (
+    HTTPBearer,
+    HTTPAuthorizationCredentials,
+    OAuth2PasswordRequestForm,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, EmailStr, validator
@@ -18,7 +22,9 @@ from ..utils.security import (
 from ..config import settings
 
 router = APIRouter()
-security = HTTPBearer()
+# auto_error=False so that a missing/malformed Authorization header results in a
+# consistent 401 Unauthorized (handled below) instead of FastAPI's default 403.
+security = HTTPBearer(auto_error=False)
 
 # Schemas
 class UserRegister(BaseModel):
@@ -44,10 +50,6 @@ class UserRegister(BaseModel):
         if not any(char.isalpha() for char in v):
             raise ValueError('Password must contain at least one letter')
         return v
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
 
 class UserResponse(BaseModel):
     id: str
@@ -97,6 +99,11 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # With auto_error=False, credentials is None when no/invalid Authorization
+    # header was supplied — treat that as an unauthorized request.
+    if credentials is None or not credentials.credentials:
+        raise credentials_exception
 
     try:
         payload = verify_access_token(credentials.credentials)
@@ -187,13 +194,21 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    """Authenticate user and return access token"""
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticate user and return access token.
+
+    Accepts OAuth2 password-flow form-encoded credentials (``username`` and
+    ``password``) to stay consistent with the ``OAuth2PasswordBearer`` scheme and
+    the frontend, which posts ``application/x-www-form-urlencoded`` to this route.
+    """
     # Find user by username
-    result = await db.execute(select(User).where(User.username == login_data.username.lower()))
+    result = await db.execute(select(User).where(User.username == form_data.username.lower()))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(login_data.password, user.hashed_password):
+    if user is None or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
