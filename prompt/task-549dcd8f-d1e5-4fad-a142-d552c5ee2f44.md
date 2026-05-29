@@ -4,13 +4,13 @@ title: صفحات Customers و Facilities در build استاتیک فقط اس�
 type: bug
 priority: high
 execution_priority: 2000
-status: suggested
+status: pending
 external_status: pending
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-17T16:03:53.848712+00:00'
-updated_at: '2026-05-29T20:22:08.657227+00:00'
+updated_at: '2026-05-29T21:44:28.774144+00:00'
 ---
 
 # صفحات Customers و Facilities در build استاتیک فقط اسپینر نشان می‌دهند و داده load نمی‌شود
