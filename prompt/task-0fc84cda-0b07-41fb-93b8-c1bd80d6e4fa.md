@@ -1,6 +1,6 @@
 ---
 task_id: 0fc84cda-0b07-41fb-93b8-c1bd80d6e4fa
-title: 'Anti-pattern: AI بدون validation'
+title: 'رفع Anti-pattern: AI بدون validation'
 type: bug_fix
 priority: high
 execution_priority: 2300
@@ -10,12 +10,12 @@ verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-24T15:57:56.575599+00:00'
-updated_at: '2026-05-29T21:59:16.831096+00:00'
+updated_at: '2026-05-29T21:59:25.281833+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
 
-# Anti-pattern: AI بدون validation
+# رفع Anti-pattern: AI بدون validation
 
 ## Raw Idea
 
