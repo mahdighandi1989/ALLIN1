@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:50:00.364124+00:00",
+  "generated_at": "2026-05-29T21:50:10.261599+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 26,
@@ -199,7 +199,7 @@
     },
     {
       "task_id": "e155f680-f40b-46f5-a027-217b8a754ba5",
-      "title": "event critical 'scan_failed' هیچ notification ندارد",
+      "title": "افزودن اعلان برای رویداد 'scan_failed'",
       "priority": "high",
       "execution_priority": 2000,
       "status": "pending",
@@ -207,7 +207,7 @@
       "path": "prompt/task-e155f680-f40b-46f5-a027-217b8a754ba5.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:07:03.175598+00:00",
-      "updated_at": "2026-05-29T21:49:53.117094+00:00"
+      "updated_at": "2026-05-29T21:50:05.563746+00:00"
     },
     {
       "task_id": "568f1abe-58ef-40bc-ba40-b9fa76d4ab1a",
