@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:48:02.100800+00:00",
+  "generated_at": "2026-05-29T21:48:12.919241+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 21,
+  "total": 22,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -151,7 +151,7 @@
     },
     {
       "task_id": "524a0f64-4f74-4967-a4f6-aceb7381c494",
-      "title": "[منطق] نشت اطلاعات permission در frontend",
+      "title": "جلوگیری از نشت اطلاعات permission در frontend",
       "priority": "high",
       "execution_priority": 2000,
       "status": "pending",
@@ -159,7 +159,7 @@
       "path": "prompt/task-524a0f64-4f74-4967-a4f6-aceb7381c494.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:52.401520+00:00",
-      "updated_at": "2026-05-29T21:47:56.234210+00:00"
+      "updated_at": "2026-05-29T21:48:05.131456+00:00"
     },
     {
       "task_id": "568f1abe-58ef-40bc-ba40-b9fa76d4ab1a",
@@ -232,6 +232,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:24.820186+00:00",
       "updated_at": "2026-05-29T21:46:58.340768+00:00"
+    },
+    {
+      "task_id": "1a8ebba4-e348-4398-87c9-784b145ae828",
+      "title": "[منطق] عدم coherence بین backend و frontend در مدیریت session",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-1a8ebba4-e348-4398-87c9-784b145ae828.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:05:18.197461+00:00",
+      "updated_at": "2026-05-29T21:48:06.528718+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
