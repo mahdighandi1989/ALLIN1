@@ -1,6 +1,6 @@
 ---
 task_id: 549dcd8f-d1e5-4fad-a142-d552c5ee2f44
-title: صفحات Customers و Facilities در build استاتیک فقط اسپینر نشان می‌دهند و داده load نمی‌شود
+title: فعال‌سازی بارگذاری داده در صفحات Customers/Facilities استاتیک
 type: bug
 priority: high
 execution_priority: 2000
@@ -10,10 +10,10 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-17T16:03:53.848712+00:00'
-updated_at: '2026-05-29T21:44:28.774144+00:00'
+updated_at: '2026-05-29T21:44:41.384989+00:00'
 ---
 
-# صفحات Customers و Facilities در build استاتیک فقط اسپینر نشان می‌دهند و داده load نمی‌شود
+# فعال‌سازی بارگذاری داده در صفحات Customers/Facilities استاتیک
 
 ## Raw Idea
 
