@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:45:47.130175+00:00",
+  "generated_at": "2026-05-29T21:45:55.205885+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 17,
+  "total": 18,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -175,7 +175,7 @@
     },
     {
       "task_id": "00478042-4983-4f7b-96c1-16c06a2fbf25",
-      "title": "عدم تطابق نسخه‌های وابستگی‌های Python بین pyproject.toml و requirements.txt",
+      "title": "همگام‌سازی وابستگی‌های Python بین pyproject.toml و requirements.txt",
       "priority": "high",
       "execution_priority": 2300,
       "status": "awaiting_review",
@@ -183,7 +183,19 @@
       "path": "prompt/task-00478042-4983-4f7b-96c1-16c06a2fbf25.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:24.789688+00:00",
-      "updated_at": "2026-05-29T21:45:43.825664+00:00"
+      "updated_at": "2026-05-29T21:45:51.882800+00:00"
+    },
+    {
+      "task_id": "c621424e-f75d-4196-8e29-b28c04aab88b",
+      "title": "تضاد default برای فیلد 'user_id'",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-c621424e-f75d-4196-8e29-b28c04aab88b.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:04:24.803589+00:00",
+      "updated_at": "2026-05-29T21:45:48.057719+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
