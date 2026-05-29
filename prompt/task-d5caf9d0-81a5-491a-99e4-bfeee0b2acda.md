@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-17T16:07:32.451825+00:00'
-updated_at: '2026-05-20T04:28:13.463667+00:00'
+updated_at: '2026-05-29T20:22:53.121954+00:00'
 ---
 
 # [منطق] عدم مدیریت خطاهای دیتابیس در auth pipeline
