@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-17T16:03:53.848712+00:00'
-updated_at: '2026-05-20T04:27:59.616234+00:00'
+updated_at: '2026-05-29T20:22:08.657227+00:00'
 ---
 
 # صفحات Customers و Facilities در build استاتیک فقط اسپینر نشان می‌دهند و داده load نمی‌شود
