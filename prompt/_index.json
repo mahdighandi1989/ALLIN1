@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:40:40.566615+00:00",
+  "generated_at": "2026-05-29T21:40:49.549565+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 8,
@@ -79,7 +79,7 @@
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
-      "title": "رفع عدم مدیریت صحیح Session و Token Expiry",
+      "title": "افزودن قابلیت Refresh و Blacklist توکن",
       "priority": "medium",
       "execution_priority": 3000,
       "status": "pending",
@@ -87,7 +87,7 @@
       "path": "prompt/task-7182df34-8ad1-495b-8e65-f2f03773b735.md",
       "external_attempts": 0,
       "created_at": "2026-05-10T15:32:15.292224+00:00",
-      "updated_at": "2026-05-29T21:40:32.589488+00:00"
+      "updated_at": "2026-05-29T21:40:45.780465+00:00"
     },
     {
       "task_id": "bc3f557f-9e02-4c09-9e3f-ff795c54fba5",
