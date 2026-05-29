@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:02:53.847111+00:00",
+  "generated_at": "2026-05-29T22:04:42.609638+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 51,
+  "total": 36,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -42,18 +42,6 @@
       "updated_at": "2026-05-29T21:56:11.761996+00:00"
     },
     {
-      "task_id": "84bedb2d-3590-4311-ab28-4c105d6d8f4c",
-      "title": "[منطق] پیاده‌سازی بررسی مالکیت برای به‌روزرسانی پروفایل و رمز",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-84bedb2d-3590-4311-ab28-4c105d6d8f4c.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:57:22.482153+00:00",
-      "updated_at": "2026-05-29T21:56:51.309739+00:00"
-    },
-    {
       "task_id": "3b6da420-9914-4d33-aaa8-3d169dc50e69",
       "title": "افزودن تست‌های خودکار احراز هویت و امنیت",
       "priority": "critical",
@@ -66,28 +54,16 @@
       "updated_at": "2026-05-29T21:58:12.196200+00:00"
     },
     {
-      "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
-      "title": "امن‌سازی JWT: رد none و مدیریت کلید",
+      "task_id": "task_1f0f55a17f45",
+      "title": "تقویت امنیت و مکانیزم‌های احراز هویت و مجوزدهی سیستم",
       "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
+      "execution_priority": 1000,
+      "status": "pending",
       "external_status": "pending",
-      "path": "prompt/task-56ab7fb9-d9b6-4cab-a0a3-98e3970018e9.md",
+      "path": null,
       "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.291356+00:00",
-      "updated_at": "2026-05-29T21:39:04.421191+00:00"
-    },
-    {
-      "task_id": "62de5589-02b3-4084-8051-a0047f6735a9",
-      "title": "حذف AUTH_DISABLED و الزام احراز هویت",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-62de5589-02b3-4084-8051-a0047f6735a9.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:02:07.318968+00:00",
-      "updated_at": "2026-05-29T21:40:25.015662+00:00"
+      "created_at": "2026-05-29T22:04:20.175732+00:00",
+      "updated_at": "2026-05-29T22:04:20.175737+00:00"
     },
     {
       "task_id": "57db04f7-e3df-4b27-b5c7-c872e9ccf486",
@@ -114,18 +90,6 @@
       "updated_at": "2026-05-29T21:41:44.241980+00:00"
     },
     {
-      "task_id": "42cbcd99-7b21-4491-816e-cad31d6791cf",
-      "title": "افزودن تست‌های خطای احراز هویت در auth.py",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-42cbcd99-7b21-4491-816e-cad31d6791cf.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:02:07.331582+00:00",
-      "updated_at": "2026-05-29T21:41:42.851449+00:00"
-    },
-    {
       "task_id": "ab4622a6-7eaa-4d03-bc4f-be7e6207628e",
       "title": "تطبیق contract داشبورد بک‌اند و فرانت‌اند",
       "priority": "critical",
@@ -136,30 +100,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:02:45.071661+00:00",
       "updated_at": "2026-05-29T21:44:00.614851+00:00"
-    },
-    {
-      "task_id": "ae87a6ca-2f66-469b-b263-79b1785240b3",
-      "title": "پیاده‌سازی permission check در auth pipeline",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-ae87a6ca-2f66-469b-b263-79b1785240b3.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:03:27.500337+00:00",
-      "updated_at": "2026-05-29T21:43:34.240973+00:00"
-    },
-    {
-      "task_id": "ea641ffd-df5b-46e4-8d2f-9f1586208457",
-      "title": "[منطق] پیاده‌سازی rate limiting لاگین",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-ea641ffd-df5b-46e4-8d2f-9f1586208457.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:03:53.841747+00:00",
-      "updated_at": "2026-05-29T21:43:30.518231+00:00"
     },
     {
       "task_id": "6a9da54c-089e-4e84-be8c-de73716981ce",
@@ -184,18 +124,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:56:31.088274+00:00",
       "updated_at": "2026-05-29T21:55:01.884723+00:00"
-    },
-    {
-      "task_id": "258b7c7d-6e73-44a0-a1b7-8b7c59a77df2",
-      "title": "پیاده‌سازی Rate Limiting و Brute Force Protection",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-258b7c7d-6e73-44a0-a1b7-8b7c59a77df2.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.291810+00:00",
-      "updated_at": "2026-05-29T21:38:43.937820+00:00"
     },
     {
       "task_id": "549dcd8f-d1e5-4fad-a142-d552c5ee2f44",
@@ -232,30 +160,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:24.812046+00:00",
       "updated_at": "2026-05-29T21:46:33.321045+00:00"
-    },
-    {
-      "task_id": "524a0f64-4f74-4967-a4f6-aceb7381c494",
-      "title": "جلوگیری از نشت اطلاعات permission در frontend",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-524a0f64-4f74-4967-a4f6-aceb7381c494.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:04:52.401520+00:00",
-      "updated_at": "2026-05-29T21:48:05.131456+00:00"
-    },
-    {
-      "task_id": "8366b1f5-8f1f-4476-b35d-5cca83ea025b",
-      "title": "پیاده‌سازی اعتبارسنجی ورودی‌های لاگین",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-8366b1f5-8f1f-4476-b35d-5cca83ea025b.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:05:54.880011+00:00",
-      "updated_at": "2026-05-29T21:49:09.862129+00:00"
     },
     {
       "task_id": "fc686bb9-3172-4810-9b26-624303be2a32",
@@ -342,18 +246,6 @@
       "updated_at": "2026-05-29T22:01:15.935863+00:00"
     },
     {
-      "task_id": "568f1abe-58ef-40bc-ba40-b9fa76d4ab1a",
-      "title": "رفع عدم اعتبارسنجی ورودی در Pydantic models",
-      "priority": "high",
-      "execution_priority": 2300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-568f1abe-58ef-40bc-ba40-b9fa76d4ab1a.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.291639+00:00",
-      "updated_at": "2026-05-29T21:38:32.197763+00:00"
-    },
-    {
       "task_id": "81c822a5-0e5c-4823-a7a3-6cb68c6104f9",
       "title": "پیاده‌سازی تست‌های واحد و یکپارچگی بک‌اند",
       "priority": "high",
@@ -364,18 +256,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-10T15:32:15.291943+00:00",
       "updated_at": "2026-05-29T21:39:42.200811+00:00"
-    },
-    {
-      "task_id": "a4ea3f65-5f4e-47a2-b85d-e2740ed0bd38",
-      "title": "رفع نشت اطلاعات حساس در لاگ‌ها و خطاها",
-      "priority": "high",
-      "execution_priority": 2300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-a4ea3f65-5f4e-47a2-b85d-e2740ed0bd38.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.292044+00:00",
-      "updated_at": "2026-05-29T21:39:40.962327+00:00"
     },
     {
       "task_id": "00478042-4983-4f7b-96c1-16c06a2fbf25",
@@ -400,30 +280,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:24.803589+00:00",
       "updated_at": "2026-05-29T21:45:59.198806+00:00"
-    },
-    {
-      "task_id": "9bd29880-cb84-4bd4-bbe9-3e8afc316f09",
-      "title": "Address conditional inconsistency anti-pattern",
-      "priority": "high",
-      "execution_priority": 2300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-9bd29880-cb84-4bd4-bbe9-3e8afc316f09.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:04:24.820186+00:00",
-      "updated_at": "2026-05-29T21:46:58.340768+00:00"
-    },
-    {
-      "task_id": "1a8ebba4-e348-4398-87c9-784b145ae828",
-      "title": "همگام‌سازی مدیریت session بک‌اند و فرانت‌اند",
-      "priority": "high",
-      "execution_priority": 2300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-1a8ebba4-e348-4398-87c9-784b145ae828.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:05:18.197461+00:00",
-      "updated_at": "2026-05-29T21:48:16.693702+00:00"
     },
     {
       "task_id": "1de3634f-33f0-429a-87a8-278171a2dd75",
@@ -474,18 +330,6 @@
       "updated_at": "2026-05-29T21:59:25.281833+00:00"
     },
     {
-      "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
-      "title": "افزودن قابلیت Refresh و Blacklist توکن",
-      "priority": "medium",
-      "execution_priority": 3000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-7182df34-8ad1-495b-8e65-f2f03773b735.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.292224+00:00",
-      "updated_at": "2026-05-29T21:40:45.780465+00:00"
-    },
-    {
       "task_id": "6e56bc2e-603c-46ff-981c-e25391ccecc6",
       "title": "بررسی دکمه UI فاقد handler",
       "priority": "medium",
@@ -510,18 +354,6 @@
       "updated_at": "2026-05-29T21:51:04.473033+00:00"
     },
     {
-      "task_id": "d5caf9d0-81a5-491a-99e4-bfeee0b2acda",
-      "title": "مدیریت خطاهای دیتابیس در auth pipeline",
-      "priority": "medium",
-      "execution_priority": 3000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-d5caf9d0-81a5-491a-99e4-bfeee0b2acda.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:07:32.451825+00:00",
-      "updated_at": "2026-05-29T21:52:56.352468+00:00"
-    },
-    {
       "task_id": "70332bc9-9299-4a67-b235-6aca5c0e561a",
       "title": "Resolve AI validation anti-pattern",
       "priority": "medium",
@@ -544,18 +376,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:59:23.748444+00:00",
       "updated_at": "2026-05-29T22:02:49.813324+00:00"
-    },
-    {
-      "task_id": "bc3f557f-9e02-4c09-9e3f-ff795c54fba5",
-      "title": "پیکربندی HTTPS، HSTS و CORS",
-      "priority": "medium",
-      "execution_priority": 3300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-bc3f557f-9e02-4c09-9e3f-ff795c54fba5.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-10T15:32:15.292134+00:00",
-      "updated_at": "2026-05-29T21:40:36.555727+00:00"
     },
     {
       "task_id": "1586f712-c484-4344-966c-05370e954288",
