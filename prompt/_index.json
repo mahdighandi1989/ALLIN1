@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:16:55.163610+00:00",
+  "generated_at": "2026-05-29T22:26:25.071837+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 13,
@@ -115,15 +115,15 @@
     },
     {
       "task_id": "task_6fa50cdd5530",
-      "title": "بازسازی و رفع Anti-patternهای کد: بهبود اعتبارسنجی و حلقه‌های بازخورد در فرانت‌اند و بک‌اند",
+      "title": "رفع Anti-patternهای اعتبارسنجی و بازخورد",
       "priority": "high",
       "execution_priority": 2000,
       "status": "pending",
       "external_status": "pending",
-      "path": null,
+      "path": "prompt/task-task_6fa50cdd5530.md",
       "external_attempts": 0,
       "created_at": "2026-05-29T22:16:30.047068+00:00",
-      "updated_at": "2026-05-29T22:16:30.047072+00:00"
+      "updated_at": "2026-05-29T22:16:58.120630+00:00"
     },
     {
       "task_id": "36090c25-a186-4c60-920a-ed2fb506ba4b",
