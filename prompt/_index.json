@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:01:10.020246+00:00",
+  "generated_at": "2026-05-29T22:01:19.854724+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 49,
@@ -331,7 +331,7 @@
     },
     {
       "task_id": "7eb31c02-841d-4090-aa7f-29b8f60bc27f",
-      "title": "[Effectiveness] عدم وجود لاگ‌های خطا در ۳۰ روز اخیر نشان‌دهنده پوشش ناقص مانیتورینگ است",
+      "title": "پیاده‌سازی مانیتورینگ جامع خطاهای واقعی",
       "priority": "high",
       "execution_priority": 2000,
       "status": "pending",
@@ -339,7 +339,7 @@
       "path": "prompt/task-7eb31c02-841d-4090-aa7f-29b8f60bc27f.md",
       "external_attempts": 0,
       "created_at": "2026-05-24T15:58:48.865052+00:00",
-      "updated_at": "2026-05-29T22:01:01.864997+00:00"
+      "updated_at": "2026-05-29T22:01:15.935863+00:00"
     },
     {
       "task_id": "568f1abe-58ef-40bc-ba40-b9fa76d4ab1a",
