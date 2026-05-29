@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:50:10.261599+00:00",
+  "generated_at": "2026-05-29T21:50:48.647635+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 26,
+  "total": 27,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -304,6 +304,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-10T15:32:15.292224+00:00",
       "updated_at": "2026-05-29T21:40:45.780465+00:00"
+    },
+    {
+      "task_id": "6e56bc2e-603c-46ff-981c-e25391ccecc6",
+      "title": "دکمه‌ی UI بدون handler: { setEditingCustomer(null); setShowForm(true) }}\n          className=\"flex items",
+      "priority": "medium",
+      "execution_priority": 3000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-6e56bc2e-603c-46ff-981c-e25391ccecc6.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:07:03.215068+00:00",
+      "updated_at": "2026-05-29T21:50:42.595746+00:00"
     },
     {
       "task_id": "bc3f557f-9e02-4c09-9e3f-ff795c54fba5",
