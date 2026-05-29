@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:53:06.854793+00:00",
+  "generated_at": "2026-05-29T21:53:59.317477+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 31,
+  "total": 33,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -100,6 +100,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:03:53.841747+00:00",
       "updated_at": "2026-05-29T21:43:30.518231+00:00"
+    },
+    {
+      "task_id": "6a9da54c-089e-4e84-be8c-de73716981ce",
+      "title": "صفحه Dashboard در حالت static build با خطای 500 در endpoint /api/stats/dashboard مواجه است",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-6a9da54c-089e-4e84-be8c-de73716981ce.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:56:31.058030+00:00",
+      "updated_at": "2026-05-29T21:53:48.922243+00:00"
     },
     {
       "task_id": "258b7c7d-6e73-44a0-a1b7-8b7c59a77df2",
@@ -376,6 +388,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:08:04.404871+00:00",
       "updated_at": "2026-05-29T21:53:02.230020+00:00"
+    },
+    {
+      "task_id": "cb7140d5-f580-4bc5-85e9-db51766cd905",
+      "title": "فایل بدون import مرجع: offer_letter.py",
+      "priority": "low",
+      "execution_priority": 4300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-cb7140d5-f580-4bc5-85e9-db51766cd905.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:08:44.074841+00:00",
+      "updated_at": "2026-05-29T21:53:55.805396+00:00"
     }
   ]
 }
