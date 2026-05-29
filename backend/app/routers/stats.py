@@ -10,8 +10,10 @@ from app.database import get_db
 from app.models.customer import Customer
 from app.models.facility import Facility
 from app.schemas.stats import DashboardStatsResponse, TotalExposureResponse, RecentCustomerResponse
+from app.utils.security import get_current_user
 
-router = APIRouter()
+# Authentication is required for every stats endpoint.
+router = APIRouter(dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
 
 

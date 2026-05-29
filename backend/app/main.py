@@ -1,7 +1,9 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.config import settings
+from app.config import settings, enforce_security_on_startup
 from app.routers import auth, customers, facilities, stats
 import logging
 import os
@@ -9,12 +11,22 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Fail fast on insecure configuration (e.g. a lingering AUTH_DISABLED in
+    # production) and log any security warnings before serving requests.
+    enforce_security_on_startup()
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     docs_url=settings.DOCS_URL,
     redoc_url=settings.REDOC_URL,
     openapi_url=settings.OPENAPI_URL,
+    lifespan=lifespan,
 )
 
 # CORS

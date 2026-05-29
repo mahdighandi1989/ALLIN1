@@ -6,8 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.schemas.facility import FacilityCreate, FacilityUpdate, FacilityResponse
+from app.utils.security import get_current_user
 
-router = APIRouter(prefix="/facilities", tags=["facilities"])
+# Authentication is required for every facility endpoint. The prefix is provided
+# by main.py (/api/facilities), so the router itself must not add another prefix.
+router = APIRouter(tags=["facilities"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/", response_model=List[FacilityResponse])

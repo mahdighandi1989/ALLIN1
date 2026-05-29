@@ -7,8 +7,12 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.customer import Customer
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
+from app.utils.security import get_current_user
 
-router = APIRouter(prefix="/customers", tags=["customers"])
+# Authentication is required for every customer endpoint. The router-level
+# dependency returns 401 when no/invalid JWT is supplied. The prefix is provided
+# by main.py (/api/customers), so the router itself must not add another prefix.
+router = APIRouter(tags=["customers"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/", response_model=List[CustomerResponse])

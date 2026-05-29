@@ -259,24 +259,8 @@ async def get_current_user(
     # Local import to break the circular dependency.
     from app.models.user import User
 
-    # If authentication is disabled, return a demo user.
-    if settings.AUTH_DISABLED:
-        result = await db.execute(select(User).where(User.username == "demo"))
-        user = result.scalar_one_or_none()
-        if user is None:
-            # Create a demo user if it doesn't exist.
-            user = User(
-                username="demo",
-                email="demo@example.com",
-                hashed_password=hash_password("demo"),
-                full_name="Demo User",
-                is_active=True,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-        return user
-
+    # Authentication is ALWAYS enforced. There is intentionally no
+    # "auth disabled" bypass — a valid JWT is required for every request.
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -309,24 +293,9 @@ async def get_optional_current_user(
     # Local import to break the circular dependency.
     from app.models.user import User
 
-    # If authentication is disabled, return a demo user.
-    if settings.AUTH_DISABLED:
-        result = await db.execute(select(User).where(User.username == "demo"))
-        user = result.scalar_one_or_none()
-        if user is None:
-            # Create a demo user if it doesn't exist.
-            user = User(
-                username="demo",
-                email="demo@example.com",
-                hashed_password=hash_password("demo"),
-                full_name="Demo User",
-                is_active=True,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-        return user
-
+    # Authentication is ALWAYS enforced — there is no "auth disabled" bypass.
+    # This dependency only differs from get_current_user by returning None
+    # (instead of raising) when no/invalid credentials are supplied.
     if not token:
         return None
     try:

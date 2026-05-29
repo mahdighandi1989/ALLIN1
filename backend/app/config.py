@@ -101,8 +101,9 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = Field(default=30, ge=10, le=300)
     METRICS_ENABLED: bool = Field(default=True)
 
-    # Authentication
-    AUTH_DISABLED: bool = Field(default=False, description="Disable authentication for development")
+    # NOTE: The legacy AUTH_DISABLED setting has been removed. Authentication is
+    # always enforced; there is no longer any way to disable it via configuration.
+    # Any AUTH_DISABLED environment variable is ignored (extra="ignore").
 
     class Config:
         env_file = ".env"
@@ -251,10 +252,35 @@ def validate_environment_security(settings: Settings) -> List[str]:
         if settings.DOCS_URL or settings.REDOC_URL:
             warnings.append("API documentation endpoints should be disabled in production")
 
-        if settings.AUTH_DISABLED:
-            warnings.append("Authentication should not be disabled in production")
+    # AUTH_DISABLED has been removed entirely — authentication is always enforced.
+    # If a deprecated AUTH_DISABLED env var is still set, surface a warning so
+    # operators remove it from their configuration.
+    if os.getenv("AUTH_DISABLED"):
+        warnings.append(
+            "AUTH_DISABLED is set but has been removed and is now ignored — "
+            "authentication is always enforced. Remove it from your environment."
+        )
 
     return warnings
+
+
+def enforce_security_on_startup() -> None:
+    """Run security validations at application startup.
+
+    Logs all security warnings and, as defense-in-depth, hard-fails in
+    production if the removed AUTH_DISABLED flag is still set to a truthy value
+    in the environment (so a stale insecure config cannot silently linger).
+    """
+    for message in validate_environment_security(settings):
+        logger.warning("SECURITY: %s", message)
+
+    auth_disabled_env = os.getenv("AUTH_DISABLED", "").strip().lower()
+    if auth_disabled_env in {"1", "true", "yes", "on"} and settings.is_production():
+        raise RuntimeError(
+            "AUTH_DISABLED is set in a production environment. This flag has been "
+            "removed and authentication can no longer be disabled. Remove "
+            "AUTH_DISABLED from your environment to start the service."
+        )
 
 
 # Create global settings instance
