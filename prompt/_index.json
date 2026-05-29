@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:57:18.133205+00:00",
+  "generated_at": "2026-05-29T21:57:56.634277+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 40,
+  "total": 41,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -376,6 +376,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:57:56.351821+00:00",
       "updated_at": "2026-05-29T21:57:14.676781+00:00"
+    },
+    {
+      "task_id": "36090c25-a186-4c60-920a-ed2fb506ba4b",
+      "title": "فایل backend/app/routers/stats.py بدون تست واحد است و مسیر بحرانی داشبورد را پوشش می‌دهد",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-36090c25-a186-4c60-920a-ed2fb506ba4b.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:57:56.389488+00:00",
+      "updated_at": "2026-05-29T21:57:53.245799+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
