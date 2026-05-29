@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:01:19.854724+00:00",
+  "generated_at": "2026-05-29T22:02:14.183449+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 49,
+  "total": 50,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -520,6 +520,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:07:32.451825+00:00",
       "updated_at": "2026-05-29T21:52:56.352468+00:00"
+    },
+    {
+      "task_id": "70332bc9-9299-4a67-b235-6aca5c0e561a",
+      "title": "Anti-pattern: AI without validation",
+      "priority": "medium",
+      "execution_priority": 3000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-70332bc9-9299-4a67-b235-6aca5c0e561a.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:58:49.164068+00:00",
+      "updated_at": "2026-05-29T22:02:08.310825+00:00"
     },
     {
       "task_id": "bc3f557f-9e02-4c09-9e3f-ff795c54fba5",
