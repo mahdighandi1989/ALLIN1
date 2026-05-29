@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:55:11.950360+00:00",
+  "generated_at": "2026-05-29T21:55:53.490784+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 36,
+  "total": 37,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -16,6 +16,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:56:31.117218+00:00",
       "updated_at": "2026-05-29T21:55:08.209504+00:00"
+    },
+    {
+      "task_id": "aba75d33-2d5b-4db9-bff6-7cb72ad16272",
+      "title": "Facilities page source code is incomplete and references non-existent API client",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-aba75d33-2d5b-4db9-bff6-7cb72ad16272.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:56:31.145593+00:00",
+      "updated_at": "2026-05-29T21:55:47.737004+00:00"
     },
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
