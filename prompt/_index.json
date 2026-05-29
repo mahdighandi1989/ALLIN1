@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:41:35.975787+00:00",
+  "generated_at": "2026-05-29T21:41:48.641500+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 10,
+  "total": 11,
   "tasks": [
     {
       "task_id": "56ab7fb9-d9b6-4cab-a0a3-98e3970018e9",
@@ -30,8 +30,20 @@
       "updated_at": "2026-05-29T21:40:25.015662+00:00"
     },
     {
+      "task_id": "57db04f7-e3df-4b27-b5c7-c872e9ccf486",
+      "title": "داشبورد فرانت‌اند در حالت loading گیر کرده و داده‌ها را نمایش نمی‌دهد",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-57db04f7-e3df-4b27-b5c7-c872e9ccf486.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-17T16:02:07.322674+00:00",
+      "updated_at": "2026-05-29T21:41:41.630356+00:00"
+    },
+    {
       "task_id": "2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a",
-      "title": "WebSocket URL هاردکد شده با توکن پروژه در فایل‌های استاتیک فرانت‌اند",
+      "title": "پیکربندی WebSocket URL و توکن پروژه",
       "priority": "critical",
       "execution_priority": 1300,
       "status": "awaiting_review",
@@ -39,11 +51,11 @@
       "path": "prompt/task-2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:02:07.326874+00:00",
-      "updated_at": "2026-05-29T21:41:29.035421+00:00"
+      "updated_at": "2026-05-29T21:41:44.241980+00:00"
     },
     {
       "task_id": "42cbcd99-7b21-4491-816e-cad31d6791cf",
-      "title": "فایل backend/app/routers/auth.py فاقد تست برای سناریوهای خطای احراز هویت است",
+      "title": "افزودن تست‌های خطای احراز هویت در auth.py",
       "priority": "critical",
       "execution_priority": 1300,
       "status": "awaiting_review",
@@ -51,7 +63,7 @@
       "path": "prompt/task-42cbcd99-7b21-4491-816e-cad31d6791cf.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:02:07.331582+00:00",
-      "updated_at": "2026-05-29T21:41:30.455091+00:00"
+      "updated_at": "2026-05-29T21:41:42.851449+00:00"
     },
     {
       "task_id": "258b7c7d-6e73-44a0-a1b7-8b7c59a77df2",
