@@ -1,6 +1,6 @@
 ---
 task_id: aba75d33-2d5b-4db9-bff6-7cb72ad16272
-title: Facilities page source code is incomplete and references non-existent API client
+title: Fix Facilities page API client and incomplete code
 type: bug
 priority: critical
 execution_priority: 1000
@@ -10,12 +10,12 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-24T15:56:31.145593+00:00'
-updated_at: '2026-05-29T21:55:47.737004+00:00'
+updated_at: '2026-05-29T21:55:55.584949+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
 
-# Facilities page source code is incomplete and references non-existent API client
+# Fix Facilities page API client and incomplete code
 
 ## Raw Idea
 
