@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:04:42.609638+00:00",
+  "generated_at": "2026-05-29T22:06:38.412439+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 36,
+  "total": 32,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -30,18 +30,6 @@
       "updated_at": "2026-05-29T21:55:55.584949+00:00"
     },
     {
-      "task_id": "9a50880a-ea5f-4482-867a-cefb621cbffb",
-      "title": "رفع استفاده از کامپوننت‌های UI تعریف‌نشده در داشبورد",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-9a50880a-ea5f-4482-867a-cefb621cbffb.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:56:31.178514+00:00",
-      "updated_at": "2026-05-29T21:56:11.761996+00:00"
-    },
-    {
       "task_id": "3b6da420-9914-4d33-aaa8-3d169dc50e69",
       "title": "افزودن تست‌های خودکار احراز هویت و امنیت",
       "priority": "critical",
@@ -55,27 +43,27 @@
     },
     {
       "task_id": "task_1f0f55a17f45",
-      "title": "تقویت امنیت و مکانیزم‌های احراز هویت و مجوزدهی سیستم",
+      "title": "تقویت امنیت JWT و مکانیزم‌های احراز هویت",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_1f0f55a17f45.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-29T22:04:20.175732+00:00",
+      "updated_at": "2026-05-29T22:04:47.468017+00:00"
+    },
+    {
+      "task_id": "task_afcee9e1c044",
+      "title": "رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد",
       "priority": "critical",
       "execution_priority": 1000,
       "status": "pending",
       "external_status": "pending",
       "path": null,
       "external_attempts": 0,
-      "created_at": "2026-05-29T22:04:20.175732+00:00",
-      "updated_at": "2026-05-29T22:04:20.175737+00:00"
-    },
-    {
-      "task_id": "57db04f7-e3df-4b27-b5c7-c872e9ccf486",
-      "title": "نمایش داده‌های داشبورد و صفحات مرتبط",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-57db04f7-e3df-4b27-b5c7-c872e9ccf486.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:02:07.322674+00:00",
-      "updated_at": "2026-05-29T21:41:51.345003+00:00"
+      "created_at": "2026-05-29T22:06:12.836115+00:00",
+      "updated_at": "2026-05-29T22:06:12.836121+00:00"
     },
     {
       "task_id": "2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a",
@@ -88,42 +76,6 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:02:07.326874+00:00",
       "updated_at": "2026-05-29T21:41:44.241980+00:00"
-    },
-    {
-      "task_id": "ab4622a6-7eaa-4d03-bc4f-be7e6207628e",
-      "title": "تطبیق contract داشبورد بک‌اند و فرانت‌اند",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-ab4622a6-7eaa-4d03-bc4f-be7e6207628e.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:02:45.071661+00:00",
-      "updated_at": "2026-05-29T21:44:00.614851+00:00"
-    },
-    {
-      "task_id": "6a9da54c-089e-4e84-be8c-de73716981ce",
-      "title": "صفحه Dashboard در حالت static build با خطای 500 در endpoint /api/stats/dashboard مواجه است",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-6a9da54c-089e-4e84-be8c-de73716981ce.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:56:31.058030+00:00",
-      "updated_at": "2026-05-29T21:53:48.922243+00:00"
-    },
-    {
-      "task_id": "e0199147-e69a-4f7e-8435-e61d649f1354",
-      "title": "Implement dashboard error handling for missing column",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-e0199147-e69a-4f7e-8435-e61d649f1354.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:56:31.088274+00:00",
-      "updated_at": "2026-05-29T21:55:01.884723+00:00"
     },
     {
       "task_id": "549dcd8f-d1e5-4fad-a142-d552c5ee2f44",
