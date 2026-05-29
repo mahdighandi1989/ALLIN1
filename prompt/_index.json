@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:56:54.993899+00:00",
+  "generated_at": "2026-05-29T21:57:07.897040+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 39,
+  "total": 40,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -364,6 +364,18 @@
       "external_attempts": 0,
       "created_at": "2026-05-17T16:05:18.197461+00:00",
       "updated_at": "2026-05-29T21:48:16.693702+00:00"
+    },
+    {
+      "task_id": "1de3634f-33f0-429a-87a8-278171a2dd75",
+      "title": "عدم تطابق نسخه‌های وابستگی‌های فرانت‌اند بین package.json و package-lock.json",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-1de3634f-33f0-429a-87a8-278171a2dd75.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:57:56.351821+00:00",
+      "updated_at": "2026-05-29T21:57:04.288850+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
