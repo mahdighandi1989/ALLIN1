@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T22:00:47.669921+00:00",
+  "generated_at": "2026-05-29T22:01:07.919929+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 47,
+  "total": 49,
   "tasks": [
     {
       "task_id": "589f3f1d-0170-40d4-92ec-d75796ff83e6",
@@ -316,6 +316,30 @@
       "external_attempts": 0,
       "created_at": "2026-05-24T15:57:56.550735+00:00",
       "updated_at": "2026-05-29T21:59:42.876448+00:00"
+    },
+    {
+      "task_id": "6ec6ac9a-3418-48bc-a124-46ca50b1a03d",
+      "title": "جلوگیری از نشت اطلاعات permission در خطاهای API",
+      "priority": "high",
+      "execution_priority": 2000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-6ec6ac9a-3418-48bc-a124-46ca50b1a03d.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:58:10.836123+00:00",
+      "updated_at": "2026-05-29T22:01:05.934589+00:00"
+    },
+    {
+      "task_id": "7eb31c02-841d-4090-aa7f-29b8f60bc27f",
+      "title": "[Effectiveness] عدم وجود لاگ‌های خطا در ۳۰ روز اخیر نشان‌دهنده پوشش ناقص مانیتورینگ است",
+      "priority": "high",
+      "execution_priority": 2000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-7eb31c02-841d-4090-aa7f-29b8f60bc27f.md",
+      "external_attempts": 0,
+      "created_at": "2026-05-24T15:58:48.865052+00:00",
+      "updated_at": "2026-05-29T22:01:01.864997+00:00"
     },
     {
       "task_id": "568f1abe-58ef-40bc-ba40-b9fa76d4ab1a",
