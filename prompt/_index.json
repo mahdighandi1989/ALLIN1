@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-05-29T21:45:55.205885+00:00",
+  "generated_at": "2026-05-29T21:46:02.830634+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 18,
@@ -187,7 +187,7 @@
     },
     {
       "task_id": "c621424e-f75d-4196-8e29-b28c04aab88b",
-      "title": "تضاد default برای فیلد 'user_id'",
+      "title": "یکپارچه‌سازی default فیلد 'user_id'",
       "priority": "high",
       "execution_priority": 2300,
       "status": "awaiting_review",
@@ -195,7 +195,7 @@
       "path": "prompt/task-c621424e-f75d-4196-8e29-b28c04aab88b.md",
       "external_attempts": 0,
       "created_at": "2026-05-17T16:04:24.803589+00:00",
-      "updated_at": "2026-05-29T21:45:48.057719+00:00"
+      "updated_at": "2026-05-29T21:45:59.198806+00:00"
     },
     {
       "task_id": "7182df34-8ad1-495b-8e65-f2f03773b735",
