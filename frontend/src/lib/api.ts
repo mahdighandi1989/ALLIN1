@@ -14,6 +14,9 @@ import type {
   OfferLetterDetail,
   OfferLetterList,
   OfferLetterForm,
+  CustomerDetail,
+  PortfolioReport,
+  TopExposures,
 } from '@/types'
 
 export { api }
@@ -92,10 +95,8 @@ export const customersApi = {
   async list(filters: CustomerFilters = {}): Promise<CustomerList> {
     const page = filters.page ?? 1
     const pageSize = filters.page_size ?? 20
-    const params: Record<string, any> = {
-      skip: (page - 1) * pageSize,
-      limit: pageSize,
-    }
+    // The backend list endpoint paginates by page/page_size (not skip/limit).
+    const params: Record<string, any> = { page, page_size: pageSize }
     if (filters.search) params.search = filters.search
     if (filters.account_type) params.account_type = filters.account_type
     if (filters.status) params.status = filters.status
@@ -103,6 +104,11 @@ export const customersApi = {
 
     const { data } = await api.get('/api/customers/', { params })
     return toPaginated<Customer>(data, page, pageSize)
+  },
+
+  async detail(id: string | number): Promise<CustomerDetail> {
+    const { data } = await api.get<CustomerDetail>(`/api/customers/${id}/detail`)
+    return data
   },
 
   async get(id: string | number): Promise<Customer> {
@@ -224,6 +230,22 @@ export const offerLettersApi = {
 
   async delete(id: string): Promise<void> {
     await api.delete(`/api/offer-letters/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+export const reportsApi = {
+  async portfolio(): Promise<PortfolioReport> {
+    const { data } = await api.get<PortfolioReport>('/api/reports/portfolio')
+    return data
+  },
+  async topExposures(limit = 10): Promise<TopExposures> {
+    const { data } = await api.get<TopExposures>('/api/reports/top-exposures', {
+      params: { limit },
+    })
+    return data
   },
 }
 

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility
+from app.models.offer_letter import OfferLetter
 from app.schemas.customer import (
     CustomerCreate,
     CustomerUpdate,
@@ -13,6 +14,7 @@ from app.schemas.customer import (
     CustomerListResponse,
 )
 from app.schemas.facility import FacilityResponse
+from app.schemas.offer_letter import OfferLetterResponse
 from app.utils.security import get_current_user
 
 # Authentication is required for every customer endpoint.
@@ -139,6 +141,49 @@ async def get_customer_facilities(customer_id: str, db: AsyncSession = Depends(g
         "customer": CustomerResponse.model_validate(customer),
         "facilities": [FacilityResponse.model_validate(f) for f in facilities],
         "total_facilities": len(facilities),
+    }
+
+
+@router.get("/{customer_id}/detail")
+async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_db)):
+    """Full customer profile: facilities, offer letters and a financial summary."""
+    customer = await _get_active_customer(customer_id, db)
+
+    facilities = (
+        await db.execute(
+            select(Facility).where(
+                Facility.customer_id == customer_id, Facility.is_deleted == False
+            )
+        )
+    ).scalars().all()
+
+    offers = (
+        await db.execute(
+            select(OfferLetter).where(
+                OfferLetter.customer_id == customer_id, OfferLetter.is_deleted == False
+            )
+        )
+    ).scalars().all()
+
+    total_exposure = sum(float(f.amount or 0) for f in facilities)
+    total_outstanding = sum(float(f.outstanding or 0) for f in facilities)
+    active_facilities = sum(
+        1 for f in facilities
+        if getattr(f.status, "value", f.status) == "active"
+    )
+
+    return {
+        "customer": CustomerResponse.model_validate(customer),
+        "facilities": [FacilityResponse.model_validate(f) for f in facilities],
+        "offer_letters": [OfferLetterResponse.model_validate(o) for o in offers],
+        "summary": {
+            "total_facilities": len(facilities),
+            "active_facilities": active_facilities,
+            "total_offers": len(offers),
+            "total_exposure": total_exposure,
+            "total_outstanding": total_outstanding,
+            "currency": "AED",
+        },
     }
 
 

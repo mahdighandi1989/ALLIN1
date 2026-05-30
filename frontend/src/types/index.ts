@@ -107,6 +107,52 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Customer detail + reporting types
+export interface CustomerDetailSummary {
+  total_facilities: number
+  active_facilities: number
+  total_offers: number
+  total_exposure: number
+  total_outstanding: number
+  currency: string
+}
+
+export interface CustomerDetail {
+  customer: Customer
+  facilities: Facility[]
+  offer_letters: OfferLetter[]
+  summary: CustomerDetailSummary
+}
+
+export interface PortfolioReport {
+  summary: {
+    total_customers: number
+    total_facilities: number
+    total_exposure: number
+    total_outstanding: number
+    available_headroom: number
+    utilisation_pct: number
+    currency: string
+  }
+  facilities_by_type: BreakdownItem[]
+  facilities_by_status: BreakdownItem[]
+  facilities_by_risk: BreakdownItem[]
+  customers_by_branch: BreakdownItem[]
+  customers_by_type: BreakdownItem[]
+}
+
+export interface TopExposureItem {
+  customer_id: string
+  name: string
+  account_no: string | null
+  exposure: number
+  facilities: number
+}
+
+export interface TopExposures {
+  items: TopExposureItem[]
+}
+
 // Offer-letter types
 export interface OfferLetter {
   id: string

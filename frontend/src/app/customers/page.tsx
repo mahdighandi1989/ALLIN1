@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { customersApi, parseApiError } from '@/lib/api'
 import { Customer, CustomerList, CustomerForm as CustomerFormData } from '@/types'
@@ -8,6 +9,7 @@ import { Plus, Search, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function CustomersPage() {
+  const router = useRouter()
   const [data, setData] = useState<CustomerList | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -102,7 +104,16 @@ export default function CustomersPage() {
                 {data.items.map((customer) => (
                   <tr key={customer.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm">{customer.account_no}</td>
-                    <td className="px-4 py-3 text-sm font-medium">{customer.name}</td>
+                    <td className="px-4 py-3 text-sm font-medium">
+                      <button
+                        type="button"
+                        data-testid={`view-customer-${customer.id}`}
+                        onClick={() => router.push(`/customer-detail?id=${customer.id}`)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {customer.name}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-sm">
                       <span className={`px-2 py-1 rounded text-xs ${
                         customer.account_type === 'corporate' ? 'bg-purple-100 text-purple-700' :
