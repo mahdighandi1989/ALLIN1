@@ -5,6 +5,7 @@ from app.routers.facilities import router as facilities_router
 from app.routers.stats import router as stats_router
 from app.routers.offer_letters import router as offer_letters_router
 from app.routers.reports import router as reports_router
+from app.routers.users import router as users_router
 
 __all__ = [
     "auth_router",
@@ -13,4 +14,5 @@ __all__ = [
     "stats_router",
     "offer_letters_router",
     "reports_router",
+    "users_router",
 ]

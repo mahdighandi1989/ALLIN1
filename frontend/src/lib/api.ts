@@ -18,6 +18,9 @@ import type {
   CustomerDetail,
   PortfolioReport,
   TopExposures,
+  AdminUser,
+  AdminUserList,
+  AdminUserForm,
 } from '@/types'
 
 export { api }
@@ -236,6 +239,32 @@ export const offerLettersApi = {
 
   async delete(id: string): Promise<void> {
     await api.delete(`/api/offer-letters/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Admin user management
+// ---------------------------------------------------------------------------
+export const usersApi = {
+  async list(filters: { page?: number; page_size?: number; search?: string } = {}): Promise<AdminUserList> {
+    const page = filters.page ?? 1
+    const pageSize = filters.page_size ?? 20
+    const params: Record<string, any> = { page, page_size: pageSize }
+    if (filters.search) params.search = filters.search
+    const { data } = await api.get('/api/users/', { params })
+    if (Array.isArray(data)) return { items: data, total: data.length, page, page_size: pageSize }
+    return data
+  },
+  async create(payload: AdminUserForm): Promise<AdminUser> {
+    const { data } = await api.post<AdminUser>('/api/users/', payload)
+    return data
+  },
+  async update(id: string, payload: Partial<AdminUserForm>): Promise<AdminUser> {
+    const { data } = await api.put<AdminUser>(`/api/users/${id}`, payload)
+    return data
+  },
+  async deactivate(id: string): Promise<void> {
+    await api.delete(`/api/users/${id}`)
   },
 }
 

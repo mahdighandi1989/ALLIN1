@@ -107,6 +107,34 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Admin user management
+export interface AdminUser {
+  id: string
+  username: string
+  email: string
+  full_name: string | null
+  is_active: boolean
+  is_admin: boolean
+  created_at: string | null
+  last_login: string | null
+}
+
+export interface AdminUserList {
+  items: AdminUser[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminUserForm {
+  username: string
+  email: string
+  password: string
+  full_name: string
+  is_admin: boolean
+  is_active: boolean
+}
+
 export interface FacilityDetail {
   facility: Facility
   customer_name: string | null

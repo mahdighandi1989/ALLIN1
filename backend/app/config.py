@@ -134,6 +134,12 @@ class Settings(BaseSettings):
         description="TEMPORARY: bypass login/auth when True. Set to false to enforce auth.",
     )
 
+    # Bootstrap admin account, created at startup if the users table is empty so
+    # the app is loginable out of the box. Change these in any real deployment.
+    DEFAULT_ADMIN_USERNAME: str = Field(default="admin")
+    DEFAULT_ADMIN_PASSWORD: str = Field(default="admin12345")
+    DEFAULT_ADMIN_EMAIL: str = Field(default="admin@allin1.local")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -217,6 +217,22 @@ async def get_current_active_user(
     return current_user
 
 
+async def require_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Dependency that requires the caller to be an admin.
+
+    When AUTH_DISABLED is on the demo user is an admin, so admin-only routes stay
+    reachable in the no-login mode; with auth enforced a non-admin gets 403.
+    """
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user
+
+
 # Routes
 @router.get("/config")
 async def auth_config():

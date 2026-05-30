@@ -4,7 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
-import { LayoutDashboard, Users, Building, FileText, BarChart3, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -14,9 +14,16 @@ const NAV_ITEMS = [
   { href: '/reports', label: 'Reports', icon: BarChart3 },
 ]
 
+// Shown only to admins (or in the no-login demo mode).
+const ADMIN_NAV_ITEMS = [
+  { href: '/users', label: 'Users', icon: ShieldCheck },
+]
+
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth()
+  const { user, logout, authDisabled } = useAuth()
   const pathname = usePathname()
+  const showAdmin = authDisabled || !!user?.is_admin
+  const navItems = showAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -25,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-8">
             <span className="text-lg font-bold text-blue-600">Banking Ops</span>
             <nav className="flex items-center gap-1">
-              {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+              {navItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname?.startsWith(href)
                 return (
                   <Link

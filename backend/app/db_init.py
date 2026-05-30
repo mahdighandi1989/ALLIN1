@@ -317,7 +317,40 @@ def _seed_offers(customers):
         return []
 
 
+async def seed_admin_user() -> None:
+    """Create a bootstrap admin account if the users table has no users.
+
+    Ensures the app is loginable out of the box once AUTH_DISABLED is turned off.
+    """
+    try:
+        from app.config import settings
+        from app.models.user import User
+        from app.utils.security import hash_password
+
+        async with AsyncSessionLocal() as session:
+            count = (await session.execute(sa.select(sa.func.count(User.id)))).scalar()
+            if count and count > 0:
+                return
+            session.add(
+                User(
+                    username=str(settings.DEFAULT_ADMIN_USERNAME).lower(),
+                    email=str(settings.DEFAULT_ADMIN_EMAIL).lower(),
+                    hashed_password=hash_password(settings.DEFAULT_ADMIN_PASSWORD),
+                    full_name="Administrator",
+                    is_active=True,
+                    is_admin=True,
+                )
+            )
+            await session.commit()
+            logger.info(
+                "Seeded bootstrap admin user '%s'", settings.DEFAULT_ADMIN_USERNAME
+            )
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.error("Admin user seeding skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
     await seed_sample_data()
+    await seed_admin_user()
