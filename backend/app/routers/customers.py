@@ -1,5 +1,5 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, or_, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -18,6 +18,7 @@ from app.schemas.facility import FacilityResponse
 from app.schemas.offer_letter import OfferLetterResponse
 from app.utils.security import get_current_user
 from app.services.audit import record_audit
+from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
 
 # Authentication is required for every customer endpoint.
 router = APIRouter(tags=["customers"], dependencies=[Depends(get_current_user)])
@@ -98,6 +99,68 @@ async def list_customers(
 
     return CustomerListResponse(
         items=customers, total=total, page=page, page_size=page_size
+    )
+
+
+_CUSTOMER_EXPORT_HEADERS = [
+    "id", "account_no", "name", "account_type", "status",
+    "email", "phone", "branch", "relationship_manager",
+]
+
+
+async def _customers_for_export(db, search, account_type, status, branch):
+    base = select(Customer).where(Customer.is_deleted == False)
+    if search:
+        like = f"%{search}%"
+        base = base.where(or_(
+            Customer.name.ilike(like), Customer.account_no.ilike(like), Customer.email.ilike(like)
+        ))
+    if account_type:
+        base = base.where(Customer.account_type == account_type)
+    if status:
+        base = base.where(Customer.status == status)
+    if branch:
+        base = base.where(Customer.branch.ilike(f"%{branch}%"))
+    rows = (await db.execute(base.order_by(Customer.created_at.desc()).limit(10000))).scalars().all()
+    return [
+        [c.id, c.account_no, c.name,
+         getattr(c.account_type, "value", c.account_type),
+         getattr(c.status, "value", c.status),
+         c.email, c.phone, c.branch, c.relationship_manager]
+        for c in rows
+    ]
+
+
+@router.get("/export.csv")
+async def export_customers_csv(
+    db: AsyncSession = Depends(get_db),
+    search: Optional[str] = Query(None),
+    account_type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
+):
+    rows = await _customers_for_export(db, search, account_type, status, branch)
+    return Response(
+        content=rows_to_csv(_CUSTOMER_EXPORT_HEADERS, rows),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="customers.csv"'},
+    )
+
+
+@router.get("/export.xlsx")
+async def export_customers_xlsx(
+    db: AsyncSession = Depends(get_db),
+    search: Optional[str] = Query(None),
+    account_type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
+):
+    rows = await _customers_for_export(db, search, account_type, status, branch)
+    content = build_xlsx([("Customers", _CUSTOMER_EXPORT_HEADERS, rows)])
+    return Response(
+        content=content,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="customers.xlsx"'},
     )
 
 

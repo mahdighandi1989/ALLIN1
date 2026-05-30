@@ -8,14 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.customer import Customer
 from app.models.facility import Facility
-from app.services.exporters import rows_to_csv, build_pdf
+from app.services.exporters import rows_to_csv, build_pdf, build_xlsx, XLSX_MEDIA_TYPE
 from app.utils.security import get_current_user
 
 router = APIRouter(tags=["reports"], dependencies=[Depends(get_current_user)])
 
 
 def _download(content: bytes, media_type: str, base: str) -> Response:
-    ext = {"application/pdf": "pdf", "text/html": "html", "text/csv": "csv"}.get(media_type, "bin")
+    ext = {
+        "application/pdf": "pdf",
+        "text/html": "html",
+        "text/csv": "csv",
+        XLSX_MEDIA_TYPE: "xlsx",
+    }.get(media_type, "bin")
     return Response(
         content=content,
         media_type=media_type,
@@ -189,3 +194,37 @@ async def export_portfolio_pdf(db: AsyncSession = Depends(get_db)):
     ]
     content, media_type = build_pdf("Portfolio Report", sections, meta)
     return _download(content, media_type, "portfolio-report")
+
+
+@router.get("/portfolio/export.xlsx")
+async def export_portfolio_xlsx(db: AsyncSession = Depends(get_db)):
+    """Full portfolio report as a multi-sheet .xlsx workbook."""
+    report = await portfolio_report(db=db)
+    top = await top_exposures(db=db, limit=1000)
+    s = report["summary"]
+
+    summary_rows = [
+        ["Total Customers", s["total_customers"]],
+        ["Total Facilities", s["total_facilities"]],
+        ["Total Exposure", s["total_exposure"]],
+        ["Total Outstanding", s["total_outstanding"]],
+        ["Available Headroom", s["available_headroom"]],
+        ["Utilisation %", s["utilisation_pct"]],
+    ]
+
+    def bd(items):
+        return [[b["label"], b["count"], b["amount"]] for b in items]
+
+    sections = [
+        ("Summary", ["Metric", "Value"], summary_rows),
+        ("By Type", ["Type", "Count", "Amount"], bd(report["facilities_by_type"])),
+        ("By Risk", ["Risk", "Count", "Amount"], bd(report["facilities_by_risk"])),
+        ("By Status", ["Status", "Count", "Amount"], bd(report["facilities_by_status"])),
+        ("By Branch", ["Branch", "Count", "Amount"], bd(report["customers_by_branch"])),
+        (
+            "Top Exposures",
+            ["Customer", "Account", "Facilities", "Exposure"],
+            [[i["name"], i["account_no"], i["facilities"], i["exposure"]] for i in top["items"]],
+        ),
+    ]
+    return _download(build_xlsx(sections), XLSX_MEDIA_TYPE, "portfolio-report")

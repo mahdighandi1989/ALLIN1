@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { facilitiesApi, customersApi, parseApiError } from '@/lib/api'
+import { facilitiesApi, customersApi, parseApiError, downloadFile } from '@/lib/api'
 import { Facility, FacilityList, FacilityForm as FacilityFormData, Customer } from '@/types'
-import { Plus, Search, Edit, Trash2 } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const FACILITY_TYPES: FacilityFormData['facility_type'][] = [
@@ -105,22 +105,44 @@ export default function FacilitiesPage() {
       toast.error(parseApiError(error))
     }
   }
+  const exportFiltered = (fmt: 'xlsx' | 'csv') => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    if (fType) params.set('facility_type', fType)
+    if (fStatus) params.set('status', fStatus)
+    if (amountMin) params.set('amount_min', amountMin)
+    if (amountMax) params.set('amount_max', amountMax)
+    const qs = params.toString()
+    downloadFile(`/api/facilities/export.${fmt}${qs ? `?${qs}` : ''}`, `facilities.${fmt}`)
+      .catch((e) => toast.error(parseApiError(e)))
+  }
+
   const allChecked = (data?.items?.length ?? 0) > 0 && data!.items.every((f) => selected.has(f.id))
 
   return (
     <Layout>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Facilities</h2>
-        <button
-          onClick={() => {
-            setEditing(null)
-            setShowForm(true)
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus size={18} />
-          Add Facility
-        </button>
+        <div className="flex gap-2">
+          <button type="button" data-testid="export-facilities-xlsx" onClick={() => exportFiltered('xlsx')}
+            className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+            <Download size={16} /> Excel
+          </button>
+          <button type="button" data-testid="export-facilities-csv" onClick={() => exportFiltered('csv')}
+            className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm">
+            <Download size={16} /> CSV
+          </button>
+          <button
+            onClick={() => {
+              setEditing(null)
+              setShowForm(true)
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={18} />
+            Add Facility
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSearch} className="mb-6 space-y-2" data-testid="facilities-filters">

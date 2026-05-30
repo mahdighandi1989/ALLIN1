@@ -1,7 +1,7 @@
 from typing import Optional, List
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from app.schemas.facility import (
 )
 from app.utils.security import get_current_user
 from app.services.audit import record_audit
+from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
 
 # Authentication is required for every facility endpoint. The prefix is provided
 # by main.py (/api/facilities), so the router itself must not add another prefix.
@@ -107,6 +108,71 @@ async def list_facilities(
 
     return FacilityListResponse(
         items=facilities, total=total, page=page, page_size=page_size
+    )
+
+
+_FACILITY_EXPORT_HEADERS = [
+    "id", "customer_id", "name", "facility_type", "status",
+    "amount", "outstanding", "currency", "interest_rate", "expiry_date",
+]
+
+
+async def _facilities_for_export(db, search, facility_type, status, amount_min, amount_max):
+    base = select(Facility).where(Facility.is_deleted == False)
+    if search:
+        base = base.where(Facility.name.ilike(f"%{search}%"))
+    if facility_type:
+        base = base.where(Facility.facility_type == facility_type)
+    if status:
+        base = base.where(Facility.status == status)
+    if amount_min is not None:
+        base = base.where(Facility.amount >= amount_min)
+    if amount_max is not None:
+        base = base.where(Facility.amount <= amount_max)
+    rows = (await db.execute(base.order_by(Facility.created_at.desc()).limit(10000))).scalars().all()
+    return [
+        [f.id, f.customer_id, f.name,
+         getattr(f.facility_type, "value", f.facility_type),
+         getattr(f.status, "value", f.status),
+         float(f.amount or 0), float(f.outstanding or 0), f.currency,
+         float(f.interest_rate) if f.interest_rate is not None else None,
+         f.expiry_date.isoformat() if f.expiry_date else None]
+        for f in rows
+    ]
+
+
+@router.get("/export.csv")
+async def export_facilities_csv(
+    db: AsyncSession = Depends(get_db),
+    search: Optional[str] = Query(None),
+    facility_type: Optional[FacilityType] = Query(None),
+    status: Optional[FacilityStatus] = Query(None),
+    amount_min: Optional[float] = Query(None, ge=0),
+    amount_max: Optional[float] = Query(None, ge=0),
+):
+    rows = await _facilities_for_export(db, search, facility_type, status, amount_min, amount_max)
+    return Response(
+        content=rows_to_csv(_FACILITY_EXPORT_HEADERS, rows),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="facilities.csv"'},
+    )
+
+
+@router.get("/export.xlsx")
+async def export_facilities_xlsx(
+    db: AsyncSession = Depends(get_db),
+    search: Optional[str] = Query(None),
+    facility_type: Optional[FacilityType] = Query(None),
+    status: Optional[FacilityStatus] = Query(None),
+    amount_min: Optional[float] = Query(None, ge=0),
+    amount_max: Optional[float] = Query(None, ge=0),
+):
+    rows = await _facilities_for_export(db, search, facility_type, status, amount_min, amount_max)
+    content = build_xlsx([("Facilities", _FACILITY_EXPORT_HEADERS, rows)])
+    return Response(
+        content=content,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="facilities.xlsx"'},
     )
 
 

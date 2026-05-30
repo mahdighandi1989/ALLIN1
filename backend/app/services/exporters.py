@@ -125,3 +125,95 @@ def build_pdf(
 
     doc.build(elements)
     return buf.getvalue(), "application/pdf"
+
+
+# --- XLSX -------------------------------------------------------------------
+XLSX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+
+def _safe_sheet_title(title: str, used: set) -> str:
+    """Excel sheet titles: <=31 chars, no []:*?/\\ , and unique."""
+    cleaned = "".join("_" if c in "[]:*?/\\" else c for c in (title or "Sheet"))[:31] or "Sheet"
+    base = cleaned
+    i = 2
+    while cleaned.lower() in used:
+        suffix = f"_{i}"
+        cleaned = base[: 31 - len(suffix)] + suffix
+        i += 1
+    used.add(cleaned.lower())
+    return cleaned
+
+
+def build_xlsx(
+    sections: List[Tuple[str, Sequence[str], Sequence[Sequence[Any]]]],
+) -> bytes:
+    """Build a real .xlsx workbook: one styled sheet per (title, headers, rows).
+
+    Numeric-looking cells are written as numbers so Excel sums/sorts them; the
+    header row is bold on a banded fill with frozen panes and auto-ish widths.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    wb.remove(wb.active)  # drop the default empty sheet
+    used_titles: set = set()
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1F4E8C")
+
+    if not sections:
+        sections = [("Sheet1", ["(empty)"], [])]
+
+    for title, headers, rows in sections:
+        ws = wb.create_sheet(_safe_sheet_title(title, used_titles))
+        ws.append(list(headers))
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(vertical="center")
+
+        widths = [len(str(h)) for h in headers]
+        for row in rows:
+            out_row = []
+            for i, v in enumerate(row):
+                num = _coerce_number(v)
+                out_row.append(num if num is not None else ("" if v is None else v))
+                if i < len(widths):
+                    widths[i] = max(widths[i], len(str(v if v is not None else "")))
+            ws.append(out_row)
+
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = min(60, max(10, w + 2))
+        ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _coerce_number(v: Any):
+    """Return v as int/float if it cleanly represents a number, else None.
+
+    Strips thousands separators and a leading currency code (e.g. 'AED 1,234.50').
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        s = v.strip().replace(",", "")
+        # Drop a leading non-numeric currency prefix like "AED ".
+        parts = s.split()
+        if len(parts) == 2 and not parts[0].replace(".", "").isdigit():
+            s = parts[1]
+        try:
+            if s and (s.lstrip("-").isdigit()):
+                return int(s)
+            f = float(s)
+            return f
+        except (ValueError, AttributeError):
+            return None
+    return None

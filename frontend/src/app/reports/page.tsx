@@ -79,6 +79,16 @@ export default function ReportsPage() {
             <Download size={16} /> PDF
           </button>
           <button
+            data-testid="report-export-xlsx"
+            onClick={() =>
+              downloadFile('/api/reports/portfolio/export.xlsx', 'portfolio-report.xlsx')
+                .catch((e) => toast.error(parseApiError(e)))
+            }
+            className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <Download size={16} /> Excel
+          </button>
+          <button
             data-testid="report-export-csv"
             onClick={() =>
               downloadFile('/api/reports/portfolio/export.csv', 'portfolio-exposures.csv')
