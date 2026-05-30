@@ -1,9 +1,13 @@
 """Unit tests for the dashboard statistics endpoint (/api/stats/dashboard)."""
+from datetime import date, timedelta
+from decimal import Decimal
+
 import pytest
 from httpx import AsyncClient
 
 from app.models.user import User
 from app.models.customer import Customer, AccountType, CustomerStatus
+from app.models.facility import Facility, FacilityType, FacilityStatus
 
 
 class TestDashboardStats:
@@ -64,3 +68,47 @@ class TestDashboardStats:
         assert any(
             "Dashboard Co" in a.get("action", "") for a in data["recent_activities"]
         )
+
+    async def test_dashboard_facility_metrics(
+        self, client: AsyncClient, auth_headers: dict, db_session
+    ):
+        """Seeding facilities exercises monthly_revenue / exposure / expiring."""
+        customer = Customer(account_no="FAC100", name="Facility Co")
+        db_session.add(customer)
+        await db_session.commit()
+        await db_session.refresh(customer)
+
+        soon = date.today() + timedelta(days=10)
+        facilities = [
+            Facility(
+                customer_id=customer.id,
+                facility_type=FacilityType.LOAN,
+                amount=Decimal("100000"),
+                outstanding=Decimal("80000"),
+                interest_rate=Decimal("12"),
+                status=FacilityStatus.ACTIVE,
+                expiry_date=soon,
+            ),
+            Facility(
+                customer_id=customer.id,
+                facility_type=FacilityType.OVERDRAFT,
+                amount=Decimal("50000"),
+                outstanding=Decimal("50000"),
+                interest_rate=Decimal("6"),
+                status=FacilityStatus.CLOSED,
+            ),
+        ]
+        db_session.add_all(facilities)
+        await db_session.commit()
+
+        resp = await client.get("/api/stats/dashboard", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_facilities"] == 2
+        assert data["active_facilities"] == 1
+        assert data["expiring_soon"] >= 1
+        # monthly_revenue = sum(amount * rate / 1200) over ACTIVE facilities only
+        # = 100000 * 12 / 1200 = 1000
+        assert data["monthly_revenue"] == pytest.approx(1000.0)
+        assert data["total_exposure"]["amount"] == pytest.approx(150000.0)
+        assert data["total_outstanding"] == pytest.approx(130000.0)

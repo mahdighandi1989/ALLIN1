@@ -1,4 +1,3 @@
-```python
 """Tests for customer endpoints"""
 import pytest
 from httpx import AsyncClient
@@ -80,18 +79,20 @@ class TestCustomerEndpoints:
             db_session.add(customer)
         await db_session.commit()
 
-        # Search by name - only John Doe contains 'John'
+        # Substring, case-insensitive search: 'John' matches "John Doe" AND
+        # "Bob Johnson" (Johnson contains John).
         response = await client.get("/api/customers/?search=John", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert len(data["items"]) == 1  # Fixed: Only John Doe matches
-        assert data["items"][0]["name"] == "John Doe"
+        assert len(data["items"]) == 2
+        names = {c["name"] for c in data["items"]}
+        assert "John Doe" in names and "Bob Johnson" in names
 
-        # Search by partial name that matches multiple
+        # 'J' matches John Doe, Jane Smith and Bob Johnson (all contain 'j').
         response = await client.get("/api/customers/?search=J", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
-        assert len(data["items"]) == 2  # John Doe and Jane Smith
+        assert len(data["items"]) == 3
 
         # Search by account number
         response = await client.get("/api/customers/?search=ACC001", headers=auth_headers)
@@ -367,4 +368,28 @@ class TestCustomerEndpoints:
         assert len(data["items"]) == 0
 
     async def test_search_special_characters(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
-        """Test search handles
+        """Test search handles special characters without error (no SQL injection)."""
+        customer = Customer(
+            account_no="SPEC001",
+            name="O'Brien & Sons",
+            account_type=AccountType.RETAIL,
+            status=CustomerStatus.ACTIVE,
+        )
+        db_session.add(customer)
+        await db_session.commit()
+
+        # Special characters must be treated as literals and never crash.
+        for term in ["O'Brien", "%", "_", "&", "' OR '1'='1"]:
+            response = await client.get(
+                "/api/customers/", params={"search": term}, headers=auth_headers
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert "items" in data and "total" in data
+
+        # The legitimate apostrophe search still finds the record.
+        response = await client.get(
+            "/api/customers/", params={"search": "O'Brien"}, headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["total"] == 1

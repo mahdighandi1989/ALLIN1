@@ -1,100 +1,173 @@
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.customer import Customer
-from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse
+from app.models.customer import Customer, AccountType, CustomerStatus
+from app.models.facility import Facility
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerUpdate,
+    CustomerResponse,
+    CustomerListResponse,
+)
+from app.schemas.facility import FacilityResponse
 from app.utils.security import get_current_user
 
-# Authentication is required for every customer endpoint. The router-level
-# dependency returns 401 when no/invalid JWT is supplied. The prefix is provided
-# by main.py (/api/customers), so the router itself must not add another prefix.
+# Authentication is required for every customer endpoint.
 router = APIRouter(tags=["customers"], dependencies=[Depends(get_current_user)])
 
+_CUSTOMER_NOT_FOUND = "Customer not found"
 
-@router.get("/", response_model=List[CustomerResponse])
+
+async def _get_active_customer(customer_id: str, db: AsyncSession) -> Customer:
+    result = await db.execute(
+        select(Customer).where(
+            Customer.id == customer_id, Customer.is_deleted == False
+        )
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CUSTOMER_NOT_FOUND
+        )
+    return customer
+
+
+@router.get("/", response_model=CustomerListResponse)
 async def list_customers(
     db: AsyncSession = Depends(get_db),
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
-    search: Optional[str] = Query(None, description="Search term for customer name"),
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search name / account no / email"),
     account_type: Optional[str] = Query(None, description="Filter by account type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     branch: Optional[str] = Query(None, description="Filter by branch"),
 ):
+    """Paginated, filterable list of customers.
+
+    ``search`` matches name, account number or email case-insensitively. The
+    term is always parameterised (never string-formatted into SQL), so special
+    characters are treated as literals.
     """
-    Retrieve a list of customers with optional filtering and pagination.
-    """
-    query = select(Customer).where(Customer.is_deleted == False)
-    
+    base = select(Customer).where(Customer.is_deleted == False)
+
     if search:
-        query = query.where(Customer.name.ilike(f"%{search}%"))
-    
+        like = f"%{search}%"
+        base = base.where(
+            or_(
+                Customer.name.ilike(like),
+                Customer.account_no.ilike(like),
+                Customer.email.ilike(like),
+            )
+        )
     if account_type:
-        query = query.where(Customer.account_type == account_type)
-    
+        base = base.where(Customer.account_type == account_type)
     if status:
-        query = query.where(Customer.status == status)
-    
+        base = base.where(Customer.status == status)
     if branch:
-        query = query.where(Customer.branch == branch)
-    
-    query = query.offset(skip).limit(limit)
-    
-    result = await db.execute(query)
+        base = base.where(Customer.branch == branch)
+
+    total_result = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        base.order_by(Customer.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
     customers = result.scalars().all()
-    return customers
+
+    return CustomerListResponse(
+        items=customers, total=total, page=page, page_size=page_size
+    )
+
+
+@router.get("/stats/summary")
+async def customers_summary(db: AsyncSession = Depends(get_db)):
+    """Aggregate customer statistics (total, active, by type, by status)."""
+    total = (
+        await db.execute(
+            select(func.count(Customer.id)).where(Customer.is_deleted == False)
+        )
+    ).scalar() or 0
+    active = (
+        await db.execute(
+            select(func.count(Customer.id)).where(
+                and_(Customer.is_deleted == False, Customer.status == "active")
+            )
+        )
+    ).scalar() or 0
+
+    by_type = {}
+    for t in AccountType:
+        count = (
+            await db.execute(
+                select(func.count(Customer.id)).where(
+                    and_(Customer.is_deleted == False, Customer.account_type == t)
+                )
+            )
+        ).scalar() or 0
+        by_type[t.value] = count
+
+    by_status = {}
+    for s in CustomerStatus:
+        count = (
+            await db.execute(
+                select(func.count(Customer.id)).where(
+                    and_(Customer.is_deleted == False, Customer.status == s)
+                )
+            )
+        ).scalar() or 0
+        by_status[s.value] = count
+
+    return {"total": total, "active": active, "by_type": by_type, "by_status": by_status}
+
+
+@router.get("/{customer_id}/facilities")
+async def get_customer_facilities(customer_id: str, db: AsyncSession = Depends(get_db)):
+    """Return a customer together with its (non-deleted) facilities."""
+    customer = await _get_active_customer(customer_id, db)
+    result = await db.execute(
+        select(Facility).where(
+            Facility.customer_id == customer_id, Facility.is_deleted == False
+        )
+    )
+    facilities = result.scalars().all()
+    return {
+        "customer": CustomerResponse.model_validate(customer),
+        "facilities": [FacilityResponse.model_validate(f) for f in facilities],
+        "total_facilities": len(facilities),
+    }
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-async def get_customer(
-    customer_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Get a specific customer by ID.
-    """
-    query = select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
-    result = await db.execute(query)
-    customer = result.scalar_one_or_none()
-    
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer with ID {customer_id} not found"
-        )
-    
-    return customer
+async def get_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
+    """Get a specific customer by ID."""
+    return await _get_active_customer(customer_id, db)
 
 
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
-    customer_data: CustomerCreate,
-    db: AsyncSession = Depends(get_db),
+    customer_data: CustomerCreate, db: AsyncSession = Depends(get_db)
 ):
-    """
-    Create a new customer.
-    """
-    # Check if account_no already exists
-    existing_query = select(Customer).where(Customer.account_no == customer_data.account_no)
-    result = await db.execute(existing_query)
-    existing = result.scalar_one_or_none()
-    
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Customer with account number {customer_data.account_no} already exists"
+    """Create a new customer (account number must be unique)."""
+    if customer_data.account_no:
+        existing = await db.execute(
+            select(Customer).where(Customer.account_no == customer_data.account_no)
         )
-    
-    new_customer = Customer(**customer_data.dict())
-    db.add(new_customer)
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Customer with this account number already exists",
+            )
+
+    customer = Customer(**customer_data.model_dump())
+    db.add(customer)
     await db.commit()
-    await db.refresh(new_customer)
-    
-    return new_customer
+    await db.refresh(customer)
+    return customer
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
@@ -103,61 +176,56 @@ async def update_customer(
     customer_data: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Update an existing customer.
-    """
-    query = select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
-    result = await db.execute(query)
-    customer = result.scalar_one_or_none()
-    
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer with ID {customer_id} not found"
+    """Update an existing customer."""
+    customer = await _get_active_customer(customer_id, db)
+
+    update_data = customer_data.model_dump(exclude_unset=True)
+    new_account_no = update_data.get("account_no")
+    if new_account_no and new_account_no != customer.account_no:
+        existing = await db.execute(
+            select(Customer).where(
+                Customer.account_no == new_account_no, Customer.id != customer_id
+            )
         )
-    
-    # Check if account_no is being changed and conflicts
-    if customer_data.account_no and customer_data.account_no != customer.account_no:
-        existing_query = select(Customer).where(Customer.account_no == customer_data.account_no)
-        result = await db.execute(existing_query)
-        existing = result.scalar_one_or_none()
-        
-        if existing:
+        if existing.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Customer with account number {customer_data.account_no} already exists"
+                detail="Another customer with this account number already exists",
             )
-    
-    # Update customer attributes
-    update_data = customer_data.dict(exclude_unset=True)
+
     for field, value in update_data.items():
         setattr(customer, field, value)
-    
+
     await db.commit()
     await db.refresh(customer)
-    
     return customer
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_customer(
-    customer_id: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Soft delete a customer (set is_deleted=True).
-    """
-    query = select(Customer).where(Customer.id == customer_id, Customer.is_deleted == False)
-    result = await db.execute(query)
-    customer = result.scalar_one_or_none()
-    
-    if not customer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Customer with ID {customer_id} not found"
-        )
-    
+async def delete_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
+    """Soft delete a customer."""
+    customer = await _get_active_customer(customer_id, db)
     customer.is_deleted = True
     await db.commit()
-
     return None
+
+
+@router.post("/{customer_id}/restore", response_model=CustomerResponse)
+async def restore_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
+    """Restore a soft-deleted customer and re-activate it."""
+    result = await db.execute(
+        select(Customer).where(
+            Customer.id == customer_id, Customer.is_deleted == True
+        )
+    )
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CUSTOMER_NOT_FOUND
+        )
+
+    customer.is_deleted = False
+    customer.status = CustomerStatus.ACTIVE
+    await db.commit()
+    await db.refresh(customer)
+    return customer

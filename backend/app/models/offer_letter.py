@@ -1,4 +1,16 @@
-"""Offer Letter Model"""
+"""Offer Letter Model.
+
+STATUS: planned feature, NOT yet wired into the running application. These
+models are intentionally **not** imported by ``app.models.__init__`` and have no
+router/schema, so SQLAlchemy never registers their tables and the app is
+unaffected. They are retained as the design for the upcoming offer-letter
+workflow. The previous version declared ``back_populates="offer_letters"`` on
+the Customer/Facility relationships, but those back-references do not exist on
+the Customer/Facility models — importing this module would therefore have raised
+a mapper-configuration error. Those broken back-references have been removed so
+the module is safe to import; wiring the full feature (registry + router +
+schema + reciprocal relationships) is tracked as future work.
+"""
 from datetime import date, datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Date, Text, Numeric, ForeignKey, Enum as SQLEnum, Integer
 from sqlalchemy.orm import relationship
@@ -104,9 +116,10 @@ class OfferLetter(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_deleted = Column(Boolean, default=False)
     
-    # Relationships
-    customer = relationship("Customer", back_populates="offer_letters")
-    facility = relationship("Facility", back_populates="offer_letters")
+    # Relationships. NOTE: the Customer/Facility back-references are intentionally
+    # omitted — those models do not define an ``offer_letters`` relationship, so
+    # declaring back_populates here would break mapper configuration if this
+    # module were ever imported. The FK columns above preserve the association.
     attachments = relationship("OfferAttachment", back_populates="offer_letter", cascade="all, delete-orphan")
     calculations = relationship("OfferCalculation", back_populates="offer_letter", cascade="all, delete-orphan")
 
