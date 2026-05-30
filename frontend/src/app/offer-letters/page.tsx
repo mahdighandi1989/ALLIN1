@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
-import { offerLettersApi, customersApi, parseApiError } from '@/lib/api'
+import { offerLettersApi, customersApi, parseApiError, downloadFile } from '@/lib/api'
 import { OfferLetter, OfferLetterList, OfferLetterDetail, OfferLetterForm as OfferForm, Customer } from '@/types'
-import { Plus, FileText, Trash2, Eye } from 'lucide-react'
+import { Plus, FileText, Trash2, Eye, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -294,8 +294,34 @@ function OfferDetailModal({ offer, onClose }: { offer: OfferLetterDetail; onClos
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="p-4 border-b flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Offer {offer.id}</h3>
-          <span className="text-sm text-gray-500">{offer.customer_name}</span>
+          <div>
+            <h3 className="text-lg font-semibold">Offer {offer.id}</h3>
+            <span className="text-sm text-gray-500">{offer.customer_name}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="offer-export-pdf"
+              onClick={() =>
+                downloadFile(`/api/offer-letters/${offer.id}/export.pdf`, `offer-${offer.id}.pdf`)
+                  .catch((e) => toast.error(parseApiError(e)))
+              }
+              className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50"
+            >
+              <Download size={15} /> PDF
+            </button>
+            <button
+              type="button"
+              data-testid="offer-export-csv"
+              onClick={() =>
+                downloadFile(`/api/offer-letters/${offer.id}/export.csv`, `offer-${offer.id}.csv`)
+                  .catch((e) => toast.error(parseApiError(e)))
+              }
+              className="flex items-center gap-1 px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50"
+            >
+              <Download size={15} /> CSV
+            </button>
+          </div>
         </div>
         <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm border-b">
           <div><p className="text-gray-500">Principal</p><p className="font-semibold">{money(offer.principal_amount, offer.currency)}</p></div>

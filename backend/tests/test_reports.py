@@ -85,3 +85,23 @@ class TestReports:
         assert items[0]["name"] == "Report Corp"  # 6M > 2M
         assert items[0]["exposure"] == pytest.approx(6000000.0)
         assert items[0]["facilities"] == 2
+
+    async def test_portfolio_export_csv(self, client: AsyncClient, auth_headers: dict, db_session):
+        await _seed(db_session)
+        r = await client.get("/api/reports/portfolio/export.csv", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        text = r.content.decode("utf-8")
+        assert "Report Corp" in text and "exposure" in text
+
+    async def test_portfolio_export_pdf(self, client: AsyncClient, auth_headers: dict, db_session):
+        await _seed(db_session)
+        r = await client.get("/api/reports/portfolio/export.pdf", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.headers["content-type"] in ("application/pdf", "text/html")
+        if r.headers["content-type"] == "application/pdf":
+            assert r.content[:5] == b"%PDF-"
+
+    async def test_exports_require_auth(self, client: AsyncClient):
+        assert (await client.get("/api/reports/portfolio/export.csv")).status_code == 401
+        assert (await client.get("/api/reports/portfolio/export.pdf")).status_code == 401

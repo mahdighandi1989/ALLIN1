@@ -144,3 +144,41 @@ class TestOfferLetterApi:
             headers=auth_headers,
         )
         assert r.status_code == 422
+
+    async def _make_offer(self, client, auth_headers, db_session) -> str:
+        cid = await self._make_customer(db_session)
+        r = await client.post(
+            "/api/offer-letters/",
+            json={
+                "customer_id": cid, "expiry_date": "2027-12-31",
+                "principal_amount": 500000, "interest_rate": 6.0, "tenor_months": 12,
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 201
+        return r.json()["id"]
+
+    async def test_export_csv(self, client: AsyncClient, auth_headers: dict, db_session):
+        oid = await self._make_offer(client, auth_headers, db_session)
+        r = await client.get(f"/api/offer-letters/{oid}/export.csv", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert "attachment" in r.headers.get("content-disposition", "")
+        # Header row + 12 installment rows.
+        text = r.content.decode("utf-8")
+        assert "installment" in text
+        assert text.count("\n") >= 12
+
+    async def test_export_pdf(self, client: AsyncClient, auth_headers: dict, db_session):
+        oid = await self._make_offer(client, auth_headers, db_session)
+        r = await client.get(f"/api/offer-letters/{oid}/export.pdf", headers=auth_headers)
+        assert r.status_code == 200
+        # Real PDF when reportlab is present; printable HTML otherwise.
+        assert r.headers["content-type"] in ("application/pdf", "text/html")
+        if r.headers["content-type"] == "application/pdf":
+            assert r.content[:5] == b"%PDF-"
+
+    async def test_export_unknown_404(self, client: AsyncClient, auth_headers: dict):
+        assert (
+            await client.get("/api/offer-letters/NOPE/export.csv", headers=auth_headers)
+        ).status_code == 404

@@ -1,16 +1,26 @@
 """Portfolio reporting endpoints (read-only analytics over the whole book)."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select, func, and_, cast as sa_cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.customer import Customer
 from app.models.facility import Facility
+from app.services.exporters import rows_to_csv, build_pdf
 from app.utils.security import get_current_user
 
 router = APIRouter(tags=["reports"], dependencies=[Depends(get_current_user)])
+
+
+def _download(content: bytes, media_type: str, base: str) -> Response:
+    ext = {"application/pdf": "pdf", "text/html": "html", "text/csv": "csv"}.get(media_type, "bin")
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{base}.{ext}"'},
+    )
 
 
 async def _grouped(db: AsyncSession, model, column, *, amount_col=None):
@@ -128,3 +138,54 @@ async def top_exposures(
             for r in rows
         ]
     }
+
+
+@router.get("/portfolio/export.csv")
+async def export_portfolio_csv(db: AsyncSession = Depends(get_db)):
+    """Top exposures as CSV (the most useful tabular slice of the portfolio)."""
+    data = await top_exposures(db=db, limit=1000)
+    headers = ["customer_id", "name", "account_no", "facilities", "exposure"]
+    rows = [
+        [i["customer_id"], i["name"], i["account_no"], i["facilities"], i["exposure"]]
+        for i in data["items"]
+    ]
+    return _download(rows_to_csv(headers, rows), "text/csv", "portfolio-exposures")
+
+
+@router.get("/portfolio/export.pdf")
+async def export_portfolio_pdf(db: AsyncSession = Depends(get_db)):
+    """Full portfolio report as a PDF (summary + breakdowns + top exposures)."""
+    report = await portfolio_report(db=db)
+    top = await top_exposures(db=db, limit=20)
+    s = report["summary"]
+    cur = s["currency"]
+
+    def money(n):
+        return f"{cur} {float(n or 0):,.0f}"
+
+    meta = {"Currency": cur, "Utilisation": f"{s['utilisation_pct']}%"}
+    summary_rows = [
+        ["Total Customers", s["total_customers"]],
+        ["Total Facilities", s["total_facilities"]],
+        ["Total Exposure", money(s["total_exposure"])],
+        ["Total Outstanding", money(s["total_outstanding"])],
+        ["Available Headroom", money(s["available_headroom"])],
+        ["Utilisation", f"{s['utilisation_pct']}%"],
+    ]
+
+    def breakdown_rows(items):
+        return [[b["label"], b["count"], money(b["amount"])] for b in items]
+
+    sections = [
+        ("Summary", ["Metric", "Value"], summary_rows),
+        ("Facilities by Type", ["Type", "Count", "Amount"], breakdown_rows(report["facilities_by_type"])),
+        ("Facilities by Risk", ["Risk", "Count", "Amount"], breakdown_rows(report["facilities_by_risk"])),
+        ("Facilities by Status", ["Status", "Count", "Amount"], breakdown_rows(report["facilities_by_status"])),
+        (
+            "Top Exposures",
+            ["Customer", "Account", "Facilities", "Exposure"],
+            [[i["name"], i["account_no"], i["facilities"], money(i["exposure"])] for i in top["items"]],
+        ),
+    ]
+    content, media_type = build_pdf("Portfolio Report", sections, meta)
+    return _download(content, media_type, "portfolio-report")

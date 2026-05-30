@@ -1,7 +1,7 @@
 from typing import Optional
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,18 @@ from app.schemas.offer_letter import (
     OfferCalculationResponse,
 )
 from app.services.amortization import generate_schedule, schedule_totals
+from app.services.exporters import rows_to_csv, build_pdf
 from app.utils.security import get_current_user
+
+
+def _ext_for(media_type: str) -> str:
+    return {"application/pdf": "pdf", "text/html": "html", "text/csv": "csv"}.get(
+        media_type, "bin"
+    )
+
+
+def _download_headers(filename: str) -> dict:
+    return {"Content-Disposition": f'attachment; filename="{filename}"'}
 
 router = APIRouter(tags=["offer_letters"], dependencies=[Depends(get_current_user)])
 
@@ -241,3 +252,96 @@ async def delete_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
     offer.is_deleted = True
     await db.commit()
     return None
+
+
+def _offer_schedule_rows(offer: OfferLetter):
+    """Compute the amortisation schedule for an offer as plain rows."""
+    return generate_schedule(
+        Decimal(offer.principal_amount),
+        Decimal(offer.interest_rate),
+        int(offer.tenor_months),
+        repayment_type=getattr(offer.repayment_type, "value", offer.repayment_type) or "monthly",
+        grace_period_months=int(offer.grace_period_months or 0),
+        start=offer.offer_date,
+    )
+
+
+async def _offer_export_payload(offer: OfferLetter, db: AsyncSession):
+    """Build (title, meta, sections) describing an offer letter for export."""
+    customer_name = (
+        await db.execute(select(Customer.name).where(Customer.id == offer.customer_id))
+    ).scalar_one_or_none()
+    cur = offer.currency or "AED"
+    meta = {
+        "Offer ID": offer.id,
+        "Customer": customer_name or offer.customer_id,
+        "Status": getattr(offer.status, "value", offer.status),
+        "Offer Date": offer.offer_date,
+        "Expiry": offer.expiry_date,
+    }
+    terms_rows = [
+        ["Principal", f"{cur} {float(offer.principal_amount):,.2f}"],
+        ["Interest Rate", f"{float(offer.interest_rate)}%"],
+        ["Tenor (months)", offer.tenor_months],
+        ["Grace (months)", offer.grace_period_months or 0],
+        ["Repayment", getattr(offer.repayment_type, "value", offer.repayment_type)],
+        ["Monthly Installment", f"{cur} {float(offer.monthly_installment or 0):,.2f}"],
+        ["Total Repayment", f"{cur} {float(offer.total_repayment_amount or 0):,.2f}"],
+        ["Purpose", offer.purpose_of_facility or "-"],
+    ]
+    schedule = _offer_schedule_rows(offer)
+    sched_rows = [
+        [
+            i.installment_number,
+            i.payment_date,
+            f"{float(i.opening_balance):,.2f}",
+            f"{float(i.principal_payment):,.2f}",
+            f"{float(i.interest_payment):,.2f}",
+            f"{float(i.total_payment):,.2f}",
+            f"{float(i.closing_balance):,.2f}",
+        ]
+        for i in schedule
+    ]
+    sections = [
+        ("Offer Terms", ["Field", "Value"], terms_rows),
+        (
+            "Repayment Schedule",
+            ["#", "Date", "Opening", "Principal", "Interest", "Payment", "Closing"],
+            sched_rows,
+        ),
+    ]
+    return "Offer Letter", meta, sections
+
+
+@router.get("/{offer_id}/export.csv")
+async def export_offer_csv(offer_id: str, db: AsyncSession = Depends(get_db)):
+    """Download the offer's repayment schedule as CSV."""
+    offer = await _get_offer(offer_id, db)
+    schedule = _offer_schedule_rows(offer)
+    headers = ["installment", "payment_date", "opening_balance", "principal",
+               "interest", "total_payment", "closing_balance"]
+    rows = [
+        [i.installment_number, i.payment_date, float(i.opening_balance),
+         float(i.principal_payment), float(i.interest_payment),
+         float(i.total_payment), float(i.closing_balance)]
+        for i in schedule
+    ]
+    content = rows_to_csv(headers, rows)
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers=_download_headers(f"offer-{offer.id}.csv"),
+    )
+
+
+@router.get("/{offer_id}/export.pdf")
+async def export_offer_pdf(offer_id: str, db: AsyncSession = Depends(get_db)):
+    """Download the offer letter (terms + schedule) as a PDF document."""
+    offer = await _get_offer(offer_id, db)
+    title, meta, sections = await _offer_export_payload(offer, db)
+    content, media_type = build_pdf(title, sections, meta)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers=_download_headers(f"offer-{offer.id}.{_ext_for(media_type)}"),
+    )

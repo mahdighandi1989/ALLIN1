@@ -240,6 +240,26 @@ export const offerLettersApi = {
 }
 
 // ---------------------------------------------------------------------------
+// File download helper (authenticated): fetches a binary endpoint as a blob and
+// triggers a browser download with the server-provided filename.
+// ---------------------------------------------------------------------------
+export async function downloadFile(url: string, fallbackName: string): Promise<void> {
+  const resp = await api.get(url, { responseType: 'blob' })
+  const disposition: string = resp.headers['content-disposition'] || ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+  const filename = match ? match[1] : fallbackName
+
+  const blobUrl = window.URL.createObjectURL(resp.data as Blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.URL.revokeObjectURL(blobUrl)
+}
+
+// ---------------------------------------------------------------------------
 // Reports
 // ---------------------------------------------------------------------------
 export const reportsApi = {

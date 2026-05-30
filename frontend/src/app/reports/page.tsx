@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { reportsApi, parseApiError } from '@/lib/api'
+import { reportsApi, parseApiError, downloadFile } from '@/lib/api'
 import { PortfolioReport, TopExposures } from '@/types'
 import { DonutChart, BarChart } from '@/components/charts'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Download } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 function money(n: number, cur = 'AED') {
   return `${cur} ${Number(n || 0).toLocaleString()}`
@@ -66,9 +67,31 @@ export default function ReportsPage() {
     <Layout>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Portfolio Report</h2>
-        <button onClick={load} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
-          <RefreshCw size={16} /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            data-testid="report-export-pdf"
+            onClick={() =>
+              downloadFile('/api/reports/portfolio/export.pdf', 'portfolio-report.pdf')
+                .catch((e) => toast.error(parseApiError(e)))
+            }
+            className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <Download size={16} /> PDF
+          </button>
+          <button
+            data-testid="report-export-csv"
+            onClick={() =>
+              downloadFile('/api/reports/portfolio/export.csv', 'portfolio-exposures.csv')
+                .catch((e) => toast.error(parseApiError(e)))
+            }
+            className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <Download size={16} /> CSV
+          </button>
+          <button onClick={load} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
+            <RefreshCw size={16} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8" data-testid="reports-summary">
