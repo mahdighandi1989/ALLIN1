@@ -107,6 +107,17 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Exchange rates
+export interface ExchangeRateItem {
+  currency: string
+  rate_to_base: number
+}
+
+export interface FxRates {
+  base_currency: string
+  rates: ExchangeRateItem[]
+}
+
 // System settings
 export interface EditableSetting {
   key: string

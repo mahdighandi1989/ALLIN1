@@ -102,56 +102,35 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             logger.error("Error fetching expiring soon facilities: %s", e)
             expiring_soon = 0
 
-        # Total exposure / outstanding
-        try:
-            total_exposure_result = await db.execute(
-                select(func.coalesce(func.sum(Facility.amount), 0)).where(
-                    Facility.is_deleted == False
-                )
-            )
-            total_exposure_amount = float(total_exposure_result.scalar() or 0)
-        except Exception as e:
-            logger.error("Error fetching total exposure: %s", e)
-            total_exposure_amount = 0.0
+        # Total exposure / outstanding / monthly-revenue — multi-currency aware.
+        # Each facility's amount is converted to the base currency via the
+        # exchange-rate table before being summed, so a USD facility and an AED
+        # facility aggregate correctly. Computed in Python (portable + avoids the
+        # NUMERIC overflow that bit the SQL revenue calc).
+        from app.services.fx import load_rates, to_base
+        from app.models.exchange_rate import BASE_CURRENCY
 
+        total_exposure_amount = 0.0
+        total_outstanding = 0.0
+        monthly_revenue = 0.0
         try:
-            total_outstanding_result = await db.execute(
-                select(func.coalesce(func.sum(Facility.outstanding), 0)).where(
-                    Facility.is_deleted == False
+            rates = await load_rates(db)
+            fac_rows = (
+                await db.execute(
+                    select(
+                        Facility.amount, Facility.outstanding, Facility.currency,
+                        Facility.interest_rate, Facility.status,
+                    ).where(Facility.is_deleted == False)
                 )
-            )
-            total_outstanding = float(total_outstanding_result.scalar() or 0)
+            ).all()
+            for amount, outstanding, currency, rate, fstatus in fac_rows:
+                amt_base = to_base(amount, currency, rates)
+                total_exposure_amount += amt_base
+                total_outstanding += to_base(outstanding, currency, rates)
+                if getattr(fstatus, "value", fstatus) == "active":
+                    monthly_revenue += amt_base * float(rate or 0) / 1200.0
         except Exception as e:
-            logger.error("Error fetching total outstanding: %s", e)
-            total_outstanding = 0.0
-
-        # Monthly revenue — monthly interest accrual of active facilities
-        # (amount * interest_rate / 100 / 12). Both operands are cast to float so
-        # the arithmetic happens in floating point: multiplying the raw
-        # NUMERIC(15,2) amount by the NUMERIC(5,2) rate would otherwise overflow
-        # the rate's tiny precision on PostgreSQL (the value works fine on SQLite,
-        # which is why this only ever failed in production).
-        try:
-            monthly_revenue_result = await db.execute(
-                select(
-                    func.coalesce(
-                        func.sum(
-                            sa_cast(Facility.amount, Float)
-                            * sa_cast(func.coalesce(Facility.interest_rate, 0), Float)
-                            / 1200.0
-                        ),
-                        0.0,
-                    )
-                ).where(
-                    and_(Facility.is_deleted == False, Facility.status == 'active')
-                )
-            )
-            monthly_revenue = float(monthly_revenue_result.scalar() or 0)
-        except Exception as e:
-            # Degrade gracefully: a revenue-calc problem should not blank the
-            # whole dashboard. Log it and report 0 instead of a hard 500.
-            logger.error("Error calculating monthly revenue: %s", e)
-            monthly_revenue = 0.0
+            logger.error("Error computing currency-normalised totals: %s", e)
 
         # Recent customers (last 5)
         try:
@@ -237,7 +216,7 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             monthly_revenue=monthly_revenue,
             total_outstanding=total_outstanding,
             total_exposure=TotalExposureResponse(
-                amount=total_exposure_amount, currency="AED"
+                amount=total_exposure_amount, currency=BASE_CURRENCY
             ),
             recent_customers=recent_customers_response,
             recent_activities=recent_activities_response,

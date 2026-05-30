@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { settingsApi, parseApiError } from '@/lib/api'
+import { settingsApi, fxApi, parseApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { SettingsResponse } from '@/types'
-import { Settings as SettingsIcon, Save, Lock } from 'lucide-react'
+import { SettingsResponse, FxRates } from '@/types'
+import { Settings as SettingsIcon, Save, Lock, Coins } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -16,6 +16,9 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [fx, setFx] = useState<FxRates | null>(null)
+  const [fxForm, setFxForm] = useState<Record<string, string>>({})
+  const [savingFx, setSavingFx] = useState(false)
 
   const isAdmin = authDisabled || !!user?.is_admin
 
@@ -27,15 +30,40 @@ export default function SettingsPage() {
   const load = async () => {
     try {
       setLoading(true)
-      const res = await settingsApi.get()
+      const [res, fxRes] = await Promise.all([settingsApi.get(), fxApi.list().catch(() => null)])
       setData(res)
       const initial: Record<string, string> = {}
       res.editable.forEach((e) => { initial[e.key] = e.value })
       setForm(initial)
+      if (fxRes) {
+        setFx(fxRes)
+        const f: Record<string, string> = {}
+        fxRes.rates.forEach((r) => { f[r.currency] = String(r.rate_to_base) })
+        setFxForm(f)
+      }
     } catch (e) {
       toast.error(parseApiError(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  const saveFx = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingFx(true)
+    try {
+      const base = fx?.base_currency
+      const rates: Record<string, number> = {}
+      Object.entries(fxForm).forEach(([cur, val]) => {
+        if (cur !== base) rates[cur] = parseFloat(val) || 0
+      })
+      await fxApi.update(rates)
+      toast.success('Exchange rates saved')
+      load()
+    } catch (err) {
+      toast.error(parseApiError(err))
+    } finally {
+      setSavingFx(false)
     }
   }
 
@@ -94,6 +122,38 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 flex items-center gap-1"><Lock size={14} /> Read-only (admin required to edit)</p>
           )}
         </form>
+
+        {/* Exchange rates */}
+        {fx && (
+          <form onSubmit={saveFx} className="bg-white rounded-lg shadow-sm p-6 space-y-4" data-testid="fx-form">
+            <h3 className="font-medium flex items-center gap-2">
+              <Coins size={16} /> Exchange rates
+              <span className="text-xs text-gray-400">(1 unit = X {fx.base_currency})</span>
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {fx.rates.map((r) => (
+                <div key={r.currency}>
+                  <label className="block text-sm font-medium mb-1">
+                    {r.currency}{r.currency === fx.base_currency ? ' (base)' : ''}
+                  </label>
+                  <input
+                    type="number" step="0.0001" min="0"
+                    value={fxForm[r.currency] ?? ''}
+                    onChange={(e) => setFxForm({ ...fxForm, [r.currency]: e.target.value })}
+                    disabled={!isAdmin || r.currency === fx.base_currency}
+                    className="w-full px-3 py-2 border rounded-lg disabled:bg-gray-100"
+                  />
+                </div>
+              ))}
+            </div>
+            {isAdmin && (
+              <button type="submit" disabled={savingFx}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                <Save size={16} /> {savingFx ? 'Saving…' : 'Save rates'}
+              </button>
+            )}
+          </form>
+        )}
 
         {/* Read-only runtime config */}
         <div className="bg-white rounded-lg shadow-sm p-6" data-testid="settings-runtime">

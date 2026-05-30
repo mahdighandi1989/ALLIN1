@@ -27,6 +27,7 @@ import type {
   ImportResult,
   SettingsResponse,
   EditableSetting,
+  FxRates,
 } from '@/types'
 
 export { api }
@@ -305,6 +306,17 @@ export const usersApi = {
 // ---------------------------------------------------------------------------
 // System settings
 // ---------------------------------------------------------------------------
+export const fxApi = {
+  async list(): Promise<FxRates> {
+    const { data } = await api.get<FxRates>('/api/fx/')
+    return data
+  },
+  async update(rates: Record<string, number>): Promise<FxRates> {
+    const { data } = await api.put<FxRates>('/api/fx/', { rates })
+    return data
+  },
+}
+
 export const settingsApi = {
   async get(): Promise<SettingsResponse> {
     const { data } = await api.get<SettingsResponse>('/api/settings/')

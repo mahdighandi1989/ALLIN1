@@ -14,6 +14,7 @@ from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.system_setting import SystemSetting
 from app.models.exposure_snapshot import ExposureSnapshot
+from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "Notification",
     "SystemSetting",
     "ExposureSnapshot",
+    "ExchangeRate", "BASE_CURRENCY",
 ]

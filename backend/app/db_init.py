@@ -411,6 +411,12 @@ async def init_database() -> None:
     await seed_sample_data()
     await seed_admin_user()
     await refresh_expiry_notifications()
+    # Currency exchange rates (default table on first run).
+    try:
+        from app.services.fx import seed_default_rates
+        await seed_default_rates()
+    except Exception as exc:  # pragma: no cover
+        logger.error("FX seeding skipped: %s", exc)
     # Exposure time series: backfill demo history once, then capture this month.
     try:
         from app.services.snapshots import backfill_demo_history, capture_current_snapshot

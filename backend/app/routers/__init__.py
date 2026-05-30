@@ -11,6 +11,7 @@ from app.routers.audit import router as audit_router
 from app.routers.notifications import router as notifications_router
 from app.routers.imports import router as imports_router
 from app.routers.settings import router as settings_router
+from app.routers.fx import router as fx_router
 
 __all__ = [
     "auth_router",
