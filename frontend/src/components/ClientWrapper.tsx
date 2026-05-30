@@ -1,32 +1,20 @@
-typescript
 'use client'
 
-export default function ClientWrapper({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  // Prevent InspectorBridge errors by wrapping in error boundary
-  if (typeof window !== 'undefined') {
-    // Add safety check for InspectorBridge code
-    const originalError = console.error;
-    console.error = function(...args) {
-      // Filter out InspectorBridge related errors
-      if (args.length > 0) {
-        const firstArg = args[0];
-        if (
-          (typeof firstArg === 'string' && 
-           (firstArg.includes('Application error') || 
-            firstArg.includes('el.className.split'))) ||
-          (firstArg && typeof firstArg === 'object' && Object.keys(firstArg).length === 0)
-        ) {
-          // Suppress InspectorBridge errors
-          return;
-        }
-      }
-      originalError.apply(console, args);
-    };
-  }
+import { ReactNode } from 'react'
+import { Toaster } from 'react-hot-toast'
+import { AuthProvider } from '@/lib/auth'
 
-  return <>{children}</>
+/**
+ * Client-side application shell: provides the auth context to the whole tree
+ * and mounts the toast container. (The previous version only contained an
+ * InspectorBridge console-error suppression hack, which has been removed along
+ * with the Inspector Bridge tooling.)
+ */
+export default function ClientWrapper({ children }: { children: ReactNode }) {
+  return (
+    <AuthProvider>
+      {children}
+      <Toaster position="top-right" />
+    </AuthProvider>
+  )
 }

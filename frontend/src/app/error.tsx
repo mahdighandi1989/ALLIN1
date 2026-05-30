@@ -1,4 +1,3 @@
-typescript
 'use client'
 
 import { useEffect } from 'react'
