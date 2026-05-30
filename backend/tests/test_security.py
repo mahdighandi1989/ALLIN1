@@ -20,8 +20,11 @@ from jose import jwt as jose_jwt
 
 from app.utils.security import (
     SECRET_KEY,
+    ALGORITHM,
     create_access_token,
     verify_access_token,
+    hash_password,
+    verify_password,
 )
 from app.models.user import User
 
@@ -36,6 +39,68 @@ def _make_none_token(payload: dict) -> str:
     header = _b64url({"alg": "none", "typ": "JWT"})
     body = _b64url(payload)
     return f"{header}.{body}."
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for the core crypto/JWT helpers (hashing, token create/verify).
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "password",
+    ["short1A", "averagepassword123", "P@ssw0rd!_with-symbols", "ünïcödë-pä55"],
+)
+def test_hash_password(password):
+    """hash_password must produce a verifiable, non-reversible bcrypt hash."""
+    hashed = hash_password(password)
+    assert hashed != password  # never store the plaintext
+    assert hashed.startswith("$2")  # bcrypt prefix
+    assert verify_password(password, hashed) is True
+    assert verify_password(password + "x", hashed) is False
+
+
+@pytest.mark.parametrize(
+    "user_id,username",
+    [("abc12345", "alice"), ("u_000001", "bob-smith"), ("XYZ98765", "carol")],
+)
+def test_create_access_token(user_id, username):
+    """create_access_token embeds the expected claims and is decodable."""
+    token = create_access_token({"user_id": user_id, "username": username})
+    assert isinstance(token, str) and token.count(".") == 2
+
+    # Decode without re-verifying to inspect the embedded claims.
+    payload = jose_jwt.decode(
+        token,
+        SECRET_KEY,
+        algorithms=[ALGORITHM],
+        options={"verify_aud": False},
+    )
+    assert payload["sub"] == user_id
+    assert payload["username"] == username
+    assert payload["type"] == "access"
+    assert "exp" in payload and "iat" in payload and "jti" in payload
+
+
+def test_create_access_token_rejects_bad_input():
+    """Missing required claims must raise rather than mint a malformed token."""
+    with pytest.raises(ValueError):
+        create_access_token({})
+    with pytest.raises(ValueError):
+        create_access_token({"username": "no-user-id"})
+
+
+@pytest.mark.parametrize("tampered", [True, False])
+def test_verify_token(tampered):
+    """verify_access_token accepts a genuine token and rejects a tampered one."""
+    token = create_access_token({"user_id": "abc12345", "username": "alice"})
+    if not tampered:
+        payload = verify_access_token(token)
+        assert payload["user_id"] == "abc12345"
+        assert payload["username"] == "alice"
+    else:
+        # Flip the signature so jwt.decode signature verification fails.
+        head, body, sig = token.split(".")
+        forged = f"{head}.{body}.{sig[:-3]}xyz"
+        with pytest.raises(HTTPException):
+            verify_access_token(forged)
 
 
 # ---------------------------------------------------------------------------

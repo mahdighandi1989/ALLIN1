@@ -292,6 +292,9 @@ async def login(
     # Enforce rate limiting / account lockout *before* touching the database.
     rl_status = login_rate_limiter.check(rate_key)
     if rl_status == RateLimitStatus.LOCKED:
+        # Security event: surface lockouts so their rate is observable in prod
+        # logs/metrics (never log the password or full key).
+        logger.warning("auth.login.locked username=%s", form_data.username.lower())
         _log_login_attempt_to_redis(rate_key, success=False)
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
@@ -301,6 +304,7 @@ async def login(
             ),
         )
     if rl_status == RateLimitStatus.RATE_LIMITED:
+        logger.warning("auth.login.rate_limited username=%s", form_data.username.lower())
         _log_login_attempt_to_redis(rate_key, success=False)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -316,6 +320,7 @@ async def login(
         # Record the failure for brute-force accounting (never log the password).
         login_rate_limiter.register_failure(rate_key)
         _log_login_attempt_to_redis(rate_key, success=False)
+        logger.warning("auth.login.failed username=%s", form_data.username.lower())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -331,6 +336,7 @@ async def login(
     # Successful login clears the brute-force counter for this key.
     login_rate_limiter.reset(rate_key)
     _log_login_attempt_to_redis(rate_key, success=True)
+    logger.info("auth.login.success user_id=%s", user.id)
 
     # Update last login
     user.last_login = datetime.utcnow()
