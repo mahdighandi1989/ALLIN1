@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
-import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, FileSpreadsheet, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, FileSpreadsheet, Settings, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
 const ADMIN_NAV_ITEMS = [
   { href: '/users', label: 'Users', icon: ShieldCheck },
   { href: '/audit', label: 'Audit Log', icon: ScrollText },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {

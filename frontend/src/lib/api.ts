@@ -25,6 +25,8 @@ import type {
   AuditList,
   NotificationList,
   ImportResult,
+  SettingsResponse,
+  EditableSetting,
 } from '@/types'
 
 export { api }
@@ -294,6 +296,20 @@ export const usersApi = {
   },
   async deactivate(id: string): Promise<void> {
     await api.delete(`/api/users/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// System settings
+// ---------------------------------------------------------------------------
+export const settingsApi = {
+  async get(): Promise<SettingsResponse> {
+    const { data } = await api.get<SettingsResponse>('/api/settings/')
+    return data
+  },
+  async update(values: Record<string, string>): Promise<{ editable: EditableSetting[] }> {
+    const { data } = await api.put<{ editable: EditableSetting[] }>('/api/settings/', { values })
+    return data
   },
 }
 

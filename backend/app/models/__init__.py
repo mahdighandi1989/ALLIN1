@@ -12,6 +12,7 @@ from app.models.offer_letter import (
 )
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "User",
@@ -21,4 +22,5 @@ __all__ = [
     "OfferStatus", "CollateralType", "RepaymentType",
     "AuditLog",
     "Notification",
+    "SystemSetting",
 ]

@@ -107,6 +107,19 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// System settings
+export interface EditableSetting {
+  key: string
+  value: string
+  label: string
+  type: string
+}
+
+export interface SettingsResponse {
+  editable: EditableSetting[]
+  runtime: Record<string, any>
+}
+
 // Excel import
 export interface ImportRowError {
   row: number
