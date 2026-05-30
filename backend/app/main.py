@@ -1,19 +1,30 @@
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
 from app.routers import auth, customers, facilities, stats
 from app.utils.log_sanitizer import install_log_sanitizer
+from app.monitoring import (
+    get_logger,
+    route_label,
+    REQUEST_COUNT,
+    REQUEST_LATENCY,
+    UNHANDLED_ERRORS,
+)
 import logging
 import os
 
 logging.basicConfig(level=getattr(logging, str(settings.LOG_LEVEL).upper(), logging.INFO))
 # Defence-in-depth: scrub passwords/tokens/secrets from every log record.
 install_log_sanitizer()
+struct_logger = get_logger("app")
 logger = logging.getLogger(__name__)
 
 
@@ -81,9 +92,27 @@ class HTTPSRedirectInProductionMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# Security middleware (order matters: redirect first, then header hardening).
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Record per-request latency and volume into Prometheus metrics."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            elapsed = time.perf_counter() - start
+            label = route_label(request)
+            REQUEST_LATENCY.labels(request.method, label, str(status_code)).observe(elapsed)
+            REQUEST_COUNT.labels(request.method, label, str(status_code)).inc()
+
+
+# Security + metrics middleware (order matters: redirect first, then headers).
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(HTTPSRedirectInProductionMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 # CORS — only the explicitly allow-listed origins may call the API.
 app.add_middleware(
@@ -96,21 +125,60 @@ app.add_middleware(
 )
 
 
-@app.exception_handler(Exception)
 async def unhandled_exception_handler_500(request: Request, exc: Exception):
     """Catch-all handler so unexpected errors never leak internals.
 
-    In production the client only sees a generic ``500`` message while the full
-    exception (with traceback) is logged server-side. In development the error
-    type is surfaced to aid debugging. Sensitive values in the log are scrubbed
-    by the installed :class:`SensitiveDataFilter`.
+    Every unhandled error gets a unique ``error_id`` that is returned to the
+    client AND logged (via stdlib + structlog ``logger.exception``) for
+    correlation. In production the client sees only a generic message; in
+    development the error type is surfaced to aid debugging. Sensitive values in
+    the log are scrubbed by the installed :class:`SensitiveDataFilter`.
     """
-    logger.error("Unhandled exception on %s %s", request.method, request.url.path, exc_info=True)
+    error_id = uuid.uuid4().hex
+    UNHANDLED_ERRORS.inc()
+    # stdlib logger (logger.exception attaches the traceback)
+    logger.exception(
+        "Unhandled exception error_id=%s on %s %s",
+        error_id,
+        request.method,
+        request.url.path,
+    )
+    # structured log for machine ingestion / production observability
+    struct_logger.error(
+        "unhandled_exception",
+        error_id=error_id,
+        method=request.method,
+        path=request.url.path,
+        exc_type=type(exc).__name__,
+    )
     if settings.is_production():
-        detail = "Internal server error"  # generic message, no internals leaked
+        message = "Internal server error"  # generic message, no internals leaked
     else:
-        detail = f"Internal server error: {type(exc).__name__}"
-    return JSONResponse(status_code=500, content={"detail": detail})
+        message = f"Internal server error: {type(exc).__name__}"
+    return JSONResponse(
+        status_code=500,
+        content={"error_id": error_id, "message": message, "detail": message},
+    )
+
+
+# Register the catch-all handler (equivalent to @app.exception_handler(Exception)).
+app.add_exception_handler(Exception, unhandled_exception_handler_500)
+
+
+@app.get("/metrics")
+async def metrics():
+    """Expose Prometheus metrics (request latency/volume, error count)."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/api/simulate-unhandled-error")
+async def simulate_unhandled_error():
+    """Diagnostic endpoint that deliberately raises to exercise error monitoring.
+
+    Hitting it returns the standard 500 error envelope ({error_id, message}) and
+    produces a correlated server-side log entry.
+    """
+    raise RuntimeError("Simulated unhandled error for monitoring verification")
 
 
 # Include routers
