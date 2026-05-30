@@ -14,6 +14,9 @@ from app.schemas.stats import (
     TotalExposureResponse,
     RecentCustomerResponse,
     RecentActivityResponse,
+    BreakdownItem,
+    MonthlyTrendItem,
+    ExpiringFacilityItem,
 )
 from app.utils.security import get_current_user
 
@@ -33,6 +36,8 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     ``500`` so the frontend can show an actionable error instead of a misleading
     zero.
     """
+    today = datetime.utcnow().date()
+    thirty_days_later = today + timedelta(days=30)
     try:
         # Total customers
         try:
@@ -82,8 +87,6 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         # expiry_date columns are considered so the count is robust to whichever
         # column a record populated.
         try:
-            today = datetime.utcnow().date()
-            thirty_days_later = today + timedelta(days=30)
             expiring_soon_result = await db.execute(
                 select(func.count(Facility.id)).where(
                     and_(
@@ -207,6 +210,22 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
                 )
                 continue
 
+        # --- analytics breakdowns (each guarded; empty list on error) ---------
+        facility_type_breakdown = await _breakdown_by(
+            db, Facility, Facility.facility_type, with_amount=True
+        )
+        facility_status_breakdown = await _breakdown_by(
+            db, Facility, Facility.status, with_amount=True
+        )
+        risk_rating_breakdown = await _breakdown_by(
+            db, Facility, Facility.risk_rating, with_amount=True
+        )
+        customer_type_breakdown = await _breakdown_by(
+            db, Customer, Customer.account_type, with_amount=False
+        )
+        monthly_trend = await _monthly_trend(db)
+        expiring_list = await _expiring_facilities(db, today, thirty_days_later)
+
         return DashboardStatsResponse(
             total_customers=total_customers,
             active_customers=active_customers,
@@ -222,6 +241,12 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             ),
             recent_customers=recent_customers_response,
             recent_activities=recent_activities_response,
+            facility_type_breakdown=facility_type_breakdown,
+            facility_status_breakdown=facility_status_breakdown,
+            risk_rating_breakdown=risk_rating_breakdown,
+            customer_type_breakdown=customer_type_breakdown,
+            monthly_trend=monthly_trend,
+            expiring_facilities_list=expiring_list,
         )
     except HTTPException:
         # Preserve explicit HTTP errors (e.g. the monthly-revenue 500) verbatim.
@@ -231,3 +256,133 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         # log for the full error).
         logger.error("Critical error in dashboard stats endpoint: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Error fetching dashboard stats")
+
+
+# ---------------------------------------------------------------------------
+# Analytics helpers for the dashboard charts/tables. Each is fully guarded and
+# returns an empty list on any error so it can never break the dashboard.
+# ---------------------------------------------------------------------------
+async def _breakdown_by(db: AsyncSession, model, column, *, with_amount: bool):
+    """GROUP BY a column, returning labelled counts (and summed amount)."""
+    try:
+        cols = [column, func.count(model.id)]
+        if with_amount:
+            cols.append(func.coalesce(func.sum(sa_cast(model.amount, Float)), 0.0))
+        query = (
+            select(*cols)
+            .where(model.is_deleted == False)
+            .group_by(column)
+            .order_by(func.count(model.id).desc())
+        )
+        rows = (await db.execute(query)).all()
+        items = []
+        for row in rows:
+            raw_label = row[0]
+            label = getattr(raw_label, "value", raw_label)
+            items.append(
+                BreakdownItem(
+                    label=str(label) if label is not None else "unknown",
+                    count=int(row[1] or 0),
+                    amount=float(row[2]) if with_amount and len(row) > 2 else 0.0,
+                )
+            )
+        return items
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Error building breakdown for %s: %s", getattr(column, "key", column), e)
+        return []
+
+
+async def _monthly_trend(db: AsyncSession, months: int = 6):
+    """Cumulative exposure + facility count per month for the last N months.
+
+    Computed in Python (portable across SQLite/Postgres) from each facility's
+    start_date (falling back to created_at).
+    """
+    try:
+        rows = (
+            await db.execute(
+                select(
+                    Facility.start_date,
+                    Facility.created_at,
+                    sa_cast(Facility.amount, Float),
+                ).where(Facility.is_deleted == False)
+            )
+        ).all()
+
+        # Build the list of the last `months` year-month buckets.
+        today = datetime.utcnow().date()
+        buckets = []
+        y, m = today.year, today.month
+        for _ in range(months):
+            buckets.append((y, m))
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        buckets.reverse()
+
+        result = []
+        for (by, bm) in buckets:
+            # Everything created on/before the end of this month counts toward
+            # the cumulative exposure (a portfolio view).
+            exposure = 0.0
+            count = 0
+            for start_date, created_at, amount in rows:
+                ref = start_date or (created_at.date() if created_at else None)
+                if ref is None:
+                    continue
+                if (ref.year, ref.month) <= (by, bm):
+                    exposure += float(amount or 0)
+                    count += 1
+            result.append(
+                MonthlyTrendItem(
+                    month=f"{by:04d}-{bm:02d}", exposure=exposure, facilities=count
+                )
+            )
+        return result
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Error building monthly trend: %s", e)
+        return []
+
+
+async def _expiring_facilities(db: AsyncSession, today, horizon, limit: int = 10):
+    """Facilities expiring between today and `horizon`, soonest first."""
+    try:
+        expiry = func.coalesce(Facility.expiry_date, Facility.end_date)
+        rows = (
+            await db.execute(
+                select(Facility, Customer.name)
+                .join(Customer, Customer.id == Facility.customer_id, isouter=True)
+                .where(
+                    and_(
+                        Facility.is_deleted == False,
+                        expiry >= today,
+                        expiry <= horizon,
+                    )
+                )
+                .order_by(expiry.asc())
+                .limit(limit)
+            )
+        ).all()
+        items = []
+        for facility, customer_name in rows:
+            exp = facility.expiry_date or facility.end_date
+            days = (exp - today).days if exp else None
+            items.append(
+                ExpiringFacilityItem(
+                    id=str(facility.id),
+                    name=facility.name,
+                    customer_id=str(facility.customer_id) if facility.customer_id else None,
+                    customer_name=customer_name,
+                    facility_type=getattr(facility.facility_type, "value", facility.facility_type),
+                    amount=float(facility.amount or 0),
+                    currency=facility.currency or "AED",
+                    expiry_date=exp,
+                    days_to_expiry=days,
+                    status=getattr(facility.status, "value", facility.status),
+                )
+            )
+        return items
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Error building expiring facilities list: %s", e)
+        return []

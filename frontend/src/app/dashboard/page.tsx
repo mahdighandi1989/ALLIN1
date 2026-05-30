@@ -17,6 +17,18 @@ import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { statsApi, parseApiError } from '@/lib/api'
 import type { DashboardStats } from '@/types'
+import { DonutChart, BarChart, LineChart } from '@/components/charts'
+
+function riskColor(label: string): string {
+  const l = (label || '').toLowerCase()
+  if (l === 'high') return 'bg-red-100 text-red-700'
+  if (l === 'medium') return 'bg-yellow-100 text-yellow-700'
+  return 'bg-green-100 text-green-700'
+}
+
+function fmtMoney(n: number, currency = 'AED'): string {
+  return `${currency} ${Number(n || 0).toLocaleString()}`
+}
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
@@ -209,6 +221,96 @@ export default function DashboardPage() {
               {stats?.total_exposure?.currency ?? 'AED'} exposure: $
               {(stats?.total_exposure?.amount ?? 0).toLocaleString()}
             </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Analytics charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8" data-testid="dashboard-charts">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Facilities by Type</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DonutChart data={stats?.facility_type_breakdown ?? []} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Exposure by Risk</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BarChart data={stats?.risk_rating_breakdown ?? []} valueKey="amount" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Customers by Type</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DonutChart data={stats?.customer_type_breakdown ?? []} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Exposure trend + expiring watch-list */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Exposure Trend (6 months)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <LineChart data={stats?.monthly_trend ?? []} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Expiring Facilities (next 30 days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {stats?.expiring_facilities_list && stats.expiring_facilities_list.length > 0 ? (
+              <div className="overflow-x-auto" data-testid="expiring-facilities">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b">
+                      <th className="py-2 pr-2">Facility</th>
+                      <th className="py-2 pr-2">Customer</th>
+                      <th className="py-2 pr-2 text-right">Amount</th>
+                      <th className="py-2 pl-2 text-right">Days</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {stats.expiring_facilities_list.map((f) => (
+                      <tr
+                        key={f.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => handleNavigation('/facilities')}
+                      >
+                        <td className="py-2 pr-2 font-medium">{f.name || f.facility_type || f.id}</td>
+                        <td className="py-2 pr-2 text-gray-600">{f.customer_name || '-'}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">
+                          {fmtMoney(f.amount, f.currency)}
+                        </td>
+                        <td className="py-2 pl-2 text-right">
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs ${
+                              (f.days_to_expiry ?? 99) <= 15
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                            }`}
+                          >
+                            {f.days_to_expiry ?? '-'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gray-500 py-6 text-center">No facilities expiring soon</p>
+            )}
           </CardContent>
         </Card>
       </div>

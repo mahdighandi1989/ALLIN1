@@ -209,38 +209,41 @@ def _seed_rows():
                  branch="Jebel Ali", relationship_manager="N. Haddad"),
     ]
 
-    def fac(cust, ftype, amount, outstanding, rate, status, expiry_days, name):
+    def fac(cust, ftype, amount, outstanding, rate, status, expiry_days, name,
+            risk="low", start_days_ago=365):
         return Facility(
             customer=cust, facility_type=ftype, name=name,
             amount=Decimal(amount), outstanding=Decimal(outstanding),
             currency="AED", interest_rate=Decimal(rate), status=status,
-            start_date=today - timedelta(days=365),
+            start_date=today - timedelta(days=start_days_ago),
             expiry_date=today + timedelta(days=expiry_days),
             end_date=today + timedelta(days=expiry_days),
-            risk_rating="low", purpose="Working capital",
+            risk_rating=risk, purpose="Working capital",
         )
 
+    # Varied start dates + risk ratings give the dashboard a realistic trend line
+    # and a meaningful risk-distribution chart.
     facilities = [
         fac(customers[0], FacilityType.LOAN, "25000000", "18500000", "6.25",
-            FacilityStatus.ACTIVE, 540, "Term Loan A"),
+            FacilityStatus.ACTIVE, 540, "Term Loan A", risk="low", start_days_ago=150),
         fac(customers[0], FacilityType.OVERDRAFT, "5000000", "3200000", "8.5",
-            FacilityStatus.ACTIVE, 20, "Working Capital OD"),
+            FacilityStatus.ACTIVE, 20, "Working Capital OD", risk="medium", start_days_ago=95),
         fac(customers[1], FacilityType.LC, "12000000", "12000000", "4.0",
-            FacilityStatus.ACTIVE, 25, "Import LC"),
+            FacilityStatus.ACTIVE, 25, "Import LC", risk="low", start_days_ago=60),
         fac(customers[1], FacilityType.LOAN, "40000000", "31000000", "5.75",
-            FacilityStatus.ACTIVE, 900, "Syndicated Term Loan"),
+            FacilityStatus.ACTIVE, 900, "Syndicated Term Loan", risk="medium", start_days_ago=130),
         fac(customers[2], FacilityType.OVERDRAFT, "1500000", "900000", "9.0",
-            FacilityStatus.ACTIVE, 200, "SME Overdraft"),
+            FacilityStatus.ACTIVE, 200, "SME Overdraft", risk="high", start_days_ago=40),
         fac(customers[3], FacilityType.LOAN, "850000", "640000", "7.5",
-            FacilityStatus.ACTIVE, 1200, "Auto Loan"),
+            FacilityStatus.ACTIVE, 1200, "Auto Loan", risk="low", start_days_ago=20),
         fac(customers[4], FacilityType.LG, "8000000", "8000000", "3.5",
-            FacilityStatus.ACTIVE, 15, "Performance Guarantee"),
+            FacilityStatus.ACTIVE, 15, "Performance Guarantee", risk="medium", start_days_ago=110),
         fac(customers[4], FacilityType.LOAN, "30000000", "30000000", "6.0",
-            FacilityStatus.PENDING, 700, "Capex Facility"),
+            FacilityStatus.PENDING, 700, "Capex Facility", risk="high", start_days_ago=10),
         fac(customers[5], FacilityType.LC, "2200000", "2200000", "4.25",
-            FacilityStatus.ACTIVE, 60, "Sight LC"),
+            FacilityStatus.ACTIVE, 60, "Sight LC", risk="low", start_days_ago=75),
         fac(customers[6], FacilityType.LOAN, "500000", "120000", "8.0",
-            FacilityStatus.CLOSED, -30, "Personal Loan"),
+            FacilityStatus.CLOSED, -30, "Personal Loan", risk="low", start_days_ago=300),
     ]
     return customers, facilities
 

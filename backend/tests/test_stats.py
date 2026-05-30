@@ -113,6 +113,51 @@ class TestDashboardStats:
         assert data["total_exposure"]["amount"] == pytest.approx(150000.0)
         assert data["total_outstanding"] == pytest.approx(130000.0)
 
+    async def test_dashboard_analytics_breakdowns(
+        self, client: AsyncClient, auth_headers: dict, db_session
+    ):
+        """The dashboard returns chart breakdowns, a trend, and an expiring list."""
+        customer = Customer(account_no="ANALYTICS1", name="Analytics Co")
+        db_session.add(customer)
+        await db_session.commit()
+        await db_session.refresh(customer)
+
+        soon = date.today() + timedelta(days=12)
+        db_session.add_all([
+            Facility(
+                customer_id=customer.id, facility_type=FacilityType.LOAN,
+                amount=Decimal("1000000"), interest_rate=Decimal("5"),
+                status=FacilityStatus.ACTIVE, risk_rating="low", expiry_date=soon,
+                start_date=date.today() - timedelta(days=40), name="Loan A",
+            ),
+            Facility(
+                customer_id=customer.id, facility_type=FacilityType.OVERDRAFT,
+                amount=Decimal("500000"), interest_rate=Decimal("8"),
+                status=FacilityStatus.ACTIVE, risk_rating="high",
+                start_date=date.today() - timedelta(days=10), name="OD B",
+            ),
+        ])
+        await db_session.commit()
+
+        data = (await client.get("/api/stats/dashboard", headers=auth_headers)).json()
+
+        # Chart breakdowns are present and labelled by VALUE (lowercase).
+        types = {b["label"]: b["count"] for b in data["facility_type_breakdown"]}
+        assert types.get("loan") == 1 and types.get("overdraft") == 1
+        risks = {b["label"] for b in data["risk_rating_breakdown"]}
+        assert {"low", "high"} <= risks
+        assert any(b["label"] == "retail" or b["label"] == "corporate" or b["label"]
+                   for b in data["customer_type_breakdown"])
+
+        # Trend has one point per month (default 6) and is non-decreasing.
+        trend = data["monthly_trend"]
+        assert len(trend) == 6
+        assert trend[-1]["exposure"] >= trend[0]["exposure"]
+
+        # The soon-to-expire loan is in the watch-list with a day count.
+        expiring = data["expiring_facilities_list"]
+        assert any(e["name"] == "Loan A" and e["days_to_expiry"] is not None for e in expiring)
+
 
 class TestDashboardStatsNamed:
     """The explicitly-named unit tests required for the stats route coverage gap."""

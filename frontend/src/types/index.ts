@@ -82,6 +82,31 @@ export interface TotalExposure {
   currency: string
 }
 
+export interface BreakdownItem {
+  label: string
+  count: number
+  amount: number
+}
+
+export interface MonthlyTrendItem {
+  month: string
+  exposure: number
+  facilities: number
+}
+
+export interface ExpiringFacility {
+  id: string
+  name: string | null
+  customer_id: string | null
+  customer_name: string | null
+  facility_type: string | null
+  amount: number
+  currency: string
+  expiry_date: string | null
+  days_to_expiry: number | null
+  status: string | null
+}
+
 export interface DashboardStats {
   total_customers: number
   active_customers: number
@@ -95,6 +120,13 @@ export interface DashboardStats {
   total_exposure: TotalExposure
   recent_customers: RecentCustomerStat[]
   recent_activities: RecentActivity[]
+  // Richer analytics (optional so older API responses still type-check).
+  facility_type_breakdown?: BreakdownItem[]
+  facility_status_breakdown?: BreakdownItem[]
+  risk_rating_breakdown?: BreakdownItem[]
+  customer_type_breakdown?: BreakdownItem[]
+  monthly_trend?: MonthlyTrendItem[]
+  expiring_facilities_list?: ExpiringFacility[]
 }
 
 // API Response types
