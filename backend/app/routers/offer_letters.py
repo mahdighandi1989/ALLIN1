@@ -1,7 +1,7 @@
 from typing import Optional
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,7 @@ from app.schemas.offer_letter import (
 from app.services.amortization import generate_schedule, schedule_totals
 from app.services.exporters import rows_to_csv, build_pdf
 from app.utils.security import get_current_user
+from app.routers.auth import get_current_active_user
 
 
 def _ext_for(media_type: str) -> str:
@@ -164,7 +165,12 @@ async def get_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=OfferLetterResponse, status_code=status.HTTP_201_CREATED)
-async def create_offer(payload: OfferLetterCreate, db: AsyncSession = Depends(get_db)):
+async def create_offer(
+    payload: OfferLetterCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_active_user),
+):
     await _ensure_customer(payload.customer_id, db)
 
     offer = OfferLetter(**payload.model_dump(exclude_none=True))
@@ -172,6 +178,11 @@ async def create_offer(payload: OfferLetterCreate, db: AsyncSession = Depends(ge
     db.add(offer)
     await db.commit()
     await db.refresh(offer)
+    from app.services.audit import record_audit
+    await record_audit(
+        action="create", entity_type="offer_letter", entity_id=offer.id,
+        detail=f"Created offer letter {offer.id}", user=current_user, request=request, db=db,
+    )
     return offer
 
 

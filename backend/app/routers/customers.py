@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.schemas.customer import (
 from app.schemas.facility import FacilityResponse
 from app.schemas.offer_letter import OfferLetterResponse
 from app.utils.security import get_current_user
+from app.services.audit import record_audit
 
 # Authentication is required for every customer endpoint.
 router = APIRouter(tags=["customers"], dependencies=[Depends(get_current_user)])
@@ -195,7 +196,10 @@ async def get_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
-    customer_data: CustomerCreate, db: AsyncSession = Depends(get_db)
+    customer_data: CustomerCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Create a new customer (account number must be unique)."""
     if customer_data.account_no:
@@ -212,6 +216,10 @@ async def create_customer(
     db.add(customer)
     await db.commit()
     await db.refresh(customer)
+    await record_audit(
+        action="create", entity_type="customer", entity_id=customer.id,
+        detail=f"Created customer '{customer.name}'", user=current_user, request=request, db=db,
+    )
     return customer
 
 
@@ -219,7 +227,9 @@ async def create_customer(
 async def update_customer(
     customer_id: str,
     customer_data: CustomerUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Update an existing customer."""
     customer = await _get_active_customer(customer_id, db)
@@ -243,15 +253,28 @@ async def update_customer(
 
     await db.commit()
     await db.refresh(customer)
+    await record_audit(
+        action="update", entity_type="customer", entity_id=customer.id,
+        detail=f"Updated customer '{customer.name}'", user=current_user, request=request, db=db,
+    )
     return customer
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_customer(
+    customer_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """Soft delete a customer."""
     customer = await _get_active_customer(customer_id, db)
     customer.is_deleted = True
     await db.commit()
+    await record_audit(
+        action="delete", entity_type="customer", entity_id=customer.id,
+        detail=f"Deleted customer '{customer.name}'", user=current_user, request=request, db=db,
+    )
     return None
 
 

@@ -9,11 +9,17 @@ def test_uuid_collision_prevention():
     against an accidental change that would shrink the space or return constant
     values, and documents that the `users.id` UNIQUE constraint is the final
     backstop against a collision.
+
+    NOTE: with an 8-hex-char space a 5k sample has a ~0.3% birthday-paradox
+    chance of a single collision, so we assert *near*-uniqueness (the DB UNIQUE
+    constraint is the real guarantee) rather than absolute uniqueness, which
+    would make this test flaky.
     """
-    ids = [generate_id() for _ in range(20000)]
+    ids = [generate_id() for _ in range(5000)]
     assert all(len(i) == 8 for i in ids)
-    # No collisions in a 20k sample.
-    assert len(set(ids)) == len(ids)
+    unique = len(set(ids))
+    # Effectively all unique — allow an astronomically-rare incidental collision.
+    assert unique >= len(ids) - 1
 
 
 def test_generate_id_is_hex_lowercase():

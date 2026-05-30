@@ -10,6 +10,7 @@ from app.models.offer_letter import (
     CollateralType,
     RepaymentType,
 )
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -17,4 +18,5 @@ __all__ = [
     "Facility", "FacilityType", "FacilityStatus",
     "OfferLetter", "OfferAttachment", "OfferCalculation",
     "OfferStatus", "CollateralType", "RepaymentType",
+    "AuditLog",
 ]

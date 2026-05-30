@@ -1,7 +1,7 @@
 """Admin user management (admin-only). Wired at /api/users."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.schemas.admin_user import (
 )
 from app.routers.auth import require_admin, get_current_active_user
 from app.utils.security import hash_password
+from app.services.audit import record_audit
 
 # Every endpoint requires an authenticated admin.
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
@@ -66,7 +67,12 @@ async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(payload: AdminUserCreate, db: AsyncSession = Depends(get_db)):
+async def create_user(
+    payload: AdminUserCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(get_current_active_user),
+):
     username = payload.username.lower()
     email = payload.email.lower()
 
@@ -86,12 +92,21 @@ async def create_user(payload: AdminUserCreate, db: AsyncSession = Depends(get_d
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    await record_audit(
+        action="create", entity_type="user", entity_id=user.id,
+        detail=f"Created user '{user.username}' (admin={user.is_admin})",
+        user=actor, request=request, db=db,
+    )
     return user
 
 
 @router.put("/{user_id}", response_model=AdminUserResponse)
 async def update_user(
-    user_id: str, payload: AdminUserUpdate, db: AsyncSession = Depends(get_db)
+    user_id: str,
+    payload: AdminUserUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(get_current_active_user),
 ):
     user = await _get_user(user_id, db)
     data = payload.model_dump(exclude_unset=True)
@@ -118,12 +133,17 @@ async def update_user(
 
     await db.commit()
     await db.refresh(user)
+    await record_audit(
+        action="update", entity_type="user", entity_id=user.id,
+        detail=f"Updated user '{user.username}'", user=actor, request=request, db=db,
+    )
     return user
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -152,4 +172,8 @@ async def delete_user(
 
     user.is_active = False
     await db.commit()
+    await record_audit(
+        action="delete", entity_type="user", entity_id=user.id,
+        detail=f"Deactivated user '{user.username}'", user=current_user, request=request, db=db,
+    )
     return None

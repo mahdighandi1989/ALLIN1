@@ -107,6 +107,26 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Audit log
+export interface AuditEntry {
+  id: string
+  user_id: string | null
+  username: string | null
+  action: string
+  entity_type: string | null
+  entity_id: string | null
+  detail: string | null
+  ip_address: string | null
+  created_at: string | null
+}
+
+export interface AuditList {
+  items: AuditEntry[]
+  total: number
+  page: number
+  page_size: number
+}
+
 // Recycle bin
 export interface TrashItem {
   id: string

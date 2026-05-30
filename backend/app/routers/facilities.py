@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.schemas.facility import (
     FacilityListResponse,
 )
 from app.utils.security import get_current_user
+from app.services.audit import record_audit
 
 # Authentication is required for every facility endpoint. The prefix is provided
 # by main.py (/api/facilities), so the router itself must not add another prefix.
@@ -162,7 +163,10 @@ async def get_facility(facility_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
 async def create_facility(
-    facility_data: FacilityCreate, db: AsyncSession = Depends(get_db)
+    facility_data: FacilityCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Create a new facility (after verifying the owning customer exists)."""
     await _ensure_customer_exists(facility_data.customer_id, db)
@@ -171,6 +175,11 @@ async def create_facility(
     db.add(new_facility)
     await db.commit()
     await db.refresh(new_facility)
+    await record_audit(
+        action="create", entity_type="facility", entity_id=new_facility.id,
+        detail=f"Created facility '{new_facility.name or new_facility.id}'",
+        user=current_user, request=request, db=db,
+    )
     return new_facility
 
 
@@ -178,7 +187,9 @@ async def create_facility(
 async def update_facility(
     facility_id: str,
     facility_data: FacilityUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     """Update an existing facility."""
     facility = await _get_active_facility(facility_id, db)
@@ -195,15 +206,30 @@ async def update_facility(
 
     await db.commit()
     await db.refresh(facility)
+    await record_audit(
+        action="update", entity_type="facility", entity_id=facility.id,
+        detail=f"Updated facility '{facility.name or facility.id}'",
+        user=current_user, request=request, db=db,
+    )
     return facility
 
 
 @router.delete("/{facility_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_facility(facility_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_facility(
+    facility_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     """Soft delete a facility."""
     facility = await _get_active_facility(facility_id, db)
     facility.is_deleted = True
     await db.commit()
+    await record_audit(
+        action="delete", entity_type="facility", entity_id=facility.id,
+        detail=f"Deleted facility '{facility.name or facility.id}'",
+        user=current_user, request=request, db=db,
+    )
     return None
 
 

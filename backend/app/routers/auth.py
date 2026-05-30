@@ -372,6 +372,12 @@ async def login(
     _log_login_attempt_to_redis(rate_key, success=True)
     logger.info("auth.login.success user_id=%s", user.id)
 
+    from app.services.audit import record_audit
+    await record_audit(
+        action="login", entity_type="auth", entity_id=user.id,
+        detail=f"User '{user.username}' logged in", user=user, request=request, db=db,
+    )
+
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()

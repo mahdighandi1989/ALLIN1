@@ -22,6 +22,7 @@ import type {
   AdminUserList,
   AdminUserForm,
   TrashList,
+  AuditList,
 } from '@/types'
 
 export { api }
@@ -266,6 +267,22 @@ export const usersApi = {
   },
   async deactivate(id: string): Promise<void> {
     await api.delete(`/api/users/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Audit log (admin)
+// ---------------------------------------------------------------------------
+export const auditApi = {
+  async list(filters: { page?: number; page_size?: number; action?: string; entity_type?: string; search?: string } = {}): Promise<AuditList> {
+    const page = filters.page ?? 1
+    const pageSize = filters.page_size ?? 50
+    const params: Record<string, any> = { page, page_size: pageSize }
+    if (filters.action) params.action = filters.action
+    if (filters.entity_type) params.entity_type = filters.entity_type
+    if (filters.search) params.search = filters.search
+    const { data } = await api.get('/api/audit/', { params })
+    return data
   },
 }
 
