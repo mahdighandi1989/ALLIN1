@@ -32,6 +32,8 @@ class NotificationListResponse(BaseModel):
     items: List[NotificationResponse]
     total: int
     unread: int
+    page: int = 1
+    page_size: int = 50
 
 
 def _visible_to(user: User):
@@ -44,7 +46,8 @@ def _visible_to(user: User):
 async def list_notifications(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=200),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
     unread_only: bool = Query(False),
 ):
     cond = _visible_to(current_user)
@@ -67,10 +70,14 @@ async def list_notifications(
 
     rows = (
         await db.execute(
-            base.order_by(Notification.created_at.desc()).limit(limit)
+            base.order_by(Notification.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
     ).scalars().all()
-    return NotificationListResponse(items=rows, total=total, unread=unread)
+    return NotificationListResponse(
+        items=rows, total=total, unread=unread, page=page, page_size=page_size
+    )
 
 
 @router.get("/unread-count")

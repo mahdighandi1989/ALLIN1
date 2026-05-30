@@ -24,6 +24,8 @@ export default function AuditPage() {
   const [action, setAction] = useState('')
   const [entityType, setEntityType] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 50
 
   useEffect(() => {
     if (authLoading) return
@@ -34,7 +36,7 @@ export default function AuditPage() {
     try {
       setLoading(true)
       setData(await auditApi.list({
-        page: 1, page_size: 100,
+        page, page_size: PAGE_SIZE,
         action: action || undefined,
         entity_type: entityType || undefined,
         search: search || undefined,
@@ -49,7 +51,15 @@ export default function AuditPage() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [page])
+
+  const onFilter = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (page === 1) load()
+    else setPage(1)
+  }
+
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
 
   return (
     <Layout>
@@ -58,7 +68,7 @@ export default function AuditPage() {
         <h2 className="text-2xl font-bold">Audit Log</h2>
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); load() }} className="mb-6 flex flex-wrap gap-2">
+      <form onSubmit={onFilter} className="mb-6 flex flex-wrap gap-2">
         <select value={action} onChange={(e) => setAction(e.target.value)} className="px-3 py-2 border rounded-lg">
           <option value="">All actions</option>
           {['create', 'update', 'delete', 'login'].map((a) => <option key={a} value={a}>{a}</option>)}
@@ -114,6 +124,20 @@ export default function AuditPage() {
           <div className="py-12 text-center text-gray-500">No audit entries</div>
         )}
       </div>
+
+      {data && data.total > 0 && (
+        <div className="mt-4 flex justify-between items-center text-sm">
+          <span className="text-gray-500">
+            {data.total} entries · page {page} of {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+              className="px-3 py-1.5 border rounded-lg disabled:opacity-50">Previous</button>
+            <button onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages}
+              className="px-3 py-1.5 border rounded-lg disabled:opacity-50">Next</button>
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }

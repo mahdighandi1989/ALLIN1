@@ -65,3 +65,23 @@ class TestNotifications:
         assert r.status_code == 201
         after = (await client.get("/api/notifications/unread-count", headers=auth_headers)).json()["unread"]
         assert after == before + 1
+
+    async def test_server_side_pagination(self, client: AsyncClient, auth_headers: dict, db_session):
+        for i in range(15):
+            db_session.add(Notification(user_id=None, level="info", title=f"P{i}", category="system"))
+        await db_session.commit()
+
+        p1 = await client.get("/api/notifications/?page=1&page_size=10", headers=auth_headers)
+        assert p1.status_code == 200
+        b1 = p1.json()
+        assert b1["page"] == 1 and b1["page_size"] == 10
+        assert len(b1["items"]) == 10
+        assert b1["total"] >= 15
+
+        p2 = await client.get("/api/notifications/?page=2&page_size=10", headers=auth_headers)
+        b2 = p2.json()
+        assert b2["page"] == 2
+        # No overlap between pages.
+        ids1 = {i["id"] for i in b1["items"]}
+        ids2 = {i["id"] for i in b2["items"]}
+        assert ids1.isdisjoint(ids2)

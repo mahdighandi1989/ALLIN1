@@ -151,6 +151,8 @@ export interface NotificationList {
   items: AppNotification[]
   total: number
   unread: number
+  page?: number
+  page_size?: number
 }
 
 // Audit log
