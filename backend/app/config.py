@@ -104,6 +104,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     SMTP_USE_TLS: bool = Field(default=True)
 
+    # Telegram notifications (for critical-event alerts such as scan_failed).
+    # When unset, notifications are logged instead of sent (graceful no-op).
+    TELEGRAM_BOT_TOKEN: Optional[str] = Field(default=None)
+    TELEGRAM_CHAT_ID: Optional[str] = Field(default=None)
+    NOTIFY_RATE_LIMIT_SECONDS: int = Field(default=60, ge=0, le=3600)
+
     # Redis settings (for caching and sessions)
     REDIS_URL: Optional[str] = Field(
         default=None,
