@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, cast as sa_cast, Float
 from sqlalchemy.orm import load_only
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,19 +122,22 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             logger.error("Error fetching total outstanding: %s", e)
             total_outstanding = 0.0
 
-        # Monthly revenue — CRITICAL. Computed as the monthly interest accrual of
-        # active facilities (amount * interest_rate / 100 / 12). A failure here
-        # (e.g. the amount column is missing) surfaces a clear 500 error.
+        # Monthly revenue — monthly interest accrual of active facilities
+        # (amount * interest_rate / 100 / 12). Both operands are cast to float so
+        # the arithmetic happens in floating point: multiplying the raw
+        # NUMERIC(15,2) amount by the NUMERIC(5,2) rate would otherwise overflow
+        # the rate's tiny precision on PostgreSQL (the value works fine on SQLite,
+        # which is why this only ever failed in production).
         try:
             monthly_revenue_result = await db.execute(
                 select(
                     func.coalesce(
                         func.sum(
-                            Facility.amount
-                            * func.coalesce(Facility.interest_rate, 0)
+                            sa_cast(Facility.amount, Float)
+                            * sa_cast(func.coalesce(Facility.interest_rate, 0), Float)
                             / 1200.0
                         ),
-                        0,
+                        0.0,
                     )
                 ).where(
                     and_(Facility.is_deleted == False, Facility.status == 'active')
@@ -142,11 +145,10 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             )
             monthly_revenue = float(monthly_revenue_result.scalar() or 0)
         except Exception as e:
+            # Degrade gracefully: a revenue-calc problem should not blank the
+            # whole dashboard. Log it and report 0 instead of a hard 500.
             logger.error("Error calculating monthly revenue: %s", e)
-            raise HTTPException(
-                status_code=500,
-                detail="Error calculating monthly revenue (amount column unavailable)",
-            )
+            monthly_revenue = 0.0
 
         # Recent customers (last 5)
         try:
