@@ -55,6 +55,8 @@ export default function CustomersPage() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Customers</h2>
         <button
+          type="button"
+          data-testid="add-customer-btn"
           onClick={() => { setEditingCustomer(null); setShowForm(true) }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
@@ -122,12 +124,18 @@ export default function CustomersPage() {
                     <td className="px-4 py-3 text-sm">{customer.branch || '-'}</td>
                     <td className="px-4 py-3 text-right">
                       <button
+                        type="button"
+                        data-testid={`edit-customer-${customer.id}`}
+                        aria-label={`Edit ${customer.name}`}
                         onClick={() => { setEditingCustomer(customer); setShowForm(true) }}
                         className="text-gray-500 hover:text-blue-600 mr-2"
                       >
                         <Edit size={16} />
                       </button>
                       <button
+                        type="button"
+                        data-testid={`delete-customer-${customer.id}`}
+                        aria-label={`Delete ${customer.name}`}
                         onClick={() => handleDelete(customer)}
                         className="text-gray-500 hover:text-red-600"
                       >
@@ -146,6 +154,8 @@ export default function CustomersPage() {
               </span>
               <div className="flex gap-2">
                 <button
+                  type="button"
+                  data-testid="prev-page-btn"
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
                   className="px-3 py-1 border rounded disabled:opacity-50"
@@ -153,6 +163,8 @@ export default function CustomersPage() {
                   Previous
                 </button>
                 <button
+                  type="button"
+                  data-testid="next-page-btn"
                   onClick={() => setPage(p => p + 1)}
                   disabled={page >= Math.ceil((data.total ?? 0) / (data.page_size || 1))}
                   className="px-3 py-1 border rounded disabled:opacity-50"
