@@ -1,11 +1,29 @@
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
 from datetime import datetime
 from typing import List, Optional
 from app.models.customer import AccountType, CustomerStatus
 from app.schemas.validators import SafeText, OptionalSafeText, Phone, AccountNo
 
 
-class CustomerBase(BaseModel):
+class _EmailNormalizerMixin:
+    """Treat empty/blank email as None.
+
+    Legacy databases (and lax clients) store ``email = ''``; a strict EmailStr
+    would reject that and 500 the *response*. Normalising blank -> None keeps
+    real (non-empty) emails fully validated while tolerating empty ones.
+    """
+
+    @field_validator("email", mode="before", check_fields=False)
+    @classmethod
+    def _blank_email_to_none(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
+
+class CustomerBase(_EmailNormalizerMixin, BaseModel):
     # account_no must be *present* on create (the DB column is NOT NULL), so a
     # missing key yields HTTP 422 rather than a database error. An empty string
     # is still tolerated for backward compatibility with existing clients.
@@ -29,7 +47,7 @@ class CustomerCreate(CustomerBase):
     pass
 
 
-class CustomerUpdate(BaseModel):
+class CustomerUpdate(_EmailNormalizerMixin, BaseModel):
     account_no: AccountNo = Field(None, max_length=50, description="Account number")
     name: OptionalSafeText = Field(None, min_length=1, max_length=200, description="Customer name")
     name_ar: OptionalSafeText = Field(None, max_length=200)

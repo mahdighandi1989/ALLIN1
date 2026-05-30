@@ -155,6 +155,73 @@ async def test_bootstrap_and_endpoints_on_legacy_postgres(legacy_pg, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_legacy_uppercase_enums_and_blank_email(legacy_pg, monkeypatch):
+    """Legacy UPPERCASE enum labels + blank emails must not 500 list endpoints.
+
+    Reproduces three production-only bugs invisible to SQLite:
+      * enums persisted as NAME ('CORPORATE') vs the model value ('corporate'),
+      * an empty-string email that a strict EmailStr response would reject,
+      * (implicitly) the enum/value mismatch on == filters.
+    """
+    eng, db_url = legacy_pg
+    import app.database as database
+    import app.db_init as db_init
+    import app.config as config
+
+    monkeypatch.setattr(config.settings, "AUTH_DISABLED", True)
+    test_engine = create_async_engine(db_url)
+    test_sessionmaker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(database, "engine", test_engine)
+    monkeypatch.setattr(database, "AsyncSessionLocal", test_sessionmaker)
+    monkeypatch.setattr(db_init, "engine", test_engine)
+    monkeypatch.setattr(db_init, "AsyncSessionLocal", test_sessionmaker)
+
+    # Seed a legacy customers table with UPPERCASE enum labels + a blank email,
+    # mirroring a real old database.
+    async with test_engine.begin() as conn:
+        await conn.execute(text("CREATE TYPE accounttype AS ENUM ('RETAIL','CORPORATE','SME')"))
+        await conn.execute(text("CREATE TYPE customerstatus AS ENUM ('ACTIVE','INACTIVE','SUSPENDED')"))
+        await conn.execute(
+            text(
+                "CREATE TABLE customers (id VARCHAR(33) PRIMARY KEY, account_no VARCHAR(50) UNIQUE NOT NULL,"
+                " name VARCHAR(200) NOT NULL, account_type accounttype, status customerstatus,"
+                " email VARCHAR(100), is_deleted BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO customers (id, account_no, name, account_type, status, email) VALUES"
+                " ('c1','OLD-1','Legacy Corp','CORPORATE','ACTIVE',''),"
+                " ('c2','OLD-2','Legacy Retail','RETAIL','ACTIVE','x@y.ae')"
+            )
+        )
+
+    async def override_db():
+        async with test_sessionmaker() as s:
+            yield s
+
+    from app.main import app
+    from app.database import get_db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        await db_init.init_database()
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://t") as ac:
+            r = await ac.get("/api/customers/")
+            assert r.status_code == 200, r.text
+            assert r.json()["total"] >= 2
+            # The == enum filter works against the lowercased label.
+            rf = await ac.get("/api/customers/?account_type=corporate")
+            assert rf.status_code == 200
+            assert rf.json()["total"] >= 1
+            assert (await ac.get("/api/customers/stats/summary")).status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        await test_engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_monthly_revenue_no_overflow_large_amounts(legacy_pg, monkeypatch):
     """A large amount * rate must not overflow NUMERIC(5,2) on Postgres."""
     eng, db_url = legacy_pg

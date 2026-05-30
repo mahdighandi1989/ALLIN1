@@ -23,6 +23,16 @@ class CustomerStatus(str, enum.Enum):
     SUSPENDED = "suspended"
 
 
+# Store the enum *value* ("retail") rather than the member NAME ("RETAIL"), so
+# the DB matches the API/filter strings the frontend sends and reads back
+# correctly. (Without values_callable, SQLAlchemy persists the NAME, which breaks
+# every == comparison against a lowercase value and corrupts reads.)
+def _enum_col(enum_cls, **kw):
+    return Column(
+        SQLEnum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+    )
+
+
 class Customer(Base):
     __tablename__ = "customers"
 
@@ -30,8 +40,8 @@ class Customer(Base):
     account_no = Column(String(50), unique=True, index=True, nullable=False)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))
-    account_type = Column(SQLEnum(AccountType), default=AccountType.RETAIL)
-    status = Column(SQLEnum(CustomerStatus), default=CustomerStatus.ACTIVE)
+    account_type = _enum_col(AccountType, default=AccountType.RETAIL)
+    status = _enum_col(CustomerStatus, default=CustomerStatus.ACTIVE)
     email = Column(String(100))
     phone = Column(String(50))
     mobile = Column(String(50))

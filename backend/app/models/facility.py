@@ -23,6 +23,15 @@ class FacilityStatus(str, enum.Enum):
     WRITTEN_OFF = "written_off"
 
 
+# Persist the enum *value* (e.g. "loan"), not the member NAME ("LOAN"), so the
+# stored data matches the API strings and == filters work. See the same note in
+# models/customer.py.
+def _enum_col(enum_cls, **kw):
+    return Column(
+        Enum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+    )
+
+
 class Facility(Base):
     __tablename__ = "facilities"
 
@@ -31,12 +40,12 @@ class Facility(Base):
     name = Column(String(200))
     amount = Column(Numeric(15, 2), nullable=False)
     currency = Column(String(3), default="AED")
-    facility_type = Column(Enum(FacilityType), default=FacilityType.LOAN)
+    facility_type = _enum_col(FacilityType, default=FacilityType.LOAN)
     start_date = Column(Date)
     end_date = Column(Date)
     expiry_date = Column(Date)
     outstanding = Column(Numeric(15, 2), default=0)
-    status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
+    status = _enum_col(FacilityStatus, default=FacilityStatus.ACTIVE)
     purpose = Column(String(500))
     tenor_months = Column(String(4))
     notes = Column(Text)

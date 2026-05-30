@@ -121,21 +121,44 @@ async def ensure_schema() -> None:
     if engine.dialect.name != "postgresql":
         return  # SQLite (tests) gets a complete schema from create_all.
 
-    # Add missing enum values first (must be autocommit on some PG versions).
+    # Normalise enum labels. Legacy databases stored enum *names* (UPPERCASE,
+    # e.g. 'CORPORATE'); the models now use the lowercase value ('corporate').
+    # Rename any legacy UPPERCASE label to its lowercase form, then ensure every
+    # model value exists. Both are idempotent and need AUTOCOMMIT.
     try:
         async with engine.connect() as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")
-            for enum_name, values in _ENUMS.items():
-                for value in values:
-                    # Enum values are model-defined identifiers (not user input).
-                    # ALTER TYPE is DDL and cannot take bind parameters, so the
-                    # value is embedded as a quoted literal.
-                    literal = "'" + str(value).replace("'", "''") + "'"
+            # Existing labels per enum type.
+            existing = {}
+            for enum_name in _ENUMS:
+                rows = (
                     await conn.execute(
                         text(
-                            f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS {literal}"
-                        )
+                            "SELECT e.enumlabel FROM pg_enum e "
+                            "JOIN pg_type t ON t.oid = e.enumtypid "
+                            "WHERE t.typname = :n"
+                        ).bindparams(n=enum_name)
                     )
+                ).all()
+                existing[enum_name] = {r[0] for r in rows}
+
+            for enum_name, values in _ENUMS.items():
+                labels = existing.get(enum_name, set())
+                for value in values:
+                    upper = value.upper()
+                    # Rename a legacy UPPERCASE label to the lowercase value.
+                    if value not in labels and upper in labels:
+                        await conn.execute(
+                            text(f"ALTER TYPE {enum_name} RENAME VALUE '{upper}' TO '{value}'")
+                        )
+                        labels.discard(upper)
+                        labels.add(value)
+                    # Otherwise make sure the value exists.
+                    elif value not in labels:
+                        await conn.execute(
+                            text(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{value}'")
+                        )
+                        labels.add(value)
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("schema-sync: enum value sync skipped: %s", exc)
 
