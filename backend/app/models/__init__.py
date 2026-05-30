@@ -13,6 +13,7 @@ from app.models.offer_letter import (
 from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.system_setting import SystemSetting
+from app.models.exposure_snapshot import ExposureSnapshot
 
 __all__ = [
     "User",
@@ -23,4 +24,5 @@ __all__ = [
     "AuditLog",
     "Notification",
     "SystemSetting",
+    "ExposureSnapshot",
 ]

@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { reportsApi, parseApiError, downloadFile } from '@/lib/api'
+import { reportsApi, statsApi, parseApiError, downloadFile } from '@/lib/api'
 import { PortfolioReport, TopExposures } from '@/types'
 import { DonutChart, BarChart } from '@/components/charts'
-import { RefreshCw, Download } from 'lucide-react'
+import { RefreshCw, Download, Camera } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 function money(n: number, cur = 'AED') {
@@ -97,6 +97,16 @@ export default function ReportsPage() {
             className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
           >
             <Download size={16} /> CSV
+          </button>
+          <button
+            data-testid="capture-snapshot"
+            onClick={async () => {
+              try { await statsApi.captureSnapshot(); toast.success('Snapshot captured') }
+              catch (e) { toast.error(parseApiError(e)) }
+            }}
+            className="flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <Camera size={16} /> Snapshot
           </button>
           <button onClick={load} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
             <RefreshCw size={16} /> Refresh

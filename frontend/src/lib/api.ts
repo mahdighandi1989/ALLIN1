@@ -216,6 +216,9 @@ export const statsApi = {
     const { data } = await api.get<DashboardStats>('/api/stats/dashboard')
     return data
   },
+  async captureSnapshot(): Promise<void> {
+    await api.post('/api/stats/snapshot')
+  },
 }
 
 // ---------------------------------------------------------------------------

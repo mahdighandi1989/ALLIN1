@@ -293,11 +293,37 @@ async def _breakdown_by(db: AsyncSession, model, column, *, with_amount: bool):
 
 
 async def _monthly_trend(db: AsyncSession, months: int = 6):
-    """Cumulative exposure + facility count per month for the last N months.
+    """Exposure + facility count per month for the last N months.
 
-    Computed in Python (portable across SQLite/Postgres) from each facility's
-    start_date (falling back to created_at).
+    Prefers the real ``exposure_snapshots`` time series (actual recorded history);
+    if there are no snapshots it falls back to a cumulative view computed from
+    each facility's start_date.
     """
+    # 1) Real snapshots first.
+    try:
+        from app.models.exposure_snapshot import ExposureSnapshot
+
+        snaps = (
+            await db.execute(
+                select(ExposureSnapshot).order_by(
+                    ExposureSnapshot.year.desc(), ExposureSnapshot.month.desc()
+                ).limit(months)
+            )
+        ).scalars().all()
+        if snaps:
+            snaps = list(reversed(snaps))
+            return [
+                MonthlyTrendItem(
+                    month=f"{s.year:04d}-{s.month:02d}",
+                    exposure=float(s.total_exposure or 0),
+                    facilities=int(s.facility_count or 0),
+                )
+                for s in snaps
+            ]
+    except Exception as e:  # pragma: no cover - defensive
+        logger.error("Snapshot trend read failed, falling back: %s", e)
+
+    # 2) Fallback: cumulative view from facility start dates.
     try:
         rows = (
             await db.execute(
@@ -386,3 +412,15 @@ async def _expiring_facilities(db: AsyncSession, today, horizon, limit: int = 10
     except Exception as e:  # pragma: no cover - defensive
         logger.error("Error building expiring facilities list: %s", e)
         return []
+
+
+@router.post("/snapshot")
+async def capture_snapshot_now(db: AsyncSession = Depends(get_db)):
+    """Capture (upsert) this month's exposure snapshot from current data.
+
+    Useful to call from a scheduler (e.g. monthly cron) to build the trend over
+    time. Idempotent per calendar month.
+    """
+    from app.services.snapshots import capture_current_snapshot
+    await capture_current_snapshot()
+    return {"ok": True}

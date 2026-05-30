@@ -411,3 +411,10 @@ async def init_database() -> None:
     await seed_sample_data()
     await seed_admin_user()
     await refresh_expiry_notifications()
+    # Exposure time series: backfill demo history once, then capture this month.
+    try:
+        from app.services.snapshots import backfill_demo_history, capture_current_snapshot
+        await backfill_demo_history()
+        await capture_current_snapshot()
+    except Exception as exc:  # pragma: no cover
+        logger.error("Snapshot init skipped: %s", exc)
