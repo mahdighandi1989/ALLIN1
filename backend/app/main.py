@@ -30,9 +30,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail fast on insecure configuration (e.g. a lingering AUTH_DISABLED in
-    # production) and log any security warnings before serving requests.
+    # Fail fast on insecure configuration and log any security warnings.
     enforce_security_on_startup()
+    # Self-heal the DB schema to match the models (independent of Alembic, which
+    # the deploy swallows on error) and seed demo banking data when empty, so the
+    # app works out of the box instead of 500-ing on a drifted schema.
+    try:
+        from app.db_init import init_database
+
+        await init_database()
+    except Exception as exc:  # never let startup hard-crash on bootstrap issues
+        logger.error("Database initialization failed: %s", exc)
     yield
 
 
