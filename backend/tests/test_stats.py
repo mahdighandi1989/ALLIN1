@@ -112,3 +112,61 @@ class TestDashboardStats:
         assert data["monthly_revenue"] == pytest.approx(1000.0)
         assert data["total_exposure"]["amount"] == pytest.approx(150000.0)
         assert data["total_outstanding"] == pytest.approx(130000.0)
+
+
+class TestDashboardStatsNamed:
+    """The explicitly-named unit tests required for the stats route coverage gap."""
+
+    async def test_dashboard_stats_success(
+        self, client: AsyncClient, auth_headers: dict, db_session
+    ):
+        """With sample data the endpoint returns 200 and the expected fields."""
+        customer = Customer(account_no="OK001", name="Sample Co")
+        db_session.add(customer)
+        await db_session.commit()
+        await db_session.refresh(customer)
+        db_session.add(
+            Facility(
+                customer_id=customer.id,
+                facility_type=FacilityType.LOAN,
+                amount=Decimal("25000"),
+                status=FacilityStatus.ACTIVE,
+            )
+        )
+        await db_session.commit()
+
+        resp = await client.get("/api/stats/dashboard", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total_customers" in data and "total_facilities" in data
+        assert data["total_customers"] >= 1
+        assert data["total_facilities"] >= 1
+
+    async def test_dashboard_stats_empty(self, client: AsyncClient, auth_headers: dict):
+        """With an empty database the endpoint returns 200 and zero counts."""
+        resp = await client.get("/api/stats/dashboard", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_customers"] == 0
+        assert data["total_facilities"] == 0
+        assert data["active_facilities"] == 0
+        assert data["monthly_revenue"] == 0
+        assert data["recent_activities"] == []
+
+    async def test_dashboard_stats_db_error(
+        self, client: AsyncClient, auth_headers: dict, monkeypatch
+    ):
+        """A database failure during aggregation surfaces as a clean HTTP 500."""
+        from app.routers import stats as stats_module
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("simulated database failure")
+
+        # Break only the stats endpoint's query building (auth uses its own
+        # `select` import, so authentication still succeeds).
+        monkeypatch.setattr(stats_module, "select", boom)
+
+        resp = await client.get("/api/stats/dashboard", headers=auth_headers)
+        assert resp.status_code == 500
+        # Generic, structured error — no internals leaked.
+        assert "detail" in resp.json()
