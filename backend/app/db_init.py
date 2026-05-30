@@ -68,7 +68,11 @@ def _add_missing_columns(sync_conn) -> None:
     for table in Base.metadata.sorted_tables:
         if table.name not in existing_tables:
             continue
-        existing_cols = {c["name"] for c in inspector.get_columns(table.name)}
+        db_columns = inspector.get_columns(table.name)
+        existing_cols = {c["name"] for c in db_columns}
+        model_cols = {c.name for c in table.columns}
+
+        # 1) Add columns the model defines but the live table is missing.
         for col in table.columns:
             if col.name in existing_cols:
                 continue
@@ -82,6 +86,28 @@ def _add_missing_columns(sync_conn) -> None:
                 ddl += f" DEFAULT {default}"
             logger.info("schema-sync: %s", ddl)
             sync_conn.execute(text(ddl))
+
+        # 2) Relax NOT NULL on columns the live table requires but the model does
+        #    NOT know about (e.g. a legacy ``users.role``). Otherwise every INSERT
+        #    from this codebase — which never sets those columns — would fail.
+        for db_col in db_columns:
+            name = db_col["name"]
+            if name in model_cols:
+                continue
+            if db_col.get("nullable", True) or db_col.get("default") is not None:
+                continue
+            try:
+                logger.info(
+                    "schema-sync: relaxing NOT NULL on unknown column %s.%s",
+                    table.name, name,
+                )
+                sync_conn.execute(
+                    text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" DROP NOT NULL')
+                )
+            except Exception as exc:  # pragma: no cover - depends on live DB
+                logger.warning(
+                    "schema-sync: could not relax %s.%s: %s", table.name, name, exc
+                )
 
 
 async def ensure_schema() -> None:

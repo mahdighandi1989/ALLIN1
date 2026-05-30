@@ -278,24 +278,47 @@ async def _get_or_create_demo_user(db: AsyncSession) -> "User":
 
     TEMPORARY: only reachable while ``settings.AUTH_DISABLED`` is True. Restores
     to full enforcement by setting AUTH_DISABLED=false.
+
+    The demo user is built in-memory (transient, never persisted). Persisting it
+    would couple this path to the exact shape of the ``users`` table, which on
+    long-lived databases may carry extra NOT NULL columns this codebase does not
+    model (e.g. ``role``) — inserting would then fail. A transient instance is
+    all the downstream code needs and is robust to any schema drift.
     """
     from app.models.user import User
 
-    result = await db.execute(select(User).where(User.username == "demo"))
-    user = result.scalar_one_or_none()
-    if user is None:
-        user = User(
-            username="demo",
-            email="demo@example.com",
-            hashed_password=hash_password("demo"),
-            full_name="Demo User",
-            is_active=True,
-            is_admin=True,
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-    return user
+    # Try to reuse an existing demo row if one is already present and readable;
+    # fall back to a transient instance on ANY error (missing/extra columns…).
+    try:
+        result = await db.execute(select(User).where(User.username == "demo"))
+        user = result.scalar_one_or_none()
+        if user is not None:
+            return user
+    except Exception:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+    demo = User(
+        id="demo",
+        username="demo",
+        email="demo@example.com",
+        hashed_password="!disabled",
+        full_name="Demo User",
+        is_active=True,
+        is_admin=True,
+        # Populate timestamps so response models that require created_at
+        # (e.g. UserResponse) serialise correctly for this un-persisted user.
+        created_at=datetime.now(timezone.utc),
+        last_login=datetime.now(timezone.utc),
+    )
+    # Make sure it is NOT tracked by the session (never flushed/inserted).
+    try:
+        db.expunge(demo)
+    except Exception:
+        pass
+    return demo
 
 
 async def get_current_user(
