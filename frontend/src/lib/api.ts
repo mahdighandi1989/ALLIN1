@@ -21,6 +21,7 @@ import type {
   AdminUser,
   AdminUserList,
   AdminUserForm,
+  TrashList,
 } from '@/types'
 
 export { api }
@@ -265,6 +266,19 @@ export const usersApi = {
   },
   async deactivate(id: string): Promise<void> {
     await api.delete(`/api/users/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Recycle bin
+// ---------------------------------------------------------------------------
+export const trashApi = {
+  async list(): Promise<TrashList> {
+    const { data } = await api.get<TrashList>('/api/trash/')
+    return data
+  },
+  async restore(entity: string, id: string): Promise<void> {
+    await api.post(`/api/trash/${entity}/${id}/restore`)
   },
 }
 

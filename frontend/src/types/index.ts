@@ -107,6 +107,20 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Recycle bin
+export interface TrashItem {
+  id: string
+  label: string
+  sublabel: string | null
+  type: 'customer' | 'facility' | 'offer_letter'
+}
+
+export interface TrashList {
+  items: TrashItem[]
+  total: number
+  counts: { customers: number; facilities: number; offer_letters: number }
+}
+
 // Admin user management
 export interface AdminUser {
   id: string

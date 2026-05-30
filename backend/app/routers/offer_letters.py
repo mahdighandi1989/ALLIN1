@@ -254,6 +254,23 @@ async def delete_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
     return None
 
 
+@router.post("/{offer_id}/restore", response_model=OfferLetterResponse)
+async def restore_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
+    """Restore a soft-deleted offer letter."""
+    result = await db.execute(
+        select(OfferLetter).where(
+            OfferLetter.id == offer_id, OfferLetter.is_deleted == True
+        )
+    )
+    offer = result.scalar_one_or_none()
+    if not offer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    offer.is_deleted = False
+    await db.commit()
+    await db.refresh(offer)
+    return offer
+
+
 def _offer_schedule_rows(offer: OfferLetter):
     """Compute the amortisation schedule for an offer as plain rows."""
     return generate_schedule(
