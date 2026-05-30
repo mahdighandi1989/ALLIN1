@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats
+from app.routers import auth, customers, facilities, stats, offer_letters
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.monitoring import (
     get_logger,
@@ -194,6 +194,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(offer_letters.router, prefix="/api/offer-letters", tags=["offer_letters"])
 
 @app.get("/health")
 async def health_check():

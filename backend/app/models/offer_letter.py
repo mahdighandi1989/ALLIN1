@@ -1,15 +1,12 @@
-"""Offer Letter Model.
+"""Offer Letter models — the offer-letter / facility-proposal workflow.
 
-STATUS: planned feature, NOT yet wired into the running application. These
-models are intentionally **not** imported by ``app.models.__init__`` and have no
-router/schema, so SQLAlchemy never registers their tables and the app is
-unaffected. They are retained as the design for the upcoming offer-letter
-workflow. The previous version declared ``back_populates="offer_letters"`` on
-the Customer/Facility relationships, but those back-references do not exist on
-the Customer/Facility models — importing this module would therefore have raised
-a mapper-configuration error. Those broken back-references have been removed so
-the module is safe to import; wiring the full feature (registry + router +
-schema + reciprocal relationships) is tracked as future work.
+Now wired into the application: registered via ``app.models.__init__``, exposed
+through ``app.routers.offer_letters`` and the ``OfferLetter*`` schemas. An offer
+letter captures the proposed financial terms for a customer (optionally tied to a
+facility); its repayment schedule is generated into ``offer_calculations``.
+
+The Customer/Facility back-references are intentionally omitted (those models do
+not declare an ``offer_letters`` relationship); the FK columns preserve the link.
 """
 from datetime import date, datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Date, Text, Numeric, ForeignKey, Enum as SQLEnum, Integer
@@ -25,6 +22,15 @@ from app.database import Base
 def generate_offer_id():
     """Generate offer letter ID with OL prefix"""
     return "OL" + str(uuid.uuid4())[:8].upper()
+
+
+def _enum_col(enum_cls, **kw):
+    # Persist the enum *value* ("draft"), not the member NAME ("DRAFT"), so the
+    # stored data matches the API strings and == filters work (same convention as
+    # the Customer/Facility models).
+    return Column(
+        SQLEnum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+    )
 
 
 class OfferStatus(str, enum.Enum):
@@ -65,7 +71,7 @@ class OfferLetter(Base):
     # Basic Information
     offer_date = Column(Date, nullable=False, default=date.today)
     expiry_date = Column(Date, nullable=False)
-    status = Column(SQLEnum(OfferStatus), default=OfferStatus.DRAFT)
+    status = _enum_col(OfferStatus, default=OfferStatus.DRAFT)
     
     # Financial Terms
     principal_amount = Column(Numeric(18, 2), nullable=False)
@@ -76,7 +82,7 @@ class OfferLetter(Base):
     grace_period_months = Column(Integer, default=0)
     
     # Repayment Details
-    repayment_type = Column(SQLEnum(RepaymentType), default=RepaymentType.MONTHLY)
+    repayment_type = _enum_col(RepaymentType, default=RepaymentType.MONTHLY)
     monthly_installment = Column(Numeric(18, 2))
     total_repayment_amount = Column(Numeric(18, 2))
     
@@ -89,7 +95,7 @@ class OfferLetter(Base):
     late_payment_fee = Column(Numeric(18, 2))
     
     # Security and Collateral
-    collateral_type = Column(SQLEnum(CollateralType))
+    collateral_type = _enum_col(CollateralType)
     collateral_value = Column(Numeric(18, 2))
     collateral_description = Column(Text)
     guarantee_required = Column(Boolean, default=False)

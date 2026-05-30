@@ -107,6 +107,60 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Offer-letter types
+export interface OfferLetter {
+  id: string
+  customer_id: string
+  facility_id: string | null
+  offer_date: string | null
+  expiry_date: string | null
+  status: string | null
+  principal_amount: number
+  currency: string
+  interest_rate: number
+  tenor_months: number
+  grace_period_months: number | null
+  repayment_type: string | null
+  monthly_installment: number | null
+  total_repayment_amount: number | null
+  purpose_of_facility: string | null
+  created_at: string | null
+}
+
+export interface OfferInstallment {
+  installment_number: number
+  payment_date: string | null
+  opening_balance: number
+  principal_payment: number
+  interest_payment: number
+  total_payment: number
+  closing_balance: number
+}
+
+export interface OfferLetterDetail extends OfferLetter {
+  customer_name: string | null
+  schedule: OfferInstallment[]
+}
+
+export interface OfferLetterList {
+  items: OfferLetter[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface OfferLetterForm {
+  customer_id: string
+  expiry_date: string
+  principal_amount: number
+  interest_rate: number
+  tenor_months: number
+  currency: string
+  repayment_type: 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'bullet'
+  grace_period_months?: number
+  purpose_of_facility?: string
+}
+
 export interface DashboardStats {
   total_customers: number
   active_customers: number

@@ -78,8 +78,10 @@ def test_offer_attachment_and_calculation_construction():
     assert calc.installment_number == 1
 
 
-def test_offer_letter_not_registered_in_active_models():
-    """The offer-letter models are intentionally excluded from app.models."""
+def test_offer_letter_registered_in_active_models():
+    """The offer-letter models are now wired into app.models (feature enabled)."""
     import app.models as models
 
-    assert not hasattr(models, "OfferLetter")
+    assert hasattr(models, "OfferLetter")
+    assert hasattr(models, "OfferCalculation")
+    assert "OfferLetter" in models.__all__

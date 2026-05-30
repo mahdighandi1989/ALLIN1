@@ -10,6 +10,10 @@ import type {
   FacilityForm,
   FacilityFilters,
   DashboardStats,
+  OfferLetter,
+  OfferLetterDetail,
+  OfferLetterList,
+  OfferLetterForm,
 } from '@/types'
 
 export { api }
@@ -165,6 +169,61 @@ export const statsApi = {
   async dashboard(): Promise<DashboardStats> {
     const { data } = await api.get<DashboardStats>('/api/stats/dashboard')
     return data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Offer letters
+// ---------------------------------------------------------------------------
+export const offerLettersApi = {
+  async list(
+    filters: { page?: number; page_size?: number; customer_id?: string; status?: string } = {}
+  ): Promise<OfferLetterList> {
+    const page = filters.page ?? 1
+    const pageSize = filters.page_size ?? 20
+    const params: Record<string, any> = { page, page_size: pageSize }
+    if (filters.customer_id) params.customer_id = filters.customer_id
+    if (filters.status) params.status = filters.status
+    const { data } = await api.get('/api/offer-letters/', { params })
+    if (Array.isArray(data)) {
+      return { items: data, total: data.length, page, page_size: pageSize }
+    }
+    return data
+  },
+
+  async get(id: string): Promise<OfferLetterDetail> {
+    const { data } = await api.get<OfferLetterDetail>(`/api/offer-letters/${id}`)
+    return data
+  },
+
+  async create(payload: OfferLetterForm): Promise<OfferLetter> {
+    const { data } = await api.post<OfferLetter>('/api/offer-letters/', payload)
+    return data
+  },
+
+  async update(id: string, payload: Partial<OfferLetterForm>): Promise<OfferLetter> {
+    const { data } = await api.put<OfferLetter>(`/api/offer-letters/${id}`, payload)
+    return data
+  },
+
+  async generateSchedule(id: string): Promise<OfferLetterDetail> {
+    const { data } = await api.post<OfferLetterDetail>(
+      `/api/offer-letters/${id}/generate-schedule`
+    )
+    return data
+  },
+
+  async setStatus(id: string, status: string): Promise<OfferLetter> {
+    const { data } = await api.post<OfferLetter>(
+      `/api/offer-letters/${id}/status`,
+      null,
+      { params: { new_status: status } }
+    )
+    return data
+  },
+
+  async delete(id: string): Promise<void> {
+    await api.delete(`/api/offer-letters/${id}`)
   },
 }
 

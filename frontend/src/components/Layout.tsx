@@ -4,12 +4,13 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
-import { LayoutDashboard, Users, Building, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Building, FileText, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/customers', label: 'Customers', icon: Users },
   { href: '/facilities', label: 'Facilities', icon: Building },
+  { href: '/offer-letters', label: 'Offer Letters', icon: FileText },
 ]
 
 export default function Layout({ children }: { children: React.ReactNode }) {

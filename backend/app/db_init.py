@@ -259,13 +259,62 @@ async def seed_sample_data() -> None:
             session.add_all(customers)
             await session.flush()  # assign customer ids for FK
             session.add_all(facilities)
+            await session.flush()
+            offers = _seed_offers(customers)
+            if offers:
+                session.add_all(offers)
             await session.commit()
             logger.info(
-                "Seeded demo banking data: %s customers, %s facilities",
-                len(customers), len(facilities),
+                "Seeded demo banking data: %s customers, %s facilities, %s offer letters",
+                len(customers), len(facilities), len(offers),
             )
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.error("Demo data seeding skipped: %s", exc)
+
+
+def _seed_offers(customers):
+    """Build a couple of demo offer letters (with computed repayment totals)."""
+    try:
+        from datetime import date, timedelta
+        from decimal import Decimal
+        from app.models.offer_letter import OfferLetter, OfferStatus, RepaymentType
+        from app.services.amortization import generate_schedule, schedule_totals
+
+        today = date.today()
+
+        def offer(cust, principal, rate, tenor, status, name_purpose, rtype="monthly", grace=0):
+            o = OfferLetter(
+                customer_id=cust.id,
+                offer_date=today - timedelta(days=10),
+                expiry_date=today + timedelta(days=30),
+                status=status,
+                principal_amount=Decimal(principal),
+                currency="AED",
+                interest_rate=Decimal(rate),
+                tenor_months=tenor,
+                grace_period_months=grace,
+                repayment_type=rtype,
+                purpose_of_facility=name_purpose,
+            )
+            totals = schedule_totals(
+                generate_schedule(
+                    Decimal(principal), Decimal(rate), tenor,
+                    repayment_type=rtype, grace_period_months=grace, start=o.offer_date,
+                )
+            )
+            o.monthly_installment = totals["monthly_installment"]
+            o.total_repayment_amount = totals["total_repayment_amount"]
+            return o
+
+        return [
+            offer(customers[0], "15000000", "6.5", 36, OfferStatus.SENT, "Fleet expansion term loan"),
+            offer(customers[1], "8000000", "5.75", 24, OfferStatus.APPROVED, "Working capital facility", grace=3),
+            offer(customers[2], "1200000", "8.0", 18, OfferStatus.DRAFT, "SME growth loan"),
+            offer(customers[4], "20000000", "6.0", 48, OfferStatus.PENDING_APPROVAL, "Capex financing"),
+        ]
+    except Exception as exc:  # pragma: no cover
+        logger.error("Offer-letter seeding skipped: %s", exc)
+        return []
 
 
 async def init_database() -> None:
