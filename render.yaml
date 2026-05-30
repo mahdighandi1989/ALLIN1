@@ -1,46 +1,27 @@
 # Render Blueprint Configuration
 # https://render.com/docs/blueprint-spec
-# Single service that serves both API and Frontend
+# Single Python web service that serves the FastAPI API AND the pre-built
+# frontend. The frontend is built in CI / committed under backend/static, so the
+# deploy does NOT rebuild it on Render (that was slow and OOM/timeout-prone on
+# small plans, and was the main cause of stuck deploys).
 
 services:
-  # Combined Backend API + Frontend Service
   - type: web
     name: banking-ops
     runtime: python
     region: frankfurt
-    plan: free
-    buildCommand: |
-      # Build frontend
-      echo "Building frontend..."
-      cd frontend && npm install && npm run build
-      
-      # Create static_frontend directory if it doesn't exist
-      echo "Creating static_frontend directory..."
-      mkdir -p ../backend/static_frontend
-      
-      # Copy frontend build output to backend's static serving path
-      echo "Copying frontend files..."
-      if [ -d "out" ]; then
-        cp -r out/* ../backend/static_frontend/ || echo "Copy failed, continuing..."
-      else
-        echo "Frontend build directory 'out' not found!"
-        # Create a basic index.html as fallback
-        mkdir -p ../backend/static_frontend
-        echo '<html><body><h1>ALLIN1 Banking System</h1><p>Frontend is being built...</p></body></html>' > ../backend/static_frontend/index.html
-      fi
-      
-      # Install backend dependencies
-      echo "Installing backend dependencies..."
-      cd ../backend && pip install --no-cache-dir --upgrade -r requirements.txt
-      
-      echo "Build completed successfully!"
-    startCommand: |
-      cd backend && (alembic upgrade head || echo "Alembic migration skipped, tables will be created at startup") && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    # Backend-only build: install Python deps from the backend directory.
+    # No Node / npm / next build here — the static frontend is already committed
+    # under backend/static and is served directly by FastAPI.
+    buildCommand: "pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r backend/requirements.txt"
+    # Run DB migrations best-effort, then start the server. The app also
+    # self-heals the schema and seeds demo data at startup (see app.db_init), so
+    # a skipped/failed alembic step never blocks boot.
+    startCommand: "cd backend && (alembic upgrade head || echo 'alembic skipped; schema self-heals at startup') && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.7"
-      - key: NODE_VERSION
-        value: "20"
       - key: DEBUG
         value: "false"
       - key: SECRET_KEY
@@ -62,9 +43,8 @@ services:
     autoDeploy: true
 
 databases:
-  # PostgreSQL Database
   - name: banking-ops-db
     region: frankfurt
-    plan: free
+    plan: basic-256mb
     databaseName: banking_ops
     user: banking_ops_user
