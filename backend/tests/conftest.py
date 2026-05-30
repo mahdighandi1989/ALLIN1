@@ -15,21 +15,26 @@ from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.utils.security import hash_password
 from app.utils.rate_limit import login_rate_limiter
 from app.utils.token_blacklist import token_blacklist
+from app.config import settings as app_settings
 
 
 @pytest.fixture(autouse=True)
 def _reset_security_state():
-    """Clear brute-force and token-revocation state before/after every test.
+    """Clear brute-force/token-revocation state and ENFORCE auth for every test.
 
     These stores are process-global singletons, so without this isolation a
     rate-limited account or revoked token from one test would leak into the
-    next.
+    next. We also pin AUTH_DISABLED=False so the suite always exercises the real
+    authentication path even though the app currently ships with it bypassed.
     """
+    previous_auth_disabled = app_settings.AUTH_DISABLED
+    app_settings.AUTH_DISABLED = False
     login_rate_limiter.reset_all()
     token_blacklist.reset_all()
     yield
     login_rate_limiter.reset_all()
     token_blacklist.reset_all()
+    app_settings.AUTH_DISABLED = previous_auth_disabled
 
 
 # Test database URL (in-memory SQLite for testing)

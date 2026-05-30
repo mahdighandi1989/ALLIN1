@@ -53,6 +53,11 @@ services:
         value: ""
       - key: ENVIRONMENT
         value: "production"
+      # Production keeps authentication ON. The app currently ships with
+      # AUTH_DISABLED defaulting to true (login removed for now); this explicit
+      # override ensures real deployments still require login.
+      - key: AUTH_DISABLED
+        value: "false"
     healthCheckPath: /health
     autoDeploy: true
 

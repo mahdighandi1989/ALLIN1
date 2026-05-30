@@ -10,6 +10,14 @@ declare module 'axios' {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
+// When the backend has login disabled (AUTH_DISABLED), the 401 interceptor must
+// not bounce the user to the (skipped) login page. AuthProvider sets this once it
+// has read GET /api/auth/config, so the flag stays in sync with the backend.
+let authDisabled = false
+export function setAuthDisabled(value: boolean) {
+  authDisabled = value
+}
+
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 60000,
@@ -42,7 +50,7 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalConfig = error.config as InternalAxiosRequestConfig | undefined
 
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
+    if (error.response?.status === 401 && typeof window !== 'undefined' && !authDisabled) {
       localStorage.removeItem('token')
       // Avoid redirect loops if we are already on the login page.
       if (!window.location.pathname.startsWith('/login')) {

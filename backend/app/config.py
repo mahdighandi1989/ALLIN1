@@ -121,9 +121,18 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = Field(default=30, ge=10, le=300)
     METRICS_ENABLED: bool = Field(default=True)
 
-    # NOTE: The legacy AUTH_DISABLED setting has been removed. Authentication is
-    # always enforced; there is no longer any way to disable it via configuration.
-    # Any AUTH_DISABLED environment variable is ignored (extra="ignore").
+    # ⚠️ TEMPORARY — login/auth toggle.
+    # When True, the login requirement is bypassed everywhere: protected
+    # endpoints accept requests without a JWT and operate as a shared "demo"
+    # user, and the frontend skips the login screen. This was requested to
+    # remove the login "for now". Set AUTH_DISABLED=false to restore mandatory
+    # authentication (no rebuild needed — the frontend adapts at runtime via
+    # GET /api/auth/config). The default here is True; production overrides it
+    # to false in render.yaml.
+    AUTH_DISABLED: bool = Field(
+        default=True,
+        description="TEMPORARY: bypass login/auth when True. Set to false to enforce auth.",
+    )
 
     class Config:
         env_file = ".env"
@@ -281,13 +290,13 @@ def validate_environment_security(settings: Settings) -> List[str]:
         if settings.DOCS_URL or settings.REDOC_URL:
             warnings.append("API documentation endpoints should be disabled in production")
 
-    # AUTH_DISABLED has been removed entirely — authentication is always enforced.
-    # If a deprecated AUTH_DISABLED env var is still set, surface a warning so
-    # operators remove it from their configuration.
-    if os.getenv("AUTH_DISABLED"):
+    # TEMPORARY: AUTH_DISABLED bypasses the login requirement. Surface it loudly
+    # so it is never forgotten — and especially never left on in production.
+    if settings.AUTH_DISABLED:
         warnings.append(
-            "AUTH_DISABLED is set but has been removed and is now ignored — "
-            "authentication is always enforced. Remove it from your environment."
+            "AUTH_DISABLED is ON — login/authentication is BYPASSED and every "
+            "request runs as the shared 'demo' user. This is intended only as a "
+            "temporary convenience; set AUTH_DISABLED=false before any real use."
         )
 
     return warnings
@@ -296,19 +305,17 @@ def validate_environment_security(settings: Settings) -> List[str]:
 def enforce_security_on_startup() -> None:
     """Run security validations at application startup.
 
-    Logs all security warnings and, as defense-in-depth, hard-fails in
-    production if the removed AUTH_DISABLED flag is still set to a truthy value
-    in the environment (so a stale insecure config cannot silently linger).
+    Logs all security warnings. AUTH_DISABLED is a supported (but strongly
+    discouraged) temporary toggle, so it is surfaced as a prominent warning here
+    rather than hard-failing — especially loud when left on in production.
     """
     for message in validate_environment_security(settings):
         logger.warning("SECURITY: %s", message)
 
-    auth_disabled_env = os.getenv("AUTH_DISABLED", "").strip().lower()
-    if auth_disabled_env in {"1", "true", "yes", "on"} and settings.is_production():
-        raise RuntimeError(
-            "AUTH_DISABLED is set in a production environment. This flag has been "
-            "removed and authentication can no longer be disabled. Remove "
-            "AUTH_DISABLED from your environment to start the service."
+    if settings.AUTH_DISABLED and settings.is_production():
+        logger.error(
+            "SECURITY: AUTH_DISABLED is ON in a PRODUCTION environment — the login "
+            "requirement is bypassed for ALL requests. Set AUTH_DISABLED=false."
         )
 
 

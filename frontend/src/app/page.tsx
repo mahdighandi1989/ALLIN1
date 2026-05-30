@@ -2,18 +2,24 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/auth'
 
 export default function HomePage() {
   const router = useRouter()
+  const { loading, user, authDisabled } = useAuth()
 
   useEffect(() => {
-    // Authentication is always enforced: send signed-in users to the dashboard
-    // and everyone else to the login page. router.push never rejects, so there
-    // is no error path to handle here.
+    if (loading) return
+    // When login is disabled, or the user is already authenticated, go to the
+    // dashboard; otherwise show the login screen.
     const token =
       typeof window !== 'undefined' ? localStorage.getItem('token') : null
-    router.replace(token ? '/dashboard' : '/login')
-  }, [router])
+    if (authDisabled || user || token) {
+      router.replace('/dashboard')
+    } else {
+      router.replace('/login')
+    }
+  }, [loading, user, authDisabled, router])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">

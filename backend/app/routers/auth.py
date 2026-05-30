@@ -159,6 +159,13 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user using unified token verification."""
+    # TEMPORARY: when AUTH_DISABLED is on, bypass auth and use a shared demo user
+    # (login removed for now). Set AUTH_DISABLED=false to restore enforcement.
+    if getattr(settings, "AUTH_DISABLED", False):
+        from ..utils.security import _get_or_create_demo_user
+
+        return await _get_or_create_demo_user(db)
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -211,6 +218,17 @@ async def get_current_active_user(
 
 
 # Routes
+@router.get("/config")
+async def auth_config():
+    """Public: lets the frontend discover whether login is currently required.
+
+    Returns ``{"auth_disabled": bool}``. When True the frontend skips the login
+    screen and runs as the shared demo user. No authentication is required to
+    read this so the SPA can decide its flow before any token exists.
+    """
+    return {"auth_disabled": bool(getattr(settings, "AUTH_DISABLED", False))}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     """Register a new user"""

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -12,7 +13,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loginAttempts, setLoginAttempts] = useState(0)
-  const { login } = useAuth()
+  const { login, authDisabled } = useAuth()
+  const router = useRouter()
+
+  // Login is currently disabled — there is nothing to sign in to, go to the app.
+  useEffect(() => {
+    if (authDisabled) router.replace('/dashboard')
+  }, [authDisabled, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

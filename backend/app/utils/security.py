@@ -273,6 +273,31 @@ def verify_access_token(token: str) -> dict:
         )
 
 
+async def _get_or_create_demo_user(db: AsyncSession) -> "User":
+    """Return a shared demo user used when AUTH_DISABLED is on (login removed).
+
+    TEMPORARY: only reachable while ``settings.AUTH_DISABLED`` is True. Restores
+    to full enforcement by setting AUTH_DISABLED=false.
+    """
+    from app.models.user import User
+
+    result = await db.execute(select(User).where(User.username == "demo"))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(
+            username="demo",
+            email="demo@example.com",
+            hashed_password=hash_password("demo"),
+            full_name="Demo User",
+            is_active=True,
+            is_admin=True,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    return user
+
+
 async def get_current_user(
     db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> "User":
@@ -283,8 +308,12 @@ async def get_current_user(
     # Local import to break the circular dependency.
     from app.models.user import User
 
-    # Authentication is ALWAYS enforced. There is intentionally no
-    # "auth disabled" bypass — a valid JWT is required for every request.
+    # TEMPORARY: when AUTH_DISABLED is on, the login requirement is bypassed and a
+    # shared demo user is returned so the app is usable without authentication.
+    # Set AUTH_DISABLED=false to restore mandatory JWT authentication.
+    if getattr(settings, "AUTH_DISABLED", False):
+        return await _get_or_create_demo_user(db)
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -316,6 +345,10 @@ async def get_optional_current_user(
     """
     # Local import to break the circular dependency.
     from app.models.user import User
+
+    # TEMPORARY: AUTH_DISABLED bypass (see get_current_user).
+    if getattr(settings, "AUTH_DISABLED", False):
+        return await _get_or_create_demo_user(db)
 
     # Authentication is ALWAYS enforced — there is no "auth disabled" bypass.
     # This dependency only differs from get_current_user by returning None

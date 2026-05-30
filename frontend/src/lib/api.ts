@@ -48,6 +48,12 @@ function toPaginated<T>(
 // Auth
 // ---------------------------------------------------------------------------
 export const authApi = {
+  /** Public: whether the backend currently has login/auth disabled. */
+  async config(): Promise<{ auth_disabled: boolean }> {
+    const { data } = await api.get<{ auth_disabled: boolean }>('/api/auth/config')
+    return data
+  },
+
   /** OAuth2 password-flow login (form-encoded), returns token + user. */
   async login(username: string, password: string): Promise<LoginResponse> {
     const body = new URLSearchParams()
