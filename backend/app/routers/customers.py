@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import and_, or_, select, func
+from sqlalchemy import and_, or_, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
@@ -98,6 +99,33 @@ async def list_customers(
     return CustomerListResponse(
         items=customers, total=total, page=page, page_size=page_size
     )
+
+
+class BulkIds(BaseModel):
+    ids: List[str] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/bulk/delete")
+async def bulk_delete_customers(
+    payload: BulkIds,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Soft-delete many customers at once. Returns how many were affected."""
+    result = await db.execute(
+        update(Customer)
+        .where(Customer.id.in_(payload.ids), Customer.is_deleted == False)
+        .values(is_deleted=True)
+    )
+    await db.commit()
+    affected = result.rowcount or 0
+    await record_audit(
+        action="delete", entity_type="customer", entity_id=f"bulk:{affected}",
+        detail=f"Bulk-deleted {affected} customers ({len(payload.ids)} requested)",
+        user=current_user, request=request, db=db,
+    )
+    return {"deleted": affected}
 
 
 @router.get("/stats/summary")

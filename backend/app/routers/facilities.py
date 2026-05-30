@@ -1,9 +1,10 @@
-from typing import Optional
+from typing import Optional, List
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.customer import Customer
@@ -107,6 +108,33 @@ async def list_facilities(
     return FacilityListResponse(
         items=facilities, total=total, page=page, page_size=page_size
     )
+
+
+class BulkIds(BaseModel):
+    ids: List[str] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/bulk/delete")
+async def bulk_delete_facilities(
+    payload: BulkIds,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Soft-delete many facilities at once."""
+    result = await db.execute(
+        update(Facility)
+        .where(Facility.id.in_(payload.ids), Facility.is_deleted == False)
+        .values(is_deleted=True)
+    )
+    await db.commit()
+    affected = result.rowcount or 0
+    await record_audit(
+        action="delete", entity_type="facility", entity_id=f"bulk:{affected}",
+        detail=f"Bulk-deleted {affected} facilities ({len(payload.ids)} requested)",
+        user=current_user, request=request, db=db,
+    )
+    return {"deleted": affected}
 
 
 @router.get("/search/advanced", response_model=FacilityListResponse)

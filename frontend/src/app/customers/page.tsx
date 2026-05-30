@@ -16,6 +16,7 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [accountType, setAccountType] = useState('')
   const [sortBy, setSortBy] = useState('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -61,6 +62,35 @@ export default function CustomersPage() {
       toast.error('Failed to delete')
     }
   }
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = () => {
+    const ids = (data?.items ?? []).map((c) => c.id)
+    setSelected((prev) => (ids.every((i) => prev.has(i)) ? new Set() : new Set(ids)))
+  }
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} selected customer(s)?`)) return
+    try {
+      const { deleted } = await customersApi.bulkDelete(ids)
+      toast.success(`${deleted} deleted`)
+      setSelected(new Set())
+      loadCustomers()
+    } catch (error) {
+      toast.error(parseApiError(error))
+    }
+  }
+
+  const allChecked = (data?.items?.length ?? 0) > 0 && data!.items.every((c) => selected.has(c.id))
 
   return (
     <Layout>
@@ -111,6 +141,20 @@ export default function CustomersPage() {
         </div>
       </form>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2" data-testid="bulk-bar">
+          <span className="text-sm text-blue-800">{selected.size} selected</span>
+          <div className="flex gap-2">
+            <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 text-sm border rounded-lg hover:bg-white">Clear</button>
+            <button onClick={bulkDelete} data-testid="bulk-delete"
+              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
+              Delete selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden" data-testid="customers-content">
         {loading ? (
@@ -122,6 +166,10 @@ export default function CustomersPage() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                      aria-label="Select all" data-testid="select-all" />
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Account No</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Name</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Type</th>
@@ -132,7 +180,11 @@ export default function CustomersPage() {
               </thead>
               <tbody className="divide-y">
                 {data.items.map((customer) => (
-                  <tr key={customer.id} className="hover:bg-gray-50">
+                  <tr key={customer.id} className={`hover:bg-gray-50 ${selected.has(customer.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selected.has(customer.id)}
+                        onChange={() => toggleOne(customer.id)} aria-label={`Select ${customer.name}`} />
+                    </td>
                     <td className="px-4 py-3 text-sm">{customer.account_no}</td>
                     <td className="px-4 py-3 text-sm font-medium">
                       <button

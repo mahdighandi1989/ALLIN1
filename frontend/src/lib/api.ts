@@ -147,6 +147,11 @@ export const customersApi = {
   async delete(id: string | number): Promise<void> {
     await api.delete(`/api/customers/${id}`)
   },
+
+  async bulkDelete(ids: string[]): Promise<{ deleted: number }> {
+    const { data } = await api.post<{ deleted: number }>('/api/customers/bulk/delete', { ids })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +197,11 @@ export const facilitiesApi = {
 
   async delete(id: string | number): Promise<void> {
     await api.delete(`/api/facilities/${id}`)
+  },
+
+  async bulkDelete(ids: string[]): Promise<{ deleted: number }> {
+    const { data } = await api.post<{ deleted: number }>('/api/facilities/bulk/delete', { ids })
+    return data
   },
 }
 

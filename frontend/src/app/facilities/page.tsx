@@ -26,6 +26,7 @@ export default function FacilitiesPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Facility | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   // Advanced filters.
   const [fType, setFType] = useState('')
   const [fStatus, setFStatus] = useState('')
@@ -79,6 +80,32 @@ export default function FacilitiesPage() {
       toast.error(parseApiError(error))
     }
   }
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  const toggleAll = () => {
+    const ids = (data?.items ?? []).map((f) => f.id)
+    setSelected((prev) => (ids.every((i) => prev.has(i)) ? new Set() : new Set(ids)))
+  }
+  const bulkDelete = async () => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    if (!confirm(`Delete ${ids.length} selected facility(ies)?`)) return
+    try {
+      const { deleted } = await facilitiesApi.bulkDelete(ids)
+      toast.success(`${deleted} deleted`)
+      setSelected(new Set())
+      loadFacilities()
+    } catch (error) {
+      toast.error(parseApiError(error))
+    }
+  }
+  const allChecked = (data?.items?.length ?? 0) > 0 && data!.items.every((f) => selected.has(f.id))
 
   return (
     <Layout>
@@ -136,6 +163,19 @@ export default function FacilitiesPage() {
         </div>
       </form>
 
+      {selected.size > 0 && (
+        <div className="mb-3 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-2" data-testid="bulk-bar">
+          <span className="text-sm text-blue-800">{selected.size} selected</span>
+          <div className="flex gap-2">
+            <button onClick={() => setSelected(new Set())} className="px-3 py-1.5 text-sm border rounded-lg hover:bg-white">Clear</button>
+            <button onClick={bulkDelete} data-testid="bulk-delete"
+              className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
+              Delete selected
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow-sm overflow-hidden" data-testid="facilities-content">
         {loading ? (
           <div className="flex justify-center py-12">
@@ -146,6 +186,10 @@ export default function FacilitiesPage() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                      aria-label="Select all" data-testid="select-all" />
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Name</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Type</th>
                   <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Amount</th>
@@ -156,7 +200,11 @@ export default function FacilitiesPage() {
               </thead>
               <tbody className="divide-y">
                 {data.items.map((facility) => (
-                  <tr key={facility.id} className="hover:bg-gray-50">
+                  <tr key={facility.id} className={`hover:bg-gray-50 ${selected.has(facility.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selected.has(facility.id)}
+                        onChange={() => toggleOne(facility.id)} aria-label={`Select ${facility.name || facility.id}`} />
+                    </td>
                     <td className="px-4 py-3 text-sm font-medium">
                       <button
                         type="button"
