@@ -51,7 +51,7 @@ async def list_customers(
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
 async def get_customer(
-    customer_id: int,
+    customer_id: str,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -99,7 +99,7 @@ async def create_customer(
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
 async def update_customer(
-    customer_id: int,
+    customer_id: str,
     customer_data: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
 ):
@@ -141,7 +141,7 @@ async def update_customer(
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_customer(
-    customer_id: int,
+    customer_id: str,
     db: AsyncSession = Depends(get_db),
 ):
     """

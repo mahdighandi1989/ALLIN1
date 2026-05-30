@@ -1,20 +1,22 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, Enum, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, Date, Enum, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from ..database import Base
+from ..utils.id_generator import generate_facility_id
 
 
 class FacilityType(str, enum.Enum):
     LOAN = "loan"
     OVERDRAFT = "overdraft"
     LC = "lc"
-    GUARANTEE = "guarantee"
+    LG = "lg"
     OTHER = "other"
 
 
 class FacilityStatus(str, enum.Enum):
     ACTIVE = "active"
+    PENDING = "pending"
     INACTIVE = "inactive"
     CLOSED = "closed"
     DEFAULTED = "defaulted"
@@ -24,10 +26,11 @@ class FacilityStatus(str, enum.Enum):
 class Facility(Base):
     __tablename__ = "facilities"
 
-    id = Column(String(33), primary_key=True, index=True)
+    id = Column(String(33), primary_key=True, index=True, default=generate_facility_id)
     customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False)
+    name = Column(String(200))
     amount = Column(Numeric(15, 2), nullable=False)
-    currency = Column(String(3), default="USD")
+    currency = Column(String(3), default="AED")
     facility_type = Column(Enum(FacilityType), default=FacilityType.LOAN)
     start_date = Column(Date)
     end_date = Column(Date)
@@ -35,6 +38,8 @@ class Facility(Base):
     outstanding = Column(Numeric(15, 2), default=0)
     status = Column(Enum(FacilityStatus), default=FacilityStatus.ACTIVE)
     purpose = Column(String(500))
+    tenor_months = Column(String(4))
+    notes = Column(Text)
     interest_rate = Column(Numeric(5, 2))
     collateral_value = Column(Numeric(15, 2))
     risk_rating = Column(String(10))
@@ -52,8 +57,28 @@ class Facility(Base):
     # Relationships
     customer = relationship("Customer", back_populates="facilities")
 
+    def __init__(self, **kwargs):
+        # Construction-time defaults (column ``default=`` only applies on INSERT).
+        kwargs.setdefault("status", FacilityStatus.ACTIVE)
+        kwargs.setdefault("currency", "AED")
+        kwargs.setdefault("outstanding", 0)
+        kwargs.setdefault("is_deleted", False)
+        super().__init__(**kwargs)
+
     def __repr__(self):
-        return f"<Facility(id={self.id}, amount={self.amount})>"
+        return (
+            f"<Facility(id={self.id}, customer_id={self.customer_id}, "
+            f"type={getattr(self.facility_type, 'value', self.facility_type)}, "
+            f"amount={self.amount}, currency={self.currency}, "
+            f"status={getattr(self.status, 'value', self.status)})>"
+        )
+
+    def __str__(self):
+        ftype = getattr(self.facility_type, "value", self.facility_type)
+        base = f"Facility {self.id} - {ftype}"
+        if self.name:
+            base += f" - {self.name}"
+        return base
 
 
 # برای backward compatibility

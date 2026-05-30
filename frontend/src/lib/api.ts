@@ -122,10 +122,7 @@ export const facilitiesApi = {
   async list(filters: FacilityFilters = {}): Promise<FacilityList> {
     const page = filters.page ?? 1
     const pageSize = filters.page_size ?? 20
-    const params: Record<string, any> = {
-      skip: (page - 1) * pageSize,
-      limit: pageSize,
-    }
+    const params: Record<string, any> = { page, page_size: pageSize }
     if (filters.customer_id) params.customer_id = filters.customer_id
     if (filters.facility_type) params.facility_type = filters.facility_type
     if (filters.status) params.status = filters.status

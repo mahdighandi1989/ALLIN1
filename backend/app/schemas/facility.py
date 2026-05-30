@@ -60,5 +60,13 @@ class FacilityResponse(FacilityBase):
     is_deleted: bool = Field(False, description="Soft delete flag")
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
-    
+
     model_config = ConfigDict(from_attributes=True)
+
+
+class FacilityListResponse(BaseModel):
+    """Paginated envelope for facility list/search responses."""
+    items: list[FacilityResponse]
+    total: int
+    page: int
+    page_size: int

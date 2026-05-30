@@ -23,3 +23,9 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True))
+
+    def __init__(self, **kwargs):
+        # Construction-time defaults (column ``default=`` only applies on INSERT).
+        kwargs.setdefault("is_active", True)
+        kwargs.setdefault("is_admin", False)
+        super().__init__(**kwargs)
