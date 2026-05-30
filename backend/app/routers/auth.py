@@ -1,7 +1,8 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import (
     HTTPBearer,
     HTTPAuthorizationCredentials,
@@ -9,7 +10,7 @@ from fastapi.security import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, Field, validator
 
 from ..database import get_db
 from ..models.user import User
@@ -17,21 +18,85 @@ from ..utils.security import (
     hash_password,
     verify_password,
     create_access_token,
-    verify_access_token
+    verify_access_token,
 )
+from ..utils.rate_limit import login_rate_limiter, RateLimitStatus
+from ..utils.token_blacklist import token_blacklist
 from ..config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 # auto_error=False so that a missing/malformed Authorization header results in a
 # consistent 401 Unauthorized (handled below) instead of FastAPI's default 403.
 security = HTTPBearer(auto_error=False)
 
+# Optional Redis client for cross-process brute-force accounting/auditing. It is
+# built lazily and best-effort: when Redis is unavailable the in-memory
+# ``login_rate_limiter`` remains the authoritative rate-limit/lockout backend.
+_redis_client = None
+_redis_initialised = False
+
+
+def _get_redis():
+    """Return a cached Redis client when REDIS_URL is configured, else None."""
+    global _redis_client, _redis_initialised
+    if _redis_initialised:
+        return _redis_client
+    _redis_initialised = True
+    redis_url = getattr(settings, "REDIS_URL", None)
+    if not redis_url:
+        return None
+    try:  # pragma: no cover - only exercised when Redis is installed/available
+        import redis
+
+        _redis_client = redis.Redis.from_url(redis_url)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Login attempt Redis backend unavailable: %s", exc)
+        _redis_client = None
+    return _redis_client
+
+
+def _log_login_attempt_to_redis(key: str, success: bool) -> None:
+    """Best-effort: record every login attempt in Redis for auditing.
+
+    Failed attempts are counted with a one-minute expiry so the data can be used
+    for cross-process rate limiting; successful logins clear the counter.
+    """
+    r = _get_redis()
+    if r is None:
+        return
+    try:  # pragma: no cover - only exercised when Redis is available
+        redis_key = f"login_attempts:{key}"
+        if success:
+            r.set(f"login_last_success:{key}", datetime.utcnow().isoformat())
+            r.delete(redis_key)
+        else:
+            attempts = r.incr(redis_key)
+            r.expire(redis_key, 60)
+            _ = r.get(redis_key)
+            logger.info("Recorded failed login attempt #%s for key", attempts)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to log login attempt to Redis: %s", exc)
+
+
+def _client_key(request: Optional[Request], username: str) -> str:
+    """Build a brute-force tracking key from the username (and client IP)."""
+    username = (username or "").strip().lower()
+    client_host = ""
+    if request is not None and request.client is not None:
+        client_host = request.client.host or ""
+    return f"{username}|{client_host}"
+
 # Schemas
 class UserRegister(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    full_name: str
+    # Explicit length limits + format patterns on every text field guard against
+    # oversized payloads and injection-style input (validated by Pydantic, so
+    # invalid input is rejected with HTTP 422 before any handler logic runs).
+    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
+    email: EmailStr = Field(..., max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str = Field(..., min_length=1, max_length=100)
 
     @validator('username')
     def validate_username(cls, v):
@@ -70,8 +135,8 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 class ChangePassword(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
 
     @validator('new_password')
     def validate_new_password(cls, v):
@@ -84,8 +149,8 @@ class ChangePassword(BaseModel):
         return v
 
 class UpdateProfile(BaseModel):
-    full_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    email: Optional[EmailStr] = Field(default=None, max_length=100)
 
 
 # Dependency to get current user
@@ -189,12 +254,13 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 
     return TokenResponse(
         access_token=access_token,
-        user=UserResponse.from_orm(user),
+        user=UserResponse.model_validate(user),
     )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
@@ -203,12 +269,53 @@ async def login(
     Accepts OAuth2 password-flow form-encoded credentials (``username`` and
     ``password``) to stay consistent with the ``OAuth2PasswordBearer`` scheme and
     the frontend, which posts ``application/x-www-form-urlencoded`` to this route.
+
+    Brute-force protection: failed attempts are throttled (HTTP 429) after
+    ``LOGIN_RATE_LIMIT_PER_MINUTE`` failures per minute and the account is locked
+    (HTTP 423) for ``ACCOUNT_LOCKOUT_MINUTES`` after
+    ``ACCOUNT_LOCKOUT_THRESHOLD`` failures.
     """
+    # Basic input-length validation for the (un-modelled) OAuth2 form fields.
+    if not form_data.username or len(form_data.username) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid username",
+        )
+    if not form_data.password or len(form_data.password) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid password",
+        )
+
+    rate_key = _client_key(request, form_data.username)
+
+    # Enforce rate limiting / account lockout *before* touching the database.
+    rl_status = login_rate_limiter.check(rate_key)
+    if rl_status == RateLimitStatus.LOCKED:
+        _log_login_attempt_to_redis(rate_key, success=False)
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                "Account temporarily locked due to too many failed login "
+                "attempts. Please try again later."
+            ),
+        )
+    if rl_status == RateLimitStatus.RATE_LIMITED:
+        _log_login_attempt_to_redis(rate_key, success=False)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please slow down and try again.",
+            headers={"Retry-After": "60"},
+        )
+
     # Find user by username
     result = await db.execute(select(User).where(User.username == form_data.username.lower()))
     user = result.scalar_one_or_none()
 
     if user is None or not verify_password(form_data.password, user.hashed_password):
+        # Record the failure for brute-force accounting (never log the password).
+        login_rate_limiter.register_failure(rate_key)
+        _log_login_attempt_to_redis(rate_key, success=False)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -220,6 +327,10 @@ async def login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user",
         )
+
+    # Successful login clears the brute-force counter for this key.
+    login_rate_limiter.reset(rate_key)
+    _log_login_attempt_to_redis(rate_key, success=True)
 
     # Update last login
     user.last_login = datetime.utcnow()
@@ -234,14 +345,14 @@ async def login(
 
     return TokenResponse(
         access_token=access_token,
-        user=UserResponse.from_orm(user),
+        user=UserResponse.model_validate(user),
     )
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user profile"""
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 @router.put("/me", response_model=UserResponse)
@@ -273,7 +384,7 @@ async def update_me(
     await db.commit()
     await db.refresh(current_user)
 
-    return UserResponse.from_orm(current_user)
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/change-password")
@@ -298,8 +409,26 @@ async def change_password(
 
 
 @router.post("/logout", response_model=dict)
-async def logout(current_user: User = Depends(get_current_active_user)):
-    """Logout user (client-side token removal)"""
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Logout user by revoking (blacklisting) the presented access token.
+
+    The token's ``jti`` claim is added to the blacklist until it would have
+    naturally expired, so the same token can no longer be used even though its
+    signature remains valid.
+    """
+    if credentials is not None and credentials.credentials:
+        try:
+            payload = verify_access_token(credentials.credentials)
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti:
+                token_blacklist.revoke(jti, expires_at=float(exp) if exp else None)
+        except HTTPException:
+            # Token already invalid/expired — nothing to revoke.
+            pass
     return {"message": "Successfully logged out"}
 
 
@@ -322,7 +451,7 @@ async def refresh_token(
 
     return TokenResponse(
         access_token=access_token,
-        user=UserResponse.from_orm(current_user)
+        user=UserResponse.model_validate(current_user)
     )
 
 

@@ -48,6 +48,20 @@ class Settings(BaseSettings):
     LOCKOUT_DURATION_MINUTES: int = Field(default=15, ge=5, le=60)
     BCRYPT_ROUNDS: int = Field(default=12)
 
+    # Brute-force protection for the login endpoint. After
+    # LOGIN_RATE_LIMIT_PER_MINUTE failed attempts within a rolling minute the
+    # endpoint returns HTTP 429; after ACCOUNT_LOCKOUT_THRESHOLD failed attempts
+    # the account is locked for ACCOUNT_LOCKOUT_MINUTES (HTTP 423).
+    LOGIN_RATE_LIMIT_PER_MINUTE: int = Field(default=5, ge=1, le=100)
+    ACCOUNT_LOCKOUT_THRESHOLD: int = Field(default=10, ge=3, le=100)
+    ACCOUNT_LOCKOUT_MINUTES: int = Field(default=30, ge=1, le=1440)
+
+    # Force HTTPS / HSTS behaviour. Defaults to enabled in production.
+    FORCE_HTTPS: Optional[bool] = Field(
+        default=None,
+        description="Redirect HTTP->HTTPS and emit HSTS. Defaults to True in production.",
+    )
+
     # JWT Claims for token structure consistency
     JWT_ISSUER: str = "allin1-banking-system"
     JWT_AUDIENCE: str = "allin1-api-users"
@@ -218,6 +232,15 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Check if running in development environment"""
         return self.ENVIRONMENT == 'development'
+
+    def should_force_https(self) -> bool:
+        """Whether HTTP should be redirected to HTTPS and HSTS emitted.
+
+        Explicit FORCE_HTTPS wins; otherwise HTTPS is enforced in production.
+        """
+        if self.FORCE_HTTPS is not None:
+            return self.FORCE_HTTPS
+        return self.is_production()
 
     def get_database_config(self) -> dict:
         """Get database configuration dictionary"""

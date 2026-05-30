@@ -13,6 +13,23 @@ from app.models.user import User
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.utils.security import hash_password
+from app.utils.rate_limit import login_rate_limiter
+from app.utils.token_blacklist import token_blacklist
+
+
+@pytest.fixture(autouse=True)
+def _reset_security_state():
+    """Clear brute-force and token-revocation state before/after every test.
+
+    These stores are process-global singletons, so without this isolation a
+    rate-limited account or revoked token from one test would leak into the
+    next.
+    """
+    login_rate_limiter.reset_all()
+    token_blacklist.reset_all()
+    yield
+    login_rate_limiter.reset_all()
+    token_blacklist.reset_all()
 
 
 # Test database URL (in-memory SQLite for testing)

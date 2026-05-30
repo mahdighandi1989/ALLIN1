@@ -9,7 +9,7 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   login: (username: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -55,10 +55,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    setUser(null)
-    router.push('/login')
+  const logout = async () => {
+    // Revoke the token server-side (blacklist) so the session is invalidated on
+    // the backend too, keeping frontend and backend session state in sync. This
+    // is best-effort: even if the request fails we still clear local state.
+    try {
+      await authApi.logout()
+    } catch (error) {
+      console.error('Server logout failed (clearing local session anyway):', error)
+    } finally {
+      localStorage.removeItem('token')
+      setUser(null)
+      router.push('/login')
+    }
   }
 
   return (

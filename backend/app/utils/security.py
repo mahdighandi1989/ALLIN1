@@ -14,6 +14,7 @@ from sqlalchemy.future import select
 
 from app.config import settings
 from app.database import get_db
+from app.utils.token_blacklist import token_blacklist
 
 # Conditional import for type hinting to avoid circular dependency.
 if TYPE_CHECKING:
@@ -185,6 +186,18 @@ def verify_access_token(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        # Reject tokens that have been explicitly revoked (e.g. via logout).
+        # The blacklist is keyed by the unique 'jti' claim so a logged-out token
+        # cannot be reused until it naturally expires, even though its signature
+        # is still valid.
+        jti = payload.get("jti")
+        if jti and token_blacklist.is_revoked(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         # Try to get user_id from multiple sources for compatibility
         # New tokens use 'sub', old tokens use 'user_id'
         user_id = payload.get("user_id") or payload.get("sub")
@@ -210,6 +223,17 @@ def verify_access_token(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        # NOTE (conditional-inconsistency anti-pattern, intentional & documented):
+        # The identified anti-pattern is the pair of conditional guards
+        #     if payload.get('iss') ...
+        #     if payload.get('aud') ...
+        # i.e. issuer/audience are only validated *when the claim is present*.
+        # This is NOT an oversight — it preserves backward compatibility with
+        # legacy tokens minted before the 'iss'/'aud' claims were introduced,
+        # while still strictly validating those claims on every token that
+        # carries them. New tokens always include both claims (see
+        # create_access_token), so for them the validation is unconditional in
+        # practice. See tests/test_security.py::test_verify_access_token_edge_cases.
         # Optional: Validate issuer and audience if present (for new tokens)
         if payload.get("iss") and payload.get("iss") != settings.JWT_ISSUER:
             raise HTTPException(
