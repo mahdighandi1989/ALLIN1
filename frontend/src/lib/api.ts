@@ -9,6 +9,7 @@ import type {
   FacilityList,
   FacilityForm,
   FacilityFilters,
+  FacilityDetail,
   DashboardStats,
   OfferLetter,
   OfferLetterDetail,
@@ -150,6 +151,11 @@ export const facilitiesApi = {
 
   async get(id: string | number): Promise<Facility> {
     const { data } = await api.get<Facility>(`/api/facilities/${id}`)
+    return data
+  },
+
+  async detail(id: string | number): Promise<FacilityDetail> {
+    const { data } = await api.get<FacilityDetail>(`/api/facilities/${id}/detail`)
     return data
   },
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { facilitiesApi, customersApi, parseApiError } from '@/lib/api'
 import { Facility, FacilityList, FacilityForm as FacilityFormData, Customer } from '@/types'
@@ -16,6 +17,7 @@ const FACILITY_TYPES: FacilityFormData['facility_type'][] = [
 ]
 
 export default function FacilitiesPage() {
+  const router = useRouter()
   const [data, setData] = useState<FacilityList | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -113,7 +115,16 @@ export default function FacilitiesPage() {
               <tbody className="divide-y">
                 {data.items.map((facility) => (
                   <tr key={facility.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium">{facility.name || '-'}</td>
+                    <td className="px-4 py-3 text-sm font-medium">
+                      <button
+                        type="button"
+                        data-testid={`view-facility-${facility.id}`}
+                        onClick={() => router.push(`/facility-detail?id=${facility.id}`)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        {facility.name || facility.facility_type.toUpperCase()}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-sm uppercase">{facility.facility_type}</td>
                     <td className="px-4 py-3 text-sm text-right">
                       {facility.currency} {Number(facility.amount).toLocaleString()}

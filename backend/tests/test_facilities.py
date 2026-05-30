@@ -351,3 +351,17 @@ class TestFacilityEndpoints:
         # Regular user should be able to read facilities
         response = await client.get("/api/facilities/", headers=auth_headers)
         assert response.status_code == 200
+
+    async def test_facility_detail_includes_customer_name(
+        self, client: AsyncClient, auth_headers: dict, test_facility: Facility, test_customer
+    ):
+        """/{id}/detail returns the facility plus its customer name."""
+        resp = await client.get(f"/api/facilities/{test_facility.id}/detail", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["facility"]["id"] == test_facility.id
+        assert body["customer_name"] == test_customer.name
+
+    async def test_facility_detail_not_found(self, client: AsyncClient, auth_headers: dict):
+        resp = await client.get("/api/facilities/NOPE/detail", headers=auth_headers)
+        assert resp.status_code == 404

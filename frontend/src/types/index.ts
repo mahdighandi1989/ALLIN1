@@ -107,6 +107,12 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+export interface FacilityDetail {
+  facility: Facility
+  customer_name: string | null
+  customer_account_no: string | null
+}
+
 // Customer detail + reporting types
 export interface CustomerDetailSummary {
   total_facilities: number

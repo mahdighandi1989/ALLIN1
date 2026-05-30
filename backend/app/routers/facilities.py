@@ -136,6 +136,24 @@ async def advanced_search_facilities(
     )
 
 
+@router.get("/{facility_id}/detail")
+async def get_facility_detail(facility_id: str, db: AsyncSession = Depends(get_db)):
+    """Full facility profile: the facility plus its customer's name/account."""
+    facility = await _get_active_facility(facility_id, db)
+    cust = (
+        await db.execute(
+            select(Customer.name, Customer.account_no).where(
+                Customer.id == facility.customer_id
+            )
+        )
+    ).first()
+    return {
+        "facility": FacilityResponse.model_validate(facility),
+        "customer_name": cust[0] if cust else None,
+        "customer_account_no": cust[1] if cust else None,
+    }
+
+
 @router.get("/{facility_id}", response_model=FacilityResponse)
 async def get_facility(facility_id: str, db: AsyncSession = Depends(get_db)):
     """Get a specific facility by ID."""
