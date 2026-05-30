@@ -370,6 +370,8 @@ export interface FacilityFilters {
   facility_type?: string
   status?: string
   search?: string
+  amount_min?: number
+  amount_max?: number
   page?: number
   page_size?: number
   sort_by?: string

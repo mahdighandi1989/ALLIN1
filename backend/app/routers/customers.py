@@ -38,6 +38,16 @@ async def _get_active_customer(customer_id: str, db: AsyncSession) -> Customer:
     return customer
 
 
+# Columns clients may sort by (maps API name -> model column).
+_CUSTOMER_SORT = {
+    "name": Customer.name,
+    "account_no": Customer.account_no,
+    "created_at": Customer.created_at,
+    "status": Customer.status,
+    "account_type": Customer.account_type,
+}
+
+
 @router.get("/", response_model=CustomerListResponse)
 async def list_customers(
     db: AsyncSession = Depends(get_db),
@@ -47,8 +57,10 @@ async def list_customers(
     account_type: Optional[str] = Query(None, description="Filter by account type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     branch: Optional[str] = Query(None, description="Filter by branch"),
+    sort_by: str = Query("created_at", description="Sort column"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="asc or desc"),
 ):
-    """Paginated, filterable list of customers.
+    """Paginated, filterable, sortable list of customers.
 
     ``search`` matches name, account number or email case-insensitively. The
     term is always parameterised (never string-formatted into SQL), so special
@@ -70,15 +82,16 @@ async def list_customers(
     if status:
         base = base.where(Customer.status == status)
     if branch:
-        base = base.where(Customer.branch == branch)
+        base = base.where(Customer.branch.ilike(f"%{branch}%"))
 
     total_result = await db.execute(select(func.count()).select_from(base.subquery()))
     total = total_result.scalar() or 0
 
+    sort_col = _CUSTOMER_SORT.get(sort_by, Customer.created_at)
+    sort_col = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
     result = await db.execute(
-        base.order_by(Customer.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        base.order_by(sort_col).offset((page - 1) * page_size).limit(page_size)
     )
     customers = result.scalars().all()
 

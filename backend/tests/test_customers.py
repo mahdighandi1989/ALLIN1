@@ -393,3 +393,18 @@ class TestCustomerEndpoints:
         )
         assert response.status_code == 200
         assert response.json()["total"] == 1
+
+    async def test_sort_by_name(self, client: AsyncClient, auth_headers: dict, db_session: AsyncSession):
+        """Customers can be sorted by name ascending/descending."""
+        for nm in ["Zeta Co", "Alpha Co", "Mid Co"]:
+            db_session.add(Customer(account_no=f"S-{nm[:3]}", name=nm,
+                                    account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE))
+        await db_session.commit()
+
+        asc = await client.get("/api/customers/?sort_by=name&sort_order=asc&page_size=100", headers=auth_headers)
+        names = [c["name"] for c in asc.json()["items"]]
+        assert names == sorted(names)
+
+        desc = await client.get("/api/customers/?sort_by=name&sort_order=desc&page_size=100", headers=auth_headers)
+        names_d = [c["name"] for c in desc.json()["items"]]
+        assert names_d == sorted(names_d, reverse=True)

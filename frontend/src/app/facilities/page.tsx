@@ -16,6 +16,8 @@ const FACILITY_TYPES: FacilityFormData['facility_type'][] = [
   'other',
 ]
 
+const FACILITY_STATUSES = ['active', 'pending', 'inactive', 'closed', 'defaulted', 'written_off']
+
 export default function FacilitiesPage() {
   const router = useRouter()
   const [data, setData] = useState<FacilityList | null>(null)
@@ -24,11 +26,18 @@ export default function FacilitiesPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Facility | null>(null)
+  // Advanced filters.
+  const [fType, setFType] = useState('')
+  const [fStatus, setFStatus] = useState('')
+  const [amountMin, setAmountMin] = useState('')
+  const [amountMax, setAmountMax] = useState('')
+  const [sortBy, setSortBy] = useState('created_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   useEffect(() => {
     loadFacilities()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [page, sortBy, sortOrder])
 
   const loadFacilities = async () => {
     try {
@@ -37,6 +46,12 @@ export default function FacilitiesPage() {
         page,
         page_size: 20,
         search: search || undefined,
+        facility_type: fType || undefined,
+        status: fStatus || undefined,
+        amount_min: amountMin ? parseFloat(amountMin) : undefined,
+        amount_max: amountMax ? parseFloat(amountMax) : undefined,
+        sort_by: sortBy,
+        sort_order: sortOrder,
       })
       setData(result)
     } catch (error) {
@@ -81,17 +96,44 @@ export default function FacilitiesPage() {
         </button>
       </div>
 
-      <form onSubmit={handleSearch} className="mb-6 flex gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by facility name..."
-          className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
-          <Search size={18} />
-        </button>
+      <form onSubmit={handleSearch} className="mb-6 space-y-2" data-testid="facilities-filters">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by facility name..."
+            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
+            <Search size={16} /> Filter
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <select value={fType} onChange={(e) => setFType(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="">All types</option>
+            {FACILITY_TYPES.map((t) => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+          </select>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="">All statuses</option>
+            {FACILITY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input type="number" min="0" value={amountMin} onChange={(e) => setAmountMin(e.target.value)}
+            placeholder="Min amount" className="w-32 px-3 py-2 border rounded-lg" />
+          <input type="number" min="0" value={amountMax} onChange={(e) => setAmountMax(e.target.value)}
+            placeholder="Max amount" className="w-32 px-3 py-2 border rounded-lg" />
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="created_at">Sort: Created</option>
+            <option value="amount">Sort: Amount</option>
+            <option value="name">Sort: Name</option>
+            <option value="expiry_date">Sort: Expiry</option>
+            <option value="status">Sort: Status</option>
+          </select>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')} className="px-3 py-2 border rounded-lg">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
       </form>
 
       <div className="bg-white rounded-lg shadow-sm overflow-hidden" data-testid="facilities-content">

@@ -52,6 +52,17 @@ async def _ensure_customer_exists(customer_id: str, db: AsyncSession) -> None:
         )
 
 
+_FACILITY_SORT = {
+    "name": Facility.name,
+    "amount": Facility.amount,
+    "outstanding": Facility.outstanding,
+    "created_at": Facility.created_at,
+    "expiry_date": Facility.expiry_date,
+    "status": Facility.status,
+    "facility_type": Facility.facility_type,
+}
+
+
 @router.get("/", response_model=FacilityListResponse)
 async def list_facilities(
     db: AsyncSession = Depends(get_db),
@@ -61,8 +72,12 @@ async def list_facilities(
     facility_type: Optional[FacilityType] = Query(None, description="Filter by facility type"),
     status: Optional[FacilityStatus] = Query(None, description="Filter by facility status"),
     search: Optional[str] = Query(None, description="Search term for facility name"),
+    amount_min: Optional[float] = Query(None, ge=0, description="Minimum amount"),
+    amount_max: Optional[float] = Query(None, ge=0, description="Maximum amount"),
+    sort_by: str = Query("created_at", description="Sort column"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="asc or desc"),
 ):
-    """Retrieve a paginated list of facilities with optional filtering."""
+    """Retrieve a paginated, filterable, sortable list of facilities."""
     base = select(Facility).where(Facility.is_deleted == False)
 
     if customer_id:
@@ -73,14 +88,19 @@ async def list_facilities(
         base = base.where(Facility.status == status)
     if search:
         base = base.where(Facility.name.ilike(f"%{search}%"))
+    if amount_min is not None:
+        base = base.where(Facility.amount >= amount_min)
+    if amount_max is not None:
+        base = base.where(Facility.amount <= amount_max)
 
     total_result = await db.execute(select(func.count()).select_from(base.subquery()))
     total = total_result.scalar() or 0
 
+    sort_col = _FACILITY_SORT.get(sort_by, Facility.created_at)
+    sort_col = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
     result = await db.execute(
-        base.order_by(Facility.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        base.order_by(sort_col).offset((page - 1) * page_size).limit(page_size)
     )
     facilities = result.scalars().all()
 

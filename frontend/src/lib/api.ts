@@ -116,6 +116,8 @@ export const customersApi = {
     if (filters.account_type) params.account_type = filters.account_type
     if (filters.status) params.status = filters.status
     if (filters.branch) params.branch = filters.branch
+    if (filters.sort_by) params.sort_by = filters.sort_by
+    if (filters.sort_order) params.sort_order = filters.sort_order
 
     const { data } = await api.get('/api/customers/', { params })
     return toPaginated<Customer>(data, page, pageSize)
@@ -158,6 +160,10 @@ export const facilitiesApi = {
     if (filters.facility_type) params.facility_type = filters.facility_type
     if (filters.status) params.status = filters.status
     if (filters.search) params.search = filters.search
+    if (filters.amount_min != null) params.amount_min = filters.amount_min
+    if (filters.amount_max != null) params.amount_max = filters.amount_max
+    if (filters.sort_by) params.sort_by = filters.sort_by
+    if (filters.sort_order) params.sort_order = filters.sort_order
 
     const { data } = await api.get('/api/facilities/', { params })
     return toPaginated<Facility>(data, page, pageSize)

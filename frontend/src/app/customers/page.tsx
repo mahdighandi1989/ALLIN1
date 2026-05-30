@@ -16,15 +16,25 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [accountType, setAccountType] = useState('')
+  const [sortBy, setSortBy] = useState('created_at')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   useEffect(() => {
     loadCustomers()
-  }, [page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, sortBy, sortOrder])
 
   const loadCustomers = async () => {
     try {
       setLoading(true)
-      const result = await customersApi.list({ page, page_size: 20, search: search || undefined })
+      const result = await customersApi.list({
+        page, page_size: 20,
+        search: search || undefined,
+        account_type: accountType || undefined,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      })
       setData(result)
     } catch (error) {
       console.error('Failed to load customers:', error)
@@ -68,17 +78,37 @@ export default function CustomersPage() {
       </div>
 
       {/* Search */}
-      <form onSubmit={handleSearch} className="mb-6 flex gap-2">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or account..."
-          className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
-          <Search size={18} />
-        </button>
+      <form onSubmit={handleSearch} className="mb-6 space-y-2" data-testid="customers-filters">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, account or email..."
+            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1">
+            <Search size={16} /> Filter
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <select value={accountType} onChange={(e) => setAccountType(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="">All types</option>
+            <option value="retail">Retail</option>
+            <option value="corporate">Corporate</option>
+            <option value="sme">SME</option>
+          </select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="created_at">Sort: Created</option>
+            <option value="name">Sort: Name</option>
+            <option value="account_no">Sort: Account</option>
+            <option value="status">Sort: Status</option>
+          </select>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')} className="px-3 py-2 border rounded-lg">
+            <option value="desc">Desc</option>
+            <option value="asc">Asc</option>
+          </select>
+        </div>
       </form>
 
       {/* Table */}

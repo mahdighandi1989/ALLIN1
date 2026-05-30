@@ -365,3 +365,30 @@ class TestFacilityEndpoints:
     async def test_facility_detail_not_found(self, client: AsyncClient, auth_headers: dict):
         resp = await client.get("/api/facilities/NOPE/detail", headers=auth_headers)
         assert resp.status_code == 404
+
+    async def test_amount_range_filter_and_sort(
+        self, client: AsyncClient, auth_headers: dict, test_customer: Customer, db_session: AsyncSession
+    ):
+        """Facilities can be filtered by amount range and sorted by amount."""
+        for amt in [5000, 50000, 500000]:
+            db_session.add(Facility(
+                customer_id=test_customer.id, facility_type=FacilityType.LOAN,
+                amount=amt, currency="AED", status=FacilityStatus.ACTIVE,
+            ))
+        await db_session.commit()
+
+        # range 10k..100k -> only the 50k one
+        r = await client.get(
+            "/api/facilities/?amount_min=10000&amount_max=100000", headers=auth_headers
+        )
+        assert r.status_code == 200
+        amounts = [float(f["amount"]) for f in r.json()["items"]]
+        assert all(10000 <= a <= 100000 for a in amounts)
+        assert 50000 in amounts and 5000 not in amounts and 500000 not in amounts
+
+        # sort by amount asc
+        s = await client.get(
+            "/api/facilities/?sort_by=amount&sort_order=asc&page_size=100", headers=auth_headers
+        )
+        sorted_amounts = [float(f["amount"]) for f in s.json()["items"]]
+        assert sorted_amounts == sorted(sorted_amounts)
