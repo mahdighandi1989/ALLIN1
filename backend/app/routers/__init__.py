@@ -8,6 +8,7 @@ from app.routers.reports import router as reports_router
 from app.routers.users import router as users_router
 from app.routers.trash import router as trash_router
 from app.routers.audit import router as audit_router
+from app.routers.notifications import router as notifications_router
 
 __all__ = [
     "auth_router",
@@ -19,4 +20,5 @@ __all__ = [
     "users_router",
     "trash_router",
     "audit_router",
+    "notifications_router",
 ]

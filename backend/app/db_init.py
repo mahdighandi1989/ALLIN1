@@ -349,8 +349,65 @@ async def seed_admin_user() -> None:
         logger.error("Admin user seeding skipped: %s", exc)
 
 
+async def refresh_expiry_notifications() -> None:
+    """Create a broadcast notification summarising facilities expiring soon.
+
+    Idempotent per day: skips if an 'expiry' broadcast was already created today.
+    """
+    try:
+        from datetime import date, timedelta, datetime
+        from app.models.facility import Facility
+        from app.models.notification import Notification
+
+        async with AsyncSessionLocal() as session:
+            today = date.today()
+            horizon = today + timedelta(days=30)
+            expiry = sa.func.coalesce(Facility.expiry_date, Facility.end_date)
+            count = (
+                await session.execute(
+                    sa.select(sa.func.count(Facility.id)).where(
+                        Facility.is_deleted == False,
+                        expiry >= today,
+                        expiry <= horizon,
+                    )
+                )
+            ).scalar() or 0
+            if count == 0:
+                return
+
+            # Skip if we already posted an expiry broadcast today.
+            existing = (
+                await session.execute(
+                    sa.select(sa.func.count(Notification.id)).where(
+                        Notification.category == "facility",
+                        Notification.user_id.is_(None),
+                        Notification.created_at >= datetime.combine(today, datetime.min.time()),
+                    )
+                )
+            ).scalar() or 0
+            if existing:
+                return
+
+            session.add(
+                Notification(
+                    user_id=None,
+                    level="warning",
+                    title=f"{count} facilities expiring within 30 days",
+                    message="Review the dashboard watch-list for upcoming expiries.",
+                    link="/dashboard",
+                    category="facility",
+                    is_read=False,
+                )
+            )
+            await session.commit()
+            logger.info("Created expiry notification for %s facilities", count)
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.error("Expiry notification refresh skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
     await seed_sample_data()
     await seed_admin_user()
+    await refresh_expiry_notifications()

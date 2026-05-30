@@ -23,6 +23,7 @@ import type {
   AdminUserForm,
   TrashList,
   AuditList,
+  NotificationList,
 } from '@/types'
 
 export { api }
@@ -282,6 +283,28 @@ export const usersApi = {
   },
   async deactivate(id: string): Promise<void> {
     await api.delete(`/api/users/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// In-app notifications
+// ---------------------------------------------------------------------------
+export const notificationsApi = {
+  async list(unreadOnly = false): Promise<NotificationList> {
+    const { data } = await api.get<NotificationList>('/api/notifications/', {
+      params: { unread_only: unreadOnly, limit: 50 },
+    })
+    return data
+  },
+  async unreadCount(): Promise<number> {
+    const { data } = await api.get<{ unread: number }>('/api/notifications/unread-count')
+    return data.unread
+  },
+  async markRead(id: string): Promise<void> {
+    await api.post(`/api/notifications/${id}/read`)
+  },
+  async markAllRead(): Promise<void> {
+    await api.post('/api/notifications/read-all')
   },
 }
 

@@ -4,6 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
+import NotificationBell from '@/components/NotificationBell'
 import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -55,6 +56,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <Link
               href="/profile"
               className="text-sm text-gray-600 hover:text-blue-600"

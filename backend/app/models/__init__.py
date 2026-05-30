@@ -11,6 +11,7 @@ from app.models.offer_letter import (
     RepaymentType,
 )
 from app.models.audit_log import AuditLog
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "OfferLetter", "OfferAttachment", "OfferCalculation",
     "OfferStatus", "CollateralType", "RepaymentType",
     "AuditLog",
+    "Notification",
 ]

@@ -107,6 +107,24 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// In-app notifications
+export interface AppNotification {
+  id: string
+  level: string
+  title: string
+  message: string | null
+  link: string | null
+  category: string | null
+  is_read: boolean
+  created_at: string | null
+}
+
+export interface NotificationList {
+  items: AppNotification[]
+  total: number
+  unread: number
+}
+
 // Audit log
 export interface AuditEntry {
   id: string

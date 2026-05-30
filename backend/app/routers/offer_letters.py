@@ -179,9 +179,15 @@ async def create_offer(
     await db.commit()
     await db.refresh(offer)
     from app.services.audit import record_audit
+    from app.services.notify_inapp import create_notification
     await record_audit(
         action="create", entity_type="offer_letter", entity_id=offer.id,
         detail=f"Created offer letter {offer.id}", user=current_user, request=request, db=db,
+    )
+    await create_notification(
+        title="New offer letter created",
+        message=f"Offer {offer.id} for {offer.currency} {float(offer.principal_amount):,.0f}",
+        level="success", link="/offer-letters", category="offer_letter", db=db,
     )
     return offer
 
