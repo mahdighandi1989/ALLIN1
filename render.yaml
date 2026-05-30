@@ -53,11 +53,11 @@ services:
         value: ""
       - key: ENVIRONMENT
         value: "production"
-      # Production keeps authentication ON. The app currently ships with
-      # AUTH_DISABLED defaulting to true (login removed for now); this explicit
-      # override ensures real deployments still require login.
+      # ⚠️ TEMPORARY: login/auth is currently DISABLED on this deployment as
+      # requested ("remove login for now"). Every request runs as a shared demo
+      # user. Set this to "false" (and redeploy) to restore mandatory login.
       - key: AUTH_DISABLED
-        value: "false"
+        value: "true"
     healthCheckPath: /health
     autoDeploy: true
 
