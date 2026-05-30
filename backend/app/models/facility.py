@@ -42,7 +42,10 @@ class Facility(Base):
     notes = Column(Text)
     interest_rate = Column(Numeric(5, 2))
     collateral_value = Column(Numeric(15, 2))
-    risk_rating = Column(String(10))
+    # Validated: risk_rating must always be present (was an unconstrained,
+    # nullable String — an under-validation anti-pattern). It now defaults to a
+    # sane 'low' and is NOT NULL. See tests/backend/test_facility.py.
+    risk_rating = Column(String(10), nullable=False, default='low')
     relationship_manager = Column(String(255))
     branch = Column(String(100))
     approved_by = Column(String(255))

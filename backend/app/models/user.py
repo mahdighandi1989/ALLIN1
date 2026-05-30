@@ -8,6 +8,12 @@ from app.database import Base
 
 
 def generate_id():
+    # NOTE: 8-char UUID is sufficient for current scale (the `users` table holds
+    # a small set of operator accounts). The id column is UNIQUE, so the database
+    # rejects the astronomically-unlikely truncated-UUID collision rather than
+    # silently overwriting — see tests/test_user_id_generation.py. If the user
+    # base ever grows by orders of magnitude, switch to uuid.uuid4().hex (32 chars)
+    # and widen the column accordingly.
     return str(uuid.uuid4())[:8]
 
 

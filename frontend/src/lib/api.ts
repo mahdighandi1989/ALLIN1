@@ -171,6 +171,12 @@ export const statsApi = {
  * without ever surfacing raw internals to the user.
  */
 export function parseApiError(error: any): string {
+  // Robust 'reason' validation: the old facilities code did
+  // `if (reason instanceof Response)` and assumed a Response/`message` shape,
+  // which broke for axios errors, plain objects and strings. This helper instead
+  // defensively reads the well-known fields and always returns a safe string, so
+  // any rejection reason (Response, AxiosError, object, string, undefined) is
+  // handled without leaking internals.
   const detail = error?.response?.data?.detail
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {

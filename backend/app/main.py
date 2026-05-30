@@ -194,11 +194,38 @@ async def health_check():
 # The static directory should contain the frontend build files.
 static_dir = "static"
 
-# Mount the static directory to serve the frontend.
-# This must be the last thing added to the app so that it doesn't
-# override the API routes.
-if os.path.exists(static_dir):
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static_frontend")
-    logger.info(f"Serving frontend from directory: {static_dir}")
-else:
-    logger.warning(f"Static directory '{static_dir}' not found. Frontend will not be served.")
+
+def mount_static_frontend(application: FastAPI, directory: str) -> bool:
+    """Mount the built frontend, with explicit (not silent) failure feedback.
+
+    Previously a missing static directory only produced a debug-level warning and
+    the app carried on as if nothing were wrong — a broken feedback loop where a
+    real deployment problem (frontend not built/copied) stayed invisible until a
+    user hit a blank site. Now the severity is tied to the environment: a missing
+    directory in production is logged at ERROR level so it surfaces in alerting,
+    while in development it remains an informational warning (the API still runs).
+
+    Returns True if the directory was mounted, False otherwise. Must be called
+    last so the catch-all mount does not shadow the API routes.
+    """
+    if os.path.exists(directory):
+        application.mount(
+            "/", StaticFiles(directory=directory, html=True), name="static_frontend"
+        )
+        logger.info("Serving frontend from directory: %s", directory)
+        return True
+
+    msg = (
+        "Static directory '%s' not found. Frontend will not be served. "
+        "Run the frontend build and ensure it is copied into the backend."
+    )
+    if settings.is_production():
+        # FIXME: Broken feedback loop for static dir — in production a missing
+        # build is a deploy failure, so escalate it instead of swallowing it.
+        logging.error(msg, directory)
+    else:
+        logger.warning(msg, directory)
+    return False
+
+
+mount_static_frontend(app, static_dir)
