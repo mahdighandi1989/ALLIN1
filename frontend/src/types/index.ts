@@ -107,6 +107,21 @@ export interface ExpiringFacility {
   status: string | null
 }
 
+// Excel import
+export interface ImportRowError {
+  row: number
+  error: string
+}
+
+export interface ImportResult {
+  dry_run: boolean
+  total_rows: number
+  created: number
+  would_create: number
+  skipped_existing?: number
+  errors: ImportRowError[]
+}
+
 // In-app notifications
 export interface AppNotification {
   id: string

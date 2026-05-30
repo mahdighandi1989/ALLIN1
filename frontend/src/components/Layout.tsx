@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
-import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, FileSpreadsheet, LogOut } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/facilities', label: 'Facilities', icon: Building },
   { href: '/offer-letters', label: 'Offer Letters', icon: FileText },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/import', label: 'Import', icon: FileSpreadsheet },
   { href: '/trash', label: 'Recycle Bin', icon: Trash2 },
 ]
 

@@ -24,6 +24,7 @@ import type {
   TrashList,
   AuditList,
   NotificationList,
+  ImportResult,
 } from '@/types'
 
 export { api }
@@ -293,6 +294,30 @@ export const usersApi = {
   },
   async deactivate(id: string): Promise<void> {
     await api.delete(`/api/users/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Excel import
+// ---------------------------------------------------------------------------
+export const importsApi = {
+  async customers(file: File, dryRun = false): Promise<ImportResult> {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post<ImportResult>('/api/imports/customers', form, {
+      params: { dry_run: dryRun },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async facilities(file: File, dryRun = false): Promise<ImportResult> {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post<ImportResult>('/api/imports/facilities', form, {
+      params: { dry_run: dryRun },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
   },
 }
 
