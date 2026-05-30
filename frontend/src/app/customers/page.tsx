@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
 import { customersApi, parseApiError } from '@/lib/api'
-import { Customer, CustomerList } from '@/types'
+import { Customer, CustomerList, CustomerForm as CustomerFormData } from '@/types'
 import { Plus, Search, Edit, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -78,7 +78,7 @@ export default function CustomersPage() {
       </form>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden" data-testid="customers-content">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -188,10 +188,10 @@ function CustomerForm({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<CustomerFormData>({
     account_no: customer?.account_no || '',
     name: customer?.name || '',
-    account_type: customer?.account_type || 'retail',
+    account_type: (customer?.account_type as CustomerFormData['account_type']) || 'retail',
     email: customer?.email || '',
     phone: customer?.phone || '',
     branch: customer?.branch || '',
@@ -257,7 +257,12 @@ function CustomerForm({
             <label className="block text-sm font-medium mb-1">Account Type</label>
             <select
               value={form.account_type}
-              onChange={(e) => setForm({ ...form, account_type: e.target.value })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  account_type: e.target.value as CustomerFormData['account_type'],
+                })
+              }
               className="w-full px-3 py-2 border rounded-lg"
             >
               <option value="retail">Retail</option>

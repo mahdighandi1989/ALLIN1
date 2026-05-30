@@ -1,80 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, RefreshCw, Users, Building, Calendar, DollarSign } from 'lucide-react';
-import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
+'use client'
 
-interface DashboardStats {
-  total_customers: number;
-  total_facilities: number;
-  active_facilities: number;
-  expiring_soon: number;
-  monthly_revenue: number;
-  recent_activities: Array<{
-    id: number;
-    action: string;
-    timestamp: string;
-    user: string;
-  }>;
-}
+import React, { useState, useEffect, useCallback } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  AlertCircle,
+  RefreshCw,
+  Users,
+  Building,
+  Calendar,
+  DollarSign,
+} from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useRouter } from 'next/navigation'
+import { statsApi, parseApiError } from '@/lib/api'
+import type { DashboardStats } from '@/types'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // True when the API could not be reached at all (e.g. a static export served
+  // without its backend), as opposed to a normal HTTP error response.
+  const [staticUnavailable, setStaticUnavailable] = useState(false)
+  const router = useRouter()
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchDashboardData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    setStaticUnavailable(false)
     try {
-      const response = await fetch('/api/stats/dashboard');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setStats(data);
+      const data = await statsApi.dashboard()
+      setStats(data)
     } catch (err: any) {
-      let errorMessage = 'Failed to load dashboard data';
-      if (err?.response) {
-        // سرور پاسخ داده اما با وضعیت خطا
-        if (err.response.status === 500) {
-          errorMessage = 'Server error. Please try again later.';
-        } else {
-          errorMessage = err.response.data?.detail || err.response.data?.message || errorMessage;
-        }
-      } else if (err?.request) {
-        // درخواست فرستاده شده اما پاسخی دریافت نشده
-        errorMessage = 'No response from server. Please check your network connection.';
+      // A network error (no response) while running as a static export means
+      // there is no backend to talk to.
+      if (err?.request && !err?.response) {
+        setStaticUnavailable(true)
+        setError('Dashboard data unavailable in static mode')
       } else {
-        // مشکلی در تنظیم درخواست رخ داده است
-        errorMessage = err?.message || errorMessage;
+        const message = parseApiError(err)
+        setError(message)
+        toast.error(message)
       }
-      setError(errorMessage);
-      toast.error(errorMessage);
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [])
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    fetchDashboardData()
+  }, [fetchDashboardData])
 
   const handleRefresh = () => {
-    fetchDashboardData();
-  };
+    fetchDashboardData()
+  }
 
   const handleNavigation = (path: string) => {
-    router.push(path);
-  };
+    router.push(path)
+  }
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-6" data-testid="dashboard-loading">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <Button variant="outline" disabled>
@@ -95,7 +85,25 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
-    );
+    )
+  }
+
+  if (staticUnavailable) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <Button onClick={handleRefresh} variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+        <Alert variant="destructive" data-testid="static-mode-message">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Dashboard data unavailable in static mode</AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
   if (error) {
@@ -108,29 +116,40 @@ export default function DashboardPage() {
             Refresh
           </Button>
         </div>
-        <Alert variant="destructive">
+        <Alert
+          variant="destructive"
+          data-testid="error-message"
+          data-test="error-message-dashboard"
+        >
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription data-testid="dashboard-error-message">
+            {error}
+          </AlertDescription>
         </Alert>
-        <div className="mt-4">
-          <Button onClick={handleRefresh}>Try Again</Button>
+        <div className="mt-4" data-testid="error-message-dashboard">
+          <Button onClick={handleRefresh} data-testid="dashboard-try-again">
+            Try Again
+          </Button>
         </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto p-6" data-testid="dashboard-content">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <Button onClick={handleRefresh} variant="outline">
+        <Button onClick={handleRefresh} variant="outline" data-testid="dashboard-refresh">
           <RefreshCw className="mr-2 h-4 w-4" />
           Refresh
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card 
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+        data-testid="dashboard-stats"
+      >
+        <Card
           className="cursor-pointer hover:shadow-lg transition-shadow"
           onClick={() => handleNavigation('/customers')}
           onKeyDown={(e) => e.key === 'Enter' && handleNavigation('/customers')}
@@ -140,14 +159,15 @@ export default function DashboardPage() {
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_customers || 0}</div>
+            <div className="text-2xl font-bold">{stats?.total_customers ?? 0}</div>
+            <p className="text-xs text-gray-500">{stats?.active_customers ?? 0} active</p>
           </CardContent>
         </Card>
 
-        <Card 
+        <Card
           className="cursor-pointer hover:shadow-lg transition-shadow"
           onClick={() => handleNavigation('/facilities')}
           onKeyDown={(e) => e.key === 'Enter' && handleNavigation('/facilities')}
@@ -157,36 +177,38 @@ export default function DashboardPage() {
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Facilities</CardTitle>
-            <Building className="h-4 w-4 text-muted-foreground" />
+            <Building className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_facilities || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {stats?.active_facilities || 0} active
-            </p>
+            <div className="text-2xl font-bold">{stats?.total_facilities ?? 0}</div>
+            <p className="text-xs text-gray-500">{stats?.active_facilities ?? 0} active</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Calendar className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.expiring_soon || 0}</div>
-            <p className="text-xs text-muted-foreground">Next 30 days</p>
+            <div className="text-2xl font-bold">{stats?.expiring_soon ?? 0}</div>
+            <p className="text-xs text-gray-500">Next 30 days</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${(stats?.monthly_revenue || 0).toLocaleString()}
+              ${(stats?.monthly_revenue ?? 0).toLocaleString()}
             </div>
+            <p className="text-xs text-gray-500">
+              {stats?.total_exposure?.currency ?? 'AED'} exposure: $
+              {(stats?.total_exposure?.amount ?? 0).toLocaleString()}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -198,21 +220,23 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {stats?.recent_activities && stats.recent_activities.length > 0 ? (
-              <ul className="space-y-4">
+              <ul className="space-y-4" data-testid="recent-activities">
                 {stats.recent_activities.map((activity) => (
                   <li key={activity.id} className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">{activity.action}</p>
-                      <p className="text-sm text-muted-foreground">by {activity.user}</p>
+                      <p className="text-sm text-gray-500">by {activity.user}</p>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {new Date(activity.timestamp).toLocaleDateString()}
+                    <span className="text-sm text-gray-500">
+                      {activity.timestamp
+                        ? new Date(activity.timestamp).toLocaleDateString()
+                        : ''}
                     </span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground">No recent activities</p>
+              <p className="text-gray-500">No recent activities</p>
             )}
           </CardContent>
         </Card>
@@ -223,34 +247,26 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <Button 
-                className="w-full justify-start" 
+              <Button
+                className="w-full justify-start"
                 variant="outline"
-                onClick={() => handleNavigation('/customers/new')}
+                onClick={() => handleNavigation('/customers')}
               >
                 <Users className="mr-2 h-4 w-4" />
-                Add New Customer
+                Manage Customers
               </Button>
-              <Button 
-                className="w-full justify-start" 
+              <Button
+                className="w-full justify-start"
                 variant="outline"
-                onClick={() => handleNavigation('/facilities/new')}
+                onClick={() => handleNavigation('/facilities')}
               >
                 <Building className="mr-2 h-4 w-4" />
-                Add New Facility
-              </Button>
-              <Button 
-                className="w-full justify-start" 
-                variant="outline"
-                onClick={() => handleNavigation('/reports')}
-              >
-                <DollarSign className="mr-2 h-4 w-4" />
-                View Financial Reports
+                Manage Facilities
               </Button>
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
-  );
+  )
 }

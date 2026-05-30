@@ -61,23 +61,40 @@ export interface FacilityList {
   page_size: number
 }
 
-// Dashboard types
+// Dashboard types — flat contract matching backend DashboardStatsResponse.
+export interface RecentActivity {
+  id: number
+  action: string
+  timestamp: string | null
+  user: string
+}
+
+export interface RecentCustomerStat {
+  id: string
+  account_no: string | null
+  name: string
+  status: string | null
+  created_at: string | null
+}
+
+export interface TotalExposure {
+  amount: number
+  currency: string
+}
+
 export interface DashboardStats {
-  customers: {
-    total: number
-    active: number
-  }
-  facilities: {
-    total: number
-    total_amount: number
-    outstanding: number
-    expiring_soon: number
-  }
-  recent_customers: {
-    id: string
-    name: string
-    account_no: string
-  }[]
+  total_customers: number
+  active_customers: number
+  total_facilities: number
+  active_facilities: number
+  expiring_soon: number
+  expiring_facilities: number
+  expiring_soon_facilities: number
+  monthly_revenue: number
+  total_outstanding: number
+  total_exposure: TotalExposure
+  recent_customers: RecentCustomerStat[]
+  recent_activities: RecentActivity[]
 }
 
 // API Response types
