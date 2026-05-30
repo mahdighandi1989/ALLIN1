@@ -436,10 +436,19 @@ async def update_me(
 @router.post("/change-password")
 async def change_password(
     password_data: ChangePassword,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Change user password"""
+    """Change the current user's password."""
+    # In no-login (AUTH_DISABLED) mode the current user is a transient demo user
+    # with no real stored password — changing it is not meaningful.
+    if getattr(settings, "AUTH_DISABLED", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password change is unavailable while login is disabled",
+        )
+
     # Verify current password
     if not verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
@@ -450,6 +459,12 @@ async def change_password(
     # Update password
     current_user.hashed_password = hash_password(password_data.new_password)
     await db.commit()
+
+    from app.services.audit import record_audit
+    await record_audit(
+        action="update", entity_type="auth", entity_id=current_user.id,
+        detail="Changed own password", user=current_user, request=request, db=db,
+    )
 
     return {"message": "Password updated successfully"}
 

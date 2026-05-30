@@ -55,9 +55,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-4">
-            {user && (
-              <span className="text-sm text-gray-600">{user.full_name || user.username}</span>
-            )}
+            <Link
+              href="/profile"
+              className="text-sm text-gray-600 hover:text-blue-600"
+              title="My profile"
+            >
+              {user?.full_name || user?.username || 'Profile'}
+            </Link>
             <button
               onClick={() => logout()}
               className="flex items-center gap-1 text-gray-500 hover:text-gray-700"
