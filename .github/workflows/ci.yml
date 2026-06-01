@@ -26,8 +26,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Test-only dependencies (sqlite driver + pytest tooling).
-          pip install pytest pytest-asyncio pytest-cov pytest-mock aiosqlite
+          # Test-only dependencies (sqlite driver, pytest tooling, xlwt to build
+          # .xls fixtures for the legacy-format import test).
+          pip install pytest pytest-asyncio pytest-cov pytest-mock aiosqlite xlwt
 
       - name: Run tests with coverage
         run: |

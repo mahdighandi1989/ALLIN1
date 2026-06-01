@@ -1,17 +1,53 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from typing import AsyncGenerator
+from urllib.parse import urlsplit
+import os
 import ssl as ssl_module
 
 from app.config import settings
 
-# SSL configuration for remote databases (Render.com, etc.)
-connect_args = {}
-if 'localhost' not in settings.DATABASE_URL and '127.0.0.1' not in settings.DATABASE_URL:
+# Hostnames that are always treated as local (no SSL). An empty host covers a
+# unix-socket DSN. We parse the *host* rather than substring-matching the whole
+# URL — the old ``'localhost' not in url`` check mis-classified hosts like
+# ``localhost.example.com`` (a remote host) as local.
+_LOCAL_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
+
+
+def _db_host(database_url: str):
+    try:
+        return urlsplit(database_url).hostname
+    except Exception:
+        return None
+
+
+def _should_use_ssl(database_url: str) -> bool:
+    """True for managed remote Postgres (Render etc.); False for sqlite/local."""
+    if database_url.startswith("sqlite"):
+        return False
+    return _db_host(database_url) not in _LOCAL_HOSTS
+
+
+def _build_connect_args(database_url: str) -> dict:
+    """SSL connect args for the async engine.
+
+    Render's managed Postgres terminates TLS with a certificate that does not
+    chain to a public CA on the internal network, so by default we connect over
+    TLS but do not verify the certificate/hostname (this is the long-standing,
+    working production setting). Set ``DB_SSL_VERIFY=true`` to require full
+    verification — e.g. behind a CA-signed endpoint — without a code change.
+    """
+    if not _should_use_ssl(database_url):
+        return {}
     ssl_context = ssl_module.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl_module.CERT_NONE
-    connect_args["ssl"] = ssl_context
+    if os.getenv("DB_SSL_VERIFY", "false").strip().lower() not in ("1", "true", "yes", "on"):
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl_module.CERT_NONE
+    return {"ssl": ssl_context}
+
+
+# SSL configuration for remote databases (Render.com, etc.)
+connect_args = _build_connect_args(settings.DATABASE_URL)
 
 # Create async engine
 engine = create_async_engine(

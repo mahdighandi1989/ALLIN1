@@ -107,6 +107,7 @@ class TestCustomerImport:
         assert body["total_rows"] == 0 and body["created"] == 0
 
     async def test_legacy_xls_format_supported(self, client: AsyncClient, auth_headers: dict):
+        pytest.importorskip("xlwt")  # test-only: needed to build the .xls fixture
         content = _xls(["account_no", "name", "account_type"], [["XLS-1", "Legacy Co", "corporate"]])
         r = await client.post("/api/imports/customers",
                               files=_file(content, name="legacy.xls"), headers=auth_headers)
