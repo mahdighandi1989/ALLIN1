@@ -40,6 +40,30 @@ _ENUMS = {
     "facilitystatus": [e.value for e in FacilityStatus],
 }
 
+# Legacy/abbreviated enum values seen in real data, mapped to their canonical
+# value. Anything still outside the allowed set after this mapping is coerced to
+# the column's default (so a stray code can never 500 a read). Used by
+# normalize_enum_data(). (table, column, enum_type, default, {alias_lower: value})
+_ENUM_COLUMNS = [
+    ("facilities", "facility_type", "facilitytype", "other", {
+        "od": "overdraft", "o/d": "overdraft", "overdraf": "overdraft",
+        "l/c": "lc", "letter of credit": "lc",
+        "l/g": "lg", "bg": "lg", "bank guarantee": "lg", "guarantee": "lg",
+        "tl": "loan", "term loan": "loan", "wc": "loan", "working capital": "loan",
+    }),
+    ("facilities", "status", "facilitystatus", "active", {
+        "open": "active", "default": "defaulted",
+        "write-off": "written_off", "writeoff": "written_off", "written off": "written_off",
+    }),
+    ("customers", "account_type", "accounttype", "retail", {
+        "individual": "retail", "personal": "retail",
+        "corp": "corporate", "company": "corporate", "business": "sme",
+    }),
+    ("customers", "status", "customerstatus", "active", {
+        "open": "active", "suspend": "suspended",
+    }),
+]
+
 
 def _default_sql(col: sa.Column) -> str | None:
     """Best-effort SQL literal for backfilling a newly-added column."""
@@ -162,12 +186,83 @@ async def ensure_schema() -> None:
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("schema-sync: enum value sync skipped: %s", exc)
 
+    # Convert any legacy native-enum columns to VARCHAR. The models now use
+    # native_enum=False; an older live DB may still have rigid native-enum
+    # columns that reject repairs and bare-string params. This makes the column
+    # types match the models and lets normalize_enum_data() clean the data.
+    try:
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            for table, col, *_ in _ENUM_COLUMNS:
+                dtype = (
+                    await conn.execute(
+                        text(
+                            "SELECT data_type FROM information_schema.columns "
+                            "WHERE table_name = :t AND column_name = :c"
+                        ).bindparams(t=table, c=col)
+                    )
+                ).scalar()
+                if dtype == "USER-DEFINED":  # a native enum column
+                    logger.info("schema-sync: %s.%s native enum -> varchar", table, col)
+                    await conn.execute(
+                        text(
+                            f'ALTER TABLE "{table}" ALTER COLUMN "{col}" '
+                            f'TYPE varchar(50) USING "{col}"::text'
+                        )
+                    )
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("schema-sync: enum->varchar conversion skipped: %s", exc)
+
     # Add any missing columns.
     try:
         async with engine.begin() as conn:
             await conn.run_sync(_add_missing_columns)
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.error("schema-sync: add-missing-columns failed: %s", exc)
+
+
+async def normalize_enum_data() -> None:
+    """Rewrite legacy/dirty enum values in existing rows to canonical values.
+
+    Real databases contain historical codes the current enums don't define (e.g.
+    ``facility_type='OD'``); SQLAlchemy raises ``LookupError`` while *reading*
+    such a row, 500ing the whole endpoint. We map known abbreviations to their
+    proper value and coerce anything still outside the allowed set to the
+    column's default. Idempotent; only assigns valid values (safe for native PG
+    enum columns, whose labels ensure_schema has already created).
+    """
+    if engine.dialect.name != "postgresql":
+        return  # SQLite test schema is created clean from the models.
+    try:
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            existing_tables = set(
+                await conn.run_sync(lambda c: inspect(c).get_table_names())
+            )
+            for table, col, enum_type, default, aliases in _ENUM_COLUMNS:
+                if table not in existing_tables:
+                    continue
+                # 1) Map known legacy/abbreviated codes to the canonical value
+                #    (case-insensitive). Only assigns valid labels.
+                for alias, canonical in aliases.items():
+                    await conn.execute(
+                        text(
+                            f'UPDATE "{table}" SET "{col}" = :canon '
+                            f'WHERE lower(trim("{col}"::text)) = :alias'
+                        ).bindparams(canon=canonical, alias=alias)
+                    )
+                # 2) Coerce anything still outside the allowed set to the default.
+                allowed = _ENUMS[enum_type]
+                allowed_sql = ", ".join("'" + v.replace("'", "''") + "'" for v in allowed)
+                await conn.execute(
+                    text(
+                        f'UPDATE "{table}" SET "{col}" = :default '
+                        f'WHERE "{col}" IS NOT NULL '
+                        f'AND lower(trim("{col}"::text)) NOT IN ({allowed_sql})'
+                    ).bindparams(default=default)
+                )
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("schema-sync: enum data normalisation skipped: %s", exc)
 
 
 # --- demo data ---------------------------------------------------------------
@@ -408,6 +503,8 @@ async def refresh_expiry_notifications() -> None:
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
+    # Clean legacy/dirty enum values so reads of existing rows can't 500.
+    await normalize_enum_data()
     await seed_sample_data()
     await seed_admin_user()
     await refresh_expiry_notifications()

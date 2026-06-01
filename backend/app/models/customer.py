@@ -4,6 +4,7 @@ from sqlalchemy.sql import func
 import enum
 import uuid
 from ..database import Base
+from .enum_utils import TolerantEnum
 
 
 def generate_customer_id() -> str:
@@ -28,8 +29,13 @@ class CustomerStatus(str, enum.Enum):
 # correctly. (Without values_callable, SQLAlchemy persists the NAME, which breaks
 # every == comparison against a lowercase value and corrupts reads.)
 def _enum_col(enum_cls, **kw):
+    # native_enum=False -> plain VARCHAR (not a native PG ENUM type), which is
+    # resilient to legacy/dirty values. See the note in models/facility.py.
     return Column(
-        SQLEnum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+        TolerantEnum(
+            enum_cls, values_callable=lambda e: [m.value for m in e], native_enum=False
+        ),
+        **kw,
     )
 
 

@@ -4,6 +4,7 @@ from sqlalchemy.sql import func
 import enum
 from ..database import Base
 from ..utils.id_generator import generate_facility_id
+from .enum_utils import TolerantEnum
 
 
 class FacilityType(str, enum.Enum):
@@ -36,10 +37,19 @@ DEFAULT_RISK_RATING = RiskRating.LOW.value
 
 # Persist the enum *value* (e.g. "loan"), not the member NAME ("LOAN"), so the
 # stored data matches the API strings and == filters work. See the same note in
-# models/customer.py.
+# models/customer.py. TolerantEnum keeps a single legacy/dirty value (e.g. a
+# historical 'OD') from 500ing every read of the table.
 def _enum_col(enum_cls, **kw):
+    # native_enum=False -> a plain VARCHAR column (not a native PG ENUM type).
+    # Native enums are rigid (can't store/repair legacy values, can't assign a
+    # bare string param) and have repeatedly caused production 500s here. Values
+    # are still validated on write by Pydantic/ORM and tolerated on read by
+    # TolerantEnum, so VARCHAR is both safe and far more resilient.
     return Column(
-        Enum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+        TolerantEnum(
+            enum_cls, values_callable=lambda e: [m.value for m in e], native_enum=False
+        ),
+        **kw,
     )
 
 
