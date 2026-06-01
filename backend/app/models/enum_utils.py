@@ -27,6 +27,9 @@ _FALLBACKS = {
     "facilitystatus": "active",
     "accounttype": "retail",
     "customerstatus": "active",
+    "offerstatus": "draft",
+    "repaymenttype": "monthly",
+    "collateraltype": "other",
 }
 
 

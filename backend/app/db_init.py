@@ -29,6 +29,7 @@ from app.database import Base, engine, AsyncSessionLocal
 from app.models.user import User  # noqa: F401
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
+from app.models.offer_letter import OfferStatus, RepaymentType, CollateralType
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ _ENUMS = {
     "customerstatus": [e.value for e in CustomerStatus],
     "facilitytype": [e.value for e in FacilityType],
     "facilitystatus": [e.value for e in FacilityStatus],
+    "offerstatus": [e.value for e in OfferStatus],
+    "repaymenttype": [e.value for e in RepaymentType],
+    "collateraltype": [e.value for e in CollateralType],
 }
 
 # Legacy/abbreviated enum values seen in real data, mapped to their canonical
@@ -61,6 +65,15 @@ _ENUM_COLUMNS = [
     }),
     ("customers", "status", "customerstatus", "active", {
         "open": "active", "suspend": "suspended",
+    }),
+    ("offer_letters", "status", "offerstatus", "draft", {
+        "pending": "pending_approval", "cancel": "cancelled", "reject": "rejected",
+    }),
+    ("offer_letters", "repayment_type", "repaymenttype", "monthly", {
+        "semi-annual": "semi_annual", "semiannual": "semi_annual",
+    }),
+    ("offer_letters", "collateral_type", "collateraltype", "other", {
+        "cash": "cash_deposit", "cash deposit": "cash_deposit",
     }),
 ]
 

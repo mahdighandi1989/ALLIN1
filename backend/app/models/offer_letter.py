@@ -17,6 +17,7 @@ import enum
 from decimal import Decimal
 
 from app.database import Base
+from app.models.enum_utils import TolerantEnum
 
 
 def generate_offer_id():
@@ -26,10 +27,14 @@ def generate_offer_id():
 
 def _enum_col(enum_cls, **kw):
     # Persist the enum *value* ("draft"), not the member NAME ("DRAFT"), so the
-    # stored data matches the API strings and == filters work (same convention as
-    # the Customer/Facility models).
+    # stored data matches the API strings and == filters work. native_enum=False
+    # (plain VARCHAR) + TolerantEnum makes the column resilient to legacy/dirty
+    # values on read — same convention as the Customer/Facility models.
     return Column(
-        SQLEnum(enum_cls, values_callable=lambda e: [m.value for m in e]), **kw
+        TolerantEnum(
+            enum_cls, values_callable=lambda e: [m.value for m in e], native_enum=False
+        ),
+        **kw,
     )
 
 
