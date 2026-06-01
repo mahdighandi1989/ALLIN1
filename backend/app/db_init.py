@@ -565,6 +565,7 @@ async def sync_user_roles() -> None:
     Idempotent; runs after the role column exists.
     """
     try:
+        from app.config import settings
         admin_emails = sorted(settings.get_admin_emails())
         async with engine.connect() as conn:
             await conn.execution_options(isolation_level="AUTOCOMMIT")

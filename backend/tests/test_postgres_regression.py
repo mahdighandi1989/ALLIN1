@@ -65,6 +65,7 @@ async def legacy_pg():
                     hashed_password VARCHAR(255) NOT NULL,
                     full_name VARCHAR(100),
                     role VARCHAR(20) NOT NULL,
+                    legacy_dept VARCHAR(20) NOT NULL,
                     is_active BOOLEAN DEFAULT true,
                     created_at TIMESTAMPTZ DEFAULT now(),
                     last_login TIMESTAMPTZ
@@ -74,8 +75,8 @@ async def legacy_pg():
         )
         await conn.execute(
             text(
-                "INSERT INTO users (id, username, email, hashed_password, role) "
-                "VALUES ('old00001','olduser','old@x.ae','x','admin')"
+                "INSERT INTO users (id, username, email, hashed_password, role, legacy_dept) "
+                "VALUES ('old00001','olduser','old@x.ae','x','admin','ops')"
             )
         )
     yield eng, db_url
@@ -122,7 +123,10 @@ async def test_bootstrap_and_endpoints_on_legacy_postgres(legacy_pg, monkeypatch
         # 1) Self-heal the drifted schema + seed demo data.
         await db_init.init_database()
 
-        # 2) The legacy NOT NULL `role` is relaxed and `is_admin` was added.
+        # 2) A legacy unknown NOT NULL column (`legacy_dept`) is relaxed so the
+        #    app's INSERTs (which never set it) don't fail; `is_admin` was added;
+        #    `role` is now a first-class model column (NOT NULL by design) and is
+        #    promoted to 'admin' for the legacy is-admin user by sync_user_roles.
         async with test_engine.connect() as conn:
             rows = (
                 await conn.execute(
@@ -132,9 +136,13 @@ async def test_bootstrap_and_endpoints_on_legacy_postgres(legacy_pg, monkeypatch
                     )
                 )
             ).all()
+            legacy_role = (
+                await conn.execute(text("SELECT role, is_admin FROM users WHERE id='old00001'"))
+            ).one()
         cols = {r[0]: r[1] for r in rows}
-        assert "is_admin" in cols
-        assert cols["role"] == "YES"  # NOT NULL relaxed
+        assert "is_admin" in cols and "role" in cols
+        assert cols["legacy_dept"] == "YES"  # unknown legacy NOT NULL relaxed
+        assert legacy_role[0] == "admin" and legacy_role[1] is True  # role/is_admin synced
 
         # 3) The exact endpoints that 500'd in production now return 200.
         transport = ASGITransport(app=app, raise_app_exceptions=False)
