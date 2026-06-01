@@ -1,22 +1,51 @@
 """Excel/CSV import endpoints. Wired at /api/imports."""
+import logging
 from decimal import Decimal, InvalidOperation
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
-from app.services.excel_import import parse_workbook, cell_str, ExcelParseError
+from app.services.excel_import import (
+    parse_workbook,
+    cell_str,
+    ExcelParseError,
+    validate_required_columns,
+)
 from app.services.exporters import rows_to_csv
 from app.services.audit import record_audit
 from app.routers.auth import get_current_active_user
 from fastapi import Response
 
+logger = logging.getLogger("app.imports")
+
 router = APIRouter(tags=["imports"], dependencies=[Depends(get_current_active_user)])
 
 _MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_ALLOWED_EXTENSIONS = (".xlsx", ".xlsm", ".xls")
+
+
+class ImportRowError(BaseModel):
+    """A single row that could not be imported, with a human-readable reason."""
+
+    row: int
+    error: str
+
+
+class ImportResult(BaseModel):
+    """Typed, documented response for both import endpoints."""
+
+    dry_run: bool
+    total_rows: int
+    created: int
+    would_create: int
+    skipped_existing: int = 0
+    errors: List[ImportRowError] = []
 
 
 def _to_decimal(v) -> Decimal:
@@ -31,14 +60,41 @@ def _to_decimal(v) -> Decimal:
 
 async def _read_upload(file: UploadFile) -> bytes:
     name = (file.filename or "").lower()
-    if not name.endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="Please upload an .xlsx or .xlsm file")
+    if not name.endswith(_ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400, detail="Please upload an .xlsx, .xlsm or .xls file"
+        )
     content = await file.read()
     if len(content) > _MAX_BYTES:
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
     if not content:
         raise HTTPException(status_code=400, detail="The uploaded file is empty")
     return content
+
+
+def _parse_or_400(content: bytes, filename: str | None) -> tuple:
+    """Parse the workbook, turning ExcelParseError into a precise 400.
+
+    Logs every failure (with its ``kind``) so a malformed upload is observable
+    in production rather than vanishing behind a generic error.
+    """
+    try:
+        return parse_workbook(content)
+    except ExcelParseError as exc:
+        logger.warning(
+            "import parse failed kind=%s file=%s: %s", exc.kind, filename, exc
+        )
+        raise HTTPException(status_code=400, detail=f"Invalid spreadsheet: {exc}")
+
+
+def _require_columns(headers, required) -> None:
+    """Fail fast with a clear 400 if the sheet is missing required columns."""
+    missing = validate_required_columns(headers, required)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required column(s): {', '.join(missing)}",
+        )
 
 
 @router.get("/customers/template")
@@ -64,7 +120,7 @@ async def facilities_template():
     )
 
 
-@router.post("/customers")
+@router.post("/customers", response_model=ImportResult)
 async def import_customers(
     request: Request,
     file: UploadFile = File(...),
@@ -79,10 +135,8 @@ async def import_customers(
     numbers are skipped. Returns a per-row result summary.
     """
     content = await _read_upload(file)
-    try:
-        headers, rows = parse_workbook(content)
-    except ExcelParseError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid spreadsheet: {exc}")
+    headers, rows = _parse_or_400(content, file.filename)
+    _require_columns(headers, ["account_no", "name"])
 
     valid_types = {t.value for t in AccountType}
     valid_status = {s.value for s in CustomerStatus}
@@ -150,7 +204,7 @@ async def import_customers(
     }
 
 
-@router.post("/facilities")
+@router.post("/facilities", response_model=ImportResult)
 async def import_facilities(
     request: Request,
     file: UploadFile = File(...),
@@ -164,10 +218,8 @@ async def import_facilities(
     currency, interest_rate, status. account_no + amount are required.
     """
     content = await _read_upload(file)
-    try:
-        headers, rows = parse_workbook(content)
-    except ExcelParseError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid spreadsheet: {exc}")
+    headers, rows = _parse_or_400(content, file.filename)
+    _require_columns(headers, ["account_no", "amount"])
 
     valid_types = {t.value for t in FacilityType}
     valid_status = {s.value for s in FacilityStatus}
