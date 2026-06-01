@@ -513,11 +513,53 @@ async def refresh_expiry_notifications() -> None:
         logger.error("Expiry notification refresh skipped: %s", exc)
 
 
+# Indexes for hot list/sort/filter/breakdown columns. CREATE INDEX IF NOT EXISTS
+# is supported on both PostgreSQL and SQLite and is idempotent.
+_INDEXES = [
+    ("ix_customers_isdel_created", "customers", "(is_deleted, created_at)"),
+    ("ix_customers_account_no", "customers", "(account_no)"),
+    ("ix_customers_status", "customers", "(status)"),
+    ("ix_customers_account_type", "customers", "(account_type)"),
+    ("ix_facilities_isdel_created", "facilities", "(is_deleted, created_at)"),
+    ("ix_facilities_customer_id", "facilities", "(customer_id)"),
+    ("ix_facilities_status", "facilities", "(status)"),
+    ("ix_facilities_facility_type", "facilities", "(facility_type)"),
+]
+
+
+async def ensure_indexes() -> None:
+    """Create indexes for the columns the list/search/dashboard queries hit.
+
+    On the small managed DB plan these turn sequential scans into index lookups,
+    which is a meaningful latency win for list pagination/sorting and the
+    dashboard breakdowns. Idempotent and individually guarded.
+    """
+    try:
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            existing_tables = set(
+                await conn.run_sync(lambda c: inspect(c).get_table_names())
+            )
+            for name, table, cols in _INDEXES:
+                if table not in existing_tables:
+                    continue
+                try:
+                    await conn.execute(
+                        text(f'CREATE INDEX IF NOT EXISTS {name} ON "{table}" {cols}')
+                    )
+                except Exception as exc:  # pragma: no cover - depends on live DB
+                    logger.warning("schema-sync: index %s skipped: %s", name, exc)
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("schema-sync: index creation skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
     # Clean legacy/dirty enum values so reads of existing rows can't 500.
     await normalize_enum_data()
+    # Indexes for faster list/search/dashboard queries.
+    await ensure_indexes()
     await seed_sample_data()
     await seed_admin_user()
     await refresh_expiry_notifications()

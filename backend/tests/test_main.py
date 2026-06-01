@@ -3,8 +3,9 @@ import os
 import tempfile
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-from app.main import mount_static_frontend
+from app.main import mount_static_frontend, CachedStaticFiles
 
 
 def test_static_directory_missing_edge_case():
@@ -45,3 +46,23 @@ def test_missing_static_escalates_to_error_in_production(monkeypatch, caplog):
         caplog.clear()
         assert mount_static_frontend(FastAPI(), "/nope/missing/xyz") is False
         assert caplog.records and all(r.levelno < logging.ERROR for r in caplog.records)
+
+
+def test_cached_static_sets_cache_headers():
+    """Hashed _next/static assets are immutable; HTML is no-cache."""
+    app = FastAPI()
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "_next", "static"))
+        with open(os.path.join(d, "_next", "static", "app.abc123.js"), "w") as f:
+            f.write("console.log(1)")
+        with open(os.path.join(d, "index.html"), "w") as f:
+            f.write("<html><body>ok</body></html>")
+        app.mount("/", CachedStaticFiles(directory=d, html=True), name="static_frontend")
+        client = TestClient(app)
+
+        r = client.get("/_next/static/app.abc123.js")
+        assert r.status_code == 200
+        assert "immutable" in r.headers.get("cache-control", "")
+
+        r2 = client.get("/index.html")
+        assert r2.headers.get("cache-control") == "no-cache"

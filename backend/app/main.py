@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -121,6 +122,8 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(HTTPSRedirectInProductionMiddleware)
 app.add_middleware(MetricsMiddleware)
+# Compress responses (JS/CSS/JSON) — a big win for first paint over slow links.
+app.add_middleware(GZipMiddleware, minimum_size=512)
 
 # CORS — only the explicitly allow-listed origins may call the API.
 app.add_middleware(
@@ -212,6 +215,30 @@ async def health_check():
 static_dir = "static"
 
 
+class CachedStaticFiles(StaticFiles):
+    """Serve the built frontend with sensible Cache-Control headers.
+
+    Next.js puts content-hashed assets under ``/_next/static`` — their name
+    changes whenever the content changes, so they can be cached forever
+    (``immutable``). That makes repeat page loads near-instant instead of
+    re-downloading every bundle. HTML is kept ``no-cache`` so a new deploy is
+    always picked up; other assets get a short cache.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        try:
+            if path.startswith("_next/static") or "/_next/static/" in path:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            elif path.endswith(".html") or path in ("", "."):
+                response.headers["Cache-Control"] = "no-cache"
+            else:
+                response.headers.setdefault("Cache-Control", "public, max-age=3600")
+        except Exception:  # never let header tweaking break static serving
+            pass
+        return response
+
+
 def mount_static_frontend(application: FastAPI, directory: str) -> bool:
     """Mount the built frontend, with explicit (not silent) failure feedback.
 
@@ -227,7 +254,7 @@ def mount_static_frontend(application: FastAPI, directory: str) -> bool:
     """
     if os.path.exists(directory):
         application.mount(
-            "/", StaticFiles(directory=directory, html=True), name="static_frontend"
+            "/", CachedStaticFiles(directory=directory, html=True), name="static_frontend"
         )
         logger.info("Serving frontend from directory: %s", directory)
         return True
