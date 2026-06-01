@@ -70,3 +70,46 @@ class TestEnumTolerance:
             select(Customer.status).where(Customer.id == c.id)
         )).scalar_one()
         assert val == CustomerStatus.ACTIVE  # fallback for customerstatus
+
+
+class TestDirtyValueResponses:
+    """A response model must serialize legacy/dirty rows, never reject them.
+
+    Regression: a facility with amount=0 / currency='-', or a customer with a
+    blank name / non-RFC email, used to 500 the whole list at response time
+    because the response schema enforced *input* constraints (gt=0, min_length,
+    EmailStr).
+    """
+
+    async def test_facilities_list_survives_dirty_amount_and_currency(
+        self, client: AsyncClient, auth_headers: dict, db_session
+    ):
+        # Raw insert (bypasses ORM/Pydantic) to mimic real legacy data.
+        await db_session.execute(text(
+            "INSERT INTO customers (id, account_no, name, account_type, status, is_deleted) "
+            "VALUES ('CDIRTY1','ADIRTY1','Dirty Co','retail','active', 0)"
+        ))
+        await db_session.execute(text(
+            "INSERT INTO facilities (id, customer_id, name, amount, currency, "
+            "facility_type, status, outstanding, risk_rating, is_deleted) "
+            "VALUES ('FDIRTY1','CDIRTY1','Bad Row',0,'-','loan','active',0,'low', 0)"
+        ))
+        await db_session.commit()
+
+        r = await client.get("/api/facilities/?page=1&page_size=50", headers=auth_headers)
+        assert r.status_code == 200
+        match = [it for it in r.json()["items"] if it["id"] == "FDIRTY1"]
+        assert match and float(match[0]["amount"]) == 0.0 and match[0]["currency"] == "-"
+
+    async def test_customers_list_survives_blank_name_and_bad_email(
+        self, client: AsyncClient, auth_headers: dict, db_session
+    ):
+        await db_session.execute(text(
+            "INSERT INTO customers (id, account_no, name, account_type, status, email, is_deleted) "
+            "VALUES ('CDIRTY2','ADIRTY2','','retail','active','not-an-email', 0)"
+        ))
+        await db_session.commit()
+
+        r = await client.get("/api/customers/?page=1&page_size=50", headers=auth_headers)
+        assert r.status_code == 200
+        assert any(it["id"] == "CDIRTY2" for it in r.json()["items"])

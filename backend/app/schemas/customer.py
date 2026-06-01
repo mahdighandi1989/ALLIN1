@@ -62,13 +62,32 @@ class CustomerUpdate(_EmailNormalizerMixin, BaseModel):
     status: Optional[CustomerStatus] = Field(None, description="Customer status")
 
 
-class CustomerResponse(CustomerBase):
-    id: str = Field(..., description="Customer ID")
-    is_deleted: bool = Field(False, description="Soft delete flag")
-    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+class CustomerResponse(BaseModel):
+    """Customer API response.
 
+    Deliberately PERMISSIVE: it must serialize whatever is already stored —
+    legacy rows may have a blank name, a non-RFC email, an odd phone, etc. —
+    without 500ing the whole list. Strict validation lives on
+    CustomerCreate / CustomerUpdate. (email is a plain str here, not EmailStr.)
+    """
     model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    account_no: Optional[str] = None
+    name: Optional[str] = None
+    name_ar: Optional[str] = None
+    account_type: AccountType = AccountType.RETAIL
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+    address: Optional[str] = None
+    branch: Optional[str] = None
+    relationship_manager: Optional[str] = None
+    notes: Optional[str] = None
+    status: CustomerStatus = CustomerStatus.ACTIVE
+    is_deleted: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class CustomerListResponse(BaseModel):

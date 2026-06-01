@@ -54,14 +54,34 @@ class FacilityUpdate(BaseModel):
     notes: OptionalSafeText = Field(None, max_length=1000, description="Notes")
 
 
-class FacilityResponse(FacilityBase):
-    """Schema for facility API response"""
-    id: str = Field(..., description="Facility ID")
-    is_deleted: bool = Field(False, description="Soft delete flag")
-    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+class FacilityResponse(BaseModel):
+    """Schema for facility API response.
 
+    Deliberately PERMISSIVE: a response model must serialize whatever is already
+    stored — including legacy/dirty rows (amount=0, a non-standard currency like
+    '-', etc.) — and never reject it at read time. Enforcing input rules here
+    (gt=0, min_length=3) made a single bad row 500 the entire list. Strict
+    validation lives on FacilityCreate / FacilityUpdate.
+    """
     model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    customer_id: Optional[str] = None
+    facility_type: FacilityType = FacilityType.LOAN
+    name: Optional[str] = None
+    status: FacilityStatus = FacilityStatus.ACTIVE
+    amount: Optional[Decimal] = None
+    outstanding: Optional[Decimal] = None
+    currency: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    interest_rate: Optional[Decimal] = None
+    tenor_months: Optional[str] = None
+    notes: Optional[str] = None
+    is_deleted: bool = False
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class FacilityListResponse(BaseModel):
