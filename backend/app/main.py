@@ -237,8 +237,8 @@ def mount_static_frontend(application: FastAPI, directory: str) -> bool:
         "Run the frontend build and ensure it is copied into the backend."
     )
     if settings.is_production():
-        # FIXME: Broken feedback loop for static dir — in production a missing
-        # build is a deploy failure, so escalate it instead of swallowing it.
+        # In production a missing build is a deploy failure, so escalate to
+        # ERROR (it surfaces in alerting) instead of swallowing it at debug level.
         logging.error(msg, directory)
     else:
         logger.warning(msg, directory)

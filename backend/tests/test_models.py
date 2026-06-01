@@ -278,6 +278,21 @@ class TestModelValidation:
         assert facility.facility_type == FacilityType.LOAN
         assert facility.amount == Decimal("100000.00")
     
+    def test_risk_rating_is_validated(self):
+        """risk_rating is constrained to the RiskRating set by @validates."""
+        from app.models.facility import RiskRating
+
+        # Accepts and normalises case + enum members.
+        assert Facility(customer_id="C1", amount=Decimal("1"), risk_rating="HIGH").risk_rating == "high"
+        assert Facility(customer_id="C1", amount=Decimal("1"), risk_rating="Medium").risk_rating == "medium"
+        assert Facility(customer_id="C1", amount=Decimal("1"), risk_rating=RiskRating.HIGH).risk_rating == "high"
+        # Blank / None fall back to the default rather than violating NOT NULL.
+        assert Facility(customer_id="C1", amount=Decimal("1"), risk_rating="").risk_rating == "low"
+        assert Facility(customer_id="C1", amount=Decimal("1"), risk_rating=None).risk_rating == "low"
+        # An out-of-range value is rejected at write time.
+        with pytest.raises(ValueError):
+            Facility(customer_id="C1", amount=Decimal("1"), risk_rating="extreme")
+
     def test_decimal_precision(self):
         """Test decimal field precision"""
         facility = Facility(
@@ -287,7 +302,7 @@ class TestModelValidation:
             outstanding=Decimal("54321.99"),
             interest_rate=Decimal("12.345")
         )
-        
+
         assert facility.amount == Decimal("123456.78")
         assert facility.outstanding == Decimal("54321.99")
         assert facility.interest_rate == Decimal("12.345")

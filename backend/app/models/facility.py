@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Numeric, Date, Enum, Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
 import enum
 from ..database import Base
@@ -21,6 +21,17 @@ class FacilityStatus(str, enum.Enum):
     CLOSED = "closed"
     DEFAULTED = "defaulted"
     WRITTEN_OFF = "written_off"
+
+
+class RiskRating(str, enum.Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+# The set of accepted risk_rating string values (lowercased).
+RISK_RATINGS = {r.value for r in RiskRating}
+DEFAULT_RISK_RATING = RiskRating.LOW.value
 
 
 # Persist the enum *value* (e.g. "loan"), not the member NAME ("LOAN"), so the
@@ -51,10 +62,12 @@ class Facility(Base):
     notes = Column(Text)
     interest_rate = Column(Numeric(5, 2))
     collateral_value = Column(Numeric(15, 2))
-    # Validated: risk_rating must always be present (was an unconstrained,
-    # nullable String — an under-validation anti-pattern). It now defaults to a
-    # sane 'low' and is NOT NULL. See tests/backend/test_facility.py.
-    risk_rating = Column(String(10), nullable=False, default='low')
+    # risk_rating is constrained to the RiskRating set (low/medium/high) by the
+    # @validates hook below — every write path (API, import, seed) is checked.
+    # The column stays a String (not a DB ENUM) on purpose: it avoids a
+    # destructive type migration on the live Postgres DB while still being
+    # validated at the ORM layer. It is NOT NULL and defaults to 'low'.
+    risk_rating = Column(String(10), nullable=False, default=DEFAULT_RISK_RATING)
     relationship_manager = Column(String(255))
     branch = Column(String(100))
     approved_by = Column(String(255))
@@ -68,6 +81,23 @@ class Facility(Base):
 
     # Relationships
     customer = relationship("Customer", back_populates="facilities")
+
+    @validates("risk_rating")
+    def _validate_risk_rating(self, key, value):
+        """Constrain risk_rating to the RiskRating set.
+
+        Accepts a RiskRating member or a (case-insensitive) string; a blank/None
+        value falls back to the default. An unknown value raises ValueError so an
+        out-of-range rating is rejected at write time rather than silently stored.
+        """
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return DEFAULT_RISK_RATING
+        normalised = (value.value if isinstance(value, RiskRating) else str(value)).strip().lower()
+        if normalised not in RISK_RATINGS:
+            raise ValueError(
+                f"invalid risk_rating '{value}' (expected one of {sorted(RISK_RATINGS)})"
+            )
+        return normalised
 
     def __init__(self, **kwargs):
         # Construction-time defaults (column ``default=`` only applies on INSERT).
@@ -94,4 +124,4 @@ class Facility(Base):
 
 
 # برای backward compatibility
-__all__ = ["Facility", "FacilityType", "FacilityStatus"]
+__all__ = ["Facility", "FacilityType", "FacilityStatus", "RiskRating", "RISK_RATINGS"]
