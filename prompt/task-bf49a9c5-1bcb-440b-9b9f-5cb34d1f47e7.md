@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-31T16:19:06.449286+00:00'
-updated_at: '2026-05-31T16:19:06.449299+00:00'
+updated_at: '2026-06-01T17:26:42.769854+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
@@ -496,10 +496,10 @@ _(مستقل)_
 
 ## Acceptance Criteria
 
-1. فرم با amount=0 خطای 'مبلغ باید مثبت باشد' نشان دهد
-2. فرم با expiry_date دیروز خطای 'تاریخ انقضا باید در آینده باشد' نشان دهد
-3. فرم با interest_rate=150 خطای 'نرخ سود باید بین 0 تا 100 باشد' نشان دهد
-4. API در صورت عبور داده‌های نامعتبر همچنان 422 برگرداند (حفاظت لایه backend)
+1. فرم با amount=0 خطای 'مبلغ باید مثبت باشد' نشان دهد _(verify: ui_interaction)_
+2. فرم با expiry_date دیروز خطای 'تاریخ انقضا باید در آینده باشد' نشان دهد _(verify: ui_interaction)_
+3. فرم با interest_rate=150 خطای 'نرخ سود باید بین 0 تا 100 باشد' نشان دهد _(verify: ui_interaction)_
+4. API در صورت عبور داده‌های نامعتبر همچنان 422 برگرداند (حفاظت لایه backend) _(verify: api_response)_
 
 ## Task Steps
 
