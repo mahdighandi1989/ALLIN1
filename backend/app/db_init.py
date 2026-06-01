@@ -447,6 +447,7 @@ async def seed_admin_user() -> None:
                     full_name="Administrator",
                     is_active=True,
                     is_admin=True,
+                    role="admin",
                 )
             )
             await session.commit()
@@ -553,6 +554,42 @@ async def ensure_indexes() -> None:
         logger.warning("schema-sync: index creation skipped: %s", exc)
 
 
+async def sync_user_roles() -> None:
+    """Keep the new ``role`` column consistent with ``is_admin`` and ADMIN_EMAILS.
+
+    Adding ``role`` with a default of 'pending' would otherwise leave existing
+    admins (and the bootstrap admin) locked out. We:
+      * promote any is_admin user to role 'admin',
+      * grant admin (role + is_admin) to every email in settings.ADMIN_EMAILS,
+      * mirror role 'admin' back onto is_admin so both stay in sync.
+    Idempotent; runs after the role column exists.
+    """
+    try:
+        admin_emails = sorted(settings.get_admin_emails())
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            cols = await conn.run_sync(
+                lambda c: {col["name"] for col in inspect(c).get_columns("users")}
+                if "users" in inspect(c).get_table_names() else set()
+            )
+            if "role" not in cols:
+                return
+            # is_admin -> role admin, and role admin -> is_admin (two-way sync).
+            await conn.execute(text(
+                "UPDATE users SET role='admin' WHERE is_admin = true AND (role IS NULL OR role <> 'admin')"
+            ))
+            await conn.execute(text(
+                "UPDATE users SET is_admin = true WHERE role = 'admin' AND is_admin <> true"
+            ))
+            # Configured admin emails are always admins.
+            for email in admin_emails:
+                await conn.execute(text(
+                    "UPDATE users SET role='admin', is_admin=true WHERE lower(email) = :e"
+                ).bindparams(e=email))
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("schema-sync: user role sync skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
@@ -562,6 +599,8 @@ async def init_database() -> None:
     await ensure_indexes()
     await seed_sample_data()
     await seed_admin_user()
+    # Keep role/is_admin/ADMIN_EMAILS consistent (after users exist).
+    await sync_user_roles()
     await refresh_expiry_notifications()
     # Currency exchange rates (default table on first run).
     try:

@@ -356,6 +356,15 @@ async def get_current_user(
 
     if user is None:
         raise credentials_exception
+    # Access gate: a signed-in user with no granted role yet ('pending') is
+    # blocked from data endpoints until an admin approves them. Their identity is
+    # still valid — /api/auth/me uses a different dependency so the SPA can show a
+    # "pending approval" screen.
+    if getattr(user, "role", "pending") == "pending" and not getattr(user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is awaiting admin approval.",
+        )
     return user
 
 

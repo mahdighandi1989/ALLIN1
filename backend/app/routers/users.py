@@ -88,6 +88,9 @@ async def create_user(
         full_name=payload.full_name,
         is_active=payload.is_active,
         is_admin=payload.is_admin,
+        # An admin-created account is trusted: admins are 'admin', others default
+        # to 'editor' (a working role) rather than the 'pending' approval state.
+        role="admin" if payload.is_admin else "editor",
     )
     db.add(user)
     await db.commit()
@@ -128,8 +131,17 @@ async def update_user(
         user.full_name = data["full_name"]
     if "is_active" in data and data["is_active"] is not None:
         user.is_active = data["is_active"]
+    # role and is_admin are kept in sync: granting 'admin' sets is_admin, and a
+    # legacy is_admin toggle maps onto the role.
+    if "role" in data and data["role"]:
+        user.role = data["role"]
+        user.is_admin = data["role"] == "admin"
     if "is_admin" in data and data["is_admin"] is not None:
         user.is_admin = data["is_admin"]
+        if data["is_admin"] and user.role != "admin":
+            user.role = "admin"
+        elif not data["is_admin"] and user.role == "admin":
+            user.role = "editor"  # demoted admins keep edit access, not pending
 
     await db.commit()
     await db.refresh(user)

@@ -140,6 +140,34 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_PASSWORD: str = Field(default="admin12345")
     DEFAULT_ADMIN_EMAIL: str = Field(default="admin@allin1.local")
 
+    # ---- Google Sign-In (OAuth 2.0) + Drive backup ----
+    # Set these in the deployment env (see docs). When GOOGLE_CLIENT_ID is empty
+    # the Google endpoints return a clear "not configured" error instead of
+    # crashing, so the rest of the app keeps working.
+    GOOGLE_CLIENT_ID: str = Field(default="")
+    GOOGLE_CLIENT_SECRET: str = Field(default="")
+    GOOGLE_REDIRECT_URI: str = Field(
+        default="", description="Must match the Authorized redirect URI in Google Console"
+    )
+    # Emails that are always granted the admin role on Google sign-in (comma/space
+    # separated). Everyone else signs in as 'pending' until an admin grants a role.
+    ADMIN_EMAILS: str = Field(default="")
+    # Where to send the browser after a successful Google login (the SPA reads the
+    # token from the query string and stores it).
+    POST_LOGIN_REDIRECT_PATH: str = Field(default="/auth/callback")
+    # Drive backup destination + cadence.
+    DRIVE_BACKUP_FOLDER: str = Field(default="BankingOps-Backups")
+    BACKUP_DAILY_ENABLED: bool = Field(default=True)
+    BACKUP_INTERVAL_HOURS: int = Field(default=24, ge=1, le=168)
+
+    def get_admin_emails(self) -> set[str]:
+        """Lowercased set of always-admin emails parsed from ADMIN_EMAILS."""
+        raw = (self.ADMIN_EMAILS or "").replace(",", " ")
+        return {e.strip().lower() for e in raw.split() if e.strip()}
+
+    def google_oauth_configured(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI)
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

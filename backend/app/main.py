@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.monitoring import (
     get_logger,
@@ -194,6 +194,7 @@ async def simulate_unhandled_error():
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(google_auth.router, prefix="/api/auth/google", tags=["google-auth"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])

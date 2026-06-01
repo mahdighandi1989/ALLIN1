@@ -17,10 +17,12 @@ from app.schemas.customer import (
 from app.schemas.facility import FacilityResponse
 from app.schemas.offer_letter import OfferLetterResponse
 from app.utils.security import get_current_user
+from app.routers.auth import require_editor
 from app.services.audit import record_audit
 from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
 
-# Authentication is required for every customer endpoint.
+# Authentication is required for every customer endpoint (reads allowed for any
+# approved user; writes are gated to editor/admin via require_editor below).
 router = APIRouter(tags=["customers"], dependencies=[Depends(get_current_user)])
 
 _CUSTOMER_NOT_FOUND = "Customer not found"
@@ -173,7 +175,7 @@ async def bulk_delete_customers(
     payload: BulkIds,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Soft-delete many customers at once. Returns how many were affected."""
     result = await db.execute(
@@ -303,7 +305,7 @@ async def create_customer(
     customer_data: CustomerCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Create a new customer (account number must be unique)."""
     if customer_data.account_no:
@@ -333,7 +335,7 @@ async def update_customer(
     customer_data: CustomerUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Update an existing customer."""
     customer = await _get_active_customer(customer_id, db)
@@ -369,7 +371,7 @@ async def delete_customer(
     customer_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Soft delete a customer."""
     customer = await _get_active_customer(customer_id, db)

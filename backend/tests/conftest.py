@@ -113,7 +113,8 @@ async def test_user(db_session: AsyncSession) -> User:
         hashed_password=hash_password("testpass123"),
         full_name="Test User",
         is_active=True,
-        is_admin=False
+        is_admin=False,
+        role="editor",
     )
     db_session.add(user)
     await db_session.commit()
@@ -130,7 +131,8 @@ async def admin_user(db_session: AsyncSession) -> User:
         hashed_password=hash_password("admin123"),
         full_name="Admin User",
         is_active=True,
-        is_admin=True
+        is_admin=True,
+        role="admin",
     )
     db_session.add(user)
     await db_session.commit()

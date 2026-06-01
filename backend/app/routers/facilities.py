@@ -16,6 +16,7 @@ from app.schemas.facility import (
     FacilityListResponse,
 )
 from app.utils.security import get_current_user
+from app.routers.auth import require_editor
 from app.services.audit import record_audit
 from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
 
@@ -185,7 +186,7 @@ async def bulk_delete_facilities(
     payload: BulkIds,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Soft-delete many facilities at once."""
     result = await db.execute(
@@ -280,7 +281,7 @@ async def create_facility(
     facility_data: FacilityCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Create a new facility (after verifying the owning customer exists)."""
     await _ensure_customer_exists(facility_data.customer_id, db)
@@ -303,7 +304,7 @@ async def update_facility(
     facility_data: FacilityUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Update an existing facility."""
     facility = await _get_active_facility(facility_id, db)
@@ -333,7 +334,7 @@ async def delete_facility(
     facility_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_editor),
 ):
     """Soft delete a facility."""
     facility = await _get_active_facility(facility_id, db)

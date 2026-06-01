@@ -34,6 +34,17 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=128)
     is_admin: Optional[bool] = None
     is_active: Optional[bool] = None
+    role: Optional[str] = Field(None, description="pending | viewer | editor | admin")
+
+    @field_validator("role")
+    @classmethod
+    def _role(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip().lower()
+        if v not in ("pending", "viewer", "editor", "admin"):
+            raise ValueError("role must be one of: pending, viewer, editor, admin")
+        return v
 
     @field_validator("password")
     @classmethod
@@ -48,6 +59,9 @@ class AdminUserResponse(BaseModel):
     full_name: Optional[str] = None
     is_active: bool = True
     is_admin: bool = False
+    role: str = "pending"
+    auth_provider: str = "local"
+    picture: Optional[str] = None
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
 

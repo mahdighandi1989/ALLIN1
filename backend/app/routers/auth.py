@@ -120,11 +120,14 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
-    full_name: str
-    is_active: bool
-    is_admin: bool
-    created_at: datetime
-    last_login: Optional[datetime]
+    full_name: Optional[str] = None
+    is_active: bool = True
+    is_admin: bool = False
+    role: str = "pending"
+    picture: Optional[str] = None
+    auth_provider: str = "local"
+    created_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -208,11 +211,16 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """Get current active user"""
+    """Get current active user (and gate accounts still awaiting approval)."""
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
+        )
+    if getattr(current_user, "role", "pending") == "pending" and not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is awaiting admin approval.",
         )
     return current_user
 
@@ -231,6 +239,40 @@ async def require_admin(
             detail="Admin privileges required",
         )
     return current_user
+
+
+def _role_at_least(user: User, *roles: str) -> bool:
+    if getattr(user, "is_admin", False):
+        return True
+    return getattr(user, "role", "pending") in roles
+
+
+async def require_approved(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Allow any user who has been granted a role; block 'pending' accounts.
+
+    A freshly signed-in Google user is 'pending' until an admin grants access —
+    they get a clear 403 instead of seeing data.
+    """
+    if _role_at_least(current_user, "admin", "editor", "viewer"):
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Your account is awaiting admin approval.",
+    )
+
+
+async def require_editor(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Require editor or admin — viewers (and pending) cannot modify data."""
+    if _role_at_least(current_user, "admin", "editor"):
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Editor or admin privileges are required to make changes.",
+    )
 
 
 # Routes
