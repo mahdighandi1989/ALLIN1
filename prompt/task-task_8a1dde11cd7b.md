@@ -3,14 +3,14 @@ task_id: task_8a1dde11cd7b
 title: تکمیل TypeScript صفحه Facilities و API
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:09:05.614452+00:00'
-updated_at: '2026-06-02T15:56:57.459482+00:00'
+updated_at: '2026-06-02T16:02:32.152359+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1508,7 +1508,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی و تکمیل TypeScript ناقص در Facilities page - بخش ⚠️ یادداشت مهم
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی اولیه repo برای تشخیص وجود کد قبلی در facilities/page.tsx. این مرحله فقط شامل خواندن فایل‌ها و grep/search است، نه تغییر کد. باید مشخص شود که آیا کد کامل FacilitiesPage از قبل وجود دارد یا خیر. خارج از این مرحله: تغییر کد، نوشتن تست، یا commit.
 **Excerpt:**
 ```
@@ -1529,7 +1529,7 @@ _(مستقل)_
 ```
 
 ### Step 2: رفع TypeScript ناقص Facilities page - بخش 🎯 هدف
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** تکمیل کد TypeScript در facilities/page.tsx برای جلوگیری از runtime errors. شامل اضافه کردن تعریف function، imports، state declarations، و ساختار کامل React component. خارج از این مرحله: تغییر API client، اصلاح backend، یا تغییر سایر صفحات.
 **Excerpt:**
 ```
@@ -1550,7 +1550,7 @@ The file `frontend/src/app/facilities/page.tsx` contains only a fragment of Type
 ```
 
 ### Step 3: رفع TypeScript ناقص Facilities page - بخش ✅ معیار پذیرش
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اعمال تغییرات در facilities/page.tsx به‌گونه‌ای که تمام معیارهای پذیرش (AC) عبور کنند: عدم شکستن تست‌های موجود، عبور linter بدون warning، و موفقیت type-check. خارج از این مرحله: نوشتن تست‌های جدید یا تغییر فایل‌های تست.
 **Excerpt:**
 ```
@@ -1566,7 +1566,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: رفع TypeScript ناقص Facilities page - بخش 🧪 دستورات اعتبارسنجی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای دستورات اعتبارسنجی مشخص شده: pytest, npm run build, npm run lint. این مرحله شامل اجرای تست‌ها و بررسی خروجی آنهاست. خارج از این مرحله: تغییر کد یا رفع خطاهای احتمالی (خطاها در مرحله بعد رفع می‌شوند).
 **Excerpt:**
 ```
@@ -1577,7 +1577,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 5: رفع TypeScript ناقص Facilities page - بخش ⚠️ ریسک‌ها و موارد احتیاط
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی و مستندسازی ریسک‌های مرتبط با تغییر facilities/page.tsx. اطمینان از اینکه تست‌های موجود قبل از merge اجرا می‌شوند تا رگرشن ایجاد نشود. خارج از این مرحله: تغییر کد یا اجرای تست‌ها.
 **Excerpt:**
 ```
@@ -1586,7 +1586,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 6: رفع Facilities page API client - بخش ⚠️ یادداشت مهم (تسک 2)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی اولیه repo برای تشخیص وجود API client facilitiesApi در frontend/src/lib/api. این مرحله فقط شامل خواندن فایل‌ها و grep/search است. خارج از این مرحله: تغییر کد یا نوشتن API client جدید.
 **Excerpt:**
 ```
@@ -1607,7 +1607,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 7: رفع Facilities page API client - بخش 🎯 هدف (تسک 2)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اصلاح facilities/page.tsx برای رفع ارجاع به API client غیرموجود. شامل بازنویسی کامل صفحه به عنوان یک React component کامل با state management و فراخوانی API صحیح. خارج از این مرحله: تغییر backend یا سایر صفحات.
 **Excerpt:**
 ```
@@ -1628,7 +1628,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 8: رفع Facilities page API client - بخش ✅ معیار پذیرش (تسک 2)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اعمال تغییرات به‌گونه‌ای که تمام معیارهای پذیرش عبور کنند: عدم شکستن تست‌های موجود (tests/test_all_existing_features.py)، عبور linter (tests/test_frontend_lint.py)، و موفقیت type-check (tests/test_frontend_typecheck.py). خارج از این مرحله: نوشتن تست‌های جدید.
 **Excerpt:**
 ```
@@ -1644,7 +1644,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 9: رفع Facilities page API client - بخش 🧪 دستورات اعتبارسنجی (تسک 2)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای دستورات اعتبارسنجی: pytest, npm run build, npm run lint. بررسی خروجی و اطمینان از موفقیت. خارج از این مرحله: رفع خطاهای احتمالی.
 **Excerpt:**
 ```
@@ -1655,7 +1655,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: رفع Facilities page API client - بخش ⚠️ ریسک‌ها و موارد احتیاط (تسک 2)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی ریسک‌های مرتبط با تغییر facilities/page.tsx. اطمینان از اجرای تست‌های موجود قبل از merge. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
@@ -1664,7 +1664,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 11: فعال‌سازی بارگذاری داده در صفحات Customers/Facilities - بخش ⚠️ یادداشت مهم (تسک 3)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی اولیه repo برای تشخیص وضعیت فعلی بارگذاری داده در customers/page.tsx و facilities/page.tsx. grep/search برای یافتن فراخوانی‌های API و state management. خارج از این مرحله: تغییر کد.
 — [merged] اصلاح customers/page.tsx و facilities/page.tsx برای فعال‌سازی بارگذاری داده از backend. شامل اضافه کردن useEffect برای فراخوانی API، state management برای داده‌ها و خطاها، و نمایش داده‌ها به جای اسپینر. خارج از این مرحله: تغییر backend API.
 **Excerpt:**
@@ -1686,7 +1686,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 12: فعال‌سازی بارگذاری داده در صفحات Customers/Facilities - بخش ✅ معیار پذیرش (تسک 3)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اعمال تغییرات به‌گونه‌ای که معیارهای پذیرش عبور کنند: عدم شکستن تست‌های موجود، عبور linter (بررسی eslint در frontend/package.json و .eslintrc*)، و موفقیت type-check (بررسی tsc در frontend/tsconfig.json و package.json). خارج از این مرحله: نوشتن تست جدید.
 **Excerpt:**
 ```
@@ -1702,7 +1702,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 13: فعال‌سازی بارگذاری داده در صفحات Customers/Facilities - بخش 🧪 دستورات اعتبارسنجی (تسک 3)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای دستورات اعتبارسنجی: pytest, npm run build, npm run lint. بررسی خروجی. خارج از این مرحله: رفع خطا.
 **Excerpt:**
 ```
@@ -1713,7 +1713,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 14: فعال‌سازی بارگذاری داده در صفحات Customers/Facilities - بخش ⚠️ ریسک‌ها و موارد احتیاط (تسک 3)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی ریسک‌های مرتبط با تغییر دو صفحه. اطمینان از اجرای تست‌ها قبل از merge. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
@@ -1722,7 +1722,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 15: Refactor over-engineered code - بخش ⚠️ یادداشت مهم (تسک 4)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی اولیه repo برای تشخیص وضعیت فعلی frontend/src/app/facilities/page.tsx. grep/search برای یافتن useState, useEffect, async/await, try/catch, router.push. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
@@ -1743,7 +1743,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 16: Refactor over-engineered code - بخش 🎯 هدف (تسک 4)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اصلاح frontend/src/app/facilities/page.tsx برای حذف over-engineering. جایگزینی useState/useEffect با router.push ساده. اگر کد ضروری است، کامنت توجیهی اضافه شود. خارج از این مرحله: تغییر سایر صفحات یا نوشتن تست.
 **Excerpt:**
 ```
@@ -1766,7 +1766,7 @@ Stack: fastapi, nextjs.
 ```
 
 ### Step 17: Refactor over-engineered code - بخش ✅ معیار پذیرش (تسک 4)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اعمال تغییرات به‌گونه‌ای که معیارهای پذیرش عبور کنند: تشخیص ریشه anti-pattern (grep روی useState, useEffect, async/await, try/catch, router.push)، اصلاح کد یا اضافه کردن کامنت توجیهی، و نوشتن تست edge case در tests/test_edge_cases.py::test_redirect_edge_cases. خارج از این مرحله: تغییر سایر فایل‌های تست.
 **Excerpt:**
 ```
@@ -1783,7 +1783,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 18: Refactor over-engineered code - بخش 🧪 دستورات اعتبارسنجی (تسک 4)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای دستورات اعتبارسنجی: npm run type-check, npm run lint, npm run build. بررسی خروجی. خارج از این مرحله: رفع خطا.
 **Excerpt:**
 ```
@@ -1794,7 +1794,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 19: Refactor over-engineered code - بخش ⚠️ ریسک‌ها و موارد احتیاط (تسک 4)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی ریسک‌های مرتبط با تغییر page.tsx. اطمینان از اجرای تست‌ها قبل از merge. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
@@ -1803,7 +1803,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 20: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش ⚠️ یادداشت مهم (تسک 5)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی اولیه repo برای تشخیص orphan بودن route /customers. grep/search برای یافتن href="/customers", router.push.*/customers, to="/customers", navigate.*/customers در frontend/src/**/*.{tsx,jsx,ts,js}. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
@@ -1824,7 +1824,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 21: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش 🎯 هدف (تسک 5)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** رفع route orphan /customers. دو گزینه: (الف) اضافه کردن navigation link در منوی اصلی، (ب) حذف route، (ج) redirect 301 به route جدید. انتخاب بر اساس بررسی context. خارج از این مرحله: تغییر backend.
 **Excerpt:**
 ```
@@ -1854,7 +1854,7 @@ route `/customers` در فایل `` تعریف شده ولی هیچ `Link`، `ro
 ```
 
 ### Step 22: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش ✅ معیار پذیرش (تسک 5)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اعمال تغییرات به‌گونه‌ای که معیارهای پذیرش عبور کنند: تأیید orphan بودن route (grep روی الگوها)، اضافه کردن link یا حذف/redirect route، و نوشتن تست navigation با ui_interaction که کاربر بتواند به صفحه /customers برسد. خارج از این مرحله: تغییر سایر route‌ها.
 **Excerpt:**
 ```
@@ -1871,7 +1871,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 23: رفع مسیر فرانت‌اند بلااستفاده /customers - گام ۲: تصمیم‌گیری و اجرا
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای گام ۲ از مراحل اجرایی پیشنهادی: اگر orphan واقعی است، یا (الف) link/redirect در navigation اصلی اضافه کن، یا (ب) فایل route را حذف کن. انتخاب بر اساس بررسی context و نیاز business. خارج از این مرحله: گام ۱ (قبلاً انجام شده) و گام ۳.
 **Excerpt:**
 ```
@@ -1889,7 +1889,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 25: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش 🧪 دستورات اعتبارسنجی (تسک 5)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای دستورات اعتبارسنجی: pytest, npm run build, npm run lint. بررسی خروجی. خارج از این مرحله: رفع خطا.
 **Excerpt:**
 ```
@@ -1900,7 +1900,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 26: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش ⚠️ ریسک‌ها و موارد احتیاط (تسک 5)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی ریسک‌های مرتبط با حذف route /customers. اگر SEO اهمیت دارد، redirect بنویس نه delete. اطمینان از اجرای تست‌ها قبل از merge. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
