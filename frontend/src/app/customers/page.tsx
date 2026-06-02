@@ -101,7 +101,7 @@ export default function CustomersPage() {
 
   const allChecked = (data?.items?.length ?? 0) > 0 && data!.items.every((c) => selected.has(c.id))
 
-  return (
+  return (<div data-testid="customers-page">
     <Layout>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Customers</h2>
@@ -300,6 +300,7 @@ export default function CustomersPage() {
         />
       )}
     </Layout>
+    </div>
   )
 }
 

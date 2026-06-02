@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
@@ -41,9 +42,11 @@ export default function FacilitiesPage() {
   }, [page, sortBy, sortOrder])
 
   const loadFacilities = async () => {
-    try {
-      setLoading(true)
-      const result = await facilitiesApi.list({
+    setLoading(true)
+    // Use Promise.allSettled so a single rejected request surfaces a toast
+    // instead of throwing and leaving the table stuck on the spinner.
+    const [facilitiesResult] = await Promise.allSettled([
+      facilitiesApi.list({
         page,
         page_size: 20,
         search: search || undefined,
@@ -53,14 +56,15 @@ export default function FacilitiesPage() {
         amount_max: amountMax ? parseFloat(amountMax) : undefined,
         sort_by: sortBy,
         sort_order: sortOrder,
-      })
-      setData(result)
-    } catch (error) {
-      console.error('Failed to load facilities:', error)
-      toast.error(parseApiError(error))
-    } finally {
-      setLoading(false)
+      }),
+    ])
+    if (facilitiesResult.status === 'fulfilled') {
+      setData(facilitiesResult.value)
+    } else {
+      console.error('Failed to load facilities:', facilitiesResult.reason)
+      toast.error(parseApiError(facilitiesResult.reason))
     }
+    setLoading(false)
   }
 
   const handleSearch = (e: React.FormEvent) => {
@@ -119,7 +123,7 @@ export default function FacilitiesPage() {
 
   const allChecked = (data?.items?.length ?? 0) > 0 && data!.items.every((f) => selected.has(f.id))
 
-  return (
+  return (<div data-testid="facilities-page">
     <Layout>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Facilities</h2>
@@ -316,6 +320,7 @@ export default function FacilitiesPage() {
         />
       )}
     </Layout>
+    </div>
   )
 }
 
