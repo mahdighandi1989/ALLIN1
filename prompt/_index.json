@@ -1,6 +1,5 @@
 {
   "version": 1,
-  "generated_at": "2026-06-01T20:58:08.519052+00:00",
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
   "total": 13,
@@ -13,45 +12,7 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_1f0f55a17f45.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:04:20.175732+00:00",
-      "updated_at": "2026-05-29T22:04:47.468017+00:00"
-    },
-    {
-      "task_id": "task_afcee9e1c044",
-      "title": "رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_afcee9e1c044.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:06:12.836115+00:00",
-      "updated_at": "2026-05-29T22:06:12.836121+00:00"
-    },
-    {
-      "task_id": "task_8a1dde11cd7b",
-      "title": "تکمیل TypeScript صفحه Facilities و API",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_8a1dde11cd7b.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:09:05.614452+00:00",
-      "updated_at": "2026-05-29T22:09:31.826725+00:00"
-    },
-    {
-      "task_id": "task_e92cd1d0c4b4",
-      "title": "پاکسازی اسکریپت‌های تزریقی و URLهای هاردکد فرانت‌اند",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_e92cd1d0c4b4.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:12:35.442679+00:00",
-      "updated_at": "2026-05-29T22:12:46.766157+00:00"
+      "external_attempts": 0
     },
     {
       "task_id": "task_66febcc9ff9a",
@@ -61,9 +22,37 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_66febcc9ff9a.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:13:50.338007+00:00",
-      "updated_at": "2026-05-29T22:14:23.494587+00:00"
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_8a1dde11cd7b",
+      "title": "تکمیل TypeScript صفحه Facilities و API",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_8a1dde11cd7b.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_afcee9e1c044",
+      "title": "رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_afcee9e1c044.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_e92cd1d0c4b4",
+      "title": "پاکسازی اسکریپت‌های تزریقی و URLهای هاردکد فرانت‌اند",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_e92cd1d0c4b4.md",
+      "external_attempts": 0
     },
     {
       "task_id": "e155f680-f40b-46f5-a027-217b8a754ba5",
@@ -73,33 +62,7 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-e155f680-f40b-46f5-a027-217b8a754ba5.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:07:03.175598+00:00",
-      "updated_at": "2026-05-31T16:21:40.110718+00:00"
-    },
-    {
-      "task_id": "task_bd83a960a6ab",
-      "title": "افزایش پایداری و اعتبارسنجی پایپلاین اکسل",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_bd83a960a6ab.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:07:38.706114+00:00",
-      "updated_at": "2026-05-29T22:08:10.447962+00:00"
-    },
-    {
-      "task_id": "task_97e9c7c534d9",
-      "title": "افزایش پوشش تست و کیفیت کد بک‌اند",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_97e9c7c534d9.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:11:03.258958+00:00",
-      "updated_at": "2026-05-29T22:11:39.787313+00:00"
+      "external_attempts": 0
     },
     {
       "task_id": "task_02dfbac2d524",
@@ -109,9 +72,7 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_02dfbac2d524.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:15:14.835242+00:00",
-      "updated_at": "2026-05-29T22:15:22.152238+00:00"
+      "external_attempts": 0
     },
     {
       "task_id": "task_6fa50cdd5530",
@@ -121,9 +82,27 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_6fa50cdd5530.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-29T22:16:30.047068+00:00",
-      "updated_at": "2026-05-29T22:16:58.120630+00:00"
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_97e9c7c534d9",
+      "title": "افزایش پوشش تست و کیفیت کد بک‌اند",
+      "priority": "high",
+      "execution_priority": 2000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_97e9c7c534d9.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_bd83a960a6ab",
+      "title": "افزایش پایداری و اعتبارسنجی پایپلاین اکسل",
+      "priority": "high",
+      "execution_priority": 2000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_bd83a960a6ab.md",
+      "external_attempts": 0
     },
     {
       "task_id": "36090c25-a186-4c60-920a-ed2fb506ba4b",
@@ -133,9 +112,7 @@
       "status": "awaiting_review",
       "external_status": "pending",
       "path": "prompt/task-36090c25-a186-4c60-920a-ed2fb506ba4b.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:57:56.389488+00:00",
-      "updated_at": "2026-05-29T21:57:58.740244+00:00"
+      "external_attempts": 0
     },
     {
       "task_id": "6e56bc2e-603c-46ff-981c-e25391ccecc6",
@@ -145,9 +122,7 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-6e56bc2e-603c-46ff-981c-e25391ccecc6.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-17T16:07:03.215068+00:00",
-      "updated_at": "2026-05-31T16:21:46.068771+00:00"
+      "external_attempts": 0
     },
     {
       "task_id": "0b55d5f5-b60c-4150-bc5b-6148b5b74924",
@@ -157,9 +132,7 @@
       "status": "awaiting_review",
       "external_status": "pending",
       "path": "prompt/task-0b55d5f5-b60c-4150-bc5b-6148b5b74924.md",
-      "external_attempts": 0,
-      "created_at": "2026-05-24T15:58:48.941122+00:00",
-      "updated_at": "2026-05-29T22:00:43.911835+00:00"
+      "external_attempts": 0
     }
   ]
 }
