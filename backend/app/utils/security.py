@@ -1,5 +1,6 @@
 # backend/app/utils/security.py
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
@@ -55,6 +56,34 @@ def get_allowed_algorithms() -> list:
 
 # Pre-computed allowlist used for every decode call.
 ALLOWED_ALGORITHMS = get_allowed_algorithms()
+
+# Module logger. Auth outcomes are logged here (in addition to the route-level
+# logging in routers/auth.py) so the success/failure rate of the JWT layer is
+# observable in production regardless of which endpoint triggered verification.
+logger = logging.getLogger(__name__)
+
+# Prometheus counter for token-verification outcomes. Imported lazily/defensively
+# so this critical auth module never fails to load just because the optional
+# metrics backend is unavailable.
+try:  # pragma: no cover - exercised only when prometheus_client is installed
+    from app.monitoring import AUTH_OUTCOMES
+except Exception:  # pragma: no cover
+    AUTH_OUTCOMES = None
+
+
+def _record_auth_outcome(outcome: str, *, level: int = logging.INFO, detail: str = "") -> None:
+    """Emit a structured log line + increment the Prometheus auth counter.
+
+    ``outcome`` is a low-cardinality label (e.g. ``success``, ``expired``,
+    ``invalid_signature``, ``revoked``) so the production auth success rate can be
+    computed as ``success / total``. Never logs token contents or secrets.
+    """
+    logger.log(level, "auth.token.verify outcome=%s %s", outcome, detail)
+    if AUTH_OUTCOMES is not None:
+        try:
+            AUTH_OUTCOMES.labels(outcome=outcome).inc()
+        except Exception:  # pragma: no cover - metrics must never break auth
+            pass
 
 
 class TokenData(BaseModel):
@@ -124,6 +153,7 @@ def verify_access_token(token: str) -> dict:
     (with additional iss, aud, sub claims) for backward compatibility.
     """
     if not token or not isinstance(token, str):
+        _record_auth_outcome("malformed", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token format",
@@ -145,12 +175,14 @@ def verify_access_token(token: str) -> dict:
 
     token_alg = str(unverified_header.get("alg", "")).strip()
     if token_alg.lower() in _DISALLOWED_ALGORITHMS:
+        _record_auth_outcome("disallowed_algorithm_none", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token algorithm 'none' is not allowed",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if token_alg not in ALLOWED_ALGORITHMS:
+        _record_auth_outcome("disallowed_algorithm", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token algorithm not allowed",
@@ -192,6 +224,7 @@ def verify_access_token(token: str) -> dict:
         # is still valid.
         jti = payload.get("jti")
         if jti and token_blacklist.is_revoked(jti):
+            _record_auth_outcome("revoked", level=logging.WARNING)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has been revoked",
@@ -249,15 +282,18 @@ def verify_access_token(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        _record_auth_outcome("success", detail=f"user_id={user_id}")
         return payload
 
     except jwt.ExpiredSignatureError:
+        _record_auth_outcome("expired", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.JWTError:
+        _record_auth_outcome("invalid_signature", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
@@ -266,6 +302,7 @@ def verify_access_token(token: str) -> dict:
     except HTTPException:
         raise
     except Exception:
+        _record_auth_outcome("verification_error", level=logging.WARNING)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token verification failed",

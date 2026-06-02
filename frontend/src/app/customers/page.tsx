@@ -304,6 +304,65 @@ export default function CustomersPage() {
   )
 }
 
+// --- Client-side validation -------------------------------------------------
+// First line of defence: validate and sanitize every field before it reaches
+// the API. Backend validation remains authoritative, but rejecting malformed or
+// XSS-bearing input here gives immediate feedback and stops obviously hostile
+// payloads (e.g. "<script>") from ever being submitted. Pure TS, no deps.
+const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/
+const PHONE_RE = /^[0-9+\-()\s]{7,20}$/
+const ACCOUNT_RE = /^[A-Za-z0-9-]{3,30}$/
+
+function hasUnsafeChars(value: string): boolean {
+  // Angle brackets are the building blocks of HTML/script injection payloads.
+  return /[<>]/.test(value)
+}
+
+function sanitizeInput(value: string): string {
+  // Strip angle brackets so markup/script fragments can never be stored or sent.
+  return value.replace(/[<>]/g, '')
+}
+
+type CustomerTextField = 'account_no' | 'name' | 'email' | 'phone' | 'branch'
+type CustomerFormErrors = Partial<Record<CustomerTextField, string>>
+
+function validateCustomerForm(form: CustomerFormData): CustomerFormErrors {
+  const errors: CustomerFormErrors = {}
+
+  const accountNo = (form.account_no ?? '').trim()
+  if (!accountNo) {
+    errors.account_no = 'Account number is required'
+  } else if (!ACCOUNT_RE.test(accountNo)) {
+    errors.account_no = 'Use 3-30 letters, digits or dashes'
+  }
+
+  const name = (form.name ?? '').trim()
+  if (!name) {
+    errors.name = 'Name is required'
+  } else if (name.length < 2 || name.length > 100) {
+    errors.name = 'Name must be 2-100 characters'
+  } else if (hasUnsafeChars(name)) {
+    errors.name = 'Name contains invalid characters'
+  }
+
+  const email = (form.email ?? '').trim()
+  if (email && !EMAIL_RE.test(email)) {
+    errors.email = 'Enter a valid email address'
+  }
+
+  const phone = (form.phone ?? '').trim()
+  if (phone && !PHONE_RE.test(phone)) {
+    errors.phone = 'Enter a valid phone number (7-20 digits)'
+  }
+
+  const branch = (form.branch ?? '').trim()
+  if (branch && (branch.length < 2 || branch.length > 50 || hasUnsafeChars(branch))) {
+    errors.branch = 'Branch must be 2-50 valid characters'
+  }
+
+  return errors
+}
+
 function CustomerForm({
   customer,
   onClose,
@@ -323,9 +382,26 @@ function CustomerForm({
     notes: customer?.notes || '',
   })
   const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<CustomerFormErrors>({})
+
+  const updateField = (field: CustomerTextField, raw: string) => {
+    const value = sanitizeInput(raw)
+    setForm((prev) => ({ ...prev, [field]: value }))
+    // Clear a field's error as soon as the user edits it.
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    const validationErrors = validateCustomerForm(form)
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors)
+      toast.error('Please fix the highlighted fields')
+      return
+    }
+    setErrors({})
+
     setSaving(true)
     try {
       if (customer) {
@@ -356,27 +432,37 @@ function CustomerForm({
         <div className="p-4 border-b">
           <h3 className="text-lg font-semibold">{customer ? 'Edit Customer' : 'New Customer'}</h3>
         </div>
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4" noValidate>
           <div>
             <label className="block text-sm font-medium mb-1">Account Number *</label>
             <input
               type="text"
               value={form.account_no}
-              onChange={(e) => setForm({ ...form, account_no: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => updateField('account_no', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg ${errors.account_no ? 'border-red-500' : ''}`}
+              aria-invalid={!!errors.account_no}
+              maxLength={30}
               required
               disabled={!!customer}
             />
+            {errors.account_no && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{errors.account_no}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => updateField('name', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg ${errors.name ? 'border-red-500' : ''}`}
+              aria-invalid={!!errors.name}
+              maxLength={100}
               required
             />
+            {errors.name && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{errors.name}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Account Type</label>
@@ -400,27 +486,42 @@ function CustomerForm({
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => updateField('email', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg ${errors.email ? 'border-red-500' : ''}`}
+              aria-invalid={!!errors.email}
+              maxLength={254}
             />
+            {errors.email && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{errors.email}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Phone</label>
             <input
               type="tel"
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => updateField('phone', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg ${errors.phone ? 'border-red-500' : ''}`}
+              aria-invalid={!!errors.phone}
+              maxLength={20}
             />
+            {errors.phone && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{errors.phone}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Branch</label>
             <input
               type="text"
               value={form.branch}
-              onChange={(e) => setForm({ ...form, branch: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => updateField('branch', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg ${errors.branch ? 'border-red-500' : ''}`}
+              aria-invalid={!!errors.branch}
+              maxLength={50}
             />
+            {errors.branch && (
+              <p className="mt-1 text-xs text-red-600" role="alert">{errors.branch}</p>
+            )}
           </div>
           <div className="flex gap-2 pt-4">
             <button

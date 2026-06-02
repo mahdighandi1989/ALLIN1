@@ -52,6 +52,15 @@ UNHANDLED_ERRORS = Counter(
     "Total number of unhandled exceptions surfaced as HTTP 500",
 )
 
+# Authentication outcome counter. Lets production dashboards compute the auth
+# success rate (and break failures down by reason) directly from the JWT layer,
+# independent of the HTTP route that triggered the verification.
+AUTH_OUTCOMES = Counter(
+    "auth_token_verifications_total",
+    "JWT access-token verifications grouped by outcome",
+    labelnames=("outcome",),
+)
+
 
 def route_label(request) -> str:
     """A low-cardinality label for the request (route template when available)."""
