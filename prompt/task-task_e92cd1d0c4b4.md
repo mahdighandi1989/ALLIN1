@@ -3,14 +3,14 @@ task_id: task_e92cd1d0c4b4
 title: پاکسازی اسکریپت‌های تزریقی و URLهای هاردکد فرانت‌اند
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:12:35.442679+00:00'
-updated_at: '2026-06-02T17:32:06.642399+00:00'
+updated_at: '2026-06-02T17:35:25.986320+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1308,7 +1308,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی و حذف WebSocket URL هاردکد شده از فایل‌های HTML استاتیک (تسک 1 - بخش ⚠️ یادداشت مهم)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی اولیه و حذف WebSocket URL هاردکد شده ('wss://ai-creator-backend-q677.onrender.com/api/render/ws/bridge/gh_mahdighandi1989_allin1') از تمام فایل‌های HTML استاتیک در frontend/out/ و backend/static/ است. خارج از این مرحله: تغییر در فایل‌های منبع (InspectorBridge.tsx, next.config.js) و اجرای تست‌ها. نکته حیاتی: قبل از هر تغییری، با grep/search بررسی کنید که آیا این اسکریپت قبلاً حذف شده است یا خیر.
 **Excerpt:**
 ```
@@ -1329,7 +1329,7 @@ _(مستقل)_
 ```
 
 ### Step 2: حذف کامل اسکریپت Inspector Bridge از تمام فایل‌های HTML استاتیک (تسک 1 - بخش 🎯 هدف)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل حذف کامل بلوک اسکریپت Inspector Bridge (شامل تگ <script> و محتوای آن) از تمام فایل‌های HTML استاتیک در frontend/out/ و backend/static/ است. خارج از این مرحله: تغییر در فایل‌های منبع (InspectorBridge.tsx, next.config.js) و اجرای تست‌ها. نکته حیاتی: اسکریپت با کامنت '<!-- Inspector Bridge Script - Auto-injected -->' شروع می‌شود و بیش از 300 خط کد دارد.
 **Excerpt:**
 ```
@@ -1355,7 +1355,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 3: بررسی و حذف کد تزریق اسکریپت از InspectorBridge.tsx (تسک 1 - بخش ✅ معیار پذیرش)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی فایل frontend/src/app/InspectorBridge.tsx و حذف یا غیرفعال کردن کدی است که اسکریپت Inspector Bridge را به خروجی HTML تزریق می‌کند. خارج از این مرحله: تغییر در next.config.js و حذف اسکریپت از فایل‌های HTML موجود. نکته حیاتی: اگر این کامپوننت فقط برای محیط توسعه استفاده می‌شود، آن را با شرط process.env.NODE_ENV محافظت کنید.
 **Excerpt:**
 ```
@@ -1371,7 +1371,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: بررسی و حذف پلاگین تزریق اسکریپت از next.config.js (تسک 1 - بخش 💡 نمونه‌های قبل/بعد)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی فایل frontend/next.config.js و حذف یا غیرفعال کردن هر پلاگین یا تنظیمی که باعث تزریق اسکریپت Inspector Bridge به خروجی HTML می‌شود. خارج از این مرحله: تغییر در InspectorBridge.tsx و حذف اسکریپت از فایل‌های HTML موجود. نکته حیاتی: اگر پلاگین تزریق برای محیط توسعه ضروری است، آن را با شرط محیطی محافظت کنید.
 **Excerpt:**
 ```
@@ -1393,7 +1393,7 @@ _بعد:_
 ```
 
 ### Step 5: اجرای تست‌ها و اعتبارسنجی تغییرات (تسک 1 - بخش 🧪 دستورات اعتبارسنجی)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای دستورات اعتبارسنجی (pytest, npm run build, npm run lint) برای اطمینان از عدم شکستن تست‌های موجود و عبور linter و type-check است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر تستی fail شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
@@ -1407,7 +1407,7 @@ _بعد:_
 ```
 
 ### Step 6: بررسی و حذف اسکریپت Inspector Bridge از frontend/out/ (تسک 2 - بخش ⚠️ یادداشت مهم)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل بررسی اولیه و حذف اسکریپت Inspector Bridge از تمام فایل‌های HTML در frontend/out/ است. خارج از این مرحله: تغییر در backend/static/ و فایل‌های منبع. نکته حیاتی: قبل از هر تغییری، با grep/search بررسی کنید که آیا این اسکریپت قبلاً حذف شده است یا خیر.
 **Excerpt:**
 ```
@@ -1428,7 +1428,7 @@ _بعد:_
 ```
 
 ### Step 7: حذف اسکریپت Inspector Bridge از تمام فایل‌های frontend/out/ (تسک 2 - بخش 🎯 هدف)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل حذف کامل بلوک اسکریپت Inspector Bridge از تمام فایل‌های HTML در frontend/out/ است. خارج از این مرحله: تغییر در backend/static/ و فایل‌های منبع. نکته حیاتی: اسکریپت با کامنت '<!-- Inspector Bridge Script - Auto-injected -->' شروع می‌شود و بیش از 300 خط کد دارد.
 **Excerpt:**
 ```
@@ -1452,7 +1452,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 8: بررسی و حذف اسکریپت Inspector Bridge از backend/static/ (تسک 2 - بخش ✅ معیار پذیرش)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل بررسی و حذف اسکریپت Inspector Bridge از تمام فایل‌های HTML در backend/static/ است. خارج از این مرحله: تغییر در frontend/out/ و فایل‌های منبع. نکته حیاتی: نسخه اسکریپت در backend/static/ از document.addEventListener استفاده می‌کند در حالی که نسخه frontend/out/ از window.addEventListener استفاده می‌کند.
 **Excerpt:**
 ```
@@ -1467,7 +1467,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 9: اجرای تست‌ها و اعتبارسنجی تغییرات (تسک 2 - بخش 💡 نمونه‌های قبل/بعد)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای دستورات اعتبارسنجی (pytest, npm run build, npm run lint) برای اطمینان از عدم شکستن تست‌های موجود و عبور linter و type-check است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر تستی fail شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
@@ -1491,7 +1491,7 @@ _بعد:_
 ```
 
 ### Step 10: بررسی و حذف اسکریپت Inspector Bridge از backend/static/ (تسک 2 - بخش 🧪 دستورات اعتبارسنجی)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل حذف کامل بلوک اسکریپت Inspector Bridge از تمام فایل‌های HTML در backend/static/ است. خارج از این مرحله: تغییر در frontend/out/ و فایل‌های منبع. نکته حیاتی: نسخه اسکریپت در backend/static/ از document.addEventListener استفاده می‌کند در حالی که نسخه frontend/out/ از window.addEventListener استفاده می‌کند.
 **Excerpt:**
 ```
@@ -1505,7 +1505,7 @@ _بعد:_
 ```
 
 ### Step 11: بررسی و اضافه کردن وابستگی sonner به package.json (تسک 3 - بخش ⚠️ یادداشت مهم)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی اولیه و اضافه کردن وابستگی 'sonner' به بخش dependencies در فایل frontend/package.json است. خارج از این مرحله: اجرای npm install و به‌روزرسانی package-lock.json. نکته حیاتی: قبل از هر تغییری، بررسی کنید که آیا وابستگی sonner از قبل در package.json وجود دارد یا خیر.
 **Excerpt:**
 ```
@@ -1526,7 +1526,7 @@ _بعد:_
 ```
 
 ### Step 12: اضافه کردن وابستگی sonner به package.json (تسک 3 - بخش 🎯 هدف)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اضافه کردن وابستگی 'sonner' با نسخه '^1.4.0' به بخش dependencies در فایل frontend/package.json است. خارج از این مرحله: اجرای npm install و به‌روزرسانی package-lock.json. نکته حیاتی: وابستگی 'react-hot-toast' ممکن است غیرضروری باشد و باید در مرحله بعد حذف شود.
 **Excerpt:**
 ```
@@ -1550,7 +1550,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 13: اجرای npm install برای به‌روزرسانی package-lock.json (تسک 3 - بخش ✅ معیار پذیرش)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای دستور 'npm install' در دایرکتوری frontend برای نصب وابستگی sonner و به‌روزرسانی فایل package-lock.json است. خارج از این مرحله: تغییر در package.json. نکته حیاتی: اطمینان حاصل کنید که دستور npm install بدون خطا اجرا می‌شود.
 **Excerpt:**
 ```
@@ -1567,7 +1567,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 14: حذف وابستگی غیرضروری react-hot-toast از package.json (تسک 3 - بخش 💡 نمونه‌های قبل/بعد)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل حذف وابستگی 'react-hot-toast' از بخش dependencies در فایل frontend/package.json است، در صورتی که دیگر در پروژه استفاده نمی‌شود. خارج از این مرحله: اجرای npm install و به‌روزرسانی package-lock.json. نکته حیاتی: قبل از حذف، بررسی کنید که آیا react-hot-toast در جای دیگری از پروژه استفاده می‌شود یا خیر.
 **Excerpt:**
 ```
@@ -1587,7 +1587,7 @@ _بعد:_
 ```
 
 ### Step 15: اجرای npm install مجدد برای به‌روزرسانی package-lock.json پس از حذف react-hot-toast (تسک 3 - بخش 🧪 دستورات اعتبارسنجی)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل اجرای مجدد دستور 'npm install' در دایرکتوری frontend برای به‌روزرسانی فایل package-lock.json پس از حذف وابستگی react-hot-toast است. خارج از این مرحله: تغییر در package.json. نکته حیاتی: اطمینان حاصل کنید که دستور npm install بدون خطا اجرا می‌شود.
 **Excerpt:**
 ```
@@ -1600,7 +1600,7 @@ _بعد:_
 ```
 
 ### Step 16: اجرای build فرانت‌اند برای اعتبارسنجی نهایی (تسک 3 - بخش ⚠️ ریسک‌ها و موارد احتیاط)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای دستور 'npm run build' در دایرکتوری frontend برای اطمینان از build موفق پروژه پس از تغییرات وابستگی‌ها است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر build با خطا مواجه شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
@@ -1612,7 +1612,7 @@ _(مستقل)_
 ```
 
 ### Step 17: اجرای تست‌ها و اعتبارسنجی نهایی (تسک 3 - بخش 🏷 دسته‌بندی)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای دستورات اعتبارسنجی (pytest, npm run test, npm run lint) برای اطمینان از عدم شکستن تست‌های موجود و عبور linter و type-check است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر تستی fail شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
@@ -1629,7 +1629,7 @@ _(مستقل)_
 ```
 
 ### Step 18: Commit نهایی و ثبت تغییرات با پیام واضح (تسک 3 - بخش 💡 نکات استاندارد)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل commit کردن تمام تغییرات با یک پیام واضح و جامع است که شامل merged-from با شناسه‌های تسک‌ها (2c5a4a0d-4b6e-4a44-8e29-4c4945c4487a, 6079265b-4be3-4b4f-87b3-65bdbe250e39, 1de3634f-33f0-429a-87a8-278171a2dd75) و توضیح مختصری از تغییرات انجام شده است. خارج از این مرحله: تغییر در کد. نکته حیاتی: پیام commit باید شامل merged-from و توضیح تغییرات باشد.
 **Excerpt:**
 ```
