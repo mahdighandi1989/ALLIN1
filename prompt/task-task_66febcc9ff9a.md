@@ -3,14 +3,14 @@ task_id: task_66febcc9ff9a
 title: پیاده‌سازی تست‌های امنیتی احراز هویت
 type: other
 priority: critical
-execution_priority: 1350
-status: awaiting_review
-external_status: done
+execution_priority: 1050
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:13:50.338007+00:00'
-updated_at: '2026-06-02T18:10:59.086861+00:00'
+updated_at: '2026-06-02T18:11:15.451601+00:00'
 tags:
 - consolidated
 - post_verify_merge
