@@ -3,14 +3,14 @@ task_id: task_8a1dde11cd7b
 title: تکمیل TypeScript صفحه Facilities و API
 type: other
 priority: critical
-execution_priority: 1000
+execution_priority: 1050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:09:05.614452+00:00'
-updated_at: '2026-05-29T22:09:31.826725+00:00'
+updated_at: '2026-06-02T15:47:21.533091+00:00'
 tags:
 - consolidated
 - post_verify_merge
