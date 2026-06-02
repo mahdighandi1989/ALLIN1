@@ -3,14 +3,14 @@ task_id: task_afcee9e1c044
 title: رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد
 type: other
 priority: critical
-execution_priority: 1350
-status: awaiting_review
-external_status: done
+execution_priority: 1050
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:06:12.836115+00:00'
-updated_at: '2026-06-02T14:37:24.612814+00:00'
+updated_at: '2026-06-02T14:37:33.295727+00:00'
 tags:
 - consolidated
 - post_verify_merge
