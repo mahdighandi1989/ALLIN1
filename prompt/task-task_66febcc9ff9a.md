@@ -3,14 +3,14 @@ task_id: task_66febcc9ff9a
 title: پیاده‌سازی تست‌های امنیتی احراز هویت
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:13:50.338007+00:00'
-updated_at: '2026-06-02T18:03:40.568526+00:00'
+updated_at: '2026-06-02T18:10:59.086861+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1122,7 +1122,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی اولیه خودکار repo برای وجود تست‌های امنیتی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل جستجوی grep برای یافتن فایل‌های تست موجود (tests/test_security.py)، توابع hash_password، create_access_token، verify_token و هرگونه تست unit یا integration مرتبط است. خارج از این مرحله: ایجاد یا تغییر هیچ کدی انجام نمی‌شود. نکته حیاتی: این مرحله صرفاً برای تشخیص وضعیت فعلی است و مبنای تصمیم‌گیری برای مراحل بعدی خواهد بود.
 **Excerpt:**
 ```
@@ -1132,7 +1132,7 @@ _(مستقل)_
 ```
 
 ### Step 2: بازنویسی outcome target به صورت measurable برای تست‌های امنیتی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازنویسی هدف (outcome target) از حالت کیفی به حالت کمی و قابل اندازه‌گیری است. مثال: 'پس از افزودن تست‌های امنیتی، ۱۰۰٪ سناریوهای احراز هویت (شامل توکن‌های منقضی، رمز عبور اشتباه، حملات brute force) باید پوشش داده شود'. خارج از این مرحله: تغییر کد یا نوشتن تست. نکته حیاتی: این هدف باید در فایل تسک یا مستندات مرتبط ثبت شود.
 **Excerpt:**
 ```
@@ -1143,7 +1143,7 @@ _(مستقل)_
 ```
 
 ### Step 3: نوشتن تست‌های unit برای تابع hash_password با پوشش edge cases
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های unit برای تابع hash_password در فایل tests/test_security.py است. edge cases شامل: رمز عبور تکراری (تأیید اینکه hashهای متفاوت تولید می‌شوند)، رمز عبور خالی، رمز عبور با کاراکترهای خاص (مانند <script>، SQL injection payloads)، و شبیه‌سازی race condition (فراخوانی همزمان تابع). خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
 — [merged] این مرحله شامل نوشتن تست‌های unit برای تابع create_access_token در فایل tests/test_security.py است. edge cases شامل: ایجاد توکن با payload خالی، ایجاد توکن با payload حاوی داده‌های حساس، و بررسی صحت ساختار JWT. خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
 — [merged] این مرحله شامل نوشتن تست‌های unit برای تابع verify_token در فایل tests/test_security.py است. edge cases شامل: توکن معتبر، توکن منقضی، توکن با signature نامعتبر، توکن با payload دستکاری‌شده، و توکن خالی. خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
@@ -1155,7 +1155,7 @@ _(مستقل)_
 ```
 
 ### Step 4: نوشتن تست‌های integration برای سناریوی توکن منقضی
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی توکن منقضی است. این تست باید یک توکن با تاریخ انقضای گذشته ایجاد کند و سپس سعی کند با آن به یک endpoint محافظت‌شده دسترسی پیدا کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1163,7 +1163,7 @@ _(مستقل)_
 ```
 
 ### Step 5: نوشتن تست‌های integration برای سناریوی رمز عبور اشتباه
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی رمز عبور اشتباه است. این تست باید با یک نام کاربری معتبر و رمز عبور اشتباه به endpoint لاگین درخواست دهد. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1171,7 +1171,7 @@ _(مستقل)_
 ```
 
 ### Step 6: نوشتن تست‌های integration برای سناریوی brute force
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی brute force است. این تست باید چندین تلاش ناموفق برای لاگین (با رمز عبور اشتباه) انجام دهد و سپس بررسی کند که آیا سیستم پس از تعداد مشخصی تلاش، درخواست‌ها را مسدود می‌کند یا تأخیر ایجاد می‌کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1179,7 +1179,7 @@ _(مستقل)_
 ```
 
 ### Step 7: نوشتن تست‌های integration برای سناریوی JWT نامعتبر
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی JWT نامعتبر است. این تست باید یک توکن JWT با signature نامعتبر (مثلاً با کلید متفاوت امضا شده) ایجاد کند و سپس سعی کند با آن به یک endpoint محافظت‌شده دسترسی پیدا کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1187,7 +1187,7 @@ _(مستقل)_
 ```
 
 ### Step 8: افزودن metric/log برای تشخیص نرخ موفقیت احراز هویت در production
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن metric و log به فایل‌های backend/app/security.py و backend/app/api/auth.py است. metric باید نرخ موفقیت (success rate) احراز هویت را اندازه‌گیری کند (مثلاً با استفاده از Prometheus metrics). log باید شامل logger.info یا logger.warning برای رویدادهای مختلف احراز هویت (موفق، ناموفق، توکن منقضی) باشد. خارج از این مرحله: تغییر در frontend. نکته حیاتی: metric باید در production قابل تشخیص باشد.
 **Excerpt:**
 ```
@@ -1197,7 +1197,7 @@ _(مستقل)_
 ```
 
 ### Step 9: اجرای تست‌ها و linter برای اطمینان از عدم شکست
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اجرای تمام تست‌های موجود (pytest) و linter (مانند flake8 یا pylint) برای اطمینان از اینکه تغییرات ایجاد شده باعث شکست هیچ تستی یا ایجاد warning جدید نشده است. خارج از این مرحله: تغییر کد. نکته حیاتی: این مرحله باید پس از تمام تغییرات کد انجام شود.
 — [merged] این مرحله شامل اجرای تمام تست‌های موجود (pytest و npm run test) و linter (npm run lint) برای اطمینان از اینکه تغییرات ایجاد شده در frontend باعث شکست هیچ تستی یا ایجاد warning جدید نشده است. خارج از این مرحله: تغییر کد. نکته حیاتی: این مرحله باید پس از تمام تغییرات کد در frontend انجام شود.
 **Excerpt:**
@@ -1210,7 +1210,7 @@ _(مستقل)_
 ```
 
 ### Step 10: بررسی اولیه خودکار repo برای وجود اعتبارسنجی فرم مشتری
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل جستجوی grep برای یافتن فایل frontend/src/app/customers/page.tsx و بررسی وجود هرگونه اعتبارسنجی سمت کلاینت برای فیلدهای فرم (account_no, name, email, phone, branch) است. خارج از این مرحله: ایجاد یا تغییر هیچ کدی انجام نمی‌شود. نکته حیاتی: این مرحله صرفاً برای تشخیص وضعیت فعلی است و مبنای تصمیم‌گیری برای مراحل بعدی خواهد بود.
 **Excerpt:**
 ```
@@ -1220,7 +1220,7 @@ _(مستقل)_
 ```
 
 ### Step 11: افزودن اعتبارسنجی سمت کلاینت برای فیلد account_no در فرم مشتری
-**Status:** `pending` (0%)
+**Status:** `partial` (60%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد account_no در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی اینکه فیلد خالی نباشد، طول آن در محدوده مشخصی باشد (مثلاً ۱۰-۲۰ کاراکتر)، و فقط شامل اعداد باشد. خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص و بدون وابستگی به کتابخانه‌های خارجی انجام شود.
 — [merged] این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد name در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی اینکه فیلد خالی نباشد، طول آن در محدوده مشخصی باشد (مثلاً ۲-۱۰۰ کاراکتر)، و فقط شامل حروف و فاصله باشد (بدون اعداد یا کاراکترهای خاص). خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص انجام شود.
 — [merged] این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد email در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی فرمت ایمیل با استفاده از یک regex ساده (مانند test@example.com)، بررسی اینکه فیلد خالی نباشد، و sanitize کردن ورودی برای جلوگیری از XSS. خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص انجام شود.
@@ -1232,7 +1232,7 @@ _(مستقل)_
 ```
 
 ### Step 12: شناسایی و مستندسازی ناسازگاری منطقی در pipeline auth
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل شناسایی کامل ناسازگاری منطقی در pipeline auth است. باید دو طرف ناسازگاری (frontend login/page.tsx و backend API) را بخوانیم و فرض‌های هر کدام را لیست کنیم. سپس ground truth را تعیین کرده و مستند کنیم. خارج از این مرحله: تغییر کد. نکته حیاتی: این مرحله صرفاً برای تحلیل و مستندسازی است.
 **Excerpt:**
 ```
@@ -1243,7 +1243,7 @@ _(مستقل)_
 ```
 
 ### Step 13: اصلاح backend API برای بازگرداندن پیام خطای عمومی به جای جزئیات permission
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل اصلاح backend API (احتمالاً در فایل backend/app/api/auth.py) است تا به جای بازگرداندن پیام‌های خطای حاوی جزئیات permission (مانند 'شما دسترسی ادمین ندارید')، یک پیام خطای عمومی مانند 'دسترسی غیرمجاز' بازگرداند. جزئیات خطا باید فقط در لاگ‌های سرور ثبت شود. خارج از این مرحله: تغییر frontend. نکته حیاتی: این تغییر باید بدون شکستن تست‌های موجود انجام شود.
 **Excerpt:**
 ```
@@ -1254,7 +1254,7 @@ _(مستقل)_
 ```
 
 ### Step 14: به‌روزرسانی frontend برای نمایش پیام خطای عمومی و حذف جزئیات permission
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل به‌روزرسانی frontend (احتمالاً در فایل frontend/src/app/customers/page.tsx یا login/page.tsx) است تا به جای نمایش جزئیات permission از خطاهای API، پیام خطای عمومی را نمایش دهد. همچنین باید هرگونه ارجاع به جزئیات permission در frontend حذف شود. خارج از این مرحله: تغییر backend. نکته حیاتی: این تغییر باید با backend هماهنگ باشد.
 **Excerpt:**
 ```
@@ -1265,7 +1265,7 @@ _(مستقل)_
 ```
 
 ### Step 15: نوشتن integration test برای جلوگیری از نشت permission در خطاهای API
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل نوشتن یک integration test در فایل tests/integration/test_auth_pipeline.py با نام test_no_permission_leak_in_errors است. این تست باید بررسی کند که هیچ خطای API حاوی جزئیات permission (مانند 'admin', 'user', 'role') نیست و همه خطاها به یک پیام عمومی تبدیل شده‌اند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
