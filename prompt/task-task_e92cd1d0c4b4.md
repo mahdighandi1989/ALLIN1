@@ -3,14 +3,14 @@ task_id: task_e92cd1d0c4b4
 title: پاکسازی اسکریپت‌های تزریقی و URLهای هاردکد فرانت‌اند
 type: other
 priority: critical
-execution_priority: 1000
+execution_priority: 1050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:12:35.442679+00:00'
-updated_at: '2026-05-29T22:12:46.766157+00:00'
+updated_at: '2026-06-02T17:28:31.047030+00:00'
 tags:
 - consolidated
 - post_verify_merge
