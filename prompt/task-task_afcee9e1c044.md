@@ -3,14 +3,14 @@ task_id: task_afcee9e1c044
 title: رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:06:12.836115+00:00'
-updated_at: '2026-06-02T14:28:00.717534+00:00'
+updated_at: '2026-06-02T14:37:24.612814+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1822,7 +1822,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی اولیه خودکار repo و تشخیص پیاده‌سازی‌های قبلی پیش از اجرا
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت هشداردهنده برای مدل اجراکننده است و شامل هیچ دستور اجرایی مشخصی نیست. وظیفه آن الزام مدل به بررسی مستقل repo، جستجوی پیاده‌سازی‌های موجود، و جلوگیری از بازسازی کدهای از قبل موجود است. هیچ مرحله فنی یا تغییری در کد در این بخش تعریف نشده است.
 **Excerpt:**
 ```
@@ -1848,7 +1848,7 @@ _(مستقل)_
 ```
 
 ### Step 2: رفع باگ loading بی‌نهایت در داشبورد با پیاده‌سازی endpoint dashboard_stats
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله فقط به پیاده‌سازی کامل endpoint `GET /dashboard` در `backend/app/routers/stats.py` می‌پردازد. شامل کوئری واقعی از دیتابیس (با استفاده از AsyncSession) برای برگرداندن داده‌های معتبر (total_customers, total_facilities) است. تغییرات در فرانت‌اند یا فایل‌های استاتیک (HTML) جزو این مرحله نیست. endpoint باید به‌جای پاسخ dummy، داده‌های واقعی برگرداند تا spinner در build استاتیک پنهان شود.
 **Excerpt:**
 ```
@@ -1872,7 +1872,7 @@ _(مستقل)_
 ```
 
 ### Step 3: همگام‌سازی نمایش داده‌های واقعی در داشبورد و صفحات مرتبط
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل رفع باگ‌های نمایش داده‌ها در داشبورد، صفحات customers و facilities است. تمرکز بر رفتار قابل مشاهده کاربر (نمایش داده‌های واقعی، مدیریت خطا، عدم نمایش spinner ابدی) است. پیاده‌سازی endpoint /api/stats/dashboard در بک‌اند و fallback UI در فرانت‌اند را پوشش می‌دهد. تست‌ها و linting نیز باید پاس شوند.
 **Excerpt:**
 ```
@@ -1892,7 +1892,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: رفع spinner ابدی و نمایش داده‌ها یا پیام خطا در داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل رفع مشکل spinner ابدی در صفحه داشبورد است. خروجی مورد انتظار: داده‌ها نمایش داده شوند یا در صورت خطا، پیام خطای مناسب نشان داده شود. این بخش شامل تغییر در frontend (احتمالاً page.tsx) و backend (احتمالاً stats.py) است. spinner باید با نمایش داده‌ها یا پیام خطا جایگزین شود.
 **Excerpt:**
 ```
@@ -1914,7 +1914,7 @@ _بعد:_
 ```
 
 ### Step 5: بررسی و اصلاح endpoint بک‌اند /api/stats/dashboard برای تطبیق با interface DashboardStats
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی endpoint بک‌اند (backend/app/routers/stats.py) و اصلاح queryهای دیتابیس برای اطمینان از تطبیق کامل response با interface DashboardStats است. وابستگی به فرانت‌اند (frontend/src/app/dashboard/page.tsx) برای تطبیق نوع داده‌ها وجود دارد. این مرحله بخشی از تسک 2 از 5 با اولویت critical است.
 **Excerpt:**
 ```
@@ -1952,7 +1952,7 @@ _(مستقل)_
 ```
 
 ### Step 7: بررسی و همگام‌سازی نمایش داده‌ها در داشبورد با رفع باگ‌های احتمالی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل بررسی کامل وضعیت فعلی repo برای تشخیص وجود یا عدم وجود پیاده‌سازی‌های مرتبط با رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد است. شامل جستجوی فایل‌های backend/app/routers/stats.py، frontend/src/app/dashboard/page.tsx، backend/app/main.py، backend/app/models/facility.py، docs/DATABASE_SCHEMA.md، tests/test_stats.py، backend/app/routers/stats.py، backend/migrations/versions/002_add_missing_columns.py، backend/tests/test_facilities.py و backend/tests/test_dashboard.py می‌شود. نکته حیاتی: قبل از هر اقدامی باید با grep/search و خواندن فایل‌های مرتبط بررسی شود که چه چیزی از قبل وجود دارد و از بازسازی موارد موجود خودداری شود.
 **Excerpt:**
 ```
@@ -1978,7 +1978,7 @@ _(مستقل)_
 ```
 
 ### Step 8: همگام‌سازی contract بین endpoint /api/stats/dashboard و فرانت‌اند dashboard/page.tsx
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی و اصلاح کامل endpoint /api/stats/dashboard در backend/app/routers/stats.py است تا response آن دقیقاً با interface DashboardStats تعریف‌شده در frontend/src/app/dashboard/page.tsx (خطوط 10-22) مطابقت داشته باشد. همچنین شامل بررسی وجود ستون amount در مدل facility (backend/app/models/facility.py) و schema response در backend/app/routers/stats.py می‌شود. خارج از scope: تغییرات در فرانت‌اند، مهاجرت دیتابیس، یا تست‌های integration.
 **Excerpt:**
 ```
@@ -2004,7 +2004,7 @@ _(مستقل)_
 ```
 
 ### Step 9: همگام‌سازی پاسخ endpoint /api/stats/dashboard با interface DashboardStats
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله تضمین می‌کند که پاسخ JSON برگشتی از endpoint /api/stats/dashboard دقیقاً با ساختار تعریف‌شده در interface DashboardStats مطابقت دارد. شامل بررسی نوع فیلدها، وجود تمام فیلدهای اجباری، و عدم وجود فیلد اضافی است. خارج از scope: منطق محاسبه آمار، اتصال به دیتابیس، یا تغییر در frontend.
 **Excerpt:**
 ```
@@ -2016,7 +2016,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: بررسی و تطبیق کامل response schema endpoint /api/stats/dashboard با interface DashboardStats در frontend و اطمینان از وجود ستون amount در مدل Facility
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی و تطبیق کامل schema خروجی endpoint /api/stats/dashboard با interface DashboardStats در frontend، اطمینان از وجود ستون amount در مدل Facility و مهاجرت دیتابیس، و اضافه کردن validation با Pydantic برای response است. خارج از scope این مرحله: تست‌نویسی، linting، type-checking و سایر آیتم‌های لیست که در مراحل بعدی انجام می‌شوند.
 **Excerpt:**
 ```
@@ -2032,7 +2032,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 11: رفع خطای 'column amount does not exist' و بازگرداندن داده‌های صحیح dashboard
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل رفع باگ در endpoint stats است که خطای 'column amount does not exist' را برمی‌گرداند. خروجی مورد انتظار شامل فیلدهای total_customers, total_facilities, active_facilities, expiring_soon, monthly_revenue, recent_activities است. تغییرات باید در فایل stats.py و احتمالاً migration مربوطه انجام شود. این بخش شامل frontend یا سایر endpointها نمی‌شود.
 **Excerpt:**
 ```
@@ -2054,7 +2054,7 @@ _بعد:_
 ```
 
 ### Step 12: رفع endpoint dashboard_stats برای بازگرداندن فیلدهای active_facilities, monthly_revenue, recent_activities
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی و اصلاح endpoint dashboard_stats در backend/app/routers/stats.py است. هدف، تطبیق response با schema جدید stats.py و بازگرداندن فیلدهای گمشده (active_facilities, monthly_revenue, recent_activities) است. وابستگی‌های قبلی (مدل facility، schema stats، مهاجرت دیتابیس) انجام شده‌اند. تغییرات نباید clientهای دیگر را بشکند. این مرحله شامل اصلاح فرانت‌اند یا تست‌ها نمی‌شود.
 **Excerpt:**
 ```
@@ -2065,7 +2065,7 @@ _بعد:_
 ```
 
 ### Step 13: بررسی اولیه خودکار و جلوگیری از بازسازی موارد موجود در ریپازیتوری
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت هشداردهنده برای مدل اجراکننده است و شامل هیچ دستور اجرایی مستقیمی نیست. وظیفه آن الزام مدل به بررسی مستقل ریپازیتوری پیش از هر تغییری است. شامل: جستجوی فایل‌ها/توابع/قابلیت‌های موجود، عدم بازسازی موارد کامل، اصلاح موارد ناقص/اشتباه، و ثبت کامیت no-op در صورت عدم نیاز به تغییر. خارج از scope: اجرای مستقیم هیچ تغییری در کد.
 **Excerpt:**
 ```
@@ -2091,7 +2091,7 @@ _بعد:_
 ```
 
 ### Step 14: رفع خطای 500 در endpoint /api/stats/dashboard و همگام‌سازی نمایش داده‌ها در حالت static build
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل رفع باگ endpoint /api/stats/dashboard در backend است که باعث خطای 500 می‌شود. همچنین شامل اصلاح fetchDashboardData در frontend/src/app/dashboard/page.tsx برای کار در حالت static export با استفاده از داده‌های mock یا pre-rendered. خارج از scope: تغییرات در backend/static/dashboard/index.html (در مرحله جداگانه) و اصلاح مدل‌های دیتابیس.
 **Excerpt:**
 ```
@@ -2099,7 +2099,7 @@ _بعد:_
 ```
 
 ### Step 15: اصلاح fetchDashboardData، پیاده‌سازی endpoint /api/stats/dashboard و افزودن fallback UI برای static export
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل سه تغییر هم‌زمان است: (1) اصلاح تابع fetchDashboardData در frontend/src/app/dashboard/page.tsx برای استفاده از try-catch و fallback UI، (2) اطمینان از پیاده‌سازی صحیح endpoint /api/stats/dashboard در backend/app/routers/stats.py و وجود ستون amount در جدول facilities، (3) افزودن mock data یا fallback UI برای حالت static export. خارج از scope: تغییرات در سایر فایل‌ها، اصلاح تست‌ها، یا تغییرات linter/type-check.
 **Excerpt:**
 ```
@@ -2107,7 +2107,7 @@ _بعد:_
 ```
 
 ### Step 16: رفع خطای 500 با اضافه کردن fallback در fetch داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش فقط به تغییر کد در فرانت‌اند (dashboard/page.tsx) مربوط می‌شود تا هنگام دریافت خطا از API، به جای throw کردن خطای عمومی، ابتدا بدنه خطا را parse کرده و پیام معنادار استخراج کند. بک‌اند و تست‌ها در این مرحله تغییر نمی‌کنند. نکته حیاتی: تغییر فقط در بخش fetch مربوط به stats dashboard است، نه سایر fetchها.
 **Excerpt:**
 ```
@@ -2134,7 +2134,7 @@ if (!response.ok) {
 ```
 
 ### Step 17: پیاده‌سازی مدیریت خطای داشبورد برای ستون گمشده amount
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی کامل تسک 4 از 5 است: مدیریت خطا در فرانت‌اند و بک‌اند برای زمانی که ستون amount در دیتابیس وجود ندارد. شامل: (1) تغییر endpoint بک‌اند برای بازگرداندن خطای 500 با پیام مناسب، (2) تغییر کامپوننت داشبورد فرانت‌اند برای نمایش پیام خطا و دکمه 'Try Again' به جای اسپینر بی‌نهایت. خارج از scope: سایر تسک‌ها، تغییرات دیتابیس، تست‌های واحد.
 **Excerpt:**
 ```
@@ -2152,7 +2152,7 @@ if (!response.ok) {
 ```
 
 ### Step 18: بررسی اولیه خودکار repo و جلوگیری از پیاده‌سازی مجدد قابلیت‌های موجود
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت هشداردهنده برای مدل اجراکننده است و شامل هیچ کار اجرایی مستقیمی نمی‌شود. وظیفه آن اطلاع‌رسانی درباره احتمال وجود پیاده‌سازی قبلی، لزوم بررسی مستقل repo، و مسئولیت مدل در قبال تشخیص صحیح موقعیت فایل‌ها و کامل بودن پیاده‌سازی است. این بخش صراحتاً می‌گوید که پرامپت ممکن است اشتباه باشد و مدل باید بر اساس قضاوت خود عمل کند. هیچ مرحله اجرایی (تغییر کد، ایجاد فایل، یا تست) در این بخش تعریف نشده است.
 **Excerpt:**
 ```
@@ -2178,7 +2178,7 @@ if (!response.ok) {
 ```
 
 ### Step 19: رفع مشکل stuck شدن داشبورد در حالت loading به دلیل عدم وجود ستون amount در جدول facilities
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل رفع باگ اصلی است که باعث می‌شود داشبورد در حالت loading بی‌نهایت بماند. علت ریشه‌ای: عدم وجود ستون 'amount' در جدول facilities که منجر به خطای 500 در endpoint stats می‌شود. راه‌حل: افزودن ستون amount از طریق migration موجود (002_add_missing_columns.py) و اصلاح هندلینگ خطا در frontend. این بخش شامل اصلاح کامل backend و frontend است. خارج از scope: سایر باگ‌های احتمالی داشبورد، بهبود UI، یا تغییرات معماری.
 **Excerpt:**
 ```
@@ -2212,7 +2212,7 @@ The dashboard page (`frontend/src/app/dashboard/page.tsx`) fetches data from `/a
 ```
 
 ### Step 20: پیاده‌سازی معیارهای پذیرش برای مدیریت خطا و همگام‌سازی نمایش داده‌ها در داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی کامل معیارهای پذیرش (AC) برای بخش خطا و بارگذاری مجدد داشبورد است. شامل: (1) اطمینان از وجود ستون amount در جدول facilities از طریق اجرای مهاجرت Alembic، (2) رفع مدیریت خطا در frontend/src/app/dashboard/page.tsx برای نمایش پیام خطا به جای اسپینر بی‌نهایت، (3) افزودن مکانیزم timeout برای جلوگیری از بارگذاری بی‌نهایت. خارج از scope: سایر بخش‌های داشبورد، تست‌های واحد (فقط اجرای تست‌ها برای اطمینان از عدم شکست)، linting و type-checking (فقط اطمینان از عبور). نکته حیاتی: تمام ACها باید به صورت رفتار قابل مشاهده پیاده‌سازی شوند و نام فایل‌ها/کلاس‌ها دقیقاً از لیست داده شده استفاده شود.
 **Excerpt:**
 ```
@@ -2255,7 +2255,7 @@ if (error) { return <ErrorState message={error} onRetry={handleRefresh} /> }
 ```
 
 ### Step 22: رفع استفاده از کامپوننت‌های UI تعریف‌نشده در داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل رفع باگ‌های مربوط به کامپوننت‌های UI تعریف‌نشده در داشبورد است. تغییرات باید بدون شکستن تست‌های موجود، عبور از linter و type-check انجام شود. فایل‌های دخیل مشخص نیستند اما احتمالاً frontend/src/app/dashboard/page.tsx و کامپوننت‌های UI مرتبط هستند.
 **Excerpt:**
 ```
@@ -2273,7 +2273,7 @@ if (error) { return <ErrorState message={error} onRetry={handleRefresh} /> }
 ```
 
 ### Step 23: بررسی اولیه خودکار و پیش‌نیازهای اجرایی برای رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل دستورالعمل‌های پیش‌اجرایی برای مدل اجراکننده است: بررسی وجود پیاده‌سازی قبلی، جستجوی فایل‌های مرتبط، و تصمیم‌گیری در مورد نیاز به تغییر. این بخش خود یک مرحله اجرایی نیست، بلکه یک یادداشت هشداردهنده برای جلوگیری از کار تکراری یا اشتباه است. هیچ کد جدیدی در این مرحله تولید نمی‌شود، فقط تحلیل و تصمیم‌گیری صورت می‌گیرد. خروجی این بخش می‌تواند 'skip' باشد اگر همه چیز از قبل درست پیاده‌سازی شده باشد.
 **Excerpt:**
 ```
@@ -2307,7 +2307,7 @@ if (error) { return <ErrorState message={error} onRetry={handleRefresh} /> }
 ```
 
 ### Step 25: تبدیل معیارهای پذیرش و مراحل اجرایی به یک مرحله اجرایی برای رفع باگ و همگام‌سازی نمایش داده‌ها در داشبورد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اعمال تغییرات کد در فایل‌های مرتبط با رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد است. معیارهای پذیرش شامل عدم شکستن تست‌های موجود، عبور linter بدون warning، موفقیت type-check، و عدم fail شدن هیچ تستی است. مراحل اجرایی باید بر اساس Context و معیارهای پذیرش تعیین شوند. خروجی مورد انتظار تغییر کد در فایل‌های مرتبط، commit یا PR جدید با پیام واضح، و عبور تمام معیارهای پذیرش است.
 **Excerpt:**
 ```
@@ -2329,7 +2329,7 @@ _(مجری بر اساس Context و معیارهای پذیرش، مراحل ر�
 ```
 
 ### Step 26: اجرای تست‌های موجود پیش از merge برای جلوگیری از رگرشن
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش صرفاً شامل اجرای تست‌های موجود در پروژه (مانند tests/test_stats.py, backend/tests/test_facilities.py, backend/tests/test_dashboard.py) پیش از انجام merge است. هیچ کد جدیدی نوشته نمی‌شود و هیچ تغییری در فایل‌های اصلی اعمال نمی‌گردد. هدف صرفاً اطمینان از عدم شکستن عملکردهای فعلی (regression) است. این مرحله یک گام احتیاطی (pre-merge check) است و بخشی از فرآیند توسعه یا رفع باگ محسوب نمی‌شود.
 **Excerpt:**
 ```
