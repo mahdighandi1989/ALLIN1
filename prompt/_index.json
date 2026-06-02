@@ -2,7 +2,7 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 11,
+  "total": 12,
   "tasks": [
     {
       "task_id": "task_1f0f55a17f45",
@@ -32,6 +32,16 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_afcee9e1c044.md",
+      "external_attempts": 1
+    },
+    {
+      "task_id": "task_e92cd1d0c4b4",
+      "title": "پاکسازی اسکریپت‌های Inspector Bridge و وابستگی‌های فرانت‌اند",
+      "priority": "critical",
+      "execution_priority": 1050,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_e92cd1d0c4b4.md",
       "external_attempts": 1
     },
     {
