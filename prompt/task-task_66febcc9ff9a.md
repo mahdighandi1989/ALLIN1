@@ -1,22 +1,22 @@
 ---
 task_id: task_66febcc9ff9a
-title: 'تقویت جامع امنیت و احراز هویت: از اعتبارسنجی ورودی تا تست‌های خودکار و جلوگیری از نشت اطلاعات'
+title: پیاده‌سازی تست‌های امنیتی احراز هویت
 type: other
 priority: critical
-execution_priority: 1000
+execution_priority: 1050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:13:50.338007+00:00'
-updated_at: '2026-05-29T22:13:50.338011+00:00'
+updated_at: '2026-06-02T17:32:45.700676+00:00'
 tags:
 - consolidated
 - post_verify_merge
 ---
 
-# تقویت جامع امنیت و احراز هویت: از اعتبارسنجی ورودی تا تست‌های خودکار و جلوگیری از نشت اطلاعات
+# پیاده‌سازی تست‌های امنیتی احراز هویت
 
 ## Raw Idea
 
