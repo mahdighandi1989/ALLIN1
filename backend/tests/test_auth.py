@@ -286,3 +286,25 @@ class TestJWTSecurity:
         payload = verify_access_token(token)
         assert payload["user_id"] == "u1"
         assert payload["username"] == "alice"
+
+
+async def test_login_rate_limit(client: AsyncClient):
+    """Repeated failed logins are throttled with HTTP 429 (brute-force guard).
+
+    The first ``LOGIN_RATE_LIMIT_PER_MINUTE`` (5) attempts fail normally with
+    401; the next attempt within the same minute is rejected with 429 before the
+    credentials are even checked. The autouse ``_reset_security_state`` fixture
+    clears the limiter between tests so this is deterministic.
+    """
+    statuses = []
+    for _ in range(settings.LOGIN_RATE_LIMIT_PER_MINUTE + 1):
+        resp = await client.post(
+            "/api/auth/login",
+            data={"username": "rate-limit-victim", "password": "wrongpassword1"},
+        )
+        statuses.append(resp.status_code)
+
+    assert statuses[: settings.LOGIN_RATE_LIMIT_PER_MINUTE] == [
+        401
+    ] * settings.LOGIN_RATE_LIMIT_PER_MINUTE
+    assert statuses[-1] == 429
