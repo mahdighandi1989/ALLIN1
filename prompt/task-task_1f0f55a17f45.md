@@ -3,14 +3,14 @@ task_id: task_1f0f55a17f45
 title: تقویت امنیت JWT و مکانیزم‌های احراز هویت
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:04:20.175732+00:00'
-updated_at: '2026-06-02T13:04:34.981632+00:00'
+updated_at: '2026-06-02T13:08:09.152341+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -4673,7 +4673,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: یادداشت مهم برای مدل اجراکننده — بررسی مستقل پیش از تغییر
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت هشداردهنده است که به مدل اجراکننده یادآوری می‌کند پرامپت ممکن است ناقص یا اشتباه باشد. وظیفه مدل اجراکننده این است که پیش از هر تغییر، ساختار repo، فایل‌های ذکرشده و وابستگی‌ها را مستقل بررسی کند. این بخش شامل هیچ مرحله اجرایی نیست و صرفاً یک راهنمای رفتاری است.
 — [merged] این بخش یک یادداشت هشداردهنده است که به مدل اجراکننده یادآوری می‌کند پرامپت ممکن است ناقص یا اشتباه باشد. شامل دستورالعمل‌هایی برای بررسی مستقل repo، فایل‌ها و وابستگی‌ها، و مسئولیت‌پذیری در قبال تصمیم‌گیری. همچنین شامل قواعدی برای انجام کار طولانی در چند کامیت متوالی. این بخش هیچ تغییر اجرایی مشخصی را تعریف نمی‌کند و صرفاً یک راهنمای رفتاری است.
 — [merged] این بخش یک یادداشت هشداردهنده است که به مدل اجراکننده یادآوری می‌کند پرامپت ممکن است ناقص یا اشتباه باشد. شامل دستورالعمل‌هایی برای بررسی مستقل ساختار repo، فایل‌ها و وابستگی‌ها، و مسئولیت‌پذیری در قبال تصمیمات. همچنین دستورالعمل‌هایی برای انجام کارهای طولانی در چند کامیت متوالی با ترتیب منطقی و ارائه checklist در PR description. این بخش هیچ تغییر اجرایی مشخصی را تعریف نمی‌کند.
@@ -4699,7 +4699,7 @@ _(مستقل)_
 ```
 
 ### Step 2: رفع آسیب‌پذیری بحرانی JWT با الگوریتم none و کلید ضعیف
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل اصلاح دو فایل اصلی backend/app/routers/auth.py و backend/app/main.py است. در auth.py باید کلید ثابت و ضعیف با یک کلید امن از متغیر محیطی جایگزین شود و الگوریتم‌های مجاز محدود شوند. در main.py باید تابع verify_token با گزینه‌های امنیتی (options) برای جلوگیری از پذیرش الگوریتم none به‌روزرسانی شود. همچنین فایل‌های backend/.env.example و backend/app/config.py برای پشتیبانی از کلید امن جدید به‌روز می‌شوند. این بخش شامل تغییرات در سایر فایل‌ها یا تست‌ها نیست.
 **Excerpt:**
 ```
@@ -4750,7 +4750,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 3: تقویت امنیت JWT: جایگزینی کلید هاردکد، محدودیت الگوریتم و به‌روزرسانی middleware
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی کامل معیارهای پذیرش امنیتی JWT است: خواندن کلید از متغیر محیطی، محدود کردن الگوریتم به HS256، فعال‌سازی بررسی امضا و فیلدهای اجباری (exp, iat)، جایگزینی کتابخانه python-jose با PyJWT/authlib، و به‌روزرسانی middleware برای رد توکن‌های با الگوریتم none. تمامی فایل‌های backend مرتبط (config, security, auth, middleware) تحت تأثیر قرار می‌گیرند. تست‌ها و linter باید پاس شوند.
 **Excerpt:**
 ```
@@ -4771,7 +4771,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 4: تقویت امنیت کلید JWT و اعتبارسنجی توکن‌ها با استفاده از متغیر محیطی و options امن
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل دو تغییر امنیتی در کد backend است: (1) جایگزینی کلید ثابت JWT_SECRET_KEY با مقدار پویا از متغیر محیطی یا تولید تصادفی امن، (2) افزودن options اجباری به تابع jwt.decode برای فعال‌سازی verify_signature و الزام وجود فیلدهای exp و iat. این تغییرات در فایل‌های backend/app/config.py و backend/app/utils/security.py یا هر فایلی که حاوی SECRET_KEY و jwt.decode است اعمال می‌شود. خارج از scope: تغییر frontend، تست‌ها، یا سایر بخش‌های احراز هویت.
 **Excerpt:**
 ```
@@ -4797,7 +4797,7 @@ payload = jwt.decode(token, SECRET_KEY, options={"verify_signature": True, "requ
 ```
 
 ### Step 5: اجرای دستورات اعتبارسنجی امنیت JWT و تست‌های مربوطه
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل اجرای دو دستور مشخص است: (1) یک دستور پایتون برای تست آسیب‌پذیری کتابخانه `python-jose` در برابر حملات الگوریتم none، و (2) اجرای تست‌های pytest مربوط به امنیت JWT در فایل `tests/test_auth.py`. این یک مرحله اجرایی و اعتبارسنجی است، نه طراحی یا پیاده‌سازی. خروجی این دستورات باید بررسی شود تا از عدم وجود آسیب‌پذیری اطمینان حاصل گردد.
 **Excerpt:**
 ```
@@ -4807,7 +4807,7 @@ payload = jwt.decode(token, SECRET_KEY, options={"verify_signature": True, "requ
 ```
 
 ### Step 6: حذف AUTH_DISABLED و الزام احراز هویت برای endpoint /api/customers
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل حذف کامل متغیر AUTH_DISABLED از فایل backend/app/utils/security.py و اطمینان از عدم وجود یا نادیده گرفته شدن آن در settings است. همچنین باید endpoint /api/customers بدون توکن JWT معتبر خطای 401 برگرداند. سایر endpointها و تغییرات امنیتی دیگر در این مرحله پوشش داده نمی‌شوند.
 **Excerpt:**
 ```
@@ -4824,7 +4824,7 @@ payload = jwt.decode(token, SECRET_KEY, options={"verify_signature": True, "requ
 ```
 
 ### Step 7: بررسی اولیه خودکار و هشدارهای پیش از اجرا برای بخش امنیت و احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت مهم و هشداردهنده برای مدل اجراکننده است. شامل دستورالعمل‌هایی برای بررسی وجود پیاده‌سازی قبلی، مسئولیت مدل در قبال بررسی مستقل repo، و نحوه برخورد با معیارهای مبهم است. این بخش هیچ کار اجرایی مشخصی را تعریف نمی‌کند و صرفاً یک راهنمای رفتاری برای مدل است. خارج از scope: پیاده‌سازی هرگونه قابلیت امنیتی، تغییر کد، یا تعریف معماری.
 — [merged] این بخش یک یادداشت مهم و هشداردهنده برای مدل اجراکننده است. شامل دستورالعمل‌هایی برای بررسی وجود پیاده‌سازی قبلی، عدم بازسازی موارد موجود، و مسئولیت مدل در قبال بررسی مستقل repo و تفسیر صحیح معیارهای پذیرش است. این بخش خود یک مرحله اجرایی نیست، بلکه یک راهنما برای نحوه اجرای سایر مراحل است.
 — [merged] این بخش یک یادداشت مهم و دستورالعمل برای مدل اجراکننده است. شامل هشدار در مورد احتمال خطا در پرامپت، احتمال پیاده‌سازی قبلی، مسئولیت مدل برای بررسی مستقل repo، و دستورالعمل‌هایی برای اجرای کامل و عدم خلاصه‌سازی است. این بخش خود یک مرحله اجرایی نیست، بلکه یک مجموعه از قواعد و هشدارها برای اجرای صحیح مراحل بعدی است. خروجی این بخش باید یک مرحله 'بررسی و آماده‌سازی' باشد که مدل اجراکننده را ملزم به انجام یکسری بررسی‌های اولیه می‌کند.
@@ -4853,7 +4853,7 @@ payload = jwt.decode(token, SECRET_KEY, options={"verify_signature": True, "requ
 ```
 
 ### Step 8: حذف backdoor AUTH_DISABLED از توابع get_current_user و get_optional_current_user
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل حذف کامل بلاک شرطی `if settings.AUTH_DISABLED` از دو تابع در فایل `backend/app/utils/security.py` است. همچنین شامل حذف import مربوط به `settings` در صورت عدم استفاده دیگر، و حذف متغیر `AUTH_DISABLED` از فایل `backend/app/config.py` و فایل‌های محیطی (`docker-compose.prod.yml`, `render.yaml`) می‌شود. خارج از scope: تغییر منطق احراز هویت JWT، تغییر مدل User، یا تغییر endpointها.
 **Excerpt:**
 ```
@@ -4861,7 +4861,7 @@ payload = jwt.decode(token, SECRET_KEY, options={"verify_signature": True, "requ
 ```
 
 ### Step 9: حذف یا غیرفعال‌سازی شرطی متغیر AUTH_DISABLED و افزودن middleware مسدودکننده در production
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل حذف کامل متغیر AUTH_DISABLED از settings یا تنظیم پیش‌فرض آن به False، پاک‌سازی آن از docker-compose.prod.yml و render.yaml، و افزودن middleware در backend/app/main.py است که در محیط production در صورت True بودن AUTH_DISABLED از اجرا جلوگیری کرده و اخطار لاگ دهد. خارج از scope: تغییرات در frontend، تست‌های auth، یا هرگونه تغییر در منطق JWT.
 **Excerpt:**
 ```
@@ -4880,7 +4880,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: حذف شرط AUTH_DISABLED از کد احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل حذف کامل بلاک شرطی `if settings.AUTH_DISABLED` از تمام فایل‌های backend است. خارج از scope: تغییر منطق احراز هویت اصلی، تغییر تنظیمات، یا تغییر frontend. نکته حیاتی: پس از حذف، هیچ مسیر بازگشتی برای حالت 'دمو' یا 'غیرفعال' وجود نخواهد داشت و احراز هویت همیشه فعال است.
 **Excerpt:**
 ```
@@ -5098,7 +5098,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 21: [منطق] پیاده‌سازی بررسی مالکیت برای به‌روزرسانی پروفایل و رمز
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل شناسایی و مستندسازی ناسازگاری‌های دو طرف (احتمالاً frontend و backend یا دو سرویس) در فرآیند به‌روزرسانی پروفایل و رمز عبور است. هدف تعیین ground truth و align کردن طرف دیگر است. این تسک صرفاً به مستندسازی و تحلیل منطقی می‌پردازد و شامل پیاده‌سازی کد نمی‌شود. خروجی نهایی باید یک PR description باشد که تصمیمات اتخاذ شده را توضیح دهد.
 **Excerpt:**
 ```
@@ -5171,7 +5171,7 @@ _(مستقل)_
 ```
 
 ### Step 23: اعمال بررسی مالکیت (ownership check) در endpointهای به‌روزرسانی پروفایل و تغییر رمز عبور
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح endpointهای مربوط به 'profile update' و 'password change' در فایل backend/app/routers/auth.py است. userId باید از توکن JWT استخراج شده و با userId موجود در بدنه درخواست مقایسه شود. در صورت عدم تطابق، پاسخ 403 Forbidden برگردانده شود. تست‌های موجود در tests/test_auth.py باید به‌روزرسانی شوند تا این رفتار جدید را پوشش دهند. این مرحله شامل تغییرات در frontend یا سایر فایل‌های backend نمی‌شود.
 **Excerpt:**
 ```
@@ -5368,7 +5368,7 @@ _(مستقل)_
 ```
 
 ### Step 31: افزودن محدودیت نرخ (Rate Limiting) به endpoint لاگین
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل افزودن دکوراتور `@limiter.limit("5/minute")` به endpoint `POST /auth/login` در فایل `backend/app/routers/auth.py` است. خارج از scope: پیاده‌سازی خود `limiter`، تنظیمات آن در `config.py`، یا تغییرات در frontend. نکته حیاتی: فرض بر این است که شی `limiter` از قبل در ماژول `routers/auth.py` import شده و قابل استفاده است.
 **Excerpt:**
 ```
@@ -5393,7 +5393,7 @@ async def login(...):
 ```
 
 ### Step 32: اجرای دستورات اعتبارسنجی نرخ محدودیت (Rate Limiting) لاگین
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل اجرای دو دستور مشخص است: (1) ارسال ۱۰ درخواست لاگین با رمز عبور اشتباه به endpoint `/auth/login` برای تست محدودیت نرخ، و (2) اجرای تست واحد `test_rate_limiting` در فایل `tests/test_auth.py`. این بخش صرفاً اجرای دستورات داده شده است و شامل پیاده‌سازی یا تغییر کد نمی‌شود. نکته حیاتی: فرض بر این است که سرویس در `localhost:8000` در حال اجراست و محیط تست (pytest) پیکربندی شده است.
 **Excerpt:**
 ```
@@ -5403,7 +5403,7 @@ async def login(...):
 ```
 
 ### Step 33: رفع نشت اطلاعات حساس در لاگ‌ها و خطاها
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی exception handler سراسری برای بازگرداندن پیام‌های generic در خطاهای 500، حذف password و token از لاگ‌ها، و catch کردن تمام استثناها در backend/app/main.py است. فایل‌های backend/app/routers/auth.py نیز برای اطمینان از عدم لاگ‌کردن اطلاعات حساس بررسی می‌شوند. خارج از scope: rate limiting (که در بخش دیگری پوشش داده می‌شود) و تغییرات در frontend.
 **Excerpt:**
 ```
@@ -5433,7 +5433,7 @@ _(مستقل)_
 ```
 
 ### Step 34: رفع نشت اطلاعات حساس در لاگ‌ها و خطاهای عمومی و لاگین
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل دو تغییر مجزاست: (1) جایگزینی exception handler عمومی در backend/app/main.py برای نمایش پیام generic به کاربر به جای str(exc). (2) sanitize کردن لاگ خطا در endpoint لاگین (backend/app/routers/auth.py) تا password در logger.error ثبت نشود. خارج از scope: سایر endpointها، سایر لاگ‌ها، و تغییرات در config یا database. نکته حیاتی: در محیط production خطاها باید generic باشند و جزئیات فنی فقط در لاگ‌های داخلی ثبت شوند.
 **Excerpt:**
 ```
@@ -5460,7 +5460,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 35: پیاده‌سازی مدیریت خطاهای امن و لاگینگ امن در production
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی exception handler سفارشی برای برگرداندن پیام‌های generic در production، فیلتر کردن فیلدهای حساس (password, token, secret) از لاگ‌ها، تنظیم سطح لاگ بر اساس محیط، و اضافه کردن middleware برای catch all exceptions است. خارج از scope: تغییرات در routing، احراز هویت، یا تست‌های موجود. نکته حیاتی: باید از structlog یا loguru استفاده شود و لاگ‌ها در production سطح INFO داشته باشند.
 **Excerpt:**
 ```
@@ -5481,7 +5481,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 36: جلوگیری از نشت اطلاعات حساس در خطاها و لاگ‌ها
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل دو تغییر مجزاست: (1) جایگزینی پیام خطای دقیق با پیام عمومی در پاسخ‌های API برای جلوگیری از نشت اطلاعات داخلی، (2) اصلاح لاگ‌ها برای حذف جزئیات حساس (مانند پیام خطای کامل) و استفاده از exc_info و فیلدهای امن. خارج از scope: تغییرات در احراز هویت، مجوزدهی، یا سایر بخش‌های امنیتی. نکته حیاتی: تغییرات باید فقط در production اعمال شوند یا با flag محیطی کنترل شوند.
 **Excerpt:**
 ```
@@ -5512,7 +5512,7 @@ logger.error("Login failed", exc_info=True, extra={"user_id": user_id})
 ```
 
 ### Step 37: اجرای دستورات اعتبارسنجی لاگین و بررسی exception handlers
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل دو دستور اعتبارسنجی است: (1) تست لاگین با curl با داده‌های نامعتبر و بررسی خطاها، (2) بررسی وجود exception handlers در اپلیکیشن FastAPI. این مرحله صرفاً اجرای این دو دستور و مشاهده خروجی است. هیچ تغییری در کد ایجاد نمی‌کند.
 **Excerpt:**
 ```
@@ -5522,7 +5522,7 @@ logger.error("Login failed", exc_info=True, extra={"user_id": user_id})
 ```
 
 ### Step 38: رفع anti-pattern ناهماهنگی شرطی در تابع verify_access_token
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله به بررسی و رفع anti-pattern ناهماهنگی شرطی (conditional inconsistency) در تابع verify_access_token در فایل backend/app/utils/security.py می‌پردازد. شامل تشخیص ریشه مشکل، اصلاح کد یا افزودن کامنت توجیهی، و نوشتن تست edge case است. هیچ فایل دیگری تحت تأثیر قرار نمی‌گیرد.
 **Excerpt:**
 ```
@@ -5540,7 +5540,7 @@ logger.error("Login failed", exc_info=True, extra={"user_id": user_id})
 ```
 
 ### Step 39: رفع ناهماهنگی شرطی در اعتبارسنجی issuer و audience توکن دسترسی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به رفع anti-pattern 'Conditional inconsistency' در تابع verify_access_token در فایل backend/app/utils/security.py می‌پردازد. هدف، اجباری کردن اعتبارسنجی issuer و audience برای همه توکن‌ها (چه جدید و چه قدیمی) است. تغییرات فقط در خط 130 و منطق اطراف آن اعمال می‌شود. فایل‌های config.py، database.py، models/user.py، و تست‌ها تحت تأثیر قرار نمی‌گیرند مگر اینکه import یا فراخوانی تغییر کند.
 **Excerpt:**
 ```
@@ -5552,7 +5552,7 @@ logger.error("Login failed", exc_info=True, extra={"user_id": user_id})
 ```
 
 ### Step 40: تشخیص و رفع anti-pattern در احراز هویت با تست edge case و عبور از CI/CD
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازنگری منطق احراز هویت در backend/app/main.py و backend/app/routers/auth.py (و فایل‌های مرتبط) برای تشخیص anti-pattern رایج (مانند hardcoded secret, missing guard, insecure default) است. خروجی شامل اصلاح کد یا افزودن کامنت توجیهی، نوشتن تست edge case در tests/test_auth.py، و اطمینان از عبور تمام تست‌ها، linter و type-check است. خارج از scope: تغییرات در frontend یا config غیرمرتبط با امنیت.
 **Excerpt:**
 ```
