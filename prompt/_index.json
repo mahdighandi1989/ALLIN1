@@ -2,7 +2,7 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 13,
+  "total": 12,
   "tasks": [
     {
       "task_id": "task_66febcc9ff9a",
@@ -12,16 +12,6 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_66febcc9ff9a.md",
-      "external_attempts": 0
-    },
-    {
-      "task_id": "task_8a1dde11cd7b",
-      "title": "تکمیل TypeScript صفحه Facilities و API",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_8a1dde11cd7b.md",
       "external_attempts": 0
     },
     {
