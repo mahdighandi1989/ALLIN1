@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-31T16:20:31.390831+00:00'
-updated_at: '2026-06-01T17:27:54.818884+00:00'
+updated_at: '2026-06-03T18:41:37.680706+00:00'
 target_files:
 - backend/app/routers/auth.py
 ---
