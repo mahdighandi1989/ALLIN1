@@ -3,14 +3,14 @@ task_id: task_afcee9e1c044
 title: رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد
 type: other
 priority: critical
-execution_priority: 1100
+execution_priority: 1150
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:06:12.836115+00:00'
-updated_at: '2026-06-04T21:52:04.077099+00:00'
+updated_at: '2026-06-04T22:59:10.226315+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1942,7 +1942,7 @@ _(مستقل)_
 ```
 
 ### Step 6: تأیید وجود ستون amount در جدول facilities و بارگذاری صحیح داشبورد و افزودن تست واحد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل سه وظیفه مجزا اما مرتبط است: (1) تأیید استاتیک وجود ستون amount با محدودیت NOT NULL در مدل و داکیومنت، (2) تأیید تعاملی بارگذاری صحیح صفحه داشبورد بدون خطا و نمایش داده‌ها، (3) افزودن تست واحد برای endpoint داشبورد. هیچ‌کدام از این موارد قبلاً اجرا نشده و صرفاً برای مرجع نیستند.
 **Excerpt:**
 ```
