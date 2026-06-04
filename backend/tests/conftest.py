@@ -1,6 +1,5 @@
 """Test configuration and fixtures"""
 import pytest
-import asyncio
 from typing import AsyncGenerator, Generator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -58,12 +57,27 @@ TestingSessionLocal = async_sessionmaker(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(scope="session", autouse=True)
+async def _dispose_test_engine():
+    """Tear the in-memory engine down at the end of the session.
+
+    The engine uses a ``StaticPool`` so a single aiosqlite connection — backed by
+    a dedicated worker thread — is reused for the whole run. If that connection
+    is never disposed, the worker thread stays blocked on its queue and the
+    interpreter hangs at shutdown waiting to join it (the test results print, but
+    the process never exits, so CI kills it and reports the suite as failed).
+
+    Disposing here, while the session event loop is still running, closes the
+    connection and lets the worker thread exit cleanly.
+
+    NOTE: the legacy ``event_loop`` fixture that used to live here was removed.
+    pytest-asyncio >= 0.23 ignores a user-defined ``event_loop`` fixture and
+    drives the loop scope via ``asyncio_default_{fixture,test}_loop_scope`` (set
+    to ``session`` in pyproject.toml) instead — which is what keeps this
+    session-scoped connection and the tests on one shared loop.
+    """
+    yield
+    await test_engine.dispose()
 
 
 @pytest.fixture

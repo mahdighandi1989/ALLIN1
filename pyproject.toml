@@ -157,6 +157,14 @@ markers = [
     "unit: marks tests as unit tests",
 ]
 asyncio_mode = "auto"
+# Run every async fixture and test on a single, session-scoped event loop.
+# The suite shares one in-memory SQLite engine (StaticPool → a single aiosqlite
+# connection + worker thread); keeping the whole session on one loop stops that
+# connection from being orphaned on a closed per-test loop, which previously
+# left the worker thread blocked and hung the interpreter at exit. Replaces the
+# now-ignored custom ``event_loop`` fixture (pytest-asyncio >= 0.23).
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 
 [tool.bandit]
 exclude_dirs = ["tests", "migrations", "alembic"]
