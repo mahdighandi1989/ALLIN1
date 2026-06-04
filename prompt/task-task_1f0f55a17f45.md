@@ -5,12 +5,12 @@ type: other
 priority: critical
 execution_priority: 1100
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: pending
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:04:20.175732+00:00'
-updated_at: '2026-06-04T20:45:43.832777+00:00'
+updated_at: '2026-06-04T20:50:07.836182+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -4905,7 +4905,7 @@ _بعد:_
 ```
 
 ### Step 11: افزودن تست‌های خطای احراز هویت در auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تسک 3 از 16 است که به افزودن تست‌های خطای احراز هویت در فایل auth.py مربوط می‌شود. acceptance_criteria شامل: عدم شکستن تست‌های موجود (تأیید با اجرای تست‌های tests/test_auth.py)، عبور linter بدون warning (بررسی با flake8/pylint/ruff در backend/)، و موفقیت type-check (بررسی با mypy/pyright در backend/). هیچ مرحله‌ای قبلاً انجام نشده و این تسک مستقل است. فایل‌های دخیل مشخص نیستند اما فایل‌های مرتبط شامل backend/app/routers/auth.py و tests/test_auth.py هستند.
 **Excerpt:**
 ```
@@ -4962,7 +4962,7 @@ _بعد:_
 ```
 
 ### Step 13: افزودن تست‌های سناریوهای خطای احراز هویت به tests/test_auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به افزودن تست‌های واحد (unit tests) برای سناریوهای خطای احراز هویت در فایل tests/test_auth.py می‌پردازد. سناریوهای تحت پوشش شامل: تلاش‌های مکرر لاگین (rate limiting)، توکن منقضی، و توکن نامعتبر است. پیاده‌سازی واقعی rate limiting در backend (مثلاً در middleware یا endpoint لاگین) بخشی از این مرحله نیست و باید در مرحله‌ای جداگانه انجام شود. این مرحله فرض می‌کند که منطق rate limiting قبلاً در backend پیاده‌سازی شده و صرفاً تست آن اضافه می‌شود.
 **Excerpt:**
 ```
@@ -4972,7 +4972,7 @@ _بعد:_
 ```
 
 ### Step 14: تبدیل معیارهای پذیرش و مراحل اجرایی به یک مرحله اجرایی واحد
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تعریف معیارهای پذیرش (AC) و مراحل اجرایی پیشنهادی برای یک مرحله از پروژه تقویت امنیت و احراز هویت است. هدف، تبدیل این بخش به یک مرحله اجرایی واحد است که شامل اعمال تغییرات کد، عبور از تست‌ها، linter و type-check می‌شود. نکته حیاتی: این مرحله نباید تست‌های موجود را بشکند و باید رفتار قابل مشاهده را تضمین کند.
 **Excerpt:**
 ```
@@ -4994,7 +4994,7 @@ _(مجری بر اساس Context و معیارهای پذیرش، مراحل ر�
 ```
 
 ### Step 15: پیاده‌سازی rate limiting لاگین با شناسایی ناسازگاری‌ها و مستندسازی فرض‌ها
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی کامل مکانیزم rate limiting برای endpoint لاگین است. شامل: شناسایی و مستندسازی ناسازگاری‌های بین frontend و backend در مورد محدودیت نرخ، تعیین ground truth و align کردن طرف دیگر، پیاده‌سازی RateLimiter با پشتیبانی Redis، افزودن middleware یا decorator برای throttle درخواست‌های لاگین، و نوشتن integration test برای pipeline احراز هویت. خارج از scope: سایر endpointها، rate limiting برای APIهای عمومی، یا پیاده‌سازی Captcha.
 **Excerpt:**
 ```
@@ -5006,7 +5006,7 @@ _(مجری بر اساس Context و معیارهای پذیرش، مراحل ر�
 ```
 
 ### Step 16: پیاده‌سازی Rate Limiting برای Endpoint لاگین در بک‌اند
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن مکانیزم rate limiting (مبتنی بر IP) به endpoint لاگین در بک‌اند FastAPI است. محدودیت: ۵ تلاش ناموفق در ۱۵ دقیقه. پیاده‌سازی می‌تواند با استفاده از Redis یا یک دیکشنری in-memory (برای سادگی) انجام شود. شمارنده سمت کلاینت (frontend) فقط برای نمایش UI باقی می‌ماند و تغییری نمی‌کند. فایل‌های تحت تأثیر: backend/app/routers/auth.py (اضافه کردن منطق rate limit)، backend/app/config.py (اضافه کردن تنظیمات rate limit)، backend/app/utils/security.py (اضافه کردن تابع یا کلاس rate limiter). تست‌ها در tests/test_auth.py باید به‌روزرسانی شوند تا رفتار rate limiting را پوشش دهند.
 **Excerpt:**
 ```
@@ -5020,7 +5020,7 @@ _(مجری بر اساس Context و معیارهای پذیرش، مراحل ر�
 ```
 
 ### Step 17: تعریف معیارهای پذیرش رفتار-محور برای رفع ناسازگاری در pipeline احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش معیارهای پذیرش (AC) را برای فرآیند شناسایی و رفع ناسازگاری بین دو طرف (مثلاً backend و frontend یا دو ماژول) در pipeline auth تعریف می‌کند. شامل مستندسازی فرض‌ها، تعیین ground truth، عبور integration test، توضیح PR، و عبور تست‌ها/linter/type-check است. خارج از scope: پیاده‌سازی خود ناسازگاری یا تغییر در منطق auth.
 — [merged] این بخش معیارهای پذیرش (AC) را برای فرآیند شناسایی و رفع ناسازگاری بین دو طرف (مثلاً backend و frontend یا دو ماژول) در pipeline احراز هویت تعریف می‌کند. شامل مستندسازی فرض‌ها، تعیین ground truth، اجرای تست‌های یکپارچه‌سازی، و اطمینان از عبور تمام تست‌ها و linting است. خارج از scope: پیاده‌سازی کد جدید یا تغییر معماری.
 — [merged] این بخش معیارهای پذیرش (AC) را برای فرآیند شناسایی و رفع ناسازگاری بین دو طرف (احتمالاً backend و frontend یا دو ماژول) در pipeline احراز هویت تعریف می‌کند. شامل مستندسازی فرضیات، تعیین ground truth، عبور integration test، توضیح PR، و عبور تست‌های واحد، linter و type-check است. خارج از scope: پیاده‌سازی کد، طراحی معماری، یا انتخاب کتابخانه خاص.
@@ -5043,7 +5043,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 18: پیاده‌سازی permission check در auth pipeline
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی مکانیزم بررسی مجوز (permission check) در پایپلاین احراز هویت است. شامل شناسایی و مستندسازی ناسازگاری‌های منطقی بین فرض‌های سمت کلاینت و سرور، تعیین ground truth، نوشتن integration test برای پایپلاین auth، و توضیح تصمیمات در PR description می‌شود. خارج از scope: پیاده‌سازی rate limiter، اصلاح شمارنده frontend، و تست‌های rate limiter.
 **Excerpt:**
 ```
@@ -5062,7 +5062,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 19: افزودن middleware بررسی permission به pipeline احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش به افزودن مکانیزم بررسی سطح دسترسی (permission check) در pipeline احراز هویت سیستم می‌پردازد. شامل تمام endpoints مربوط به mutation‌ها (تغییر رمز عبور، ثبت‌نام، لاگین) می‌شود. خارج از scope این بخش: پیاده‌سازی کامل role-based access control (RBAC) یا resource-based authorization. نکته حیاتی: این بخش صرفاً به شناسایی شکاف امنیتی و پیشنهاد رفع اولیه اشاره دارد و نیاز به پیاده‌سازی کامل middleware یا decorator دارد.
 **Excerpt:**
 ```
@@ -5076,7 +5076,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 20: تعریف معیارهای پذیرش رفتار-محور برای یکپارچه‌سازی احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش معیارهای پذیرش (AC) را برای مرحله‌ای از پروژه تعریف می‌کند که هدف آن رفع ناسازگاری‌ها و هم‌ترازسازی فرض‌های دو طرف (احتمالاً backend و frontend) در pipeline احراز هویت است. شامل مستندسازی ناسازگاری‌ها، تعیین ground truth، عبور تست‌های یکپارچه‌سازی auth، توضیح PR، و عبور از تست‌ها، linter و type-check می‌شود. خارج از این scope: پیاده‌سازی منطق جدید احراز هویت یا تغییر APIها.
 — [merged] این بخش معیارهای پذیرش (AC) را برای مرحله‌ای تعریف می‌کند که در آن ناسازگاری‌های بین دو طرف (احتمالاً backend و frontend یا دو ماژول) شناسایی و مستند می‌شود، ground truth تعیین می‌گردد، و یکپارچه‌سازی pipeline احراز هویت (auth) از طریق تست‌های یکپارچه‌سازی (integration test) تأیید می‌شود. همچنین شامل الزامات مربوط به عبور تست‌ها، linter و type-check است. خارج از این scope: پیاده‌سازی جزئیات فنی یا کدنویسی مستقیم.
 **Excerpt:**
@@ -5298,7 +5298,7 @@ amount: float = Field(..., gt=0, le=1_000_000_000)
 ```
 
 ### Step 28: پیاده‌سازی Rate Limiting و Brute Force Protection در مسیر لاگین
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی محدودیت نرخ (rate limiting) و محافظت در برابر حملات brute force در endpoint لاگین است. پس از 5 تلاش ناموفق در دقیقه، خطای 429 (Too Many Requests) و پس از 10 تلاش ناموفق، خطای 423 (Locked) به مدت 30 دقیقه برگردانده می‌شود. تمام تلاش‌ها در Redis لاگ می‌شوند. این بخش فقط فایل backend/app/routers/auth.py را درگیر می‌کند و نیاز به بررسی backward compatibility با داده‌های معتبر قدیمی دارد.
 **Excerpt:**
 ```
@@ -5334,7 +5334,7 @@ _(مستقل)_
 ```
 
 ### Step 29: پیاده‌سازی Rate Limiting و Brute Force Protection برای endpoint لاگین
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن محدودیت نرخ (rate limiting) با استفاده از slowapi و Redis برای endpoint `/auth/login` و پیاده‌سازی مکانیزم قفل حساب (account lockout) پس از تلاش‌های ناموفق است. محدوده شامل فایل‌های `backend/app/routers/auth.py`، `backend/app/config.py` و `backend/app/database.py` می‌شود. خارج از محدوده: endpoint ثبت‌نام، سایر endpointها، و frontend.
 **Excerpt:**
 ```
@@ -5347,7 +5347,7 @@ _(مستقل)_
 ```
 
 ### Step 30: پیاده‌سازی محدودیت نرخ و قفل حساب با لاگ‌گیری Redis
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی کامل محدودیت نرخ (rate limiting) برای endpoint لاگین، قفل خودکار حساب پس از ۱۰ تلاش ناموفق، و لاگ‌گیری تمام تلاش‌ها در Redis است. فایل‌های backend/app/routers/auth.py و backend/app/config.py و backend/app/utils/security.py تحت تأثیر قرار می‌گیرند. تست‌های مربوطه در tests/test_auth.py باید به‌روزرسانی شوند. بخش اعلان ایمیلی (آیتم ۵) در این مرحله پیاده‌سازی نمی‌شود.
 **Excerpt:**
 ```
@@ -5575,7 +5575,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 41: جلوگیری از نشت اطلاعات permission در frontend
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل شناسایی و مستندسازی ناسازگاری‌های مربوط به نشت اطلاعات permission در frontend، تعیین ground truth و align کردن طرف دیگر، اجرای integration test برای pipeline auth، و توضیح تصمیمات در PR description است. فایل‌های دخیل شامل frontend/src/lib/auth.tsx و frontend/src/app/login/page.tsx هستند. نکته حیاتی: این مرحله نیازمند بررسی دقیق متغیرهای AUTH_DISABLED، permission، role و token در frontend است.
 **Excerpt:**
 ```
@@ -5631,7 +5631,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 43: رفع نشت اطلاعات permission در frontend با محدودسازی حالت AUTH_DISABLED و generic کردن پیام‌های خطا
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح دو فایل frontend است: (1) frontend/src/lib/auth.tsx برای محدودسازی حالت AUTH_DISABLED به محیط development و لاگ‌گیری محدود، (2) frontend/src/app/login/page.tsx برای جایگزینی پیام‌های خطای فنی با پیام‌های generic. خارج از scope: تغییرات backend، تست‌های unit، یا هر فایل دیگر.
 **Excerpt:**
 ```
@@ -5639,7 +5639,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 44: همگام‌سازی مدیریت session بک‌اند و فرانت‌اند
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل شناسایی ناسازگاری‌های موجود در مدیریت session بین بک‌اند (AsyncSession) و فرانت‌اند (localStorage/cookies) است. هدف مستندسازی فرضیات هر دو طرف، تعیین ground truth و align کردن طرف دیگر است. همچنین شامل نوشتن integration test برای pipeline احراز هویت و مستندسازی تصمیمات در PR description می‌شود. موارد خارج از scope: تغییرات در AUTH_DISABLED، پیام‌های خطا، permission system و unit tests.
 **Excerpt:**
 ```
@@ -5708,7 +5708,7 @@ _(مستقل)_
 ```
 
 ### Step 47: افزودن اعتبارسنجی ورودی‌های لاگین در فرانت‌اند و بک‌اند
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت در فایل frontend/src/app/login/page.tsx و اعتبارسنجی سمت سرور در فایل backend/app/routers/auth.py (یا backend/app/routers/auth.py) با استفاده از Pydantic است. خارج از scope این مرحله: پیاده‌سازی ضد SQL injection یا XSS به صورت جداگانه (فقط validation اولیه)، تغییرات در دیتابیس یا مدل‌ها، و تست‌های واحد جدید (فقط validation منطبق بر نیاز). نکته حیاتی: validation سمت کلاینت صرفاً برای UX است و امنیت اصلی باید در backend تضمین شود.
 **Excerpt:**
 ```
@@ -5722,7 +5722,7 @@ _(مستقل)_
 ```
 
 ### Step 48: تکمیل معیارهای پذیرش رفتار-محور برای pipeline احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل ۷ معیار پذیرش (AC) برای تضمین کیفیت و یکپارچگی pipeline احراز هویت است. محدوده شامل مستندسازی ناسازگاری‌ها، تعیین ground truth، عبور تست‌های یکپارچه‌سازی، توضیح PR، عبور تست‌ها، linter و type-check می‌باشد. خارج از محدوده: پیاده‌سازی منطق احراز هویت یا تغییر در کد اصلی.
 **Excerpt:**
 ```
@@ -5802,7 +5802,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 51: پیاده‌سازی معیارهای پذیرش امنیتی شامل HSTS، CORS، ریدایرکت HTTPS و هدرهای امنیتی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل پیاده‌سازی کامل معیارهای پذیرش امنیتی (HSTS، CORS، ریدایرکت HTTP به HTTPS در production، و هدرهای امنیتی اضافی) است. همچنین شامل اطمینان از عبور تست‌ها، linter و type-check می‌شود. خارج از scope: پیاده‌سازی احراز هویت، مجوزدهی، یا سایر بخش‌های امنیتی که در این بخش ذکر نشده‌اند.
 **Excerpt:**
 ```
@@ -5823,7 +5823,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 52: افزودن middlewareهای امنیتی CORS و TrustedHost به برنامه FastAPI
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن دو middleware امنیتی (CORSMiddleware و TrustedHostMiddleware) به نمونه اصلی برنامه FastAPI در فایل main.py است. محدود به تغییرات در backend/app/main.py می‌باشد و شامل پیاده‌سازی منطق احراز هویت یا سایر middlewareها نمی‌شود. نکته حیاتی: مقادیر allow_origins و allowed_hosts باید با دامنه واقعی پروژه جایگزین شوند.
 **Excerpt:**
 ```
@@ -5851,7 +5851,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["yourdomain.com", "*.yo
 ```
 
 ### Step 53: افزودن قابلیت Refresh و Blacklist توکن
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی دو endpoint جدید در backend/app/routers/auth.py است: یکی برای logout که توکن را در blacklist قرار می‌دهد و دیگری برای refresh که با توکن منقضی شده یک access_token جدید صادر می‌کند. همچنین باید middleware بررسی blacklist را در backend/app/middleware.py پیاده‌سازی کند. خارج از scope این مرحله: تغییرات در frontend، مدل‌های دیتابیس، یا تنظیمات CORS.
 **Excerpt:**
 ```
@@ -5881,7 +5881,7 @@ _(مستقل)_
 ```
 
 ### Step 54: پیاده‌سازی logout واقعی و مکانیزم refresh token در auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی دو قابلیت مجزاست: (1) تکمیل endpoint logout با ذخیره توکن revoked در Redis از طریق database_manager، (2) ایجاد endpoint جدید refresh_token که با استفاده از refresh token جدید (که باید در مدل JWT گنجانده شود) access token جدید صادر کند. خارج از scope این مرحله: تغییرات در middleware برای چک کردن blacklist (در main.py انجام می‌شود)، تست‌های واحد (در test_auth.py). نکته حیاتی: باید از کلاس AsyncSession و Redis از database_manager استفاده شود.
 **Excerpt:**
 ```
@@ -5923,7 +5923,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 55: پیاده‌سازی مکانیزم Logout با Blacklist توکن و Refresh Token
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی کامل logout واقعی با ذخیره توکن‌های revoked در Redis، ایجاد endpoint /auth/refresh با refresh token 7 روزه، و اضافه کردن blacklist check در middleware احراز هویت است. تست‌ها، linter و type-check باید پاس شوند. خارج از scope: تغییرات در frontend، مدل‌های دیتابیس، یا configهای غیرمرتبط.
 **Excerpt:**
 ```
@@ -5944,7 +5944,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 56: پیاده‌سازی مکانیزم بلاک‌لیست توکن در logout
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش صرفاً تغییر endpoint logout از حالت بدون عملیات به حالتی است که توکن را در Redis بلاک‌لیست می‌کند. شامل تغییر فایل backend/app/routers/auth.py و احتمالاً اضافه کردن وابستگی oauth2_scheme است. خارج از scope: پیاده‌سازی Redis connection pool، middleware بررسی بلاک‌لیست، یا تست‌های مربوطه.
 **Excerpt:**
 ```
@@ -5971,7 +5971,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
 ```
 
 ### Step 57: مدیریت خطاهای دیتابیس در auth pipeline
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش مربوط به پیاده‌سازی مکانیزم‌های مدیریت خطا (retry, fallback, timeout handling) در pipeline احراز هویت است. شامل مستندسازی ناسازگاری‌های دو طرف (احتمالاً backend و database)، تعیین ground truth، و پیاده‌سازی retry decorator در فایل‌های database.py و auth.py می‌شود. همچنین نیاز به integration test برای auth pipeline و توضیح PR دارد.
 **Excerpt:**
 ```
@@ -5983,7 +5983,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
 ```
 
 ### Step 58: بررسی اولیه خودکار و پیش‌نیازهای اجرایی برای تقویت امنیت و احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش یک یادداشت هشداردهنده و راهنمای اجرایی است که قبل از هرگونه تغییر در repo باید مطالعه شود. شامل دستورالعمل‌های بررسی وجود پیاده‌سازی قبلی، مسئولیت مدل اجراکننده برای تحقیق مستقل، و قواعد مربوط به کامیت‌های طولانی است. این بخش خود یک مرحله اجرایی نیست، بلکه پیش‌نیاز و چارچوب اجرای سایر بخش‌ها را تعیین می‌کند. هیچ فایل یا کلاسی مستقیماً در این بخش برای تغییر معرفی نشده است.
 **Excerpt:**
 ```
@@ -6009,7 +6009,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
 ```
 
 ### Step 59: افزودن مکانیزم Retry و Fallback برای خطاهای اتصال دیتابیس در Pipeline Auth
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن یک decorator retry با exponential backoff برای session creation در backend/app/database.py و ایجاد یک health check endpoint برای دیتابیس است. خارج از scope این مرحله: تغییر در frontend، تغییر در مدل‌های کاربر، یا تغییر در منطق احراز هویت (auth logic). نکته حیاتی: این مرحله صرفاً به مدیریت خطاهای اتصال دیتابیس می‌پردازد و نه به بهبود عملکرد یا تغییر ساختار دیتابیس.
 **Excerpt:**
 ```
@@ -6023,7 +6023,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
 ```
 
 ### Step 60: تعیین معیارهای پذیرش رفتار-محور برای هم‌راستاسازی ناسازگاری‌ها و عبور تست‌های pipeline auth
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تعریف ۷ معیار پذیرش (AC) برای اطمینان از هم‌راستاسازی دو طرف ناسازگار (احتمالاً backend/frontend یا دو ماژول)، تعیین ground truth، عبور integration test برای pipeline auth، مستندسازی تصمیمات در PR description، و عبور از تست‌ها، linter و type-check است. خارج از scope: پیاده‌سازی کد جدید یا تغییر معماری.
 **Excerpt:**
 ```
@@ -6044,7 +6044,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 61: بررسی و مستندسازی وضعیت فعلی اتصال دیتابیس در auth pipeline
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی کامل و مستندسازی وضعیت فعلی اتصال دیتابیس در auth pipeline است. شامل: تحلیل کد موجود در backend/app/database.py و backend/app/routers/auth.py برای شناسایی نحوه ایجاد session، مدیریت خطاها، و نقاط ضعف. خروجی این مرحله یک سند فنی (در قالب کامنت یا فایل markdown) است که وضعیت فعلی را شرح می‌دهد. این مرحله شامل پیاده‌سازی هیچ تغییری نیست و صرفاً مستندسازی است.
 **Excerpt:**
 ```
