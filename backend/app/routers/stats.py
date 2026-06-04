@@ -29,12 +29,13 @@ logger = logging.getLogger(__name__)
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     """Return aggregated dashboard statistics.
 
-    The individual count queries degrade gracefully to ``0`` on error so a
-    single missing optional column never blanks the whole dashboard. The
-    monthly-revenue calculation is treated as critical: if it cannot be computed
-    (e.g. the ``amount`` column is missing) the endpoint returns a clear
-    ``500`` so the frontend can show an actionable error instead of a misleading
-    zero.
+    Every aggregate query — counts *and* the currency-normalised
+    exposure/revenue totals — is individually guarded, so a single broken or
+    missing column degrades that value to ``0`` rather than blanking (or
+    ``500``-ing) the whole dashboard. The frontend therefore always receives a
+    usable payload and the page never gets stuck on an infinite spinner. Only a
+    failure outside the guarded blocks surfaces as a clean, internals-free
+    ``500`` that the frontend renders as an actionable error with a retry.
     """
     today = datetime.utcnow().date()
     thirty_days_later = today + timedelta(days=30)
