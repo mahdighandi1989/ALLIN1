@@ -3,14 +3,14 @@ task_id: task_8a1dde11cd7b
 title: تکمیل TypeScript صفحه Facilities و API
 type: other
 priority: critical
-execution_priority: 1150
+execution_priority: 1200
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:09:05.614452+00:00'
-updated_at: '2026-06-04T23:18:14.394812+00:00'
+updated_at: '2026-06-04T23:31:05.049880+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1881,7 +1881,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 24: رفع مسیر فرانت‌اند بلااستفاده /customers - گام ۳: redirect اگر deprecated
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای گام ۳ از مراحل اجرایی پیشنهادی: اگر route /customers deprecated است، redirect 301 به route جدید بنویس. این مرحله فقط در صورتی انجام می‌شود که گام ۲ تشخیص دهد route deprecated است. خارج از این مرحله: گام‌های ۱ و ۲.
 **Excerpt:**
 ```
@@ -1900,7 +1900,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 26: رفع مسیر فرانت‌اند بلااستفاده /customers - بخش ⚠️ ریسک‌ها و موارد احتیاط (تسک 5)
-**Status:** `done` (100%)
+**Status:** `partial` (80%)
 **Scope:** بررسی ریسک‌های مرتبط با حذف route /customers. اگر SEO اهمیت دارد، redirect بنویس نه delete. اطمینان از اجرای تست‌ها قبل از merge. خارج از این مرحله: تغییر کد.
 **Excerpt:**
 ```
