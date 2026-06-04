@@ -3,14 +3,14 @@ task_id: task_e92cd1d0c4b4
 title: پاکسازی اسکریپت‌های Inspector Bridge و وابستگی‌های فرانت‌اند
 type: other
 priority: critical
-execution_priority: 1100
+execution_priority: 1150
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:12:35.442679+00:00'
-updated_at: '2026-06-04T23:21:21.726901+00:00'
+updated_at: '2026-06-04T23:41:53.665300+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1407,7 +1407,7 @@ _بعد:_
 ```
 
 ### Step 6: بررسی و حذف اسکریپت Inspector Bridge از frontend/out/ (تسک 2 - بخش ⚠️ یادداشت مهم)
-**Status:** `not_done` (0%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل بررسی اولیه و حذف اسکریپت Inspector Bridge از تمام فایل‌های HTML در frontend/out/ است. خارج از این مرحله: تغییر در backend/static/ و فایل‌های منبع. نکته حیاتی: قبل از هر تغییری، با grep/search بررسی کنید که آیا این اسکریپت قبلاً حذف شده است یا خیر.
 **Excerpt:**
 ```
@@ -1428,7 +1428,7 @@ _بعد:_
 ```
 
 ### Step 7: حذف اسکریپت Inspector Bridge از تمام فایل‌های frontend/out/ (تسک 2 - بخش 🎯 هدف)
-**Status:** `not_done` (0%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل حذف کامل بلوک اسکریپت Inspector Bridge از تمام فایل‌های HTML در frontend/out/ است. خارج از این مرحله: تغییر در backend/static/ و فایل‌های منبع. نکته حیاتی: اسکریپت با کامنت '<!-- Inspector Bridge Script - Auto-injected -->' شروع می‌شود و بیش از 300 خط کد دارد.
 **Excerpt:**
 ```
@@ -1452,7 +1452,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 8: بررسی و حذف اسکریپت Inspector Bridge از backend/static/ (تسک 2 - بخش ✅ معیار پذیرش)
-**Status:** `not_done` (0%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل بررسی و حذف اسکریپت Inspector Bridge از تمام فایل‌های HTML در backend/static/ است. خارج از این مرحله: تغییر در frontend/out/ و فایل‌های منبع. نکته حیاتی: نسخه اسکریپت در backend/static/ از document.addEventListener استفاده می‌کند در حالی که نسخه frontend/out/ از window.addEventListener استفاده می‌کند.
 **Excerpt:**
 ```
@@ -1491,7 +1491,7 @@ _بعد:_
 ```
 
 ### Step 10: بررسی و حذف اسکریپت Inspector Bridge از backend/static/ (تسک 2 - بخش 🧪 دستورات اعتبارسنجی)
-**Status:** `not_done` (0%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل حذف کامل بلوک اسکریپت Inspector Bridge از تمام فایل‌های HTML در backend/static/ است. خارج از این مرحله: تغییر در frontend/out/ و فایل‌های منبع. نکته حیاتی: نسخه اسکریپت در backend/static/ از document.addEventListener استفاده می‌کند در حالی که نسخه frontend/out/ از window.addEventListener استفاده می‌کند.
 **Excerpt:**
 ```
@@ -1505,7 +1505,7 @@ _بعد:_
 ```
 
 ### Step 11: بررسی و اضافه کردن وابستگی sonner به package.json (تسک 3 - بخش ⚠️ یادداشت مهم)
-**Status:** `done` (100%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل بررسی اولیه و اضافه کردن وابستگی 'sonner' به بخش dependencies در فایل frontend/package.json است. خارج از این مرحله: اجرای npm install و به‌روزرسانی package-lock.json. نکته حیاتی: قبل از هر تغییری، بررسی کنید که آیا وابستگی sonner از قبل در package.json وجود دارد یا خیر.
 **Excerpt:**
 ```
@@ -1526,7 +1526,7 @@ _بعد:_
 ```
 
 ### Step 12: اضافه کردن وابستگی sonner به package.json (تسک 3 - بخش 🎯 هدف)
-**Status:** `done` (100%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل اضافه کردن وابستگی 'sonner' با نسخه '^1.4.0' به بخش dependencies در فایل frontend/package.json است. خارج از این مرحله: اجرای npm install و به‌روزرسانی package-lock.json. نکته حیاتی: وابستگی 'react-hot-toast' ممکن است غیرضروری باشد و باید در مرحله بعد حذف شود.
 **Excerpt:**
 ```
@@ -1550,7 +1550,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 13: اجرای npm install برای به‌روزرسانی package-lock.json (تسک 3 - بخش ✅ معیار پذیرش)
-**Status:** `done` (100%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل اجرای دستور 'npm install' در دایرکتوری frontend برای نصب وابستگی sonner و به‌روزرسانی فایل package-lock.json است. خارج از این مرحله: تغییر در package.json. نکته حیاتی: اطمینان حاصل کنید که دستور npm install بدون خطا اجرا می‌شود.
 **Excerpt:**
 ```
@@ -1600,7 +1600,7 @@ _بعد:_
 ```
 
 ### Step 16: اجرای build فرانت‌اند برای اعتبارسنجی نهایی (تسک 3 - بخش ⚠️ ریسک‌ها و موارد احتیاط)
-**Status:** `done` (100%)
+**Status:** `not_done` (0%)
 **Scope:** این مرحله شامل اجرای دستور 'npm run build' در دایرکتوری frontend برای اطمینان از build موفق پروژه پس از تغییرات وابستگی‌ها است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر build با خطا مواجه شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
@@ -1612,7 +1612,7 @@ _(مستقل)_
 ```
 
 ### Step 17: اجرای تست‌ها و اعتبارسنجی نهایی (تسک 3 - بخش 🏷 دسته‌بندی)
-**Status:** `done` (100%)
+**Status:** `partial` (50%)
 **Scope:** این مرحله شامل اجرای دستورات اعتبارسنجی (pytest, npm run test, npm run lint) برای اطمینان از عدم شکستن تست‌های موجود و عبور linter و type-check است. خارج از این مرحله: تغییر در کد. نکته حیاتی: اگر تستی fail شد، باید قبل از ادامه رفع شود.
 **Excerpt:**
 ```
