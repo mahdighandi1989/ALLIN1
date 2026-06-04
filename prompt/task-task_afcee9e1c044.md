@@ -3,14 +3,14 @@ task_id: task_afcee9e1c044
 title: رفع باگ‌ها و همگام‌سازی نمایش داده‌ها در داشبورد
 type: other
 priority: critical
-execution_priority: 1200
+execution_priority: 1250
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:06:12.836115+00:00'
-updated_at: '2026-06-04T23:15:11.503933+00:00'
+updated_at: '2026-06-04T23:26:23.499896+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -2232,7 +2232,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 21: رفع وضعیت بارگذاری برای نمایش خطا به جای اسپینر بی‌پایان
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله فقط تغییر شرط نمایش کامپوننت LoadingSpinner را پوشش می‌دهد تا در صورت وجود error، به جای اسپینر، ErrorState با پیام خطا و دکمه تلاش مجدد نمایش داده شود. خارج از scope: تغییرات دیگر در منطق بارگذاری، مدیریت state خطا در سطح بالاتر، یا تغییر ظاهر کامپوننت‌ها.
 **Excerpt:**
 ```
