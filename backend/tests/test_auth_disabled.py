@@ -3,7 +3,6 @@
 The suite-wide autouse fixture pins AUTH_DISABLED=False, so these tests opt in
 explicitly via monkeypatch to exercise the bypass path.
 """
-import pytest
 from httpx import AsyncClient
 
 from app.config import settings as app_settings
@@ -67,8 +66,6 @@ class TestAuthDisabledBypass:
 
         # Make any attempt to persist a demo user explode — the transient path
         # must not depend on it.
-        import app.utils.security as security_module
-
         async def _boom(db):
             raise AssertionError("demo user must not be persisted")
 
@@ -77,6 +74,49 @@ class TestAuthDisabledBypass:
         resp = await client.get("/api/customers/", headers={})
         assert resp.status_code == 200
         assert "items" in resp.json()
+
+    async def test_demo_lookup_db_error_recovers_and_logs(
+        self, db_session, monkeypatch, caplog
+    ):
+        """If the demo-user DB lookup raises, recover transiently AND log it.
+
+        Regression for the silent-failure anti-pattern: the lookup used to be
+        wrapped in a bare ``except Exception: pass`` so a real DB outage was
+        indistinguishable from "no demo row yet" and left no trace in the logs.
+        Now a ``SQLAlchemyError`` is logged at WARNING with context, the session
+        is rolled back, and the function still returns a usable transient demo
+        user (documented fallback / recovery).
+        """
+        import logging
+
+        from sqlalchemy.exc import OperationalError
+
+        from app.utils.security import _get_or_create_demo_user
+
+        async def _boom(*args, **kwargs):
+            raise OperationalError("SELECT demo", {}, Exception("db is down"))
+
+        rolled_back = {"called": False}
+
+        async def _rollback():
+            rolled_back["called"] = True
+
+        monkeypatch.setattr(db_session, "execute", _boom)
+        monkeypatch.setattr(db_session, "rollback", _rollback)
+
+        with caplog.at_level(logging.WARNING, logger="app.utils.security"):
+            user = await _get_or_create_demo_user(db_session)
+
+        # Recovery: a usable transient demo user is still returned.
+        assert user.username == "demo"
+        assert user.is_admin is True
+        # The failure was NOT silent — it was logged with context.
+        assert any(
+            "demo_user.lookup_failed" in rec.message and rec.levelno == logging.WARNING
+            for rec in caplog.records
+        )
+        # The session was rolled back so it stays usable downstream.
+        assert rolled_back["called"] is True
 
     async def test_me_endpoint_works_without_token_when_disabled(
         self, client: AsyncClient, monkeypatch

@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
+from sqlalchemy.exc import InvalidRequestError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -324,17 +325,38 @@ async def _get_or_create_demo_user(db: AsyncSession) -> "User":
     from app.models.user import User
 
     # Try to reuse an existing demo row if one is already present and readable;
-    # fall back to a transient instance on ANY error (missing/extra columns…).
+    # fall back to a transient instance on a DB error (missing/extra columns,
+    # connection issues, schema drift…).
+    #
+    # The fallback is deliberate and SAFE: when the lookup fails we simply build
+    # a transient demo user below, which is exactly what the rest of the function
+    # would do for a fresh database anyway. No data is dropped — the demo user is
+    # never persisted regardless of which branch runs. The previous version
+    # swallowed the error completely (`except Exception: pass`), so a real DB
+    # outage looked identical to "no demo row yet" and was impossible to spot in
+    # production logs. We now log it at WARNING with context so the silent
+    # failure is observable while preserving the recovery behaviour.
     try:
         result = await db.execute(select(User).where(User.username == "demo"))
         user = result.scalar_one_or_none()
         if user is not None:
             return user
-    except Exception:
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "demo_user.lookup_failed: could not query the 'demo' user; "
+            "falling back to a transient instance. error=%s",
+            exc,
+            exc_info=True,
+        )
+        # Roll back so the session is usable again for any downstream work.
         try:
             await db.rollback()
-        except Exception:
-            pass
+        except SQLAlchemyError as rb_exc:
+            logger.warning(
+                "demo_user.rollback_failed: rollback after a failed demo "
+                "lookup did not succeed. error=%s",
+                rb_exc,
+            )
 
     demo = User(
         id="demo",
@@ -350,10 +372,24 @@ async def _get_or_create_demo_user(db: AsyncSession) -> "User":
         last_login=datetime.now(timezone.utc),
     )
     # Make sure it is NOT tracked by the session (never flushed/inserted).
+    # expunge() raises InvalidRequestError if the instance was never added to
+    # the session — which is the expected, harmless case here (we constructed it
+    # transiently and never called db.add). We therefore log that at DEBUG only.
+    # Any other SQLAlchemy error is unexpected and logged at WARNING so it is not
+    # silently lost.
     try:
         db.expunge(demo)
-    except Exception:
-        pass
+    except InvalidRequestError:
+        logger.debug(
+            "demo_user.expunge_skipped: transient demo user was not tracked "
+            "by the session (expected)."
+        )
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "demo_user.expunge_failed: could not expunge the transient demo "
+            "user from the session. error=%s",
+            exc,
+        )
     return demo
 
 
