@@ -3,14 +3,14 @@ task_id: task_ce1de819f000
 title: همگام‌سازی bcrypt و تطبیق تست‌های واحد
 type: other
 priority: high
-execution_priority: 2000
+execution_priority: 2050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:53:09.547599+00:00'
-updated_at: '2026-06-05T15:53:19.320644+00:00'
+updated_at: '2026-06-05T19:16:37.950820+00:00'
 tags:
 - consolidated
 - post_verify_merge
