@@ -2,18 +2,8 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 11,
+  "total": 10,
   "tasks": [
-    {
-      "task_id": "task_b49f32ed354c",
-      "title": "اصلاح و استانداردسازی پیکربندی و متغیرهای محیطی بک‌اند",
-      "priority": "critical",
-      "execution_priority": 1000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_b49f32ed354c.md",
-      "external_attempts": 0
-    },
     {
       "task_id": "task_cba4b5521484",
       "title": "افزودن ستون amount و اصلاح نمایش داشبورد",
