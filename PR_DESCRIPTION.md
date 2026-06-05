@@ -119,3 +119,57 @@ verification gaps** and documents the decisions the manual-review ACs require.
 - `pytest tests/test_frontend_lint.py tests/test_frontend_typecheck.py tests/test_all_existing_features.py`
   → **passed**.
 - `cd frontend && npm run type-check && npm run lint` → **no warnings or errors**.
+
+---
+
+## Follow-up: Excel `data` pipeline robustness & validation (task_bd83a960a6ab)
+
+`merged-from: 93988a1c-6d13-40f8-b5a9-8c49c377c7c6, fc686bb9-3172-4810-9b26-624303be2a32, e0513e78-010b-4e28-bc31-4cc597182f0b, 45d3c335-4be5-47cd-8394-997476ca53ef`
+
+A consolidated logic-audit task covering four coherence inconsistencies in the
+`data` pipeline (corrupt/empty file handling, missing Excel schema, undefined
+component output, and `.xlsm`/`.xls` format handling).
+
+### Why this change (the decision)
+
+The `data` pipeline read spreadsheets under `data-import/` with an implicit
+"every file opens cleanly and has the columns we expect" assumption, while
+describing its inputs only as a *"binary archive file"* and its output only as a
+*"Preserved original Excel file"*. That left four assumptions un-reconciled: what
+happens on a **corrupt/empty/invalid format** file, what **schema** an Excel file
+must satisfy, what the component actually **outputs**, and how **`.xlsm`** (with
+macros) differs from legacy **`.xls`**.
+
+**Ground truth chosen:** the typed reader/validator in
+`backend/app/services/data_pipeline.py`
+(`load_rows` → `validate_schema` → `process_file`). Every caller is **aligned**
+to go through `process_file`, which fail-closes a bad file (log +
+`scan_failed` notification, no fallback) and returns a structured `FileResult`,
+so downstream tiers (CSV export / DB load) only ever see validated rows. Full
+rationale and the four-row inconsistency table are in
+[`docs/decisions.md`](docs/decisions.md) (ADR-004).
+
+### Coherence resolutions (ground truth → align)
+
+| Inconsistency | Ground truth | How the other side was aligned |
+| --- | --- | --- |
+| Corrupt / empty / invalid format file | Typed reader raises `PipelineError` | Scanner fail-closes that file (log + notify), run continues |
+| No schema for the "binary archive file" | `SheetSchema` required columns | Missing columns → `error_kind="schema"`; downstream gets valid rows only |
+| Undefined component output | Explicit `List[Dict]` rows; original preserved read-only | Defined downstream artifact = CSV (`export_to_csv`) / DB load |
+| `.xlsm` vs `.xls` not distinguished | openpyxl for `.xlsx`/`.xlsm`, xlrd for legacy `.xls` | `load_rows` dispatches by extension; missing `xlrd` → clear `invalid_format` |
+
+### Dependencies synced
+
+- upstream: `app.services.notifications.notify_event` (`scan_failed` event) —
+  already present; `openpyxl` and `xlrd` pinned in `backend/requirements.txt`,
+  `openpyxl` also in `pyproject.toml`.
+- downstream: CSV export / DB load consume the typed `PipelineReport`/`FileResult`
+  shape — no other call sites read raw sheets.
+- side artifacts: `docs/decisions.md` ADR-004 (decision + why), this section.
+
+### Verification (this follow-up)
+
+- `pytest backend/tests/test_data_pipeline.py backend/tests/test_pipeline_data.py`
+  → **9 passed**, including `test_data_pipeline.py::test_integration` and
+  `test_pipeline_data.py::test_integration` (good file extracts rows;
+  corrupt/empty are reported not raised; originals preserved; CSV produced).
