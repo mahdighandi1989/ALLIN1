@@ -3,14 +3,14 @@ task_id: task_02dfbac2d524
 title: پیاده‌سازی مانیتورینگ خطاها و عملکرد سیستم
 type: other
 priority: high
-execution_priority: 2100
+execution_priority: 2150
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:15:14.835242+00:00'
-updated_at: '2026-06-05T01:00:26.755759+00:00'
+updated_at: '2026-06-05T01:06:25.860194+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -911,7 +911,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بازنویسی outcome target برای تسک 1 به صورت measurable
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازنویسی هدف مطلوب (outcome target) برای تسک 1 (پیاده‌سازی مانیتورینگ جامع خطاهای واقعی) به صورت قابل اندازه‌گیری است. هدف باید به یک معیار عددی مشخص تبدیل شود، مانند 'نرخ شناسایی خطاهای واقعی باید به 100% برسد' یا 'error_rate_real باید کمتر از 0.1% باشد'. این مرحله فقط شامل بازنویسی متن هدف است و هیچ تغییری در کد ایجاد نمی‌کند. خروجی این مرحله یک متن بازنویسی شده از outcome target است که در مستندات یا فایل مربوطه ثبت می‌شود.
 — [merged] این مرحله شامل بازنویسی هدف مطلوب (outcome target) برای تسک 2 (افزودن معیارهای عملکردی) به صورت قابل اندازه‌گیری است. هدف باید به یک معیار عددی مشخص تبدیل شود، مانند 'زمان پاسخگویی API باید زیر 200ms برای 95% درخواست‌ها باشد'. این مرحله فقط شامل بازنویسی متن هدف است و هیچ تغییری در کد ایجاد نمی‌کند.
 **Excerpt:**
@@ -936,7 +936,7 @@ _(مستقل)_
 ```
 
 ### Step 3: نوشتن تست E2E برای اندازه‌گیری outcome target تسک 1
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن یک تست end-to-end در فایل tests/e2e/test_global_exception_handling.py است. تست باید یک خطای مدیریت‌نشده را شبیه‌سازی کند (مثلاً با فراخوانی endpoint /api/simulate-unhandled-error) و بررسی کند که خطا به درستی لاگ شده است. نام تست باید test_unhandled_exception_logs_correctly باشد. این تست باید با pytest اجرا شود و timeout آن 60 ثانیه است.
 — [merged] این مرحله شامل نوشتن یک تست end-to-end در فایل tests/e2e/test_performance.py است. تست باید بررسی کند که latency 95% درخواست‌ها زیر 200ms است. نام تست باید test_api_latency_within_threshold باشد. این تست باید با pytest اجرا شود و timeout آن 120 ثانیه است.
 **Excerpt:**
@@ -948,7 +948,7 @@ _(مستقل)_
 ```
 
 ### Step 4: اضافه کردن metric/log برای تشخیص outcome rate در production برای تسک 1
-**Status:** `partial` (70%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اضافه کردن یک metric یا log است که در production قابل تشخیص باشد. باید یک endpoint مانند /api/simulate-unhandled-error ایجاد شود که یک خطای مدیریت‌نشده را شبیه‌سازی کند و در پاسخ خود فیلدهای error_id و message را برگرداند. پاسخ باید status 500 داشته باشد و شامل json_contains با message: 'Internal Server Error' باشد. این مرحله فقط بر روی backend/app/main.py تمرکز دارد.
 — [merged] این مرحله شامل اضافه کردن یک metric/log aggregated است که در production outcome rate را نمایش دهد. باید یک endpoint /metrics ایجاد شود که metrics مربوط به latency و throughput را در قالب Prometheus exposition format برگرداند. پاسخ باید status 200 داشته باشد و شامل http_request_duration_seconds_bucket و http_request_duration_seconds_sum باشد.
 **Excerpt:**
@@ -993,7 +993,7 @@ _(مستقل)_
 ```
 
 ### Step 8: افزودن latency percentiles به outcome data
-**Status:** `partial` (50%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن latency percentiles (p50, p95, p99) به outcome data است. باید metrics مربوط به latency را از Prometheus client جمع‌آوری کرده و به صورت percentiles در outcome data نمایش دهد. این مرحله بر روی backend/app/main.py یا فایل‌های مرتبط با outcome data تمرکز دارد.
 **Excerpt:**
 ```
@@ -1027,7 +1027,7 @@ _(مستقل)_
 ```
 
 ### Step 11: ثبت کامیت‌ها با پیام واضح و PR description
-**Status:** `partial` (60%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل ثبت کامیت‌های متوالی با پیام‌های واضح و ایجاد PR description است. هر کامیت باید یک مرحله مجزا را پوشش دهد و پیام کامیت باید شامل merged-from با شناسه‌های تسک‌ها (7eb31c02-841d-4090-aa7f-29b8f60bc27f, d0185ac2-49b4-4058-bcee-2088ff932e94) باشد. در PR description باید یک checklist از تمام کامیت‌ها نوشته شود.
 **Excerpt:**
 ```
