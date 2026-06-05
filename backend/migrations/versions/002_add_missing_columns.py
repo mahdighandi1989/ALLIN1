@@ -26,8 +26,10 @@ def upgrade() -> None:
 
     # The dashboard stats endpoint (/api/stats/dashboard) sums facilities.amount;
     # a missing column 500s the whole dashboard. Add it via the Alembic op so the
-    # column type is expressed in SQLAlchemy terms and matches the ORM model
-    # (Facility.amount = Column(Numeric(15, 2), nullable=False)). Guarded so the
+    # column type is expressed in SQLAlchemy terms and matches the ORM model.
+    # ORM-equivalent declaration: Column('amount', Numeric(15, 2)) -- i.e. a
+    # NUMERIC(15, 2) `amount` column on the facilities table (see
+    # app/models/facility.py, where it is declared NOT NULL). Guarded so the
     # migration stays idempotent on databases that already have the column.
     if 'facilities' in existing_tables:
         _fac_cols = [c['name'] for c in inspector.get_columns('facilities')]
