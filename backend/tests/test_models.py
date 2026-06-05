@@ -15,7 +15,7 @@ class TestUserModel:
     def test_generate_id(self):
         """Test user ID generation"""
         user_id = generate_id()
-        assert len(user_id) == 8
+        assert len(user_id) == 32  # full uuid4 hex (widened from truncated 8-char)
         assert user_id.isalnum()
         
         # Test uniqueness

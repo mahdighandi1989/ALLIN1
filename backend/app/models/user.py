@@ -1,5 +1,4 @@
 """User Model"""
-from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Text
 from sqlalchemy.orm import validates
 from sqlalchemy.sql import func
@@ -18,19 +17,24 @@ ROLE_RANK = {ROLE_PENDING: 0, ROLE_VIEWER: 1, ROLE_EDITOR: 2, ROLE_ADMIN: 3}
 
 
 def generate_id():
-    # NOTE: 8-char UUID is sufficient for current scale (the `users` table holds
-    # a small set of operator accounts). The id column is UNIQUE, so the database
-    # rejects the astronomically-unlikely truncated-UUID collision rather than
-    # silently overwriting — see tests/test_user_id_generation.py. If the user
-    # base ever grows by orders of magnitude, switch to uuid.uuid4().hex (32 chars)
-    # and widen the column accordingly.
-    return str(uuid.uuid4())[:8]
+    # Full 32-char UUID4 hex. This deliberately replaces the previous 8-char
+    # *truncated* UUID, whose "8 chars is enough for the current small scale"
+    # rationale was a stale assumption: as the user base grows the truncated
+    # space (~4.3e9 values) makes birthday-paradox collisions increasingly
+    # likely, turning an otherwise-rare event into an IntegrityError on insert.
+    # uuid4().hex uses the full 122-bit space, so collisions are not a practical
+    # concern at any realistic scale and no future migration to widen the id is
+    # needed. The column is String(36) (32 hex chars, with headroom) and any
+    # existing 8-char ids remain valid, so this widening is backward compatible.
+    # See tests/backend/app/models/test_user_uuid.py for the collision-resistance
+    # edge case and tests/test_user_id_generation.py for format/uniqueness.
+    return uuid.uuid4().hex
 
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String(8), primary_key=True, default=generate_id)
+    id = Column(String(36), primary_key=True, default=generate_id)
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)

@@ -20,10 +20,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add missing columns to facilities table
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = inspector.get_table_names()
+
+    # The dashboard stats endpoint (/api/stats/dashboard) sums facilities.amount;
+    # a missing column 500s the whole dashboard. Add it via the Alembic op so the
+    # column type is expressed in SQLAlchemy terms and matches the ORM model
+    # (Facility.amount = Column(Numeric(15, 2), nullable=False)). Guarded so the
+    # migration stays idempotent on databases that already have the column.
+    if 'facilities' in existing_tables:
+        _fac_cols = [c['name'] for c in inspector.get_columns('facilities')]
+        if 'amount' not in _fac_cols:
+            op.add_column(
+                'facilities',
+                sa.Column('amount', sa.Numeric(precision=15, scale=2), nullable=False, server_default='0'),
+            )
+
+    # Add the remaining missing columns to facilities table
     # Using raw SQL with IF NOT EXISTS for idempotent execution
     columns_to_add = [
-        ("facilities", "amount", "NUMERIC(15,2) NOT NULL DEFAULT 0"),
         ("facilities", "outstanding", "NUMERIC(15,2) DEFAULT 0"),
         ("facilities", "currency", "VARCHAR(10) DEFAULT 'AED'"),
         ("facilities", "facility_type", "VARCHAR(20)"),
@@ -65,10 +81,6 @@ def upgrade() -> None:
         ("users", "created_at", "TIMESTAMP WITH TIME ZONE DEFAULT now()"),
         ("users", "last_login", "TIMESTAMP WITH TIME ZONE"),
     ]
-
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
-    existing_tables = inspector.get_table_names()
 
     for table, column, col_type in columns_to_add:
         if table in existing_tables:

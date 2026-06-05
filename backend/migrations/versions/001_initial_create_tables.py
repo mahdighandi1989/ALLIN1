@@ -25,7 +25,10 @@ def upgrade() -> None:
     if 'users' not in existing_tables:
         op.create_table(
             'users',
-            sa.Column('id', sa.String(8), primary_key=True),
+            # Full 32-char uuid4 hex (String(36) gives headroom). The earlier
+            # truncated 8-char id was a stale-scale assumption; see
+            # app/models/user.py and migration 003_widen_user_id.
+            sa.Column('id', sa.String(36), primary_key=True),
             sa.Column('username', sa.String(50), unique=True, nullable=False, index=True),
             sa.Column('email', sa.String(100), unique=True, nullable=False),
             sa.Column('hashed_password', sa.String(255), nullable=False),

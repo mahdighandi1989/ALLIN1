@@ -37,10 +37,11 @@ def test_user_id_default():
     assert callable(id_default.arg)
     assert id_default.arg.__name__ == "generate_id"
 
-    # 2) That factory yields a stable, non-empty 8-char id every call.
+    # 2) That factory yields a stable, non-empty full 32-char uuid4 hex id every
+    #    call (the id was widened from the old truncated 8-char form).
     minted = generate_id()
     assert isinstance(minted, str)
-    assert len(minted) == 8
+    assert len(minted) == 32
     assert minted  # never None / empty — the old conflicting default
 
     # 3) A freshly issued token exposes the id identically under the legacy
