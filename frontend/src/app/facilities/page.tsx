@@ -61,6 +61,13 @@ export default function FacilitiesPage() {
     if (facilitiesResult.status === 'fulfilled') {
       setData(facilitiesResult.value)
     } else {
+      // Robust 'reason' validation. The old anti-pattern handled the rejection
+      // with `if (reason instanceof Response)` and assumed a Response/`message`
+      // shape, so a non-Response reason (AxiosError, plain object, string, or
+      // undefined) silently swallowed the error. We now route every rejection
+      // reason through parseApiError(), which defensively inspects the well-known
+      // fields and always returns a safe user-facing string — see
+      // src/lib/api.ts and tests/frontend/test_facilities_reason_validation.py.
       console.error('Failed to load facilities:', facilitiesResult.reason)
       toast.error(parseApiError(facilitiesResult.reason))
     }
