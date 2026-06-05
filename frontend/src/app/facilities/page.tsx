@@ -410,6 +410,7 @@ function FacilityFormModal({
               value={form.customer_id}
               onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg"
+              data-testid="facility-form-customer"
               required
               disabled={!!facility}
             >
@@ -460,6 +461,7 @@ function FacilityFormModal({
                   setForm({ ...form, currency: e.target.value.toUpperCase() })
                 }
                 className="w-full px-3 py-2 border rounded-lg"
+                data-testid="facility-form-currency"
               />
             </div>
           </div>
@@ -473,6 +475,7 @@ function FacilityFormModal({
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border rounded-lg"
+                data-testid="facility-form-amount"
                 required
               />
             </div>
@@ -491,6 +494,7 @@ function FacilityFormModal({
                   })
                 }
                 className="w-full px-3 py-2 border rounded-lg"
+                data-testid="facility-form-interest-rate"
               />
             </div>
           </div>
@@ -503,6 +507,7 @@ function FacilityFormModal({
                 setForm({ ...form, expiry_date: e.target.value || undefined })
               }
               className="w-full px-3 py-2 border rounded-lg"
+              data-testid="facility-form-expiry-date"
             />
           </div>
           <div>
@@ -525,6 +530,7 @@ function FacilityFormModal({
             <button
               type="submit"
               disabled={saving}
+              data-testid="facility-form-submit"
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save'}
