@@ -1,22 +1,22 @@
 ---
 task_id: task_02dfbac2d524
-title: پیاده‌سازی مانیتورینگ خطاها و عملکرد سیستم
+title: تکمیل مانیتورینگ خطا و عملکرد سیستم
 type: other
 priority: high
-execution_priority: 2150
+execution_priority: 2200
 status: pending
 external_status: claimed
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:15:14.835242+00:00'
-updated_at: '2026-06-05T01:06:25.860194+00:00'
+updated_at: '2026-06-05T01:14:52.877252+00:00'
 tags:
 - consolidated
 - post_verify_merge
 ---
 
-# پیاده‌سازی مانیتورینگ خطاها و عملکرد سیستم
+# تکمیل مانیتورینگ خطا و عملکرد سیستم
 
 ## Raw Idea
 
@@ -1027,7 +1027,7 @@ _(مستقل)_
 ```
 
 ### Step 11: ثبت کامیت‌ها با پیام واضح و PR description
-**Status:** `partial` (80%)
+**Status:** `partial` (90%)
 **Scope:** این مرحله شامل ثبت کامیت‌های متوالی با پیام‌های واضح و ایجاد PR description است. هر کامیت باید یک مرحله مجزا را پوشش دهد و پیام کامیت باید شامل merged-from با شناسه‌های تسک‌ها (7eb31c02-841d-4090-aa7f-29b8f60bc27f, d0185ac2-49b4-4058-bcee-2088ff932e94) باشد. در PR description باید یک checklist از تمام کامیت‌ها نوشته شود.
 **Excerpt:**
 ```
