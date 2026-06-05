@@ -3,14 +3,14 @@ task_id: task_66febcc9ff9a
 title: پیاده‌سازی تست‌های امنیتی احراز هویت
 type: other
 priority: critical
-execution_priority: 1200
+execution_priority: 1250
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:13:50.338007+00:00'
-updated_at: '2026-06-05T00:08:22.391440+00:00'
+updated_at: '2026-06-05T00:12:18.692178+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1187,7 +1187,7 @@ _(مستقل)_
 ```
 
 ### Step 8: افزودن metric/log برای تشخیص نرخ موفقیت احراز هویت در production
-**Status:** `partial` (50%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل افزودن metric و log به فایل‌های backend/app/security.py و backend/app/api/auth.py است. metric باید نرخ موفقیت (success rate) احراز هویت را اندازه‌گیری کند (مثلاً با استفاده از Prometheus metrics). log باید شامل logger.info یا logger.warning برای رویدادهای مختلف احراز هویت (موفق، ناموفق، توکن منقضی) باشد. خارج از این مرحله: تغییر در frontend. نکته حیاتی: metric باید در production قابل تشخیص باشد.
 **Excerpt:**
 ```
