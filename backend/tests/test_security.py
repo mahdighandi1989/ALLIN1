@@ -57,6 +57,36 @@ def test_hash_password(password):
     assert verify_password(password + "x", hashed) is False
 
 
+def test_hash_password_functionality():
+    """``hash_password`` must run end-to-end without raising.
+
+    This is the behavioural guard for the bcrypt/passlib version pin
+    (bcrypt==4.0.1). passlib 1.7.4 hard-errors when paired with bcrypt >= 4.1,
+    so this test exercises the exact code paths that would break under a
+    divergent install:
+
+    * a normal password hashes and round-trips through ``verify_password``;
+    * a > 72-byte password (the boundary bcrypt is sensitive to) still hashes
+      without raising and verifies correctly — bcrypt silently truncates at
+      72 bytes, which passlib relies on. Under bcrypt >= 4.1 this raises.
+    """
+    # Normal-length password.
+    hashed = hash_password("a-perfectly-normal-password")
+    assert isinstance(hashed, str)
+    assert hashed.startswith("$2")  # bcrypt hash prefix
+    assert verify_password("a-perfectly-normal-password", hashed) is True
+    assert verify_password("wrong", hashed) is False
+
+    # Long (> 72 byte) password — must NOT raise with bcrypt 4.0.1 + passlib.
+    long_password = "x" * 100
+    long_hashed = hash_password(long_password)
+    assert long_hashed.startswith("$2")
+    assert verify_password(long_password, long_hashed) is True
+
+    # Two hashes of the same password use distinct salts -> different digests.
+    assert hash_password("salted") != hash_password("salted")
+
+
 @pytest.mark.parametrize(
     "user_id,username",
     [("abc12345", "alice"), ("u_000001", "bob-smith"), ("XYZ98765", "carol")],

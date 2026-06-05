@@ -34,7 +34,11 @@ dependencies = [
     "python-multipart>=0.0.6",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
-    "bcrypt>=4.0,<4.1",
+    # Pinned to match backend/requirements.txt. passlib 1.7.4 is incompatible
+    # with bcrypt >= 4.1 (it removed the ``__about__`` module and hard-errors on
+    # >72-byte inputs), so the version is pinned exactly to stop CI/Docker from
+    # installing a divergent, broken version.
+    "bcrypt==4.0.1",
     "python-dotenv>=1.0.0",
     "python-dateutil>=2.8.0",
     "redis>=4.5.0",
