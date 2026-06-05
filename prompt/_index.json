@@ -2,7 +2,7 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 5,
+  "total": 4,
   "tasks": [
     {
       "task_id": "3ba913fd-e857-447e-b53c-e3230b889286",
@@ -12,16 +12,6 @@
       "status": "awaiting_review",
       "external_status": "pending",
       "path": "prompt/task-3ba913fd-e857-447e-b53c-e3230b889286.md",
-      "external_attempts": 0
-    },
-    {
-      "task_id": "ecb1f050-33ba-4da5-936c-c0b7784f3b46",
-      "title": "عدم تطابق بین فیچرهای ذکر شده در README و کد پیاده‌سازی شده",
-      "priority": "high",
-      "execution_priority": 2300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-ecb1f050-33ba-4da5-936c-c0b7784f3b46.md",
       "external_attempts": 0
     },
     {
