@@ -31,6 +31,8 @@ class TestDashboardStats:
             "expiring_facilities",
             "monthly_revenue",
             "total_outstanding",
+            "total_amount",
+            "other_stats",
             "recent_customers",
             "recent_activities",
         ):
@@ -42,6 +44,17 @@ class TestDashboardStats:
         assert isinstance(data["monthly_revenue"], (int, float))
         assert isinstance(data["recent_activities"], list)
         assert data["total_exposure"]["currency"] == "AED"
+
+        # The flat total_amount mirrors the nested total_exposure.amount.
+        assert isinstance(data["total_amount"], (int, float))
+        assert data["total_amount"] == pytest.approx(data["total_exposure"]["amount"])
+
+        # other_stats groups the remaining scalars and stays consistent with the
+        # canonical top-level fields.
+        other = data["other_stats"]
+        assert other["total_customers"] == data["total_customers"]
+        assert other["total_outstanding"] == pytest.approx(data["total_outstanding"])
+        assert other["currency"] == "AED"
 
     async def test_dashboard_counts_reflect_data(
         self,
@@ -111,7 +124,10 @@ class TestDashboardStats:
         # = 100000 * 12 / 1200 = 1000
         assert data["monthly_revenue"] == pytest.approx(1000.0)
         assert data["total_exposure"]["amount"] == pytest.approx(150000.0)
+        assert data["total_amount"] == pytest.approx(150000.0)
         assert data["total_outstanding"] == pytest.approx(130000.0)
+        assert data["other_stats"]["total_facilities"] == 2
+        assert data["other_stats"]["total_outstanding"] == pytest.approx(130000.0)
 
     async def test_dashboard_analytics_breakdowns(
         self, client: AsyncClient, auth_headers: dict, db_session
@@ -197,6 +213,8 @@ class TestDashboardStatsNamed:
         assert data["active_facilities"] == 0
         assert data["monthly_revenue"] == 0
         assert data["recent_activities"] == []
+        assert data["total_amount"] == 0
+        assert data["other_stats"]["total_facilities"] == 0
 
     async def test_dashboard_stats_db_error(
         self, client: AsyncClient, auth_headers: dict, monkeypatch

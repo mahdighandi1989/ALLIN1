@@ -345,6 +345,21 @@ export interface DashboardStats {
   monthly_revenue: number
   total_outstanding: number
   total_exposure: TotalExposure
+  // Flat headline amount mirroring total_exposure.amount (see backend
+  // DashboardStatsResponse.total_amount). Optional so older API responses
+  // without the flat field still type-check.
+  total_amount?: number
+  // The remaining aggregate scalars grouped together (backend OtherStatsResponse).
+  other_stats?: {
+    total_customers: number
+    active_customers: number
+    total_facilities: number
+    active_facilities: number
+    expiring_soon: number
+    monthly_revenue: number
+    total_outstanding: number
+    currency: string
+  }
   recent_customers: RecentCustomerStat[]
   recent_activities: RecentActivity[]
   // Richer analytics (optional so older API responses still type-check).

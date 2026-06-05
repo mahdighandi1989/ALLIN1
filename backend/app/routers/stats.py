@@ -12,6 +12,7 @@ from app.models.facility import Facility
 from app.schemas.stats import (
     DashboardStatsResponse,
     TotalExposureResponse,
+    OtherStatsResponse,
     RecentCustomerResponse,
     RecentActivityResponse,
     BreakdownItem,
@@ -218,6 +219,19 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
             total_outstanding=total_outstanding,
             total_exposure=TotalExposureResponse(
                 amount=total_exposure_amount, currency=BASE_CURRENCY
+            ),
+            # Flat headline amount (mirrors total_exposure.amount).
+            total_amount=total_exposure_amount,
+            # The remaining scalars grouped for the documented contract.
+            other_stats=OtherStatsResponse(
+                total_customers=total_customers,
+                active_customers=active_customers,
+                total_facilities=total_facilities,
+                active_facilities=active_facilities,
+                expiring_soon=expiring_soon,
+                monthly_revenue=monthly_revenue,
+                total_outstanding=total_outstanding,
+                currency=BASE_CURRENCY,
             ),
             recent_customers=recent_customers_response,
             recent_activities=recent_activities_response,

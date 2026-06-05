@@ -8,6 +8,25 @@ class TotalExposureResponse(BaseModel):
     currency: str
 
 
+class OtherStatsResponse(BaseModel):
+    """The non-amount aggregate scalars of the dashboard, grouped in one object.
+
+    Exposed alongside the flat ``total_amount`` so a consumer that just wants
+    "the total amount plus everything else" has a single, documented place to
+    read the remaining counts/totals from. Every field mirrors a top-level field
+    on :class:`DashboardStatsResponse`, so this is purely additive — the
+    top-level fields remain the canonical source of truth.
+    """
+    total_customers: int
+    active_customers: int
+    total_facilities: int
+    active_facilities: int
+    expiring_soon: int
+    monthly_revenue: float
+    total_outstanding: float
+    currency: str
+
+
 class RecentCustomerResponse(BaseModel):
     id: str
     account_no: Optional[str] = None
@@ -78,6 +97,14 @@ class DashboardStatsResponse(BaseModel):
     monthly_revenue: float
     total_outstanding: float
     total_exposure: TotalExposureResponse
+    # Flat sum of every facility's ``amount`` in the base currency. This is the
+    # headline "total amount" the dashboard shows; it equals
+    # ``total_exposure.amount`` and is surfaced as a plain number so consumers
+    # (and the documented API contract) can read it without unwrapping the
+    # nested ``total_exposure`` object.
+    total_amount: float
+    # The remaining aggregate scalars grouped together (see OtherStatsResponse).
+    other_stats: OtherStatsResponse
     recent_customers: List[RecentCustomerResponse]
     recent_activities: List[RecentActivityResponse]
 
