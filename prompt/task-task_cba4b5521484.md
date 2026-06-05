@@ -3,14 +3,14 @@ task_id: task_cba4b5521484
 title: افزودن ستون amount و اصلاح نمایش داشبورد
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:52:02.604928+00:00'
-updated_at: '2026-06-05T17:57:45.771834+00:00'
+updated_at: '2026-06-05T18:01:14.349280+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -3174,7 +3174,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی وجود ستون amount در migration 001_initial_create_tables.py
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** بررسی فایل backend/migrations/versions/001_initial_create_tables.py برای اطمینان از وجود ستون amount با نوع NUMERIC(15,2) در جدول facilities. این مرحله فقط شامل بررسی کد migration است و شامل تغییر یا اضافه کردن کد نمی‌شود. اگر ستون وجود نداشته باشد، مرحله بعدی آن را اضافه خواهد کرد.
 **Excerpt:**
 ```
@@ -3197,7 +3197,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 2: بررسی وجود ستون amount در migration 002_add_missing_columns.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی فایل backend/migrations/versions/002_add_missing_columns.py برای اطمینان از وجود ستون amount با نوع NUMERIC(15,2) در جدول facilities. این مرحله فقط شامل بررسی کد migration است و شامل تغییر یا اضافه کردن کد نمی‌شود. اگر ستون وجود نداشته باشد، مرحله بعدی آن را اضافه خواهد کرد.
 **Excerpt:**
 ```
@@ -3210,7 +3210,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 3: اضافه کردن ستون amount به جدول facilities از طریق migration جدید
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اگر ستون amount در migration‌های موجود وجود نداشته باشد، یک فایل migration جدید (003_add_amount_column.py) ایجاد کنید که ستون amount را با نوع NUMERIC(15,2) و nullable=True به جدول facilities اضافه کند. این مرحله شامل نوشتن کد migration و اطمینان از rollback امن است.
 **Excerpt:**
 ```
@@ -3227,7 +3227,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 4: به‌روزرسانی مدل SQLAlchemy facility.py برای اضافه کردن ستون amount
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اضافه کردن فیلد amount به مدل Facility در فایل backend/app/models/facility.py. این فیلد باید از نوع Numeric(15,2) و nullable=True باشد. این مرحله شامل همگام‌سازی مدل ORM با schema دیتابیس است.
 **Excerpt:**
 ```
@@ -3235,7 +3235,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 5: به‌روزرسانی endpoint /api/stats/dashboard برای استفاده از ستون amount
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** بررسی و به‌روزرسانی فایل backend/app/routers/stats.py برای اطمینان از اینکه endpoint /api/stats/dashboard از ستون amount استفاده می‌کند و خطای 500 برنمی‌گرداند. این مرحله شامل بررسی query و response است.
 **Excerpt:**
 ```
@@ -3246,7 +3246,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 6: نوشتن تست برای endpoint /api/stats/dashboard
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** نوشتن تست‌های واحد برای endpoint /api/stats/dashboard در فایل backend/tests/test_stats.py. تست‌ها باید شامل بررسی status 200، وجود فیلدهای total_amount و other_stats در response، و عدم بازگشت خطای 500 باشند.
 **Excerpt:**
 ```
@@ -3256,7 +3256,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 7: به‌روزرسانی مستندات DATABASE_SCHEMA.md برای ستون amount
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** به‌روزرسانی فایل docs/DATABASE_SCHEMA.md برای اضافه کردن توضیحات مربوط به ستون amount در جدول facilities. این شامل نوع داده، nullable بودن، و توضیح کاربرد آن است.
 **Excerpt:**
 ```
@@ -3264,7 +3264,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 8: شناسایی تمام مکان‌هایی که فیلد 'finally' default value می‌گیرد
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** جستجوی کامل در کل پروژه (فایل‌های .py) برای یافتن تمام مکان‌هایی که فیلد 'finally' دارای default value است. این شامل جستجوی الگوهای 'finally\s*=\s*Field\(' و 'finally\s*:\s*.*\s*=\s*.*' می‌شود. نتایج باید در یک لیست مستند شوند.
 **Excerpt:**
 ```
@@ -3276,7 +3276,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 9: انتخاب یک default value واحد برای فیلد 'finally' و ایجاد یک منبع مرکزی
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** انتخاب یک default value واحد برای فیلد 'finally' و ایجاد یک constant یا config در یک فایل مرکزی (مثلاً backend/app/config.py یا backend/app/constants.py). سپس تمام مکان‌های شناسایی شده در مرحله قبل را به این منبع مرکزی ارجاع دهید.
 **Excerpt:**
 ```
@@ -3284,7 +3284,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 10: نوشتن تست fixture برای رفتار پیش‌فرض فیلد 'finally'
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** نوشتن تست واحد در فایل tests/unit/test_finally_field.py که رفتار پیش‌فرض فیلد 'finally' را تأیید می‌کند. تست باید بررسی کند که وقتی فیلد 'finally' بدون مقدار مشخص استفاده می‌شود، از default value مرکزی استفاده می‌کند.
 **Excerpt:**
 ```
@@ -3294,7 +3294,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 11: اضافه کردن کامنت یا migration برای تغییر default value فیلد 'finally'
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر default value فیلد 'finally' تغییر کرده است (مثلاً از 'invalid_format' به مقدار جدید)، یک migration یا backward-compat layer اضافه کنید. اگر تغییر نیاز به migration ندارد، یک کامنت توجیهی در کد اضافه کنید که دلیل انتخاب default value را توضیح می‌دهد.
 **Excerpt:**
 ```
@@ -3302,7 +3302,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 12: تشخیص ریشه anti-pattern 'Stale assumption' در مدل User
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی کامل فایل backend/app/models/user.py برای تشخیص ریشه anti-pattern 'Stale assumption'. این شامل بررسی استفاده از String(8) برای UUID truncated و تحلیل خطر collision در آینده است. نتایج باید مستند شوند.
 **Excerpt:**
 ```
@@ -3319,7 +3319,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 13: اصلاح کد یا اضافه کردن کامنت توجیهی برای anti-pattern در مدل User
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بسته به تصمیم، یا کد را اصلاح کنید (مثلاً تغییر String(8) به UUID یا String(36))، یا یک کامنت توجیهی در فایل backend/app/models/user.py اضافه کنید که دلیل استفاده از String(8) و خطرات آن را توضیح می‌دهد. اگر کد اصلاح می‌شود، migration مربوطه نیز باید ایجاد شود.
 **Excerpt:**
 ```
@@ -3327,7 +3327,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 14: نوشتن تست edge case برای مقاومت در برابر collision UUID
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن تست واحد در فایل tests/backend/app/models/test_user_uuid.py که مقاومت در برابر collision UUID را بررسی می‌کند. تست باید شبیه‌سازی کند که دو UUID truncated با هم collision دارند و بررسی کند که سیستم به درستی از insert دوم جلوگیری می‌کند.
 **Excerpt:**
 ```
@@ -3335,7 +3335,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 15: به‌روزرسانی فایل‌های مرتبط با مدل User (database.py, security.py, __init__.py, conftest.py)
-**Status:** `pending` (0%)
+**Status:** `partial` (50%)
 **Scope:** بررسی و به‌روزرسانی فایل‌های backend/app/database.py، backend/app/utils/security.py، backend/app/models/__init__.py، و backend/tests/conftest.py برای اطمینان از سازگاری با تغییرات مدل User. اگر تغییری در signature یا importها ایجاد شده است، آن‌ها را همگام کنید.
 **Excerpt:**
 ```
@@ -3346,7 +3346,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 16: اجرای تست‌های موجود برای اطمینان از عدم رگرشن
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اجرای تمام تست‌های موجود (pytest) برای اطمینان از اینکه تغییرات ایجاد شده باعث رگرشن نمی‌شود. این شامل تست‌های stats، finally field، و user UUID است.
 **Excerpt:**
 ```
@@ -3357,7 +3357,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 17: اجرای linter و type-checker برای اطمینان از کیفیت کد
-**Status:** `pending` (0%)
+**Status:** `partial` (50%)
 **Scope:** اجرای linter (ruff) و type-checker (mypy) برای اطمینان از اینکه کد بدون warning و خطا است. این شامل تمام فایل‌های تغییر یافته می‌شود.
 **Excerpt:**
 ```
@@ -3366,7 +3366,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 18: ایجاد فایل TO-DO برای اقدامات دستی کاربر (در صورت نیاز)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر هر یک از مراحل نیاز به اقدام دستی کاربر دارد (مثلاً تنظیم credential یا تصمیم سلیقه‌ای)، فایل TO-DO/todo-task-{task_id_first_8}.md را ایجاد کنید. در غیر این صورت، صریحاً اعلام کنید که هیچ بخش Manual-required وجود ندارد.
 **Excerpt:**
 ```
@@ -3377,7 +3377,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 19: Commit و Push تغییرات به default branch
-**Status:** `pending` (0%)
+**Status:** `partial` (80%)
 **Scope:** پس از اتمام تمام مراحل، تغییرات را commit کرده و به default branch (main/master) push کنید. commit message باید شامل merged-from با IDهای تسک‌ها و توضیحات وابستگی‌های همگام‌سازی شده باشد.
 **Excerpt:**
 ```
@@ -3388,7 +3388,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 20: بررسی نهایی و مستندسازی وابستگی‌های همگام‌سازی شده
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** در commit message یا PR description، دامنهٔ وابستگی‌های شناسایی‌شده و همگام‌شده را به‌طور explicit و per-tier بنویسید. اگر هیچ وابستگی پیدا نشد، صریحاً اعلام کنید که بررسی انجام شده است.
 **Excerpt:**
 ```
