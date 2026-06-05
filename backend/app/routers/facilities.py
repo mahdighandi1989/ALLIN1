@@ -15,14 +15,21 @@ from app.schemas.facility import (
     FacilityResponse,
     FacilityListResponse,
 )
-from app.utils.security import get_current_user
 from app.routers.auth import require_editor
 from app.services.audit import record_audit
 from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
+from app.services.facility_authorization import require_facility_reader
 
-# Authentication is required for every facility endpoint. The prefix is provided
-# by main.py (/api/facilities), so the router itself must not add another prefix.
-router = APIRouter(tags=["facilities"], dependencies=[Depends(get_current_user)])
+# Authentication AND read-authorization are required for every facility endpoint.
+# ``require_facility_reader`` (app.services.facility_authorization) first resolves
+# the caller via get_current_user, then makes the authorization decision explicit
+# and centralised: only an approved account (viewer/editor/admin) may read
+# facility data; an authenticated-but-pending account gets 403. Write endpoints
+# additionally depend on ``require_editor``. The prefix is provided by main.py
+# (/api/facilities), so the router itself must not add another prefix.
+router = APIRouter(
+    tags=["facilities"], dependencies=[Depends(require_facility_reader)]
+)
 
 _FACILITY_NOT_FOUND = "Facility not found"
 _CUSTOMER_NOT_FOUND = "Customer not found"

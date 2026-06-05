@@ -14,6 +14,29 @@ import pytest
 from httpx import AsyncClient
 
 from app.models.user import User
+from app.utils.security import hash_password, create_access_token
+
+
+async def _make_user(db, username, role):
+    """Create a user with a specific role and return it (for RBAC scenarios)."""
+    user = User(
+        username=username,
+        email=f"{username}@example.com",
+        hashed_password=hash_password("Passw0rd1"),
+        full_name=username.title(),
+        is_active=True,
+        role=role,
+        is_admin=(role == "admin"),
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+def _headers_for(user: User) -> dict:
+    token = create_access_token(data={"user_id": user.id, "username": user.username})
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def test_integration(client: AsyncClient, test_user: User, auth_headers: dict):
@@ -67,3 +90,38 @@ async def test_pipeline_handles_invalid_tokens_gracefully(client: AsyncClient):
     for bad in ("Bearer garbage-token", "Bearer ", "Token abc", "not-a-scheme"):
         resp = await client.get("/api/auth/me", headers={"Authorization": bad})
         assert resp.status_code == 401, f"{bad!r} -> {resp.status_code}"
+
+
+async def test_facility_read_authorization_pipeline(client: AsyncClient, db_session):
+    """Facility reads enforce explicit role-based authorization, not just auth.
+
+    Resolves the logic-audit inconsistency between
+    ``app/routers/facilities.py`` (authentication) and
+    ``app/services/facility_authorization.py`` (authorization): an authenticated
+    but *pending* account must be forbidden from facility data, while an approved
+    (viewer/editor/admin) account may read it.
+    """
+    facilities_url = "/api/facilities/"
+
+    # Unauthenticated → 401 (authentication still required, no silent bypass).
+    assert (await client.get(facilities_url)).status_code == 401
+
+    # Authenticated but pending → 403 (authenticated, not authorized).
+    pending = await _make_user(db_session, "pending_fac", "pending")
+    assert (await client.get(facilities_url, headers=_headers_for(pending))).status_code == 403
+
+    # Approved viewer → 200, and read-only (cannot create).
+    viewer = await _make_user(db_session, "viewer_fac", "viewer")
+    assert (await client.get(facilities_url, headers=_headers_for(viewer))).status_code == 200
+    create = await client.post(
+        facilities_url,
+        json={"customer_id": "nonexistent", "name": "X", "amount": 1000},
+        headers=_headers_for(viewer),
+    )
+    assert create.status_code == 403  # require_editor blocks the viewer
+
+    # Editor and admin can also read.
+    editor = await _make_user(db_session, "editor_fac", "editor")
+    assert (await client.get(facilities_url, headers=_headers_for(editor))).status_code == 200
+    admin = await _make_user(db_session, "admin_fac", "admin")
+    assert (await client.get(facilities_url, headers=_headers_for(admin))).status_code == 200
