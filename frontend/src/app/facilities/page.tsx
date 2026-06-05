@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { facilitiesApi, customersApi, parseApiError, downloadFile } from '@/lib/api'
+import { validateFacilityForm } from '@/lib/facilityValidation'
 import { Facility, FacilityList, FacilityForm as FacilityFormData, Customer } from '@/types'
 import { Plus, Search, Edit, Trash2, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -362,6 +363,14 @@ function FacilityFormModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // Client-side validation: surface a friendly message and abort the request
+    // before an invalid payload reaches the API (which would otherwise return an
+    // opaque 422 / database constraint error).
+    const validationError = validateFacilityForm(form)
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
     setSaving(true)
     try {
       if (facility) {

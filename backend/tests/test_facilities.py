@@ -207,9 +207,56 @@ class TestFacilityEndpoints:
             "facility_type": "loan",
             "amount": -1000  # Negative amount
         }
-        
+
         response = await client.post("/api/facilities/", json=facility_data, headers=auth_headers)
-        
+
+        assert response.status_code == 422
+
+        # Zero amount (must be strictly positive)
+        response = await client.post(
+            "/api/facilities/",
+            json={"customer_id": test_customer.id, "facility_type": "loan", "amount": 0},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+        # interest_rate above the allowed 0-100 range
+        response = await client.post(
+            "/api/facilities/",
+            json={
+                "customer_id": test_customer.id,
+                "facility_type": "loan",
+                "amount": 1000,
+                "interest_rate": 150,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+        # Negative interest_rate (below the allowed range)
+        response = await client.post(
+            "/api/facilities/",
+            json={
+                "customer_id": test_customer.id,
+                "facility_type": "loan",
+                "amount": 1000,
+                "interest_rate": -5,
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+        # Invalid currency (not a 3-letter ISO code)
+        response = await client.post(
+            "/api/facilities/",
+            json={
+                "customer_id": test_customer.id,
+                "facility_type": "loan",
+                "amount": 1000,
+                "currency": "US1",
+            },
+            headers=auth_headers,
+        )
         assert response.status_code == 422
 
     async def test_update_facility_success(self, client: AsyncClient, auth_headers: dict, test_facility: Facility):
