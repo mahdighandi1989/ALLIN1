@@ -3,14 +3,14 @@ task_id: task_1a0502982b9b
 title: حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند
 type: other
 priority: medium
-execution_priority: 3350
-status: awaiting_review
-external_status: done
+execution_priority: 3050
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:49:46.762948+00:00'
-updated_at: '2026-06-05T19:57:04.134235+00:00'
+updated_at: '2026-06-05T19:57:14.733284+00:00'
 tags:
 - consolidated
 - post_verify_merge
