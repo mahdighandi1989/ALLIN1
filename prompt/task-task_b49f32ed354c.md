@@ -3,14 +3,14 @@ task_id: task_b49f32ed354c
 title: اصلاح و استانداردسازی پیکربندی و متغیرهای محیطی بک‌اند
 type: other
 priority: critical
-execution_priority: 1000
+execution_priority: 1050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:50:49.576711+00:00'
-updated_at: '2026-06-05T15:50:49.576715+00:00'
+updated_at: '2026-06-05T17:16:12.124232+00:00'
 tags:
 - consolidated
 - post_verify_merge
