@@ -3,14 +3,14 @@ task_id: task_21687b9591ca
 title: پیاده‌سازی Rate Limit و رفع JWT احراز هویت
 type: other
 priority: critical
-execution_priority: 1050
-status: pending
+execution_priority: 1350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:48:04.062953+00:00'
-updated_at: '2026-06-05T17:14:47.207201+00:00'
+updated_at: '2026-06-05T17:34:55.205836+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -6764,7 +6764,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: تبدیل یادداشت‌های پیش‌نیاز و قواعد اجرایی به یک مرحله اجرایی برای پیاده‌سازی سیستم احراز هویت و امنیت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل پیاده‌سازی کامل بخش‌های فنی درخواست کاربر نیست، بلکه شامل ایجاد زیرساخت اجرایی برای اطمینان از رعایت دقیق قواعد ذکر شده در یادداشت مهم (⚠️) است. این مرحله شامل: (1) ایجاد فایل TO-DO برای اقدامات دستی کاربر (در صورت نیاز)، (2) بررسی و همگام‌سازی وابستگی‌ها در چهار جهت (upstream, downstream, cross-tier, side artifacts)، (3) اطمینان از عدم خلاصه‌سازی یا حذف بخش‌های درخواست، (4) ایجاد commit و push فوری پس از اتمام. نکته حیاتی: این مرحله صرفاً یک 'مرحله صفر' برای آماده‌سازی و مستندسازی است و هیچ کد جدیدی برای قابلیت‌های احراز هویت اضافه نمی‌کند.
 — [merged] این مرحله شامل پیاده‌سازی کامل و دقیق تمام دستورالعمل‌های موجود در بخش ⚠️ است. این بخش یک یادداشت مهم برای مدل اجراکننده است و شامل قواعد سخت‌گیرانه‌ای برای خواندن، تحلیل وابستگی‌ها، همگام‌سازی چهارجهته، مدیریت TO-DO، و قوانین commit/push می‌باشد. این مرحله به‌عنوان یک مرحله اجرایی مستقل در نظر گرفته می‌شود که باید پیش از هر تغییر کد، به‌طور کامل رعایت شود. هیچ کدی در این مرحله تولید نمی‌شود، بلکه این مرحله چارچوب اجرایی برای تمام مراحل بعدی را تعیین می‌کند.
 **Excerpt:**
@@ -7028,7 +7028,7 @@ Dependencies synced:
 ```
 
 ### Step 2: فعال‌سازی rate limiting روی endpoint‌های احراز هویت با استفاده از فایل rate_limit.py موجود
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن dependency rate limiting به router احراز هویت در فایل backend/app/main.py است. فایل backend/app/utils/rate_limit.py از قبل وجود دارد و باید فعال شود. این مرحله فقط روی router auth تمرکز دارد و شامل سایر endpoint‌ها نمی‌شود. نکته حیاتی: rate_limit.py باید import شود و به عنوان dependency به auth.router اضافه گردد.
 **Excerpt:**
 ```
@@ -7074,7 +7074,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: اضافه کردن Rate Limiter به روتر احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تغییر کد در فایل backend/app/main.py برای افزودن وابستگی RateLimitMiddleware به روتر auth است. همچنین شامل ایجاد یا اصلاح فایل backend/app/utils/rate_limit.py برای پیاده‌سازی RateLimitMiddleware می‌شود. خارج از scope: تغییرات در سایر روترها، تست‌ها، یا تنظیمات rate limit در config.
 **Excerpt:**
 ```
@@ -7107,7 +7107,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"], dependencies=
 ```
 
 ### Step 6: رفع نقص اعتبارسنجی JWT در security.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این تسک شامل رفع نقص در اعتبارسنجی JWT در فایل backend/utils/security.py است. تغییرات باید بدون شکستن تست‌های موجود، عبور از linter بدون warning و موفقیت type-check انجام شود. فایل‌های دخیل مشخص نیستند اما احتمالاً backend/utils/security.py و فایل‌های تست مرتبط هستند.
 **Excerpt:**
 ```
@@ -7125,7 +7125,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"], dependencies=
 ```
 
 ### Step 7: تبدیل یادداشت مهم و قواعد اجرایی به یک مرحله اجرایی برای تقویت سیستم احراز هویت و امنیت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل یادداشت مهم برای مدل اجراکننده است که پیش از اجرای هر تغییری در repo باید خوانده شود. این یادداشت شامل قواعد سختگیرانه‌ای برای خواندن کامل پرامپت، ممنوعیت خلاصه‌سازی، بررسی وابستگی‌ها در چهار جهت (upstream, downstream, cross-tier, side artifacts)، مدیریت TO-DO با آستانه ۲۰٪، و الزام commit+push فوری per-task است. این بخش خود یک مرحله اجرایی نیست، بلکه یک دستورالعمل متا برای نحوه اجرای سایر بخش‌هاست. خروجی این مرحله باید یک فایل TO-DO (در صورت نیاز) و یک commit باشد که نشان دهد این یادداشت خوانده و درک شده است.
 — [merged] این بخش شامل یادداشت مهم برای مدل اجراکننده است که شامل قواعد سخت، وابستگی‌ها، مدیریت TO-DO، و قوانین commit/push می‌باشد. این بخش یک مرحله اجرایی نیست، بلکه یک دستورالعمل جامع برای نحوه اجرای کل پروژه است. بنابراین، این بخش به عنوان یک مرحله اجرایی مستقل در نظر گرفته نمی‌شود، بلکه به عنوان چارچوب اجرایی برای تمام مراحل دیگر عمل می‌کند. خروجی این بخش باید `{"skip": true, "reason": "این بخش یک یادداشت راهنما برای اجراکننده است و شامل دستورالعمل‌های اجرایی مستقیم نیست. به عنوان یک مرحله مجزا قابل پیاده‌سازی نیست."}` باشد.
 — [merged] این بخش شامل یادداشت مهم و قواعد سخت برای مدل اجراکننده است. وظیفه آن تبدیل این بخش به یک مرحله اجرایی واحد است که شامل: 1) خواندن کامل و مو به موی پرامپت، 2) بررسی وابستگی‌های upstream، downstream، cross-tier و جانبی، 3) مدیریت TO-DO بر اساس قواعد مشخص، 4) commit و push فوری پس از اتمام. این مرحله به‌عنوان پیش‌نیاز اجرای سایر بخش‌های پروژه عمل می‌کند و خود شامل پیاده‌سازی کد جدید نیست.
@@ -7465,7 +7465,7 @@ injection، یا integration پولی automate شود)، انجام دهید و 
 ```
 
 ### Step 8: رفع نقص اعتبارسنجی انقضای توکن JWT در تابع validate_token
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به بررسی و رفع نقص در تابع validate_token در فایل backend/utils/security.py می‌پردازد. تمرکز بر اطمینان از بررسی صحیح فیلد exp (expiry) توکن JWT است. سایر جنبه‌های امنیتی JWT مانند امضا یا issuer در این مرحله لحاظ نمی‌شوند. فایل دقیق backend/utils/security.py نیست بلکه backend/utils/security.py است.
 **Excerpt:**
 ```
@@ -7473,7 +7473,7 @@ injection، یا integration پولی automate شود)، انجام دهید و 
 ```
 
 ### Step 9: اعمال معیارهای پذیرش رفتار-محور برای تغییرات امنیتی
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تعریف معیارهای پذیرش (AC) برای هر تغییری در سیستم احراز هویت و امنیت است. تمام تغییرات باید بدون شکستن تست‌های موجود، عبور از linter و type-check، و موفقیت در تست‌های واحد و یکپارچه‌سازی انجام شوند. این بخش خود یک مرحله اجرایی نیست، بلکه چارچوبی برای تأیید کیفیت مراحل دیگر است. خارج از scope: پیاده‌سازی خاص، نام فایل‌ها یا کلاس‌ها.
 **Excerpt:**
 ```
@@ -7489,7 +7489,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: Resolve security anti-pattern: conditional inconsistency and stale assumption
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این تسک سوم از ۷ تسک پروژه است و بر رفع یک anti-pattern امنیتی در فایل backend/app/routers/auth.py متمرکز است. شامل تشخیص ریشه مشکل، اصلاح کد یا افزودن کامنت توجیهی، و نوشتن تست edge case برای امنیت bypass است. هیچ مرحله‌ای قبلاً انجام نشده و همه مراحل باقی‌مانده‌اند.
 **Excerpt:**
 ```
@@ -7507,7 +7507,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 11: رفع آسیب‌پذیری امنیتی ناشی از بایپس موقت احراز هویت در auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به رفع مشکل امنیتی موجود در خط 150 فایل backend/app/routers/auth.py می‌پردازد. تمرکز بر حذف یا ایمن‌سازی منطق بایپس موقت (AUTH_DISABLED) است. سایر بخش‌های auth.py یا فایل‌های مرتبط (rate_limit, security, models) در این مرحله تغییر نمی‌کنند مگر اینکه مستقیماً به این بایپس وابسته باشند.
 **Excerpt:**
 ```
@@ -7515,7 +7515,7 @@ The comment `# TEMPORARY: when AUTH_DISABLED is on, bypass auth a` indicates the
 ```
 
 ### Step 12: تشخیص و اصلاح anti-pattern در احراز هویت با تست edge case و عبور از CI
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل بازنگری منطق احراز هویت برای یافتن anti-pattern، اصلاح کد یا افزودن کامنت توجیهی، نوشتن تست edge case، و عبور از تمام pipelineهای CI (تست، linter، type-check) است. خارج از scope: طراحی معماری جدید، تغییر API، یا اضافه کردن قابلیت جدید.
 **Excerpt:**
 ```
@@ -7538,7 +7538,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 13: Clarify Auth Granularity for User Profile/Password Mutations
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تسک 4 از 7 با عنوان 'Clarify Auth Granularity for User Profile/Password Mutations' است. هدف آن شناسایی و مستندسازی ناسازگاری‌های احراز هویت در سطح granularity برای تغییرات پروفایل و رمز عبور کاربر است. شامل تعیین ground truth، align کردن طرف‌های ناسازگار، نوشتن integration test برای pipeline auth، و توضیح تصمیمات در PR description می‌باشد. فایل‌های دخیل مشخص نیستند ('-') اما integration test در مسیر tests/integration/test_auth_granularity.py قرار دارد.
 **Excerpt:**
 ```
@@ -7557,7 +7557,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 14: اعمال granularity مجوز برای به‌روزرسانی پروفایل و تغییر رمز عبور در auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله به اصلاح منطق مجوزدهی در endpointهای به‌روزرسانی پروفایل و تغییر رمز عبور در فایل backend/app/routers/auth.py می‌پردازد. شامل: افزودن بررسی مالکیت (ownership check) برای اطمینان از اینکه کاربر فقط می‌تواند داده‌های خود را تغییر دهد، و/یا اعمال کنترل دسترسی مبتنی بر نقش (RBAC) برای اجازه تغییر داده‌های کاربران دیگر فقط به مدیران. خارج از scope: سایر endpointهای auth (مانند لاگین، ثبت‌نام)، سایر pipelineها، و تغییرات در frontend.
 **Excerpt:**
 ```
@@ -7571,7 +7571,7 @@ Clarify and confirm that the 'authorization dependencies' for profile updates an
 ```
 
 ### Step 15: تعریف معیارهای پذیرش رفتار-محور برای رفع ناسازگاری در pipeline احراز هویت
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش معیارهای پذیرش (AC) را برای مرحله‌ای تعریف می‌کند که در آن ناسازگاری‌های بین دو طرف (احتمالاً backend و frontend یا دو ماژول) شناسایی، مستند و رفع می‌شود. شامل: مستندسازی ناسازگاری‌ها و فرض‌ها، تعیین ground truth، اجرای موفق integration test برای pipeline auth، عبور تمام تست‌ها، linter و type-check. خارج از scope: پیاده‌سازی کد جدید یا تغییر معماری.
 — [merged] این بخش معیارهای پذیرش (AC) را برای یک مرحله از پروژه تعریف می‌کند که در آن دو طرف (احتمالاً دو توسعه‌دهنده یا دو سرویس) ناسازگاری در فرض‌های خود درباره pipeline احراز هویت دارند. هدف این است که ابتدا ناسازگاری‌ها مستند شوند، ground truth تعیین شود، و سپس با اصلاح کد و تست‌ها، pipeline auth بدون شکست عبور کند. این بخش شامل مراحل اجرایی پیشنهادی نیست (فقط گام ۱ ذکر شده) و صرفاً ACها را مشخص می‌کند.
 **Excerpt:**
@@ -7590,7 +7590,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 16: Return Consistent 401 for Login Errors
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل و اصلاح رفتار لاگین برای بازگرداندن وضعیت 401 یکسان در تمام خطاهای احراز هویت (کاربر ناموجود، رمز اشتباه، و غیره) است. هدف جلوگیری از افشای اطلاعات (enumeration) از طریق کدهای وضعیت متفاوت است. شامل مستندسازی ناسازگاری‌ها، تعیین ground truth، نوشتن integration test، و توضیح در PR description می‌شود. موارد خارج از scope: تغییر rate limiting، تغییر endpointهای دیگر، یا تغییر رفتار غیر از کد وضعیت 401.
 **Excerpt:**
 ```
@@ -7627,7 +7627,7 @@ _(مستقل)_
 ```
 
 ### Step 17: رفع نشت اطلاعات endpoint ورود از طریق کدهای وضعیت HTTP
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح endpoint ورود در فایل backend/app/routers/auth.py است تا برای تمام تلاش‌های ناموفق ورود (اعم از کاربر ناموجود یا رمز اشتباه) تنها کد وضعیت 401 Unauthorized برگرداند. خارج از scope این مرحله: تغییرات در سایر endpointها، rate limiting، یا تغییر در response body (که باید generic بماند). نکته حیاتی: باید مطمئن شویم که هیچ تفاوتی در کد وضعیت یا بدنه پاسخ بین 'کاربر پیدا نشد' و 'رمز عبور اشتباه' وجود ندارد.
 **Excerpt:**
 ```
@@ -7641,7 +7641,7 @@ The login endpoint should return a generic `401 Unauthorized` (or `400 Bad Reque
 ```
 
 ### Step 18: بررسی و مستندسازی تأثیر تغییرات axios.ts بر auth.tsx
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل تحلیل diff فایل frontend/src/lib/axios.ts و مستندسازی تأثیر آن بر frontend/src/lib/auth.tsx است. خروجی این مرحله یک سند یا کامنت در کد است که نشان می‌دهد کدام بخش‌های auth.tsx نیاز به تغییر دارند. این مرحله صرفاً تحلیلی و مستندسازی است و شامل تغییر کد نمی‌شود.
 — [merged] این مرحله صرفاً به بررسی diff فایل frontend/src/lib/axios.ts و مستندسازی تأثیر آن بر frontend/src/lib/auth.tsx می‌پردازد. شامل تطبیق کدهای وابسته با قرارداد جدید، اجرای تست‌های یکپارچه، تست‌های واحد، linter و type-check می‌شود. خارج از scope: پیاده‌سازی تغییرات جدید در axios.ts یا auth.tsx.
 **Excerpt:**
@@ -7653,7 +7653,7 @@ The login endpoint should return a generic `401 Unauthorized` (or `400 Bad Reque
 ```
 
 ### Step 19: بررسی و تطبیق auth.tsx با تغییرات axios.ts برای جلوگیری از regression
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بررسی کامل فایل frontend/src/lib/auth.tsx برای اطمینان از سازگاری با تغییرات اخیر در frontend/src/lib/axios.ts است. تمرکز بر روی نحوه استفاده auth.tsx از setAuthDisabled و interceptor 401 می‌باشد. هرگونه تغییر در signature، behavior یا side-effect این توابع باید در auth.tsx منعکس شود. این مرحله شامل تغییر در auth.tsx نیست، بلکه صرفاً تحلیل و مستندسازی شکاف‌ها است.
 **Excerpt:**
 ```
@@ -7666,7 +7666,7 @@ The login endpoint should return a generic `401 Unauthorized` (or `400 Bad Reque
 ```
 
 ### Step 20: حذف متغیر محیطی بلااستفاده ACCESS_TOKEN_EXPIRE_MINUTES
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این تسک شامل حذف کامل متغیر محیطی `ACCESS_TOKEN_EXPIRE_MINUTES` از تمام کدهای برنامه، فایل‌های پیکربندی استقرار (مانند docker-compose.yml، Kubernetes manifests، Terraform) و فایل `.env.example` است. همچنین شامل تأیید عدم خوانده شدن این متغیر در هیچ کدی و در صورت نیاز، چرخش (rotate) آن به عنوان یک secret و تنظیم مقدار جدید در deployment می‌باشد. فایل‌های دخیل شامل تمام فایل‌های پروژه هستند، اما تمرکز اصلی روی فایل‌های پیکربندی و کدهای خواندن متغیرهای محیطی است.
 **Excerpt:**
 ```
@@ -7684,7 +7684,7 @@ The login endpoint should return a generic `401 Unauthorized` (or `400 Bad Reque
 ```
 
 ### Step 21: حذف یا استفاده از متغیر محیطی ACCESS_TOKEN_EXPIRE_MINUTES
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله به بررسی و رفع مشکل متغیر محیطی ACCESS_TOKEN_EXPIRE_MINUTES می‌پردازد که در فایل‌های پیکربندی (.env, .env.example, README) تعریف شده اما در هیچ کد اجرایی خوانده نمی‌شود. شامل جستجوی کامل در کدبیس برای یافتن استفاده‌های احتمالی، تصمیم‌گیری بین حذف متغیر (در صورت عدم نیاز) یا اضافه کردن reader آن (در صورت نیاز)، و به‌روزرسانی مستندات مربوطه است. این مرحله شامل تغییر در backend/app/config.py و احتمالاً backend/app/routers/auth.py یا backend/utils/security.py می‌شود.
 **Excerpt:**
 ```
@@ -7698,7 +7698,7 @@ env var `ACCESS_TOKEN_EXPIRE_MINUTES` در `.env`/config تعریف شده ول�
 ```
 
 ### Step 22: حذف کامل متغیر ACCESS_TOKEN_EXPIRE_MINUTES از کدبیس و تنظیمات
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل جستجوی کامل متغیر ACCESS_TOKEN_EXPIRE_MINUTES در تمام کدهای برنامه، فایل‌های CI/CD، Dockerfile، فایل‌های .env.example و deployment configs است. پس از یافتن تمام موارد، باید آنها را حذف کرده و در صورت نیاز مقدار جدیدی برای deployment تنظیم شود. خارج از این مرحله: تغییر منطق احراز هویت، تغییر سایر متغیرهای محیطی، یا تغییر رفتار runtime.
 **Excerpt:**
 ```
