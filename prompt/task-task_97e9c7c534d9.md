@@ -3,14 +3,14 @@ task_id: task_97e9c7c534d9
 title: افزایش پوشش تست و کیفیت کد بک‌اند
 type: other
 priority: high
-execution_priority: 2100
+execution_priority: 2150
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:11:03.258958+00:00'
-updated_at: '2026-06-05T00:43:46.608005+00:00'
+updated_at: '2026-06-05T00:52:56.217736+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -2008,7 +2008,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 15: اصلاح یا مستندسازی anti-pattern در backend/app/database.py
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** اصلاح منطق SSL configuration در backend/app/database.py یا اضافه کردن کامنت توجیهی. اگر اصلاح انجام می‌شود، باید منطق جدید بر اساس پیکربندی explicit (مانند variable environment) باشد. اگر مستندسازی انجام می‌شود، باید دلیل حفظ وضعیت فعلی توضیح داده شود. نکته حیاتی: هر دو گزینه باید با تست edge case همراه باشند.
 **Excerpt:**
 ```
@@ -2022,7 +2022,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 16: نوشتن تست edge case برای SSL configuration در test_database.py
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن تست edge case در tests/test_database.py با نام test_ssl_edge_cases که سناریوهای مختلف SSL configuration را پوشش می‌دهد. این تست باید شامل مواردی مانند hostname 'db' در Docker, localhost, 127.0.0.1, و remote database با SSL باشد. نکته حیاتی: timeout تست 60 ثانیه است.
 **Excerpt:**
 ```
@@ -2155,7 +2155,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 26: بررسی و رفع warningهای linter در تمام فایل‌های تغییر یافته
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای linter (ruff) روی تمام فایل‌هایی که در این super-task تغییر کرده‌اند و رفع هرگونه warning. این مرحله شامل backend/app/database.py, backend/app/compat.py, backend/tests/*.py, و backend/requirements.txt است. نکته حیاتی: هیچ warning جدیدی نباید اضافه شود.
 **Excerpt:**
 ```
@@ -2167,7 +2167,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 27: بررسی و رفع warningهای type-check در تمام فایل‌های تغییر یافته
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای type-check (mypy) روی تمام فایل‌هایی که در این super-task تغییر کرده‌اند و رفع هرگونه warning. این مرحله شامل backend/app/database.py, backend/app/compat.py, backend/tests/*.py است. نکته حیاتی: هیچ warning جدیدی نباید اضافه شود.
 **Excerpt:**
 ```
@@ -2179,7 +2179,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 28: نوشتن commit message با merged-from IDs
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن commit message برای تمام تغییرات این super-task که شامل merged-from IDs تمام 5 تسک است. این مرحله شامل ایجاد یک commit با پیام واضح و جامع است. نکته حیاتی: commit message باید شامل `merged-from: 81c822a5-0e5c-4823-a7a3-6cb68c6104f9, 00478042-4983-4f7b-96c1-16c06a2fbf25, c621424e-f75d-4196-8e29-b28c04aab88b, 5fa1a292-c7d8-4ef3-95ad-4725e8c3bb8a, cb7140d5-f580-4bc5-85e9-db51766cd905` باشد.
 **Excerpt:**
 ```
@@ -2188,7 +2188,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 29: ایجاد PR description با checklist از تمام کامیت‌ها
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** ایجاد یک PR description که شامل checklist از تمام کامیت‌های این super-task است. این checklist باید ترتیب منطقی (foundation → core → integration → tests) را رعایت کند. نکته حیاتی: هیچ کامیتی نباید از قلم بیفتد.
 **Excerpt:**
 ```
@@ -2209,7 +2209,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 31: نوشتن release note برای تغییرات اعمال‌شده
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن release note برای تمام تغییرات این super-task، شامل تغییرات در وابستگی‌ها، اصلاح anti-pattern، پاکسازی dead code، و اضافه شدن تست‌ها. نکته حیاتی: release note باید شامل warning درباره تغییرات backward-incompatible باشد.
 **Excerpt:**
 ```
