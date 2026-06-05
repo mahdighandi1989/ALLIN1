@@ -2,7 +2,7 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 9,
+  "total": 8,
   "tasks": [
     {
       "task_id": "9f1a6790-aa39-42a4-8ac6-14b8d62c4ce8",
@@ -22,16 +22,6 @@
       "status": "awaiting_review",
       "external_status": "pending",
       "path": "prompt/task-b6ff9b08-d9df-4c3b-9434-f03c91af125f.md",
-      "external_attempts": 0
-    },
-    {
-      "task_id": "bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7",
-      "title": "اعتبارسنجی ورودی‌های فرم تسهیلات",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7.md",
       "external_attempts": 0
     },
     {
