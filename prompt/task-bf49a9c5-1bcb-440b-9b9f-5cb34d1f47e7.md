@@ -3,14 +3,14 @@ task_id: bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7
 title: اعتبارسنجی ورودی‌های فرم تسهیلات
 type: bug
 priority: critical
-execution_priority: 1350
-status: awaiting_review
-external_status: done
+execution_priority: 1050
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-31T16:19:06.449286+00:00'
-updated_at: '2026-06-05T18:40:58.104203+00:00'
+updated_at: '2026-06-05T18:41:07.470761+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
