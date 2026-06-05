@@ -26,7 +26,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://dev_user:dev_secure_pass_2024@db:5432/allin1_dev
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - SECRET_KEY=dev_secret_key_change_in_production_2024_secure_random
-      - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      # Access-token lifetime lives in backend/app/config.py; it is
+      # intentionally not read from the environment.
     volumes:
       - ./backend:/app:rw
       - backend_dev_logs:/app/logs

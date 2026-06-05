@@ -37,7 +37,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set (openssl rand -base64 48)}
       - DEBUG=${DEBUG:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      # Access-token lifetime is configured in backend/app/config.py
+      # (default 7 days); it is intentionally not a deployment env var.
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

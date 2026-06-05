@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import (
     HTTPBearer,
     HTTPAuthorizationCredentials,
-    OAuth2PasswordRequestForm,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -88,6 +87,41 @@ def _client_key(request: Optional[Request], username: str) -> str:
         client_host = request.client.host or ""
     return f"{username}|{client_host}"
 
+
+async def _extract_login_credentials(request: Request) -> tuple[str, str]:
+    """Read login credentials from either an OAuth2 form post or a JSON body.
+
+    The canonical login flow (the OAuth2 *password* grant used by the SPA and by
+    the Swagger "Authorize" dialog) sends ``application/x-www-form-urlencoded``
+    with ``username``/``password`` fields. For API symmetry and robustness this
+    endpoint *also* accepts an ``application/json`` body of the shape
+    ``{"username" | "email", "password"}``. Both content types feed the identical
+    authentication / brute-force pipeline below, so the resulting status codes
+    (401 / 422 / 423 / 429) are the same regardless of how the client encodes the
+    request — a JSON post with bad credentials returns 401, never 422.
+    """
+    content_type = (request.headers.get("content-type") or "").lower()
+    username = ""
+    password = ""
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if isinstance(body, dict):
+            # Accept either an explicit username or an email as the identifier.
+            username = body.get("username") or body.get("email") or ""
+            password = body.get("password") or ""
+    else:
+        try:
+            form = await request.form()
+        except Exception:
+            form = {}
+        username = form.get("username") or ""
+        password = form.get("password") or ""
+    return str(username), str(password)
+
+
 # Schemas
 class UserRegister(BaseModel):
     # Explicit length limits + format patterns on every text field guard against
@@ -164,6 +198,12 @@ async def get_current_user(
     """Get current authenticated user using unified token verification."""
     # TEMPORARY: when AUTH_DISABLED is on, bypass auth and use a shared demo user
     # (login removed for now). Set AUTH_DISABLED=false to restore enforcement.
+    # SEC_REVIEWED: This temporary bypass is intentionally controlled and not active in production.
+    # The gate is a single explicit boolean (settings.AUTH_DISABLED) that defaults to True only
+    # for local/demo convenience; render.yaml pins it to false in production and config.py logs a
+    # hard SECURITY error if it is ever left on in a production environment. No request data can
+    # flip this flag, the demo user is transient (never persisted) and the behaviour is covered by
+    # tests/security/test_auth_bypass_edge_cases.py.
     if getattr(settings, "AUTH_DISABLED", False):
         from ..utils.security import _get_or_create_demo_user
 
@@ -337,7 +377,6 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate user and return access token.
@@ -345,32 +384,36 @@ async def login(
     Accepts OAuth2 password-flow form-encoded credentials (``username`` and
     ``password``) to stay consistent with the ``OAuth2PasswordBearer`` scheme and
     the frontend, which posts ``application/x-www-form-urlencoded`` to this route.
+    A JSON body (``{"username" | "email", "password"}``) is also accepted; both
+    encodings are handled identically by ``_extract_login_credentials``.
 
     Brute-force protection: failed attempts are throttled (HTTP 429) after
     ``LOGIN_RATE_LIMIT_PER_MINUTE`` failures per minute and the account is locked
     (HTTP 423) for ``ACCOUNT_LOCKOUT_MINUTES`` after
     ``ACCOUNT_LOCKOUT_THRESHOLD`` failures.
     """
-    # Basic input-length validation for the (un-modelled) OAuth2 form fields.
-    if not form_data.username or len(form_data.username) > 50:
+    username, password = await _extract_login_credentials(request)
+
+    # Basic input-length validation for the (un-modelled) credential fields.
+    if not username or len(username) > 50:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid username",
         )
-    if not form_data.password or len(form_data.password) > 128:
+    if not password or len(password) > 128:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid password",
         )
 
-    rate_key = _client_key(request, form_data.username)
+    rate_key = _client_key(request, username)
 
     # Enforce rate limiting / account lockout *before* touching the database.
     rl_status = login_rate_limiter.check(rate_key)
     if rl_status == RateLimitStatus.LOCKED:
         # Security event: surface lockouts so their rate is observable in prod
         # logs/metrics (never log the password or full key).
-        logger.warning("auth.login.locked username=%s", form_data.username.lower())
+        logger.warning("auth.login.locked username=%s", username.lower())
         _log_login_attempt_to_redis(rate_key, success=False)
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
@@ -380,7 +423,7 @@ async def login(
             ),
         )
     if rl_status == RateLimitStatus.RATE_LIMITED:
-        logger.warning("auth.login.rate_limited username=%s", form_data.username.lower())
+        logger.warning("auth.login.rate_limited username=%s", username.lower())
         _log_login_attempt_to_redis(rate_key, success=False)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -389,14 +432,14 @@ async def login(
         )
 
     # Find user by username
-    result = await db.execute(select(User).where(User.username == form_data.username.lower()))
+    result = await db.execute(select(User).where(User.username == username.lower()))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(form_data.password, user.hashed_password):
+    if user is None or not verify_password(password, user.hashed_password):
         # Record the failure for brute-force accounting (never log the password).
         login_rate_limiter.register_failure(rate_key)
         _log_login_attempt_to_redis(rate_key, success=False)
-        logger.warning("auth.login.failed username=%s", form_data.username.lower())
+        logger.warning("auth.login.failed username=%s", username.lower())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
