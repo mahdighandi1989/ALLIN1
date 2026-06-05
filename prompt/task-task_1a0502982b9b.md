@@ -3,14 +3,14 @@ task_id: task_1a0502982b9b
 title: حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند
 type: other
 priority: medium
-execution_priority: 3050
-status: pending
+execution_priority: 3350
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:49:46.762948+00:00'
-updated_at: '2026-06-05T19:52:52.302504+00:00'
+updated_at: '2026-06-05T19:57:04.134235+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -9922,7 +9922,7 @@ Dependencies synced:
 ```
 
 ### Step 2: حذف endpoint بلااستفاده POST /register از backend/app/routers/auth.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به حذف کامل endpoint POST /register از فایل backend/app/routers/auth.py می‌پردازد. شامل حذف تابع handler مربوطه، حذف دکوراتور router.post، و حذف هرگونه import یا متغیر محلی که فقط توسط این endpoint استفاده می‌شود. خارج از scope: تغییر در فایل‌های import کننده (مانند main.py یا __init__.py)، حذف توابع کمکی که توسط endpointهای دیگر نیز استفاده می‌شوند، و تغییر در frontend. نکته حیاتی: قبل از حذف، باید با grep روی کل کدبیس (شامل frontend) تأیید شود که هیچ فراخوانی به این endpoint وجود ندارد.
 **Excerpt:**
 ```
@@ -9939,7 +9939,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 3: تحلیل و اقدام روی endpoint POST /register بر اساس دسته‌بندی و معیارهای پذیرش
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint POST /register برای تعیین دسته (orphan/internal/deprecated) و انجام اقدام مناسب (اتصال مجدد، تگ internal، یا حذف) است. در صورت حذف، تست‌های مرتبط و OpenAPI نیز باید به‌روز شوند. خروجی نهایی باید بدون خطا در تست‌ها، linter و type-check باشد. گام اول شامل جستجوی caller در frontend، scripts و docs است.
 **Excerpt:**
 ```
@@ -9959,7 +9959,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: بررسی ریسک‌های حذف endpoint GET /metrics با چک کردن لاگ‌های ۳۰ روز گذشته
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل بررسی ریسک‌های حذف endpoint GET /metrics است. تمرکز بر اطمینان از عدم استفاده endpoint در production توسط cron یا webhook خارجی است. اقدامات شامل چک کردن Render logs یا nginx access logs برای آخرین ۳۰ روز قبل از هرگونه حذف است. وابستگی به تسک‌های دیگر ندارد و مستقل است.
 — [merged] این بخش شامل بررسی ریسک‌های حذف endpoint بلااستفاده GET /search/advanced است. قبل از هر اقدامی، باید لاگ‌های Render یا nginx access logs مربوط به ۳۰ روز گذشته را بررسی کرد تا مطمئن شویم endpoint در production توسط cron یا webhook خارجی مصرف نمی‌شود. این مرحله یک پیش‌نیاز برای تصمیم‌گیری در مورد حذف یا نگهداری endpoint است. هیچ endpoint یا فایل دیگری خارج از این محدوده بررسی نمی‌شود.
 — [merged] این بخش شامل بررسی ریسک‌های حذف endpoint GET /{user_id} است. قبل از هر اقدامی برای حذف، باید لاگ‌های Render یا nginx access logs مربوط به ۳۰ روز گذشته را چک کرد تا مطمئن شویم endpoint در production توسط cron یا webhook خارجی مصرف نمی‌شود. این مرحله صرفاً یک بررسی احتیاطی است و شامل خود حذف یا تغییر endpoint نمی‌شود. وابستگی به تسک دیگری ندارد و مستقل است.
@@ -10291,7 +10291,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 7: تشخیص و اقدام روی endpoint GET /metrics
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint GET /metrics برای تعیین دسته (orphan/internal/deprecated) و انجام اقدام مناسب است. شامل جستجوی caller در frontend، scripts و docs، و اصلاح connection در صورت drop شدن. خارج از scope: سایر endpoints، تغییرات در backend logic غیر از /metrics.
 **Excerpt:**
 ```
@@ -10658,7 +10658,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 13: تحلیل و اقدام روی endpoint GET /search/advanced بر اساس معیارهای پذیرش
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint GET /search/advanced برای تعیین دسته (orphan/internal/deprecated) و انجام اقدام مناسب (اتصال مجدد، تگ internal، یا حذف) است. شامل حذف تست‌های مرتبط در صورت حذف endpoint، به‌روزرسانی OpenAPI، و اطمینان از عبور تست‌ها، linter و type-check. خارج از scope: تحلیل سایر endpoints، تغییرات در frontend یا docs (فقط grep اولیه برای یافتن callerها). نکته حیاتی: گام ۱ (grep) پیشنهاد شده اما بخشی از اجراست.
 **Excerpt:**
 ```
@@ -11070,7 +11070,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 30: بررسی و طبقه‌بندی endpoint GET /{user_id} و اعمال اقدام مناسب
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint `GET /{user_id}` برای تعیین دسته (orphan/internal/deprecated) و اجرای اقدام متناظر است. شامل جستجوی callerها در frontend، scripts و docs، اصلاح اتصال‌های drop شده، حذف endpoint در صورت orphan بودن، به‌روزرسانی OpenAPI و حذف تست‌های مرتبط می‌شود. خارج از scope: سایر endpoints، تغییرات در business logic غیرمرتبط با این endpoint، و refactorهای غیرضروری.
 **Excerpt:**
 ```
