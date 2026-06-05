@@ -35,14 +35,14 @@
       "external_attempts": 0
     },
     {
-      "task_id": "task_bd83a960a6ab",
-      "title": "افزایش پایداری و اعتبارسنجی پایپلاین اکسل",
+      "task_id": "e155f680-f40b-46f5-a027-217b8a754ba5",
+      "title": "افزودن اعلان برای رویداد 'scan_failed'",
       "priority": "high",
-      "execution_priority": 2000,
+      "execution_priority": 2050,
       "status": "pending",
       "external_status": "pending",
-      "path": "prompt/task-task_bd83a960a6ab.md",
-      "external_attempts": 0
+      "path": "prompt/task-e155f680-f40b-46f5-a027-217b8a754ba5.md",
+      "external_attempts": 1
     },
     {
       "task_id": "36090c25-a186-4c60-920a-ed2fb506ba4b",
