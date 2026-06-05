@@ -2,17 +2,6 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 1,
-  "tasks": [
-    {
-      "task_id": "7a8d8e11-b9cc-4425-b2f3-527536622171",
-      "title": "Correct exportFiltered's downloadFile path",
-      "priority": "medium",
-      "execution_priority": 3300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-7a8d8e11-b9cc-4425-b2f3-527536622171.md",
-      "external_attempts": 0
-    }
-  ]
+  "total": 0,
+  "tasks": []
 }
