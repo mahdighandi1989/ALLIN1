@@ -3,14 +3,14 @@ task_id: task_1a0502982b9b
 title: حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند
 type: other
 priority: medium
-execution_priority: 3150
-status: pending
+execution_priority: 3450
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:49:46.762948+00:00'
-updated_at: '2026-06-05T20:15:05.859000+00:00'
+updated_at: '2026-06-05T20:19:24.190741+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -11090,7 +11090,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 31: بررسی ریسک حذف Endpointهای مصرف‌شده در Production (Cron/Webhook خارجی)
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل بررسی لاگ‌های Render و nginx برای ۳۰ روز گذشته به منظور شناسایی endpointهایی است که فقط در production مصرف می‌شوند (مانند cron jobs یا webhookهای خارجی). هدف جلوگیری از حذف اشتباهی endpointهایی است که باعث silent failure می‌شوند. این بخش صرفاً یک مرحله audit و احتیاطی است و شامل حذف یا تغییر کد نمی‌شود.
 **Excerpt:**
 ```
