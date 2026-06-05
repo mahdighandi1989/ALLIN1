@@ -120,3 +120,33 @@ All 10 verdicts were independently re-verified against the live tree:
   test_facilities.py` → 48 passed. `py_compile` of all changed modules clean.
 
 No code change was required; this entry records the audit was re-run end to end.
+
+## Re-verification (2026-06-05, full-suite run)
+
+The audit was re-run a second time, this time exercising the **entire relevant
+backend test surface** (not just the auth/users/facilities subset) to prove the
+verdicts hold against the live tree with no code change:
+
+- **Code state confirmed** — `grep` re-confirmed: `auth.py` defines no
+  `register`/`UserRegister` (only the explanatory note at `auth.py:322`);
+  `test_auth.py` carries no `register` tests (note at line 39);
+  `include_in_schema=False` present on `GET /metrics` (`main.py:162`),
+  `GET /api/facilities/search/advanced` (`facilities.py:220-222`) and
+  `GET /api/users/{user_id}` (`users.py:68`); all six "connected" endpoints
+  still have their live frontend callers (`customers/page.tsx`,
+  `import/page.tsx`, `reports/page.tsx`, `offerLettersApi.get`,
+  `notificationsApi.markRead`, `trashApi.restore`).
+- **Tests** — `pytest tests/test_auth.py test_users.py test_facilities.py
+  test_notifications_api.py test_trash.py test_offer_letters.py
+  test_customers.py test_reports.py test_imports.py test_main.py` →
+  **123 passed**. The PDF-export tests (`test_export_pdf`,
+  `test_portfolio_export_pdf`) and the legacy-`.xls` import test
+  (`test_legacy_xls_format_supported`) are green only when their *optional*
+  runtime libraries are installed (`reportlab`, `xlrd` — both pinned in
+  `backend/requirements.txt`, hence green in CI); when those libs are absent the
+  exporters degrade to an HTML fallback / the `.xls` reader is skipped, which is
+  the documented `exporters.py` "dependency-tolerant" behaviour and is unrelated
+  to this endpoint audit.
+
+Conclusion: all 10 endpoint verdicts and their actions remain correct and
+complete; no further code change is needed.
