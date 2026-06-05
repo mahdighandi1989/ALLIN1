@@ -1,22 +1,22 @@
 ---
 task_id: task_cba4b5521484
-title: افزودن ستون amount و اصلاح نمایش داشبورد
+title: افزودن ستون amount، اصلاح داشبورد و استانداردسازی finally
 type: other
 priority: critical
-execution_priority: 1400
-status: awaiting_review
-external_status: done
+execution_priority: 1100
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:52:02.604928+00:00'
-updated_at: '2026-06-05T18:20:24.299517+00:00'
+updated_at: '2026-06-05T18:20:40.411045+00:00'
 tags:
 - consolidated
 - post_verify_merge
 ---
 
-# افزودن ستون amount و اصلاح نمایش داشبورد
+# افزودن ستون amount، اصلاح داشبورد و استانداردسازی finally
 
 ## Raw Idea
 
