@@ -5,12 +5,12 @@ type: other
 priority: critical
 execution_priority: 1050
 status: pending
-external_status: claimed
-verification_status: pending
+external_status: done
+verification_status: applied_externally_pending_verify
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:48:04.062953+00:00'
-updated_at: '2026-06-05T17:01:45.759674+00:00'
+updated_at: '2026-06-05T17:14:47.207201+00:00'
 tags:
 - consolidated
 - post_verify_merge
