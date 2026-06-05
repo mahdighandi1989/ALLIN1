@@ -3,14 +3,14 @@ task_id: task_bd83a960a6ab
 title: افزایش پایداری و اعتبارسنجی پایپلاین اکسل
 type: other
 priority: high
-execution_priority: 2000
+execution_priority: 2050
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:07:38.706114+00:00'
-updated_at: '2026-06-03T18:37:01.832850+00:00'
+updated_at: '2026-06-05T00:22:19.631534+00:00'
 tags:
 - consolidated
 - post_verify_merge
