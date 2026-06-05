@@ -4,7 +4,6 @@ This file defines the configuration for the entire backend application,
 loading values from environment variables and a .env file.
 It includes robust validation to ensure security and correctness.
 """
-import os
 from typing import Optional, List
 from pydantic_settings import BaseSettings
 from pydantic import validator, Field, AliasChoices
@@ -16,7 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    # Database settings
+    # Database settings.
+    # SECURITY / production note: the default DATABASE_URL below intentionally uses
+    # placeholder "user:password" credentials and is for LOCAL DEV ONLY. Production
+    # MUST override DATABASE_URL via the environment with real secret credentials —
+    # validate_environment_security() / enforce_security_on_startup() flag the
+    # insecure default when ENVIRONMENT=production so it can never be silently
+    # shipped. See tests/test_config_security.py::test_production_config_defaults.
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://user:password@localhost/allin1_db",
         description="Database connection URL"
@@ -313,6 +318,20 @@ def generate_secret_key() -> str:
     return secrets.token_urlsafe(64)
 
 
+def _is_insecure_default_database_url(database_url: Optional[str]) -> bool:
+    """Return True when DATABASE_URL still carries the local-dev placeholder.
+
+    The shipped default uses generic ``user:password`` credentials so the app is
+    runnable out of the box for local development. Those credentials are an
+    under-engineering / security risk if they survive into a non-local
+    deployment, so this guard lets the startup validator flag the situation
+    rather than silently connecting (or failing) with placeholder secrets.
+    """
+    if not database_url:
+        return False
+    return "user:password@" in database_url
+
+
 def validate_environment_security(settings: Settings) -> List[str]:
     """Validate security settings and return warnings"""
     warnings = []
@@ -323,6 +342,17 @@ def validate_environment_security(settings: Settings) -> List[str]:
 
         if settings.DOCS_URL or settings.REDOC_URL:
             warnings.append("API documentation endpoints should be disabled in production")
+
+        # The default DATABASE_URL ships with placeholder "user:password"
+        # credentials for local development. If that insecure default is still
+        # in use under production it almost certainly means DATABASE_URL was not
+        # overridden — a serious security risk — so surface it loudly.
+        if _is_insecure_default_database_url(settings.DATABASE_URL):
+            warnings.append(
+                "DATABASE_URL still uses the insecure placeholder 'user:password' "
+                "credentials in production — override DATABASE_URL via the "
+                "environment with real, secret database credentials."
+            )
 
     # TEMPORARY: AUTH_DISABLED bypasses the login requirement. Surface it loudly
     # so it is never forgotten — and especially never left on in production.
