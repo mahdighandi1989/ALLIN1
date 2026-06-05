@@ -3,14 +3,14 @@ task_id: bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7
 title: اعتبارسنجی ورودی‌های فرم تسهیلات
 type: bug
 priority: critical
-execution_priority: 1100
-status: pending
+execution_priority: 1400
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-31T16:19:06.449286+00:00'
-updated_at: '2026-06-05T18:53:06.608842+00:00'
+updated_at: '2026-06-05T18:55:36.196934+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
@@ -504,7 +504,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: افزودن اعتبارسنجی فیلد amount برای جلوگیری از مقادیر صفر یا منفی
-**Status:** `done` (100%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد amount در فرم موجود در frontend/src/app/facilities/page.tsx است. مقدار amount باید عددی مثبت و بزرگتر از صفر باشد. اعتبارسنجی باید قبل از ارسال داده به API در تابع handleSubmit انجام شود. خارج از این مرحله: اعتبارسنجی سایر فیلدها، تغییرات سمت سرور، یا اصلاح UI. نکته حیاتی: خطای اعتبارسنجی باید به صورت دوستانه به کاربر نمایش داده شود و از ارسال درخواست با amount نامعتبر جلوگیری کند.
 **Excerpt:**
 ```
@@ -512,7 +512,7 @@ _(مستقل)_
 ```
 
 ### Step 2: افزودن اعتبارسنجی فیلد interest_rate برای محدودیت بازه 0-100
-**Status:** `done` (100%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد interest_rate در فرم موجود در frontend/src/app/facilities/page.tsx است. مقدار interest_rate باید یک عدد اعشاری بین 0 تا 100 (شامل 0 و 100) باشد. اعتبارسنجی باید قبل از ارسال داده به API در تابع handleSubmit انجام شود. خارج از این مرحله: اعتبارسنجی سایر فیلدها، تغییرات سمت سرور، یا اصلاح UI. نکته حیاتی: خطای اعتبارسنجی باید به صورت دوستانه به کاربر نمایش داده شود و از ارسال درخواست با interest_rate نامعتبر جلوگیری کند.
 **Excerpt:**
 ```
@@ -520,7 +520,7 @@ _(مستقل)_
 ```
 
 ### Step 3: افزودن اعتبارسنجی فیلد expiry_date برای جلوگیری از تاریخ قبل از start_date
-**Status:** `done` (100%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد expiry_date در فرم موجود در frontend/src/app/facilities/page.tsx است. مقدار expiry_date باید بعد از start_date باشد. اعتبارسنجی باید قبل از ارسال داده به API در تابع handleSubmit انجام شود. خارج از این مرحله: اعتبارسنجی سایر فیلدها، تغییرات سمت سرور، یا اصلاح UI. نکته حیاتی: خطای اعتبارسنجی باید به صورت دوستانه به کاربر نمایش داده شود و از ارسال درخواست با expiry_date نامعتبر جلوگیری کند. فرض بر این است که start_date در فرم موجود است و قابل دسترسی است.
 **Excerpt:**
 ```
@@ -528,7 +528,7 @@ _(مستقل)_
 ```
 
 ### Step 4: افزودن اعتبارسنجی فیلد currency برای کد ISO 4217 معتبر
-**Status:** `partial` (99%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد currency در فرم موجود در frontend/src/app/facilities/page.tsx است. مقدار currency باید یک کد ISO 4217 معتبر (مانند USD, EUR, IRR) باشد. اعتبارسنجی باید قبل از ارسال داده به API در تابع handleSubmit انجام شود. خارج از این مرحله: اعتبارسنجی سایر فیلدها، تغییرات سمت سرور، یا اصلاح UI. نکته حیاتی: خطای اعتبارسنجی باید به صورت دوستانه به کاربر نمایش داده شود و از ارسال درخواست با currency نامعتبر جلوگیری کند. یک لیست از کدهای معتبر ISO 4217 باید در frontend تعریف شود.
 **Excerpt:**
 ```
