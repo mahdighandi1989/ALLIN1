@@ -2,18 +2,8 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 10,
+  "total": 9,
   "tasks": [
-    {
-      "task_id": "task_21687b9591ca",
-      "title": "پیاده‌سازی Rate Limit و رفع JWT احراز هویت",
-      "priority": "critical",
-      "execution_priority": 1100,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_21687b9591ca.md",
-      "external_attempts": 2
-    },
     {
       "task_id": "9f1a6790-aa39-42a4-8ac6-14b8d62c4ce8",
       "title": "Integrate Facility Authorization in Facilities Router",
