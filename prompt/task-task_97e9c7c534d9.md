@@ -3,14 +3,14 @@ task_id: task_97e9c7c534d9
 title: افزایش پوشش تست و کیفیت کد بک‌اند
 type: other
 priority: high
-execution_priority: 2050
+execution_priority: 2100
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:11:03.258958+00:00'
-updated_at: '2026-06-05T00:33:47.891551+00:00'
+updated_at: '2026-06-05T00:39:26.232308+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1710,7 +1710,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: ایجاد ساختار دایرکتوری tests/ و فایل‌های تست پایه برای backend
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** ایجاد دایرکتوری backend/tests/ و فایل‌های خالی conftest.py, test_auth.py, test_customers.py, test_facilities.py, test_security.py. این مرحله فقط شامل ایجاد ساختار فایل است، نه نوشتن محتوای تست. نکته حیاتی: مسیر دقیق backend/tests/ رعایت شود و فایل‌ها دقیقاً با نام‌های مشخص شده ایجاد شوند.
 **Excerpt:**
 ```
@@ -1753,7 +1753,7 @@ backend/tests/
 ```
 
 ### Step 2: نوشتن تست‌های واحد برای models و schemas backend
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن تست‌های واحد برای مدل‌ها و اسکیماهای backend در فایل‌های test_*.py. این مرحله شامل تست‌های مربوط به models.py و schemas.py است. نکته حیاتی: تست‌ها باید با pytest و pytest-asyncio نوشته شوند و حداقل 10 تست واحد برای این بخش ایجاد شود.
 **Excerpt:**
 ```
@@ -1773,7 +1773,7 @@ backend/tests/
 ```
 
 ### Step 3: نوشتن تست‌های یکپارچگی برای API endpoints (auth, customers, facilities)
-**Status:** `pending` (0%)
+**Status:** `partial` (66%)
 **Scope:** نوشتن تست‌های یکپارچگی برای endpointهای API شامل auth.py, customers.py, facilities.py. این تست‌ها باید با httpx و TestClient اجرا شوند. نکته حیاتی: تست‌ها باید حداقل 20 تست یکپارچگی را پوشش دهند و شامل سناریوهای موفق و خطا باشند.
 **Excerpt:**
 ```
@@ -1791,7 +1791,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 4: نوشتن تست‌های امنیتی برای SQL Injection, XSS, JWT
-**Status:** `pending` (0%)
+**Status:** `partial` (33%)
 **Scope:** نوشتن تست‌های امنیتی در test_security.py که شامل سناریوهای SQL Injection, XSS, و JWT است. این تست‌ها باید حملات رایج را شبیه‌سازی کنند و اطمینان حاصل کنند که سیستم در برابر آنها مقاوم است. نکته حیاتی: تست‌های JWT باید شامل توکن‌های منقضی، دستکاری‌شده، و با امضای نامعتبر باشند.
 **Excerpt:**
 ```
@@ -1808,7 +1808,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 5: تنظیم GitHub Actions برای اجرای خودکار تست‌ها
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** ایجاد یا اصلاح فایل workflow GitHub Actions برای اجرای خودکار pytest در هر push و pull request. این مرحله شامل تنظیم مراحل نصب وابستگی‌ها، اجرای تست‌ها، و گزارش نتایج است. نکته حیاتی: workflow باید pytest را با پوشش کد اجرا کند و در صورت failure، هشدار دهد.
 **Excerpt:**
 ```
@@ -1823,7 +1823,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 6: تنظیم coverage حداقل 80% برای backend
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اضافه کردن تنظیمات coverage به pyproject.toml یا فایل pytest.ini برای اعمال حداقل 80% پوشش کد. این مرحله شامل تنظیم pytest-cov و تعیین آستانه است. نکته حیاتی: coverage باید برای کل backend/app/ محاسبه شود و در صورت کمتر از 80%، pytest با خطا مواجه شود.
 **Excerpt:**
 ```
@@ -1840,7 +1840,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 7: بررسی و هماهنگ‌سازی وابستگی‌های requirements.txt با pyproject.toml
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** مقایسه و هماهنگ‌سازی لیست وابستگی‌های فایل requirements.txt با pyproject.toml. این مرحله شامل اضافه کردن وابستگی‌های گمشده (redis, celery, httpx, python-dotenv) به requirements.txt و اطمینان از تطابق نسخه‌ها است. نکته حیاتی: وابستگی‌های dev مانند pytest نباید به requirements.txt اضافه شوند.
 **Excerpt:**
 ```
@@ -1890,7 +1890,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 8: اجرای تست‌های موجود برای اطمینان از عدم شکستن پس از تغییر وابستگی‌ها
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای کامل تست‌های backend با pytest برای اطمینان از اینکه تغییرات در requirements.txt باعث شکستن تست‌ها نشده است. این مرحله شامل اجرای `pytest backend/tests/ -v` و بررسی نتایج است. نکته حیاتی: اگر تستی fail شود، باید علت بررسی و رفع شود.
 **Excerpt:**
 ```
@@ -1911,7 +1911,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 9: اجرای linter و type-check برای اطمینان از عدم وجود warning
-**Status:** `pending` (0%)
+**Status:** `partial` (50%)
 **Scope:** اجرای linter (ruff/flake8) و type-check (mypy) روی کدهای backend برای اطمینان از عدم وجود warning پس از تغییر وابستگی‌ها. این مرحله شامل اجرای دستورات مربوطه و رفع هرگونه warning است. نکته حیاتی: اگر warning جدیدی ایجاد شده، باید رفع شود.
 **Excerpt:**
 ```
@@ -1924,7 +1924,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: شناسایی تمام مکان‌های دارای default متفاوت برای فیلد user_id
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** جستجوی کامل در کدبس backend برای یافتن تمام مکان‌هایی که فیلد user_id دارای default value متفاوت است. این مرحله شامل grep روی فایل‌های models.py, schemas.py, و سایر فایل‌های مرتبط است. نکته حیاتی: نتایج جستجو باید مستند شوند و لیست کاملی از مکان‌ها تهیه شود.
 **Excerpt:**
 ```
@@ -1942,7 +1942,7 @@ _(فایل‌های دقیق توسط مجری شناسایی شوند — هی�
 ```
 
 ### Step 11: انتخاب یک منبع واحد برای default value فیلد user_id
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** انتخاب یک منبع واحد (مانند config یا constant) برای default value فیلد user_id و اعمال آن در تمام مکان‌های شناسایی‌شده. این مرحله شامل ایجاد یک constant یا config جدید و جایگزینی تمام default values پراکنده با آن است. نکته حیاتی: تغییر باید backward-compatible باشد و رفتار فعلی را نشکند.
 **Excerpt:**
 ```
@@ -1957,7 +1957,7 @@ _(فایل‌های دقیق توسط مجری شناسایی شوند — هی�
 ```
 
 ### Step 12: نوشتن تست fixture برای تأیید رفتار پیش‌فرض user_id
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** نوشتن یک تست fixture در tests/test_defaults.py که رفتار پیش‌فرض فیلد user_id را تأیید می‌کند. این تست باید اطمینان حاصل کند که در صورت عدم ارائه user_id، مقدار پیش‌فرض صحیح استفاده می‌شود. نکته حیاتی: نام تست باید test_user_id_default باشد.
 **Excerpt:**
 ```
@@ -1973,7 +1973,7 @@ _(فایل‌های دقیق توسط مجری شناسایی شوند — هی�
 ```
 
 ### Step 13: اضافه کردن backward-compat layer در صورت تغییر default value user_id
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر default value user_id تغییر کرده است، یک backward-compat layer در backend/app/compat.py اضافه کنید تا از شکستن کدهای موجود جلوگیری شود. این مرحله شامل ایجاد توابع compat و مستندسازی تغییر است. نکته حیاتی: اگر تغییری در default value رخ نداده، این مرحله را با یک کامیت توضیحی (no-op) ثبت کنید.
 **Excerpt:**
 ```
@@ -1987,7 +1987,7 @@ _(فایل‌های دقیق توسط مجری شناسایی شوند — هی�
 ```
 
 ### Step 14: بررسی و تشخیص ریشه anti-pattern در backend/app/database.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی دقیق خط 10 فایل backend/app/database.py برای تشخیص anti-pattern مربوط به SSL configuration. این مرحله شامل تحلیل منطق شرطی که بر اساس hostname SSL را فعال/غیرفعال می‌کند و شناسایی مشکلات آن است. نکته حیاتی: نتایج تشخیص باید مستند شوند.
 **Excerpt:**
 ```
@@ -2008,7 +2008,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 15: اصلاح یا مستندسازی anti-pattern در backend/app/database.py
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اصلاح منطق SSL configuration در backend/app/database.py یا اضافه کردن کامنت توجیهی. اگر اصلاح انجام می‌شود، باید منطق جدید بر اساس پیکربندی explicit (مانند variable environment) باشد. اگر مستندسازی انجام می‌شود، باید دلیل حفظ وضعیت فعلی توضیح داده شود. نکته حیاتی: هر دو گزینه باید با تست edge case همراه باشند.
 **Excerpt:**
 ```
@@ -2022,7 +2022,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 16: نوشتن تست edge case برای SSL configuration در test_database.py
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** نوشتن تست edge case در tests/test_database.py با نام test_ssl_edge_cases که سناریوهای مختلف SSL configuration را پوشش می‌دهد. این تست باید شامل مواردی مانند hostname 'db' در Docker, localhost, 127.0.0.1, و remote database با SSL باشد. نکته حیاتی: timeout تست 60 ثانیه است.
 **Excerpt:**
 ```
@@ -2038,7 +2038,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 17: اجرای py_compile و ruff check روی backend/app/database.py
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اجرای دستورات `python -m py_compile backend/app/database.py` و `ruff check backend/app/database.py` برای اطمینان از عدم وجود خطاهای کامپایل و lint پس از تغییرات. نکته حیاتی: اگر خطایی وجود دارد، باید رفع شود.
 **Excerpt:**
 ```
@@ -2049,7 +2049,7 @@ SSL configuration assumes that if the database URL does not contain 'localhost' 
 ```
 
 ### Step 18: بررسی وضعیت فایل offer_letter.py با grep روی importها
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اجرای grep روی کل کدبس برای یافتن هرگونه import یا ارجاع به فایل offer_letter.py. این مرحله شامل جستجوی `from.*offer_letter.*import`, `import.*offer_letter`, و `offer_letter` در تمام فایل‌ها است. نکته حیاتی: نتایج جستجو باید مستند شوند تا مشخص شود فایل dead است یا entry point.
 **Excerpt:**
 ```
@@ -2072,7 +2072,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 19: بررسی entry point بودن offer_letter.py در CI/CD و scripts
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** بررسی فایل‌های CI/CD (مانند .github/workflows/*.yml) و scripts/ برای اطمینان از اینکه offer_letter.py به صورت مستقیم (direct invocation) استفاده نمی‌شود. این مرحله شامل جستجوی `offer_letter` در این فایل‌ها است. نکته حیاتی: اگر فایل در CI/CD استفاده می‌شود، نباید حذف شود.
 **Excerpt:**
 ```
@@ -2085,7 +2085,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 20: حذف فایل offer_letter.py در صورت dead بودن
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر فایل offer_letter.py dead است (هیچ import و استفاده‌ای ندارد)، آن را حذف کنید. این مرحله شامل حذف فایل backend/app/models/offer_letter.py و commit تغییر است. نکته حیاتی: قبل از حذف، مطمئن شوید که فایل در CI/CD یا scripts استفاده نمی‌شود.
 **Excerpt:**
 ```
@@ -2101,7 +2101,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 21: حذف تست‌های مربوط به offer_letter.py در صورت حذف فایل
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر فایل offer_letter.py حذف شده است، تست‌های مربوط به آن (در صورت وجود) نیز باید حذف شوند. این مرحله شامل جستجوی `test.*offer_letter` و `offer_letter.*test` در tests/ و حذف فایل‌های مربوطه است. نکته حیاتی: اگر تستی وجود ندارد، این مرحله را با یک کامیت توضیحی ثبت کنید.
 **Excerpt:**
 ```
@@ -2112,7 +2112,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 22: اجرای py_compile و ruff check روی backend/app/models/offer_letter.py (در صورت وجود)
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر فایل offer_letter.py حذف نشده است (به دلیل entry point بودن)، اجرای `python -m py_compile backend/app/models/offer_letter.py` و `ruff check backend/app/models/offer_letter.py` برای اطمینان از کیفیت کد. نکته حیاتی: اگر فایل حذف شده است، این مرحله را با یک کامیت توضیحی ثبت کنید.
 **Excerpt:**
 ```
@@ -2123,7 +2123,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 23: اجرای کامل pytest برای اطمینان از عدم شکستن تست‌ها پس از تغییرات
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** اجرای کامل `pytest -x` برای اطمینان از اینکه تمام تغییرات اعمال‌شده (تغییر وابستگی‌ها، اصلاح database.py، حذف offer_letter.py) باعث شکستن هیچ تستی نشده است. نکته حیاتی: اگر تستی fail شود، باید علت بررسی و رفع شود.
 **Excerpt:**
 ```
@@ -2135,7 +2135,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 24: بررسی و مستندسازی فایل offer_letter.py در README در صورت entry point بودن
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر فایل offer_letter.py entry point است (مثلاً در CI/CD یا scripts استفاده می‌شود)، آن را در README مستند کنید. این مرحله شامل اضافه کردن توضیح در README درباره نحوه استفاده از این فایل است. نکته حیاتی: اگر فایل dead است و حذف شده، این مرحله را با یک کامیت توضیحی ثبت کنید.
 **Excerpt:**
 ```
@@ -2146,7 +2146,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 25: ایجاد فایل compat.py برای backward compatibility در صورت نیاز
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** اگر در مراحل قبلی نیاز به backward-compat layer تشخیص داده شد، فایل backend/app/compat.py را ایجاد کنید. این فایل شامل توابعی است که رفتار قدیمی را شبیه‌سازی می‌کنند. نکته حیاتی: اگر نیازی به compat layer نیست، این مرحله را با یک کامیت توضیحی ثبت کنید.
 **Excerpt:**
 ```
@@ -2200,7 +2200,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 30: بررسی نهایی و merge تغییرات
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی نهایی تمام تغییرات، اطمینان از عبور تمام CI checks، و merge کردن PR. این مرحله شامل تأیید نهایی است. نکته حیاتی: قبل از merge، مطمئن شوید که تمام acceptance criteriaهای تمام 5 تسک برآورده شده‌اند.
 **Excerpt:**
 ```
