@@ -436,8 +436,9 @@ function CustomerForm({
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-white rounded-lg shadow-xl w-full max-w-md"
+        data-testid="customer-form"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-4 border-b">
@@ -448,6 +449,7 @@ function CustomerForm({
             <label className="block text-sm font-medium mb-1">Account Number *</label>
             <input
               type="text"
+              data-testid="customer-form-account-no"
               value={form.account_no}
               onChange={(e) => updateField('account_no', e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg ${errors.account_no ? 'border-red-500' : ''}`}
@@ -464,6 +466,7 @@ function CustomerForm({
             <label className="block text-sm font-medium mb-1">Name *</label>
             <input
               type="text"
+              data-testid="customer-form-name"
               value={form.name}
               onChange={(e) => updateField('name', e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg ${errors.name ? 'border-red-500' : ''}`}
