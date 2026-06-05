@@ -8,18 +8,24 @@
 
 ### Features
 
+> فهرست زیر فقط فیچرهایی است که **در کد پیاده‌سازی شده‌اند**. فیچرهای
+> برنامه‌ریزی‌شده اما هنوز پیاده‌نشده در [`FEATURE_BACKLOG.md`](FEATURE_BACKLOG.md)
+> نگه‌داری می‌شوند.
+
 - **Customer Management** - مدیریت مشتریان با پروفایل 290+ فیلد
-- **Facility Management** - مدیریت تسهیلات (OD, Loan, LG, LC, ...)
-- **Checklist System** - سیستم چک‌لیست و تسک
-- **Guarantor Management** - مدیریت ضامن‌ها و چک‌های ضمانت
-- **Property & Deposit Tracking** - پیگیری املاک و سپرده‌ها
-- **KYC Management** - مدیریت شناسایی مشتری
-- **AI Integration** - یکپارچه‌سازی با OpenAI, Claude, Gemini
-- **Google Drive Sync** - همگام‌سازی خودکار با گوگل درایو
-- **Personal Notes Panel** - پنل یادداشت‌های شخصی هر کاربر
-- **Multi-user Support** - پشتیبانی چند کاربره با سطوح دسترسی
-- **Document Expiry Alerts** - هشدار انقضای مدارک
-- **Email Notifications** - اعلان‌های ایمیلی
+- **Facility Management** - مدیریت تسهیلات (OD, Loan, LG, LC, ...) به‌همراه
+  محاسبهٔ اقساط (amortization) و authorization
+- **Offer Letter Management** - مدیریت و صدور نامه‌های پیشنهاد تسهیلات
+- **FX / Exchange Rate Tracking** - نرخ ارز و محاسبهٔ exposure
+- **Excel Import** - ورود داده از فایل‌های اکسل
+- **Reports & Statistics** - گزارش‌ها و داشبورد آماری
+- **Google Drive Backup** - پشتیبان‌گیری در گوگل درایو از طریق OAuth
+  (scope `drive.file`)
+- **In-app Notifications** - اعلان‌های درون‌برنامه‌ای (زنگولهٔ UI)
+- **Facility Expiry Alerts** - هشدار درون‌برنامه‌ای برای تسهیلاتِ نزدیک به انقضا
+- **Audit Log** - ثبت رویدادها و گزارش حسابرسی
+- **Trash / Soft Delete** - حذف نرم و سطل بازیافت
+- **Multi-user Support** - پشتیبانی چند کاربره با احراز هویت JWT و سطوح دسترسی
 
 ## Tech Stack
 
@@ -28,13 +34,13 @@
 - **Database**: PostgreSQL + Redis
 - **ORM**: SQLAlchemy 2.0
 - **Auth**: JWT with refresh tokens
-- **AI**: OpenAI, Anthropic, Google AI
+- **Integrations**: Google OAuth 2.0 (Drive backup)
 
 ### Frontend
-- **Framework**: Next.js 14 (React)
+- **Framework**: Next.js 14 (React 18)
 - **Styling**: Tailwind CSS
-- **State**: Zustand + React Query
-- **UI**: Radix UI primitives
+- **HTTP**: Axios
+- **UI**: lucide-react icons, react-hot-toast / sonner notifications
 
 ## Installation
 

@@ -1,0 +1,34 @@
+# Feature Backlog — فیچرهای برنامه‌ریزی‌شده اما پیاده‌نشده
+
+این فایل فیچرهایی را فهرست می‌کند که پیش‌تر در `README.md` به‌عنوان قابلیت
+معرفی شده بودند اما در کد (مدل‌ها، روت‌ها، سرویس‌ها، فرانت‌اند) **پیاده‌سازی
+نشده‌اند**. برای جلوگیری از عدم تطابق مستندات و کد، از `README.md` حذف و به
+این backlog منتقل شدند. برای هر مورد یک GitHub issue نیز ایجاد می‌شود
+(label: `feature-backlog`).
+
+| # | فیچر | وضعیت فعلی در کد | Issue | توضیح |
+|---|------|------------------|-------|-------|
+| 1 | **Checklist System** | موجود نیست | [#140](https://github.com/mahdighandi1989/ALLIN1/issues/140) | هیچ مدل/روت/سرویس/UI با مفهوم checklist یا task یافت نشد. |
+| 2 | **Guarantor Management** | موجود نیست | [#141](https://github.com/mahdighandi1989/ALLIN1/issues/141) | مدیریت ضامن‌ها و چک‌های ضمانت پیاده‌سازی نشده است. |
+| 3 | **Property & Deposit Tracking** | موجود نیست | [#142](https://github.com/mahdighandi1989/ALLIN1/issues/142) | تنها ارجاع‌های `property`/`deposit` در کد، اتفاقی‌اند (مثل `@property` پایتون و فیلدهای دیگر)؛ فیچر پیگیری املاک و سپرده وجود ندارد. |
+| 4 | **KYC Management** | موجود نیست | [#143](https://github.com/mahdighandi1989/ALLIN1/issues/143) | هیچ کد مرتبط با KYC یافت نشد. |
+| 5 | **AI Integration (OpenAI, Claude, Gemini)** | موجود نیست | [#144](https://github.com/mahdighandi1989/ALLIN1/issues/144) | هیچ کتابخانهٔ AI (مانند `openai`، `anthropic`، `google-generativeai`) در `requirements.txt` نیست و کدی برای فراخوانی این سرویس‌ها وجود ندارد. |
+| 6 | **Personal Notes Panel** | موجود نیست | [#145](https://github.com/mahdighandi1989/ALLIN1/issues/145) | فیلد `notes` روی مدل‌های customer/facility صرفاً یک فیلد متنی است؛ پنل یادداشت شخصیِ هر کاربر پیاده‌سازی نشده است. |
+| 7 | **Email Notifications** | فقط config | [#146](https://github.com/mahdighandi1989/ALLIN1/issues/146) | تنظیمات `SMTP_*` در `config.py` تعریف شده‌اند اما هیچ کدِ ارسال ایمیل (`smtplib`/`send_email`/SMTP client) از آن‌ها استفاده نمی‌کند. اعلان‌های فعلی فقط in-app و Telegram (برای رویدادهای operator) هستند. |
+
+## وضعیت فیچرهای پیاده‌سازی‌شدهٔ مرتبط (برای رفع ابهام)
+
+- **Google Drive**: README پیش‌تر «Google Drive Sync (همگام‌سازی خودکار)» را
+  ادعا می‌کرد؛ آنچه واقعاً پیاده شده **پشتیبان‌گیری (backup)** از طریق
+  Google OAuth با scope `drive.file` است — نه sync دوطرفهٔ خودکار. در README
+  به «Google Drive Backup» اصلاح شد.
+- **Document Expiry Alerts**: آنچه پیاده شده، هشدار **انقضای تسهیلات
+  (facility)** به‌صورت اعلان درون‌برنامه‌ای است (تسهیلاتِ نزدیک به انقضا در
+  ۳۰ روز آینده)، نه «انقضای مدارک». در README به «Facility Expiry Alerts»
+  اصلاح شد.
+
+## وقتی یکی از این فیچرها پیاده‌سازی شد
+
+1. مورد مربوطه را از این جدول حذف کن.
+2. آن را به بخش `Features` در `README.md` اضافه کن.
+3. GitHub issue مرتبط را ببند.
