@@ -5,12 +5,12 @@ type: other
 priority: high
 execution_priority: 2100
 status: pending
-external_status: claimed
-verification_status: partial
+external_status: done
+verification_status: applied_externally_pending_verify
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:15:14.835242+00:00'
-updated_at: '2026-06-05T00:57:53.290953+00:00'
+updated_at: '2026-06-05T01:00:26.755759+00:00'
 tags:
 - consolidated
 - post_verify_merge
