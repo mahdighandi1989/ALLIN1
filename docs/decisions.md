@@ -41,6 +41,9 @@ bypass become a silent backdoor; restoring auth is a config change only.
 
 ## ADR-004 — Excel `data` pipeline: fail-closed typed reader is the ground truth
 
+> Full per-ADR record:
+> [`decisions/ADR-004-excel-data-pipeline.md`](decisions/ADR-004-excel-data-pipeline.md).
+
 This ADR resolves four coherence inconsistencies found in the `data` pipeline
 (`merged-from: 93988a1c-6d13-40f8-b5a9-8c49c377c7c6,
 fc686bb9-3172-4810-9b26-624303be2a32, e0513e78-010b-4e28-bc31-4cc597182f0b,
