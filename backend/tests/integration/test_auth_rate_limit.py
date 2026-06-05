@@ -6,7 +6,6 @@ that repeated failed attempts from the same client are throttled with HTTP
 ``_reset_security_state`` fixture in ``conftest.py`` clears the in-memory limiter
 between tests, so the sequence is deterministic.
 """
-import pytest
 from httpx import AsyncClient
 
 from app.config import settings

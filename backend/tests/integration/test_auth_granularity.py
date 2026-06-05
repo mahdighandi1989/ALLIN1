@@ -13,7 +13,6 @@ Ground truth (the contract these tests lock in):
 This complements ``test_auth_pipeline.py`` by asserting the per-endpoint
 granularity (which mutations need auth, and at what level) in one focused test.
 """
-import pytest
 from httpx import AsyncClient
 
 from app.models.user import User

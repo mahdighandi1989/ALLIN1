@@ -12,7 +12,6 @@ note and guarded by these tests, which prove the bypass is *controlled*:
 * only flipping the explicit server-side flag enables it, and even then the demo
   identity is transient (never persisted) and the request can't choose a user.
 """
-import pytest
 from httpx import AsyncClient
 
 from app.config import settings as app_settings
