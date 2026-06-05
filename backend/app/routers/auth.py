@@ -194,8 +194,21 @@ class UpdateProfile(BaseModel):
     email: Optional[EmailStr] = Field(default=None, max_length=100)
 
 
+def _bind_interaction_user(request: Request | None, user: User) -> None:
+    """Expose the authenticated user's id to the metrics middleware.
+
+    The :class:`~app.middleware.MetricsMiddleware` runs *around* the route (and
+    its dependencies), so anything we stash on ``request.state`` here is readable
+    when it emits the ``user_interaction`` engagement log. We record only the
+    opaque user id — never credentials or profile content.
+    """
+    if request is not None:
+        request.state.user_id = getattr(user, "id", None)
+
+
 # Dependency to get current user
 async def get_current_user(
+    request: Request = None,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -211,7 +224,9 @@ async def get_current_user(
     if getattr(settings, "AUTH_DISABLED", False):
         from ..utils.security import _get_or_create_demo_user
 
-        return await _get_or_create_demo_user(db)
+        demo_user = await _get_or_create_demo_user(db)
+        _bind_interaction_user(request, demo_user)
+        return demo_user
 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -249,6 +264,7 @@ async def get_current_user(
             detail="Inactive user",
         )
 
+    _bind_interaction_user(request, user)
     return user
 
 
