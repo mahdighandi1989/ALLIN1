@@ -3,14 +3,14 @@ task_id: task_cba4b5521484
 title: افزودن ستون amount و اصلاح نمایش داشبورد
 type: other
 priority: critical
-execution_priority: 1100
-status: pending
+execution_priority: 1400
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:52:02.604928+00:00'
-updated_at: '2026-06-05T18:16:32.534929+00:00'
+updated_at: '2026-06-05T18:20:24.299517+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -3174,7 +3174,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: بررسی وجود ستون amount در migration 001_initial_create_tables.py
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** بررسی فایل backend/migrations/versions/001_initial_create_tables.py برای اطمینان از وجود ستون amount با نوع NUMERIC(15,2) در جدول facilities. این مرحله فقط شامل بررسی کد migration است و شامل تغییر یا اضافه کردن کد نمی‌شود. اگر ستون وجود نداشته باشد، مرحله بعدی آن را اضافه خواهد کرد.
 **Excerpt:**
 ```
@@ -3227,7 +3227,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 4: به‌روزرسانی مدل SQLAlchemy facility.py برای اضافه کردن ستون amount
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** اضافه کردن فیلد amount به مدل Facility در فایل backend/app/models/facility.py. این فیلد باید از نوع Numeric(15,2) و nullable=True باشد. این مرحله شامل همگام‌سازی مدل ORM با schema دیتابیس است.
 **Excerpt:**
 ```
@@ -3235,7 +3235,7 @@ op.add_column('facilities', sa.Column('amount', sa.Numeric(15, 2), nullable=Fals
 ```
 
 ### Step 5: به‌روزرسانی endpoint /api/stats/dashboard برای استفاده از ستون amount
-**Status:** `not_done` (0%)
+**Status:** `partial` (70%)
 **Scope:** بررسی و به‌روزرسانی فایل backend/app/routers/stats.py برای اطمینان از اینکه endpoint /api/stats/dashboard از ستون amount استفاده می‌کند و خطای 500 برنمی‌گرداند. این مرحله شامل بررسی query و response است.
 **Excerpt:**
 ```
@@ -3335,7 +3335,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 15: به‌روزرسانی فایل‌های مرتبط با مدل User (database.py, security.py, __init__.py, conftest.py)
-**Status:** `partial` (50%)
+**Status:** `partial` (60%)
 **Scope:** بررسی و به‌روزرسانی فایل‌های backend/app/database.py، backend/app/utils/security.py، backend/app/models/__init__.py، و backend/tests/conftest.py برای اطمینان از سازگاری با تغییرات مدل User. اگر تغییری در signature یا importها ایجاد شده است، آن‌ها را همگام کنید.
 **Excerpt:**
 ```
@@ -3346,7 +3346,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 16: اجرای تست‌های موجود برای اطمینان از عدم رگرشن
-**Status:** `not_done` (0%)
+**Status:** `partial` (70%)
 **Scope:** اجرای تمام تست‌های موجود (pytest) برای اطمینان از اینکه تغییرات ایجاد شده باعث رگرشن نمی‌شود. این شامل تست‌های stats، finally field، و user UUID است.
 **Excerpt:**
 ```
@@ -3377,7 +3377,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 19: Commit و Push تغییرات به default branch
-**Status:** `partial` (80%)
+**Status:** `done` (100%)
 **Scope:** پس از اتمام تمام مراحل، تغییرات را commit کرده و به default branch (main/master) push کنید. commit message باید شامل merged-from با IDهای تسک‌ها و توضیحات وابستگی‌های همگام‌سازی شده باشد.
 **Excerpt:**
 ```
@@ -3388,7 +3388,7 @@ The `id` column uses an 8-character truncated UUID, justified by the current 'sm
 ```
 
 ### Step 20: بررسی نهایی و مستندسازی وابستگی‌های همگام‌سازی شده
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** در commit message یا PR description، دامنهٔ وابستگی‌های شناسایی‌شده و همگام‌شده را به‌طور explicit و per-tier بنویسید. اگر هیچ وابستگی پیدا نشد، صریحاً اعلام کنید که بررسی انجام شده است.
 **Excerpt:**
 ```
