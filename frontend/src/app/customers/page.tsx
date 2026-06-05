@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { customersApi, parseApiError, downloadFile } from '@/lib/api'
@@ -21,14 +21,19 @@ export default function CustomersPage() {
   const [sortBy, setSortBy] = useState('created_at')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
-  useEffect(() => {
-    loadCustomers()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, sortBy, sortOrder])
+  // Latest free-text/account-type filters held in a ref so they are read at
+  // fetch time WITHOUT making loadCustomers change identity on every keystroke.
+  // This keeps loadCustomers referentially stable across typing while still
+  // sending the current filter values, and is what lets the effect below list
+  // an exhaustive dependency array (no eslint-disable needed). The filters are
+  // applied deliberately via handleSearch, not automatically as the user types.
+  const filtersRef = useRef({ search, accountType })
+  filtersRef.current = { search, accountType }
 
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       setLoading(true)
+      const { search, accountType } = filtersRef.current
       const result = await customersApi.list({
         page, page_size: 20,
         search: search || undefined,
@@ -43,7 +48,13 @@ export default function CustomersPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, sortBy, sortOrder])
+
+  // Reload when pagination or sort changes (loadCustomers identity tracks those);
+  // typing in the search box does not retrigger this — handleSearch does.
+  useEffect(() => {
+    loadCustomers()
+  }, [loadCustomers])
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
