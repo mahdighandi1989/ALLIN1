@@ -2,7 +2,7 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 7,
+  "total": 6,
   "tasks": [
     {
       "task_id": "task_02dfbac2d524",
@@ -22,16 +22,6 @@
       "status": "pending",
       "external_status": "pending",
       "path": "prompt/task-task_6fa50cdd5530.md",
-      "external_attempts": 0
-    },
-    {
-      "task_id": "task_97e9c7c534d9",
-      "title": "افزایش پوشش تست و کیفیت کد بک‌اند",
-      "priority": "high",
-      "execution_priority": 2000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_97e9c7c534d9.md",
       "external_attempts": 0
     },
     {
