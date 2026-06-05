@@ -2,18 +2,8 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 7,
+  "total": 6,
   "tasks": [
-    {
-      "task_id": "b6ff9b08-d9df-4c3b-9434-f03c91af125f",
-      "title": "افزایش تعامل کاربران با قابلیت‌های اصلی هوش مصنوعی",
-      "priority": "critical",
-      "execution_priority": 1300,
-      "status": "awaiting_review",
-      "external_status": "pending",
-      "path": "prompt/task-b6ff9b08-d9df-4c3b-9434-f03c91af125f.md",
-      "external_attempts": 0
-    },
     {
       "task_id": "task_ce1de819f000",
       "title": "همگام‌سازی bcrypt و تطبیق تست‌های واحد",
