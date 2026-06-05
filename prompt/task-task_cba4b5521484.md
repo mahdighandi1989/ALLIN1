@@ -3,14 +3,14 @@ task_id: task_cba4b5521484
 title: افزودن ستون amount، اصلاح داشبورد و استانداردسازی finally
 type: other
 priority: critical
-execution_priority: 1100
+execution_priority: 1150
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:52:02.604928+00:00'
-updated_at: '2026-06-05T18:20:40.411045+00:00'
+updated_at: '2026-06-05T18:24:43.966475+00:00'
 tags:
 - consolidated
 - post_verify_merge
