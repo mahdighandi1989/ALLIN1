@@ -3,14 +3,14 @@ task_id: task_1a0502982b9b
 title: حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند
 type: other
 priority: medium
-execution_priority: 3100
-status: pending
+execution_priority: 3400
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:49:46.762948+00:00'
-updated_at: '2026-06-05T20:03:13.176484+00:00'
+updated_at: '2026-06-05T20:06:50.006936+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -9659,7 +9659,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: یادداشت مهم برای مدل اجراکننده — دستورالعمل‌های عمومی و قواعد اجرا
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این بخش یک یادداشت مقدماتی و دستورالعمل‌های کلی برای مدل اجراکننده است. شامل قواعد خواندن پرامپت، ممنوعات، مدیریت وابستگی‌ها، همگام‌سازی cross-tier، مدیریت TO-DO، و قواعد commit/push می‌باشد. این بخش خود یک مرحله اجرایی نیست، بلکه چارچوب اجرای تمام مراحل بعدی را تعریف می‌کند. هیچ endpoint یا فایل خاصی در این بخش برای تغییر معرفی نشده است.
 — [merged] این بخش یک یادداشت عمومی و فراساختاری است که نحوهٔ اجرای کل پرامپت را مشخص می‌کند. شامل قوانین خواندن دقیق، ممنوعیت خلاصه‌سازی، بررسی وابستگی‌های چهارجهته، مدیریت TO-DO، و الزام commit+push فوری است. این بخش خود یک مرحلهٔ اجرایی نیست، بلکه دستورالعملی برای تمام مراحل بعدی است. هیچ کدی در این بخش درخواست نشده و هیچ تغییری در repo نباید صرفاً بر اساس این بخش انجام شود.
 **Excerpt:**
@@ -9997,7 +9997,7 @@ _(مستقل)_
 ```
 
 ### Step 5: یادداشت مهم برای مدل اجراکننده — قبل از شروع بخوان
-**Status:** `pending` (0%)
+**Status:** `not_done` (0%)
 **Scope:** این بخش یک یادداشت هشداردهنده و دستورالعمل اجرایی برای مدل اجراکننده است. شامل قوانین سختگیرانه برای خواندن کامل پرامپت، ممنوعیت خلاصه‌سازی، الزام به بررسی وابستگی‌های چهارجهته (upstream, downstream, cross-tier, side artifacts)، مدیریت TO-DO با آستانه ۲۰٪، و قانون commit+push فوری per-task. این بخش خودش یک مرحله اجرایی نیست بلکه چارچوب اجرای تمام مراحل بعدی را تعیین می‌کند. مدل اجراکننده باید این قوانین را در تمام مراحل بعدی رعایت کند.
 — [merged] این بخش یک یادداشت هشداردهنده و راهنمای کلی برای مدل اجراکننده است. شامل دستورالعمل‌های ضروری برای خواندن کامل پرامپت، بررسی وابستگی‌ها در چهار جهت (upstream, downstream, cross-tier, side artifacts)، مدیریت TO-DO، و قوانین commit/push. این بخش خود یک مرحله اجرایی نیست، بلکه یک prelude است که نحوه اجرای تمام مراحل بعدی را تعیین می‌کند. هیچ کد یا تغییری در این بخش درخواست نشده است.
 — [merged] این بخش یک یادداشت متا-پرامپتی است که نحوه اجرای کل درخواست را تعریف می‌کند. شامل قوانین خواندن دقیق، ممنوعیت خلاصه‌سازی، بررسی وابستگی‌های چهارجهته (upstream, downstream, cross-tier, side artifacts)، مدیریت TO-DO با آستانه ۲۰٪، و الزام commit+push فوری per-task است. این بخش خودش یک مرحله اجرایی نیست، بلکه دستورالعمل اجرای تمام مراحل بعدی است.
@@ -10266,7 +10266,7 @@ Dependencies synced:
 ```
 
 ### Step 6: حذف endpoint بلااستفاده GET /metrics از backend/app/main.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله صرفاً به حذف endpoint GET /metrics از فایل backend/app/main.py می‌پردازد. شامل بررسی callerهای frontend، لاگ‌ها، یا مستندسازی نیست. endpoint به‌طور کامل از کد حذف می‌شود و هیچ جایگزینی (مانند 410 Gone) ارائه نمی‌شود. فایل‌های مرتبط (routers, config, tests) نیاز به تغییر ندارند مگر اینکه به این endpoint ارجاع داده باشند.
 **Excerpt:**
 ```
@@ -10311,7 +10311,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 8: رسیدگی به endpoint بلااستفاده: GET /export.csv
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تسک شماره 3 از 10 است که به بررسی و اقدام روی endpoint GET /export.csv در فایل backend/app/routers/customers.py می‌پردازد. ریسک اصلی حذف endpoint‌هایی است که فقط در production توسط cron یا webhook خارجی مصرف می‌شوند و باعث silent failure می‌شوند. قبل از هر اقدامی باید لاگ‌های ۳۰ روز گذشته (Render logs یا nginx access logs) بررسی شوند. acceptance_criteria شامل سه بخش است: 1) دسته‌بندی endpoint (orphan/internal/deprecated) با verify دستی، 2) اقدام مناسب (اتصال مجدد، تگ internal یا حذف) با verify استاتیک، 3) در صورت حذف، تست‌ها و OpenAPI نیز به‌روز شوند.
 **Excerpt:**
 ```
@@ -10623,7 +10623,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 11: تحلیل و اقدام روی endpoint GET /export.csv بر اساس معیارهای پذیرش
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل تحلیل endpoint GET /export.csv برای تعیین دسته (orphan/internal/deprecated) و انجام اقدام مناسب (اتصال مجدد، تگ internal، یا حذف) است. همچنین شامل حذف تست‌های مرتبط در صورت حذف endpoint، به‌روزرسانی OpenAPI، و اطمینان از عبور تست‌ها، linter و type-check می‌باشد. خارج از scope: سایر endpoints، تغییرات در frontend (فقط بررسی caller)، و تغییرات در docs (فقط بررسی caller). نکته حیاتی: گام ۱ (grep روی frontend/scripts/docs) بخشی از این مرحله است.
 **Excerpt:**
 ```
@@ -10733,7 +10733,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 16: تحلیل و اقدام روی endpoint GET /customers/template بر اساس دسته‌بندی orphan/internal/deprecated
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل جستجوی کامل در frontend، scripts و docs برای یافتن callerهای GET /customers/template است. اگر هیچ callerای یافت نشد، endpoint در دسته orphan قرار می‌گیرد و باید حذف شود. اگر فقط در frontend استفاده می‌شود، اتصال اصلاح می‌شود. اگر deprecated است، تگ internal اضافه می‌شود. خارج از scope: تغییرات در سایر endpoints، تحلیل وابستگی‌های runtime، یا بازنویسی منطق business.
 **Excerpt:**
 ```
@@ -10806,7 +10806,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 19: بررسی و دسته‌بندی endpoint GET /{offer_id} و اعمال اقدام مناسب
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint GET /{offer_id} برای تعیین دسته (orphan/internal/deprecated) و اجرای اقدام متناظر است. شامل جستجوی callerها در frontend، scripts و docs، اصلاح connectionهای drop شده، حذف endpoint در صورت orphan بودن، به‌روزرسانی OpenAPI و حذف تست‌های مرتبط می‌شود. خارج از scope: سایر endpointها، تغییرات در business logic، و refactoring کدهای غیرمرتبط.
 **Excerpt:**
 ```
@@ -10873,7 +10873,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 22: تحلیل و اقدام روی endpoint POST /{notification_id}/read
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل تحلیل endpoint مشخص شده برای تعیین دسته (orphan/internal/deprecated) و انجام اقدام متناسب است. شامل حذف endpoint در صورت عدم استفاده، به‌روزرسانی OpenAPI و تست‌ها، و اطمینان از عبور تست‌ها و linter. خارج از scope: تحلیل سایر endpoints، تغییرات در frontend (فقط grep برای یافتن callerها).
 **Excerpt:**
 ```
@@ -10958,7 +10958,7 @@ endpoint `GET /portfolio/export.pdf` در `backend/app/routers/reports.py` تع�
 ```
 
 ### Step 25: بررسی و دسته‌بندی endpoint GET /portfolio/export.pdf
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل تحلیل endpoint مشخص شده (GET /portfolio/export.pdf) برای تعیین وضعیت آن (orphan/internal/deprecated) و انجام اقدام مناسب است. خروجی این مرحله شامل: (1) جستجوی کامل در frontend، scripts و docs برای یافتن callerهای این endpoint، (2) تصمیم‌گیری در مورد دسته endpoint، (3) اجرای اقدام متناسب (اصلاح connection، افزودن تگ internal، یا حذف کامل endpoint و تست‌های مرتبط). نکته حیاتی: این مرحله فقط روی این endpoint خاص تمرکز دارد و شامل سایر endpoints نمی‌شود.
 **Excerpt:**
 ```
@@ -11033,7 +11033,7 @@ endpoint بدون caller یا (الف) به‌صورت اشتباه orphan شد�
 ```
 
 ### Step 28: تحلیل و اقدام روی endpoint POST /{entity}/{item_id}/restore
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل جستجوی کامل در frontend، scripts و docs برای یافتن callerهای endpoint POST /{entity}/{item_id}/restore است. اگر caller یافت شود، endpoint در دسته 'orphan' قرار می‌گیرد و connection آن اصلاح می‌شود. اگر caller یافت نشود، endpoint در دسته 'deprecated' قرار گرفته و حذف می‌شود. این مرحله فقط به تحلیل و اقدام اولیه روی این endpoint خاص می‌پردازد و شامل سایر endpoints نمی‌شود.
 **Excerpt:**
 ```
