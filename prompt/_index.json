@@ -5,14 +5,14 @@
   "total": 1,
   "tasks": [
     {
-      "task_id": "0b55d5f5-b60c-4150-bc5b-6148b5b74924",
-      "title": "پیاده‌سازی صفحه Customers برای static build",
+      "task_id": "6e56bc2e-603c-46ff-981c-e25391ccecc6",
+      "title": "تأیید handler دکمه افزودن مشتری و افزودن تست",
       "priority": "medium",
-      "execution_priority": 3300,
-      "status": "awaiting_review",
+      "execution_priority": 3050,
+      "status": "pending",
       "external_status": "pending",
-      "path": "prompt/task-0b55d5f5-b60c-4150-bc5b-6148b5b74924.md",
-      "external_attempts": 0
+      "path": "prompt/task-6e56bc2e-603c-46ff-981c-e25391ccecc6.md",
+      "external_attempts": 1
     }
   ]
 }
