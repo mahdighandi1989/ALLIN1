@@ -211,7 +211,16 @@ async def bulk_delete_facilities(
     return {"deleted": affected}
 
 
-@router.get("/search/advanced", response_model=FacilityListResponse)
+# Internal/extended search surface: richer than the main ``GET /`` list (adds
+# start-date range + customer-name filtering) but not yet wired to the SPA, which
+# uses the list endpoint's filters. Kept functional for API/admin consumers but
+# hidden from the public OpenAPI schema (unused-endpoint audit, see
+# docs/ENDPOINT_AUDIT.md).
+@router.get(
+    "/search/advanced",
+    response_model=FacilityListResponse,
+    include_in_schema=False,
+)
 async def advanced_search_facilities(
     db: AsyncSession = Depends(get_db),
     amount_from: Optional[float] = Query(None, ge=0),

@@ -61,7 +61,11 @@ async def list_users(
     return AdminUserListResponse(items=rows, total=total, page=page, page_size=page_size)
 
 
-@router.get("/{user_id}", response_model=AdminUserResponse)
+# Admin single-user fetch: a valid REST member of the admin users resource that
+# the SPA does not currently consume (it lists/creates/updates/deactivates via
+# the sibling routes). Kept for API/admin completeness but hidden from the public
+# OpenAPI schema (unused-endpoint audit, see docs/ENDPOINT_AUDIT.md).
+@router.get("/{user_id}", response_model=AdminUserResponse, include_in_schema=False)
 async def get_user(user_id: str, db: AsyncSession = Depends(get_db)):
     return await _get_user(user_id, db)
 

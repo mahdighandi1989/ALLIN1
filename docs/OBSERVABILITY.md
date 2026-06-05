@@ -35,7 +35,7 @@ keeping the 95th-percentile API latency within threshold.
 | Metrics middleware | `backend/app/middleware.py` — `MetricsMiddleware` (uses `prometheus_client`, `Histogram`), registered in `backend/app/main.py` via `app.add_middleware(MetricsMiddleware)` |
 | Latency histogram | `backend/app/monitoring.py` — `REQUEST_LATENCY` (`http_request_duration_seconds`, buckets → percentiles) |
 | Request/throughput counter | `backend/app/monitoring.py` — `REQUEST_COUNT` (`http_requests_total`) |
-| Metrics endpoint | `backend/app/main.py` — `GET /metrics` (Prometheus exposition, `generate_latest`) |
+| Metrics endpoint | `backend/app/main.py` — `GET /metrics` (Prometheus exposition, `generate_latest`; `include_in_schema=False` — internal, hidden from public OpenAPI, see `docs/ENDPOINT_AUDIT.md`) |
 
 Latency is measured in a `finally` block so failed requests (HTTP 500) are
 still recorded — a prerequisite for a *real* error rate and latency

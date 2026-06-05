@@ -123,34 +123,6 @@ async def _extract_login_credentials(request: Request) -> tuple[str, str]:
 
 
 # Schemas
-class UserRegister(BaseModel):
-    # Explicit length limits + format patterns on every text field guard against
-    # oversized payloads and injection-style input (validated by Pydantic, so
-    # invalid input is rejected with HTTP 422 before any handler logic runs).
-    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
-    email: EmailStr = Field(..., max_length=100)
-    password: str = Field(..., min_length=8, max_length=128)
-    full_name: str = Field(..., min_length=1, max_length=100)
-
-    @validator('username')
-    def validate_username(cls, v):
-        if len(v) < 3:
-            raise ValueError('Username must be at least 3 characters long')
-        if not v.replace('_', '').replace('-', '').isalnum():
-            raise ValueError('Username must contain only letters, numbers, hyphens and underscores')
-        return v.lower()
-
-    @validator('password')
-    def validate_password(cls, v):
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
-        if not any(char.isdigit() for char in v):
-            raise ValueError('Password must contain at least one digit')
-        if not any(char.isalpha() for char in v):
-            raise ValueError('Password must contain at least one letter')
-        return v
-
-
 class UserResponse(BaseModel):
     id: str
     username: str
@@ -347,51 +319,13 @@ async def auth_config():
     return {"auth_disabled": bool(getattr(settings, "AUTH_DISABLED", False))}
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    """Register a new user"""
-    # Check if username exists
-    result = await db.execute(select(User).where(User.username == user_data.username.lower()))
-    if result.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered",
-        )
-
-    # Check if email exists
-    result = await db.execute(select(User).where(User.email == user_data.email.lower()))
-    if result.scalar_one_or_none() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
-
-    # Create new user
-    hashed_password = hash_password(user_data.password)
-    user = User(
-        username=user_data.username.lower(),
-        email=user_data.email.lower(),
-        hashed_password=hashed_password,
-        full_name=user_data.full_name,
-        is_active=True,
-        is_admin=False
-    )
-
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-
-    # Create access token
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"user_id": user.id, "username": user.username},
-        expires_delta=access_token_expires
-    )
-
-    return TokenResponse(
-        access_token=access_token,
-        user=UserResponse.model_validate(user),
-    )
+# NOTE: The public self-service ``POST /register`` endpoint was removed during the
+# unused-endpoint audit (see docs/ENDPOINT_AUDIT.md). It was never called by the
+# frontend (accounts are created by admins via ``POST /api/users/``) and the
+# bootstrap admin is seeded from env by ``seed_admin_user()`` — so the endpoint
+# was dead code *and* an unauthenticated user-creation attack surface. Removed
+# rather than tagged internal because keeping it live (even hidden from the
+# schema) would still expose anonymous account creation.
 
 
 @router.post("/login", response_model=TokenResponse)

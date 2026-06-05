@@ -159,9 +159,14 @@ async def unhandled_exception_handler_500(request: Request, exc: Exception):
 app.add_exception_handler(Exception, unhandled_exception_handler_500)
 
 
-@app.get("/metrics")
+@app.get("/metrics", include_in_schema=False)
 async def metrics():
-    """Expose Prometheus metrics (request latency/volume, error count)."""
+    """Expose Prometheus metrics (request latency/volume, error count).
+
+    Internal observability endpoint scraped by Prometheus, not consumed by the
+    SPA — hidden from the public OpenAPI schema (unused-endpoint audit, see
+    docs/ENDPOINT_AUDIT.md).
+    """
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

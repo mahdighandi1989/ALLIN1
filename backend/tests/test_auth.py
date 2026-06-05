@@ -36,64 +36,10 @@ def _make_unsigned_none_token(claims: dict) -> str:
 class TestAuthEndpoints:
     """Test authentication endpoints"""
 
-    async def test_register_user_success(self, client: AsyncClient):
-        """Test successful user registration"""
-        user_data = {
-            "username": "newuser",
-            "email": "newuser@example.com",
-            "password": "newpass123",
-            "full_name": "New User"
-        }
-        
-        response = await client.post("/api/auth/register", json=user_data)
-        
-        assert response.status_code == 201
-        data = response.json()
-        assert "access_token" in data
-        assert data["user"]["username"] == "newuser"
-        assert data["user"]["email"] == "newuser@example.com"
-        assert data["user"]["full_name"] == "New User"
-
-    async def test_register_duplicate_username(self, client: AsyncClient, test_user: User):
-        """Test registration with duplicate username"""
-        user_data = {
-            "username": test_user.username,
-            "email": "different@example.com",
-            "password": "newpass123",
-            "full_name": "Different User"
-        }
-        
-        response = await client.post("/api/auth/register", json=user_data)
-        
-        assert response.status_code == 400
-        assert "Username already registered" in response.json()["detail"]
-
-    async def test_register_duplicate_email(self, client: AsyncClient, test_user: User):
-        """Test registration with duplicate email"""
-        user_data = {
-            "username": "differentuser",
-            "email": test_user.email,
-            "password": "newpass123",
-            "full_name": "Different User"
-        }
-        
-        response = await client.post("/api/auth/register", json=user_data)
-        
-        assert response.status_code == 400
-        assert "Email already registered" in response.json()["detail"]
-
-    async def test_register_invalid_password(self, client: AsyncClient):
-        """Test registration with invalid password"""
-        user_data = {
-            "username": "newuser",
-            "email": "newuser@example.com",
-            "password": "weak",  # Too short, no digits
-            "full_name": "New User"
-        }
-        
-        response = await client.post("/api/auth/register", json=user_data)
-        
-        assert response.status_code == 422
+    # NOTE: tests for ``POST /api/auth/register`` were removed alongside the
+    # endpoint during the unused-endpoint audit (see docs/ENDPOINT_AUDIT.md).
+    # Public self-registration is no longer supported — accounts are created by
+    # admins via ``POST /api/users/``.
 
     async def test_login_success(self, client: AsyncClient, test_user: User):
         """Test successful login"""
