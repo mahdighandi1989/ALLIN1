@@ -2,6 +2,127 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 0,
-  "tasks": []
+  "total": 12,
+  "tasks": [
+    {
+      "task_id": "task_21687b9591ca",
+      "title": "پیاده‌سازی Rate Limit و رفع JWT احراز هویت",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_21687b9591ca.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_b49f32ed354c",
+      "title": "اصلاح و استانداردسازی پیکربندی و متغیرهای محیطی بک‌اند",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_b49f32ed354c.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_cba4b5521484",
+      "title": "افزودن ستون amount و اصلاح نمایش داشبورد",
+      "priority": "critical",
+      "execution_priority": 1000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_cba4b5521484.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "9f1a6790-aa39-42a4-8ac6-14b8d62c4ce8",
+      "title": "Integrate Facility Authorization in Facilities Router",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-9f1a6790-aa39-42a4-8ac6-14b8d62c4ce8.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "b6ff9b08-d9df-4c3b-9434-f03c91af125f",
+      "title": "افزایش تعامل کاربران با قابلیت‌های اصلی هوش مصنوعی",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-b6ff9b08-d9df-4c3b-9434-f03c91af125f.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7",
+      "title": "اعتبارسنجی ورودی‌های فرم تسهیلات",
+      "priority": "critical",
+      "execution_priority": 1300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-bf49a9c5-1bcb-440b-9b9f-5cb34d1f47e7.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_ce1de819f000",
+      "title": "همگام‌سازی bcrypt و تطبیق تست‌های واحد",
+      "priority": "high",
+      "execution_priority": 2000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_ce1de819f000.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "3ba913fd-e857-447e-b53c-e3230b889286",
+      "title": "Handle crucial exceptions with logging and recovery",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-3ba913fd-e857-447e-b53c-e3230b889286.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "ecb1f050-33ba-4da5-936c-c0b7784f3b46",
+      "title": "عدم تطابق بین فیچرهای ذکر شده در README و کد پیاده‌سازی شده",
+      "priority": "high",
+      "execution_priority": 2300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-ecb1f050-33ba-4da5-936c-c0b7784f3b46.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "task_1a0502982b9b",
+      "title": "حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند",
+      "priority": "medium",
+      "execution_priority": 3000,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-task_1a0502982b9b.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "2a179a4f-b245-4cea-b83b-194f8f357ad7",
+      "title": "صفحات است",
+      "priority": "medium",
+      "execution_priority": 3300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-2a179a4f-b245-4cea-b83b-194f8f357ad7.md",
+      "external_attempts": 0
+    },
+    {
+      "task_id": "7a8d8e11-b9cc-4425-b2f3-527536622171",
+      "title": "Correct exportFiltered's downloadFile path",
+      "priority": "medium",
+      "execution_priority": 3300,
+      "status": "awaiting_review",
+      "external_status": "pending",
+      "path": "prompt/task-7a8d8e11-b9cc-4425-b2f3-527536622171.md",
+      "external_attempts": 0
+    }
+  ]
 }
