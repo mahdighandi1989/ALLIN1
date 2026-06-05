@@ -150,6 +150,7 @@ class UserRegister(BaseModel):
             raise ValueError('Password must contain at least one letter')
         return v
 
+
 class UserResponse(BaseModel):
     id: str
     username: str
@@ -166,10 +167,12 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
 
 class ChangePassword(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=128)
@@ -184,6 +187,7 @@ class ChangePassword(BaseModel):
         if not any(char.isalpha() for char in v):
             raise ValueError('Password must contain at least one letter')
         return v
+
 
 class UpdateProfile(BaseModel):
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)

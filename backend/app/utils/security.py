@@ -1,13 +1,12 @@
 # backend/app/utils/security.py
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -412,9 +411,6 @@ async def get_optional_current_user(
     Dependency to get the current user if a token is provided.
     Returns None if no token is provided or the token is invalid.
     """
-    # Local import to break the circular dependency.
-    from app.models.user import User
-
     # TEMPORARY: AUTH_DISABLED bypass (see get_current_user).
     if getattr(settings, "AUTH_DISABLED", False):
         return await _get_or_create_demo_user(db)
