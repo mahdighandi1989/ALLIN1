@@ -2,8 +2,18 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 1,
+  "total": 2,
   "tasks": [
+    {
+      "task_id": "2a179a4f-b245-4cea-b83b-194f8f357ad7",
+      "title": "پیاده‌سازی صفحات",
+      "priority": "medium",
+      "execution_priority": 3050,
+      "status": "pending",
+      "external_status": "pending",
+      "path": "prompt/task-2a179a4f-b245-4cea-b83b-194f8f357ad7.md",
+      "external_attempts": 1
+    },
     {
       "task_id": "7a8d8e11-b9cc-4425-b2f3-527536622171",
       "title": "Correct exportFiltered's downloadFile path",
