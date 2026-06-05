@@ -55,6 +55,43 @@ class TestXlsxExports:
         r = await client.get("/api/facilities/export.xlsx", headers=auth_headers)
         assert r.status_code == 200 and r.content[:2] == b"PK"
 
+    async def test_facilities_export_honours_sort(
+        self, client: AsyncClient, auth_headers: dict, db_session, test_customer
+    ):
+        """export.xlsx must honour sort_by/sort_order so the file matches the
+        on-screen list order (previously it was hard-coded to created_at desc)."""
+        from app.models.facility import Facility, FacilityType, FacilityStatus
+
+        db_session.add_all([
+            Facility(customer_id=test_customer.id, name="Bravo", facility_type=FacilityType.LOAN,
+                     status=FacilityStatus.ACTIVE, amount=300, outstanding=0, currency="AED"),
+            Facility(customer_id=test_customer.id, name="Alpha", facility_type=FacilityType.LOAN,
+                     status=FacilityStatus.ACTIVE, amount=100, outstanding=0, currency="AED"),
+            Facility(customer_id=test_customer.id, name="Charlie", facility_type=FacilityType.LOAN,
+                     status=FacilityStatus.ACTIVE, amount=200, outstanding=0, currency="AED"),
+        ])
+        await db_session.commit()
+
+        import openpyxl
+
+        def names(content):
+            ws = openpyxl.load_workbook(io.BytesIO(content))["Facilities"]
+            header = [c.value for c in ws[1]]
+            col = header.index("name") + 1
+            return [ws.cell(row=i, column=col).value for i in range(2, ws.max_row + 1)]
+
+        r = await client.get(
+            "/api/facilities/export.xlsx?sort_by=name&sort_order=asc", headers=auth_headers
+        )
+        assert r.status_code == 200
+        assert names(r.content) == ["Alpha", "Bravo", "Charlie"]
+
+        r = await client.get(
+            "/api/facilities/export.xlsx?sort_by=name&sort_order=desc", headers=auth_headers
+        )
+        assert r.status_code == 200
+        assert names(r.content) == ["Charlie", "Bravo", "Alpha"]
+
     async def test_portfolio_xlsx_multisheet(self, client: AsyncClient, auth_headers: dict):
         r = await client.get("/api/reports/portfolio/export.xlsx", headers=auth_headers)
         assert r.status_code == 200 and r.content[:2] == b"PK"

@@ -124,6 +124,9 @@ export default function FacilitiesPage() {
     if (fStatus) params.set('status', fStatus)
     if (amountMin) params.set('amount_min', amountMin)
     if (amountMax) params.set('amount_max', amountMax)
+    // Mirror the active sort so the exported file matches the on-screen order.
+    if (sortBy) params.set('sort_by', sortBy)
+    if (sortOrder) params.set('sort_order', sortOrder)
     const qs = params.toString()
     downloadFile(`/api/facilities/export.${fmt}${qs ? `?${qs}` : ''}`, `facilities.${fmt}`)
       .catch((e) => toast.error(parseApiError(e)))

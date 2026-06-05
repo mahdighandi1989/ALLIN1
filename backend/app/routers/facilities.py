@@ -125,7 +125,10 @@ _FACILITY_EXPORT_HEADERS = [
 ]
 
 
-async def _facilities_for_export(db, search, facility_type, status, amount_min, amount_max):
+async def _facilities_for_export(
+    db, search, facility_type, status, amount_min, amount_max,
+    sort_by="created_at", sort_order="desc",
+):
     base = select(Facility).where(Facility.is_deleted == False)
     if search:
         base = base.where(Facility.name.ilike(f"%{search}%"))
@@ -137,7 +140,12 @@ async def _facilities_for_export(db, search, facility_type, status, amount_min, 
         base = base.where(Facility.amount >= amount_min)
     if amount_max is not None:
         base = base.where(Facility.amount <= amount_max)
-    rows = (await db.execute(base.order_by(Facility.created_at.desc()).limit(10000))).scalars().all()
+    # Honour the same sort the list view applies so the exported file matches
+    # exactly what the user sees on screen. Unknown columns fall back to
+    # created_at and any non-"asc" order is treated as descending.
+    sort_col = _FACILITY_SORT.get(sort_by, Facility.created_at)
+    sort_col = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+    rows = (await db.execute(base.order_by(sort_col).limit(10000))).scalars().all()
     return [
         [f.id, f.customer_id, f.name,
          getattr(f.facility_type, "value", f.facility_type),
@@ -157,8 +165,12 @@ async def export_facilities_csv(
     status: Optional[FacilityStatus] = Query(None),
     amount_min: Optional[float] = Query(None, ge=0),
     amount_max: Optional[float] = Query(None, ge=0),
+    sort_by: str = Query("created_at", description="Sort column"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="asc or desc"),
 ):
-    rows = await _facilities_for_export(db, search, facility_type, status, amount_min, amount_max)
+    rows = await _facilities_for_export(
+        db, search, facility_type, status, amount_min, amount_max, sort_by, sort_order
+    )
     return Response(
         content=rows_to_csv(_FACILITY_EXPORT_HEADERS, rows),
         media_type="text/csv",
@@ -174,8 +186,12 @@ async def export_facilities_xlsx(
     status: Optional[FacilityStatus] = Query(None),
     amount_min: Optional[float] = Query(None, ge=0),
     amount_max: Optional[float] = Query(None, ge=0),
+    sort_by: str = Query("created_at", description="Sort column"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="asc or desc"),
 ):
-    rows = await _facilities_for_export(db, search, facility_type, status, amount_min, amount_max)
+    rows = await _facilities_for_export(
+        db, search, facility_type, status, amount_min, amount_max, sort_by, sort_order
+    )
     content = build_xlsx([("Facilities", _FACILITY_EXPORT_HEADERS, rows)])
     return Response(
         content=content,
