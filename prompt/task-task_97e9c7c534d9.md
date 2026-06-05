@@ -3,14 +3,14 @@ task_id: task_97e9c7c534d9
 title: افزایش پوشش تست و کیفیت کد بک‌اند
 type: other
 priority: high
-execution_priority: 2150
+execution_priority: 2200
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:11:03.258958+00:00'
-updated_at: '2026-06-05T00:57:01.364616+00:00'
+updated_at: '2026-06-05T01:01:16.047262+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1773,7 +1773,7 @@ backend/tests/
 ```
 
 ### Step 3: نوشتن تست‌های یکپارچگی برای API endpoints (auth, customers, facilities)
-**Status:** `partial` (66%)
+**Status:** `partial` (70%)
 **Scope:** نوشتن تست‌های یکپارچگی برای endpointهای API شامل auth.py, customers.py, facilities.py. این تست‌ها باید با httpx و TestClient اجرا شوند. نکته حیاتی: تست‌ها باید حداقل 20 تست یکپارچگی را پوشش دهند و شامل سناریوهای موفق و خطا باشند.
 **Excerpt:**
 ```
@@ -1791,7 +1791,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 4: نوشتن تست‌های امنیتی برای SQL Injection, XSS, JWT
-**Status:** `partial` (33%)
+**Status:** `partial` (60%)
 **Scope:** نوشتن تست‌های امنیتی در test_security.py که شامل سناریوهای SQL Injection, XSS, و JWT است. این تست‌ها باید حملات رایج را شبیه‌سازی کنند و اطمینان حاصل کنند که سیستم در برابر آنها مقاوم است. نکته حیاتی: تست‌های JWT باید شامل توکن‌های منقضی، دستکاری‌شده، و با امضای نامعتبر باشند.
 **Excerpt:**
 ```
@@ -1808,7 +1808,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 5: تنظیم GitHub Actions برای اجرای خودکار تست‌ها
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** ایجاد یا اصلاح فایل workflow GitHub Actions برای اجرای خودکار pytest در هر push و pull request. این مرحله شامل تنظیم مراحل نصب وابستگی‌ها، اجرای تست‌ها، و گزارش نتایج است. نکته حیاتی: workflow باید pytest را با پوشش کد اجرا کند و در صورت failure، هشدار دهد.
 **Excerpt:**
 ```
@@ -1823,7 +1823,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 6: تنظیم coverage حداقل 80% برای backend
-**Status:** `not_done` (0%)
+**Status:** `partial` (70%)
 **Scope:** اضافه کردن تنظیمات coverage به pyproject.toml یا فایل pytest.ini برای اعمال حداقل 80% پوشش کد. این مرحله شامل تنظیم pytest-cov و تعیین آستانه است. نکته حیاتی: coverage باید برای کل backend/app/ محاسبه شود و در صورت کمتر از 80%، pytest با خطا مواجه شود.
 **Excerpt:**
 ```
@@ -1840,7 +1840,7 @@ _(فایل‌هایی که با موقعیت‌های هدف در ارتباط �
 ```
 
 ### Step 7: بررسی و هماهنگ‌سازی وابستگی‌های requirements.txt با pyproject.toml
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** مقایسه و هماهنگ‌سازی لیست وابستگی‌های فایل requirements.txt با pyproject.toml. این مرحله شامل اضافه کردن وابستگی‌های گمشده (redis, celery, httpx, python-dotenv) به requirements.txt و اطمینان از تطابق نسخه‌ها است. نکته حیاتی: وابستگی‌های dev مانند pytest نباید به requirements.txt اضافه شوند.
 **Excerpt:**
 ```
@@ -1911,7 +1911,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 9: اجرای linter و type-check برای اطمینان از عدم وجود warning
-**Status:** `partial` (50%)
+**Status:** `done` (100%)
 **Scope:** اجرای linter (ruff/flake8) و type-check (mypy) روی کدهای backend برای اطمینان از عدم وجود warning پس از تغییر وابستگی‌ها. این مرحله شامل اجرای دستورات مربوطه و رفع هرگونه warning است. نکته حیاتی: اگر warning جدیدی ایجاد شده، باید رفع شود.
 **Excerpt:**
 ```
@@ -2112,7 +2112,7 @@ _(file:line — symbol — snippet)_
 ```
 
 ### Step 22: اجرای py_compile و ruff check روی backend/app/models/offer_letter.py (در صورت وجود)
-**Status:** `not_done` (0%)
+**Status:** `partial` (50%)
 **Scope:** اگر فایل offer_letter.py حذف نشده است (به دلیل entry point بودن)، اجرای `python -m py_compile backend/app/models/offer_letter.py` و `ruff check backend/app/models/offer_letter.py` برای اطمینان از کیفیت کد. نکته حیاتی: اگر فایل حذف شده است، این مرحله را با یک کامیت توضیحی ثبت کنید.
 **Excerpt:**
 ```
