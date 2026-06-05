@@ -1,22 +1,22 @@
 ---
 task_id: task_6fa50cdd5530
-title: رفع Anti-patternهای اعتبارسنجی و بازخورد
+title: رفع Anti-patternهای اعتبارسنجی و پایداری
 type: other
 priority: high
-execution_priority: 2050
+execution_priority: 2100
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:16:30.047068+00:00'
-updated_at: '2026-06-05T01:14:02.443210+00:00'
+updated_at: '2026-06-05T01:18:43.479328+00:00'
 tags:
 - consolidated
 - post_verify_merge
 ---
 
-# رفع Anti-patternهای اعتبارسنجی و بازخورد
+# رفع Anti-patternهای اعتبارسنجی و پایداری
 
 ## Raw Idea
 
@@ -1348,7 +1348,7 @@ _(مستقل)_
 ## Task Steps
 
 ### Step 1: تشخیص ریشه anti-pattern Under-engineering در backend/app/models/user.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازبینی دستی کد در backend/app/models/user.py برای شناسایی ریشه anti-pattern Under-engineering است. تمرکز بر روی تابع generate_id و نحوه تولید UUID است. خارج از این مرحله، هرگونه اصلاح کد یا نوشتن تست است.
 **Excerpt:**
 ```
@@ -1457,7 +1457,7 @@ _(مستقل)_
 ```
 
 ### Step 2: اصلاح کد یا افزودن کامنت توجیهی برای Under-engineering در backend/app/models/user.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح کد در backend/app/models/user.py برای رفع anti-pattern Under-engineering است. اگر اصلاح کد ممکن نیست، باید یک کامنت توجیهی اضافه شود که دلیل استفاده از 8 کاراکتر UUID را توضیح دهد. خارج از این مرحله، نوشتن تست edge case است.
 **Excerpt:**
 ```
@@ -1485,7 +1485,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 3: نوشتن تست edge case برای Under-engineering در tests/test_user_id_generation.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن یک تست edge case در فایل tests/test_user_id_generation.py است که احتمال برخورد (collision) در تولید شناسه کاربر را بررسی می‌کند. تست باید تابع test_uuid_collision_prevention را پیاده‌سازی کند. خارج از این مرحله، اصلاح کد در user.py است.
 **Excerpt:**
 ```
@@ -1513,7 +1513,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 4: تشخیص ریشه anti-pattern AI بدون validation در frontend/src/app/facilities/page.tsx
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازبینی دستی کد در frontend/src/app/facilities/page.tsx برای شناسایی ریشه anti-pattern AI بدون validation است. تمرکز بر روی نحوه مدیریت متغیر reason و فرضیات نادرست در مورد نوع آن است. خارج از این مرحله، هرگونه اصلاح کد یا نوشتن تست است.
 **Excerpt:**
 ```
@@ -1613,7 +1613,7 @@ _(مستقل)_
 ```
 
 ### Step 5: اصلاح کد یا افزودن کامنت توجیهی برای AI بدون validation در frontend/src/app/facilities/page.tsx
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح کد در frontend/src/app/facilities/page.tsx برای رفع anti-pattern AI بدون validation است. اگر اصلاح کد ممکن نیست، باید یک کامنت توجیهی اضافه شود که دلیل فرضیات نادرست در مورد نوع reason را توضیح دهد. خارج از این مرحله، نوشتن تست edge case است.
 **Excerpt:**
 ```
@@ -1644,7 +1644,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 6: نوشتن تست edge case برای AI بدون validation در tests/frontend/test_facilities_reason_validation.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن یک تست edge case در فایل tests/frontend/test_facilities_reason_validation.py است که رفتار کد را در هنگام دریافت یک reason غیرمنتظره (مثلاً یک Error سفارشی) بررسی می‌کند. تست باید تابع test_handle_non_response_reason را پیاده‌سازی کند. خارج از این مرحله، اصلاح کد در page.tsx است.
 **Excerpt:**
 ```
@@ -1675,7 +1675,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 7: تشخیص ریشه anti-pattern Broken feedback loop در backend/app/main.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازبینی دستی کد در backend/app/main.py برای شناسایی ریشه anti-pattern Broken feedback loop است. تمرکز بر روی خط 38 و نحوه مدیریت عدم وجود دایرکتوری static است. خارج از این مرحله، هرگونه اصلاح کد یا نوشتن تست است.
 **Excerpt:**
 ```
@@ -1784,7 +1784,7 @@ _(مستقل)_
 ```
 
 ### Step 8: اصلاح کد یا افزودن کامنت توجیهی برای Broken feedback loop در backend/app/main.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح کد در backend/app/main.py برای رفع anti-pattern Broken feedback loop است. اگر اصلاح کد ممکن نیست، باید یک کامنت توجیهی اضافه شود که دلیل عدم بازخورد مناسب را توضیح دهد. خارج از این مرحله، نوشتن تست edge case است.
 **Excerpt:**
 ```
@@ -1815,7 +1815,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 9: نوشتن تست edge case برای Broken feedback loop در tests/test_main.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن یک تست edge case در فایل tests/test_main.py است که رفتار کد را در هنگام عدم وجود دایرکتوری static بررسی می‌کند. تست باید تابع test_static_directory_missing_edge_case را پیاده‌سازی کند. خارج از این مرحله، اصلاح کد در main.py است.
 **Excerpt:**
 ```
@@ -1846,7 +1846,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 10: تشخیص ریشه anti-pattern AI without validation در backend/app/models/facility.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل بازبینی کد در backend/app/models/facility.py برای شناسایی ریشه anti-pattern AI without validation است. تمرکز بر روی فیلد risk_rating و عدم وجود Enum یا validation برای مقادیر مجاز است. خارج از این مرحله، هرگونه اصلاح کد یا نوشتن تست است.
 **Excerpt:**
 ```
@@ -1955,7 +1955,7 @@ _(مستقل)_
 ```
 
 ### Step 11: اصلاح کد یا افزودن کامنت توجیهی برای AI without validation در backend/app/models/facility.py
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اصلاح کد در backend/app/models/facility.py برای رفع anti-pattern AI without validation است. اگر اصلاح کد ممکن نیست، باید یک کامنت توجیهی اضافه شود که دلیل استفاده از String(10) به جای Enum را توضیح دهد. خارج از این مرحله، نوشتن تست edge case است.
 **Excerpt:**
 ```
@@ -1986,7 +1986,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 12: نوشتن تست edge case برای AI without validation در tests/backend/test_facility.py
-**Status:** `pending` (0%)
+**Status:** `partial` (80%)
 **Scope:** این مرحله شامل نوشتن یک تست edge case در فایل tests/backend/test_facility.py است که اعتبارسنجی فیلد risk_rating را بررسی می‌کند. تست باید تابع test_risk_rating_validation را پیاده‌سازی کند. خارج از این مرحله، اصلاح کد در facility.py است.
 **Excerpt:**
 ```
