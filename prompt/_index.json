@@ -5,13 +5,13 @@
   "total": 2,
   "tasks": [
     {
-      "task_id": "task_1a0502982b9b",
-      "title": "حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند",
+      "task_id": "2a179a4f-b245-4cea-b83b-194f8f357ad7",
+      "title": "پیاده‌سازی صفحات",
       "priority": "medium",
       "execution_priority": 3150,
       "status": "pending",
       "external_status": "pending",
-      "path": "prompt/task-task_1a0502982b9b.md",
+      "path": "prompt/task-2a179a4f-b245-4cea-b83b-194f8f357ad7.md",
       "external_attempts": 3
     },
     {
