@@ -1,4 +1,3 @@
-import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -8,24 +7,25 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
 from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth
 from app.utils.log_sanitizer import install_log_sanitizer
-from app.monitoring import (
-    get_logger,
-    route_label,
-    REQUEST_COUNT,
-    REQUEST_LATENCY,
-    UNHANDLED_ERRORS,
-)
+from app.middleware import MetricsMiddleware
+# Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
+# so the ``structlog.get_logger`` call below returns a fully-configured (JSON,
+# ISO-timestamped) bound logger.
+from app.monitoring import UNHANDLED_ERRORS
+
 import logging
 import os
 
 logging.basicConfig(level=getattr(logging, str(settings.LOG_LEVEL).upper(), logging.INFO))
 # Defence-in-depth: scrub passwords/tokens/secrets from every log record.
 install_log_sanitizer()
-struct_logger = get_logger("app")
+# Structured logger for production observability (configured in app.monitoring).
+struct_logger = structlog.get_logger("app")
 logger = logging.getLogger(__name__)
 
 
@@ -99,23 +99,6 @@ class HTTPSRedirectInProductionMiddleware(BaseHTTPMiddleware):
                     headers={"Location": str(https_url)},
                 )
         return await call_next(request)
-
-
-class MetricsMiddleware(BaseHTTPMiddleware):
-    """Record per-request latency and volume into Prometheus metrics."""
-
-    async def dispatch(self, request: Request, call_next):
-        start = time.perf_counter()
-        status_code = 500
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-            return response
-        finally:
-            elapsed = time.perf_counter() - start
-            label = route_label(request)
-            REQUEST_LATENCY.labels(request.method, label, str(status_code)).observe(elapsed)
-            REQUEST_COUNT.labels(request.method, label, str(status_code)).inc()
 
 
 # Security + metrics middleware (order matters: redirect first, then headers).
