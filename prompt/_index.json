@@ -2,18 +2,8 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 2,
+  "total": 1,
   "tasks": [
-    {
-      "task_id": "task_1a0502982b9b",
-      "title": "حذف و بهینه‌سازی Endpoints بلااستفاده در API بک‌اند",
-      "priority": "medium",
-      "execution_priority": 3050,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-task_1a0502982b9b.md",
-      "external_attempts": 1
-    },
     {
       "task_id": "7a8d8e11-b9cc-4425-b2f3-527536622171",
       "title": "Correct exportFiltered's downloadFile path",
