@@ -3,14 +3,14 @@ task_id: task_66febcc9ff9a
 title: پیاده‌سازی تست‌های امنیتی احراز هویت
 type: other
 priority: critical
-execution_priority: 1150
+execution_priority: 1200
 status: pending
-external_status: done
-verification_status: applied_externally_pending_verify
+external_status: claimed
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-29T22:13:50.338007+00:00'
-updated_at: '2026-06-04T23:53:27.656774+00:00'
+updated_at: '2026-06-05T00:04:17.141016+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -1143,7 +1143,7 @@ _(مستقل)_
 ```
 
 ### Step 3: نوشتن تست‌های unit برای تابع hash_password با پوشش edge cases
-**Status:** `partial` (99%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن تست‌های unit برای تابع hash_password در فایل tests/test_security.py است. edge cases شامل: رمز عبور تکراری (تأیید اینکه hashهای متفاوت تولید می‌شوند)، رمز عبور خالی، رمز عبور با کاراکترهای خاص (مانند <script>، SQL injection payloads)، و شبیه‌سازی race condition (فراخوانی همزمان تابع). خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
 — [merged] این مرحله شامل نوشتن تست‌های unit برای تابع create_access_token در فایل tests/test_security.py است. edge cases شامل: ایجاد توکن با payload خالی، ایجاد توکن با payload حاوی داده‌های حساس، و بررسی صحت ساختار JWT. خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
 — [merged] این مرحله شامل نوشتن تست‌های unit برای تابع verify_token در فایل tests/test_security.py است. edge cases شامل: توکن معتبر، توکن منقضی، توکن با signature نامعتبر، توکن با payload دستکاری‌شده، و توکن خالی. خارج از این مرحله: تست‌های integration یا E2E. نکته حیاتی: تست‌ها باید با pytest و با استفاده از parametrize نوشته شوند.
@@ -1155,7 +1155,7 @@ _(مستقل)_
 ```
 
 ### Step 4: نوشتن تست‌های integration برای سناریوی توکن منقضی
-**Status:** `partial` (99%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی توکن منقضی است. این تست باید یک توکن با تاریخ انقضای گذشته ایجاد کند و سپس سعی کند با آن به یک endpoint محافظت‌شده دسترسی پیدا کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1163,7 +1163,7 @@ _(مستقل)_
 ```
 
 ### Step 5: نوشتن تست‌های integration برای سناریوی رمز عبور اشتباه
-**Status:** `partial` (99%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی رمز عبور اشتباه است. این تست باید با یک نام کاربری معتبر و رمز عبور اشتباه به endpoint لاگین درخواست دهد. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1171,7 +1171,7 @@ _(مستقل)_
 ```
 
 ### Step 6: نوشتن تست‌های integration برای سناریوی brute force
-**Status:** `partial` (99%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی brute force است. این تست باید چندین تلاش ناموفق برای لاگین (با رمز عبور اشتباه) انجام دهد و سپس بررسی کند که آیا سیستم پس از تعداد مشخصی تلاش، درخواست‌ها را مسدود می‌کند یا تأخیر ایجاد می‌کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1179,7 +1179,7 @@ _(مستقل)_
 ```
 
 ### Step 7: نوشتن تست‌های integration برای سناریوی JWT نامعتبر
-**Status:** `partial` (99%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل نوشتن تست‌های integration در فایل tests/integration/test_auth_pipeline.py برای سناریوی JWT نامعتبر است. این تست باید یک توکن JWT با signature نامعتبر (مثلاً با کلید متفاوت امضا شده) ایجاد کند و سپس سعی کند با آن به یک endpoint محافظت‌شده دسترسی پیدا کند. خارج از این مرحله: تست‌های unit یا E2E. نکته حیاتی: تست باید از طریق API واقعی (HTTP client) اجرا شود.
 **Excerpt:**
 ```
@@ -1187,7 +1187,7 @@ _(مستقل)_
 ```
 
 ### Step 8: افزودن metric/log برای تشخیص نرخ موفقیت احراز هویت در production
-**Status:** `not_done` (0%)
+**Status:** `partial` (50%)
 **Scope:** این مرحله شامل افزودن metric و log به فایل‌های backend/app/security.py و backend/app/api/auth.py است. metric باید نرخ موفقیت (success rate) احراز هویت را اندازه‌گیری کند (مثلاً با استفاده از Prometheus metrics). log باید شامل logger.info یا logger.warning برای رویدادهای مختلف احراز هویت (موفق، ناموفق، توکن منقضی) باشد. خارج از این مرحله: تغییر در frontend. نکته حیاتی: metric باید در production قابل تشخیص باشد.
 **Excerpt:**
 ```
@@ -1220,7 +1220,7 @@ _(مستقل)_
 ```
 
 ### Step 11: افزودن اعتبارسنجی سمت کلاینت برای فیلد account_no در فرم مشتری
-**Status:** `not_done` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد account_no در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی اینکه فیلد خالی نباشد، طول آن در محدوده مشخصی باشد (مثلاً ۱۰-۲۰ کاراکتر)، و فقط شامل اعداد باشد. خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص و بدون وابستگی به کتابخانه‌های خارجی انجام شود.
 — [merged] این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد name در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی اینکه فیلد خالی نباشد، طول آن در محدوده مشخصی باشد (مثلاً ۲-۱۰۰ کاراکتر)، و فقط شامل حروف و فاصله باشد (بدون اعداد یا کاراکترهای خاص). خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص انجام شود.
 — [merged] این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد email در کامپوننت CustomerForm در فایل frontend/src/app/customers/page.tsx است. اعتبارسنجی باید شامل: بررسی فرمت ایمیل با استفاده از یک regex ساده (مانند test@example.com)، بررسی اینکه فیلد خالی نباشد، و sanitize کردن ورودی برای جلوگیری از XSS. خارج از این مرحله: اعتبارسنجی سایر فیلدها. نکته حیاتی: اعتبارسنجی باید با استفاده از توابع JavaScript/TypeScript خالص انجام شود.
