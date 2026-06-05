@@ -2,18 +2,8 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 4,
+  "total": 3,
   "tasks": [
-    {
-      "task_id": "e155f680-f40b-46f5-a027-217b8a754ba5",
-      "title": "افزودن اعلان برای رویداد 'scan_failed'",
-      "priority": "high",
-      "execution_priority": 2050,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-e155f680-f40b-46f5-a027-217b8a754ba5.md",
-      "external_attempts": 1
-    },
     {
       "task_id": "36090c25-a186-4c60-920a-ed2fb506ba4b",
       "title": "افزودن تست واحد برای مسیر stats داشبورد",
