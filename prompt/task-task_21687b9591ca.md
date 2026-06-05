@@ -3,14 +3,14 @@ task_id: task_21687b9591ca
 title: پیاده‌سازی Rate Limit و رفع JWT احراز هویت
 type: other
 priority: critical
-execution_priority: 1100
-status: pending
+execution_priority: 1400
+status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:48:04.062953+00:00'
-updated_at: '2026-06-05T17:44:53.862052+00:00'
+updated_at: '2026-06-05T17:49:55.510169+00:00'
 tags:
 - consolidated
 - post_verify_merge
@@ -7054,7 +7054,7 @@ rate_limit.py توسط هیچ فایلی import نشده است؛ این یک ق
 ```
 
 ### Step 3: اعمال rate limiter روی endpoint /api/auth/login با استفاده از Redis و fallback in-memory
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این مرحله شامل اضافه کردن rate limiter به عنوان dependency به router auth و اعمال آن روی endpoint /api/auth/login است. rate limiter باید از Redis استفاده کند و در صورت عدم دسترسی به Redis، به in-memory fallback کند. پس از ۵ درخواست ناموفق در ۶۰ ثانیه، endpoint باید 429 Too Many Requests برگرداند. تست‌های واحد برای rate limiting باید اضافه شوند و همه تست‌های موجود باید پاس شوند. linter و type-check نیز باید بدون warning عبور کنند.
 **Excerpt:**
 ```
@@ -7718,7 +7718,7 @@ verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز
 ```
 
 ### Step 23: بررسی مصرف env var در CI/CD pipeline و Dockerfile/Render config برای جلوگیری از miss شدن در grep
-**Status:** `pending` (0%)
+**Status:** `done` (100%)
 **Scope:** این بخش شامل بررسی کامل تمام مکان‌های مصرف env var (متغیرهای محیطی) در CI/CD pipeline، Dockerfile، و Render config است. هدف اطمینان از این است که grep روی کد به تنهایی کافی نیست و باید همه‌جا (شامل pipeline و config) چک شود. این بخش فقط به ریسک اشاره دارد و نیاز به اقدام اجرایی برای جستجوی جامع env var دارد. خارج از scope: تغییر کد یا پیاده‌سازی قابلیت جدید.
 **Excerpt:**
 ```
