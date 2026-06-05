@@ -97,4 +97,26 @@ or **deprecated** (dead code → removed).
   scrape path is unchanged for the infra/Prometheus side.
 - **side artifacts:** OpenAPI regenerates from code; this audit doc and
   `docs/OBSERVABILITY.md` updated; no i18n/env/CI impact.
-</content>
+
+## Re-verification (2026-06-05)
+
+All 10 verdicts were independently re-verified against the live tree:
+
+- **Removed** — `auth.py` no longer defines `register`/`UserRegister`;
+  `backend/tests/test_auth.py` has no `register` tests (only an explanatory
+  note remains).
+- **Internal flags present** — `GET /metrics`
+  (`backend/app/main.py:162`), `GET /api/facilities/search/advanced`
+  (`facilities.py:220-222`) and `GET /api/users/{user_id}`
+  (`users.py:68`) all carry `include_in_schema=False`.
+- **Connected (false positives) confirmed wired** — frontend callers verified:
+  `customers/page.tsx` (`/api/customers/export.${fmt}`),
+  `import/page.tsx` (`/api/imports/${kind}/template`),
+  `offerLettersApi.get` (`/api/offer-letters/${id}`),
+  `notificationsApi.markRead` (`/api/notifications/${id}/read`),
+  `reports/page.tsx` (`/api/reports/portfolio/export.pdf`),
+  `trashApi.restore` (`/api/trash/${entity}/${id}/restore`).
+- **Tests** — `pytest backend/tests/test_auth.py test_users.py
+  test_facilities.py` → 48 passed. `py_compile` of all changed modules clean.
+
+No code change was required; this entry records the audit was re-run end to end.
