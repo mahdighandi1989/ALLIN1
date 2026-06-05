@@ -3,14 +3,14 @@ task_id: task_21687b9591ca
 title: پیاده‌سازی Rate Limit و رفع JWT احراز هویت
 type: other
 priority: critical
-execution_priority: 1150
+execution_priority: 1200
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-05T15:48:04.062953+00:00'
-updated_at: '2026-06-05T18:11:34.789460+00:00'
+updated_at: '2026-06-05T18:17:32.408961+00:00'
 tags:
 - consolidated
 - post_verify_merge
