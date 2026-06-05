@@ -6,11 +6,11 @@ priority: critical
 execution_priority: 1350
 status: awaiting_review
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-05-31T16:19:06.449286+00:00'
-updated_at: '2026-06-05T18:38:35.055439+00:00'
+updated_at: '2026-06-05T18:40:58.104203+00:00'
 target_files:
 - frontend/src/app/facilities/page.tsx
 ---
@@ -528,7 +528,7 @@ _(مستقل)_
 ```
 
 ### Step 4: افزودن اعتبارسنجی فیلد currency برای کد ISO 4217 معتبر
-**Status:** `partial` (80%)
+**Status:** `partial` (99%)
 **Scope:** این مرحله شامل افزودن اعتبارسنجی سمت کلاینت برای فیلد currency در فرم موجود در frontend/src/app/facilities/page.tsx است. مقدار currency باید یک کد ISO 4217 معتبر (مانند USD, EUR, IRR) باشد. اعتبارسنجی باید قبل از ارسال داده به API در تابع handleSubmit انجام شود. خارج از این مرحله: اعتبارسنجی سایر فیلدها، تغییرات سمت سرور، یا اصلاح UI. نکته حیاتی: خطای اعتبارسنجی باید به صورت دوستانه به کاربر نمایش داده شود و از ارسال درخواست با currency نامعتبر جلوگیری کند. یک لیست از کدهای معتبر ISO 4217 باید در frontend تعریف شود.
 **Excerpt:**
 ```
