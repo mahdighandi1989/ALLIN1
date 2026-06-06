@@ -62,6 +62,9 @@ dev = [
     "bandit>=1.7.5",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
+    # Async SQLite driver used by the test suite's in-memory DB (see
+    # backend/tests/conftest.py). Missing it aborts pytest at collection time.
+    "aiosqlite>=0.19.0",
 ]
 
 [tool.black]

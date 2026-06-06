@@ -27,3 +27,9 @@ xlrd==2.0.1
 structlog==24.1.0
 prometheus-client==0.20.0
 reportlab==4.1.0
+# aiosqlite is the async SQLite driver the test suite uses for its in-memory DB
+# (tests/conftest.py: "sqlite+aiosqlite:///:memory:"). Without it, importing the
+# conftest raises ModuleNotFoundError and pytest aborts with an internal/collection
+# error before any test runs. Kept here so any environment that installs the
+# backend deps can run the suite (CI installs it explicitly too).
+aiosqlite==0.19.0
