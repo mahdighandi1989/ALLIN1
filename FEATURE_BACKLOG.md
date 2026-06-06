@@ -32,3 +32,58 @@
 1. مورد مربوطه را از این جدول حذف کن.
 2. آن را به بخش `Features` در `README.md` اضافه کن.
 3. GitHub issue مرتبط را ببند.
+
+---
+
+# Page Audit — صفحات ناقص، کارکرد و دسته‌بندی ناوبری
+
+ممیزی (page audit) همهٔ مسیرهای فرانت‌اند (`frontend/src/app/*/page.tsx`) در پاسخ به
+درخواست کاربر دربارهٔ «صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن».
+هر صفحه با الگوی «صفحهٔ سالم» (`customers/page.tsx`) سنجیده شد: داشتن `Layout`،
+بارگذاری داده از `@/lib/api`، spinner و empty-state، `data-testid` روی المان‌های کلیدی،
+و اتصال به یک router فعال backend.
+
+## دسته‌بندی منوی ناوبری (navigation grouping)
+
+منوی تخت قبلی در `frontend/src/components/Layout.tsx` به گروه‌های عنوان‌دار بازسازی شد:
+
+| گروه | صفحات |
+| --- | --- |
+| **Operations** | Dashboard, Customers, Facilities, Offer Letters |
+| **Finance & Reports** | Reports, Import |
+| **System** (admin) | Users, Audit Log, Settings, Recycle Bin |
+
+صفحات detail (`/customer-detail`, `/facility-detail`) اکنون آیتم والد خود را در nav
+highlight می‌کنند (`usePathname()`) و یک `Breadcrumb` بازگشت به فهرست والد دارند.
+
+## وضعیت صفحات (page status)
+
+| صفحه (route) | Router backend | وضعیت | توضیح |
+| --- | --- | --- | --- |
+| `/dashboard` | stats | ✅ کار می‌کند | کارت‌های KPI + نمودارها |
+| `/customers` | customers | ✅ کار می‌کند | الگوی مرجع؛ حالا از `Button` مشترک استفاده می‌کند |
+| `/customer-detail` | customers | ✅ کار می‌کند | breadcrumb افزوده شد |
+| `/facilities` | facilities | ✅ کار می‌کند | الگوی مرجع |
+| `/facility-detail` | facilities | ✅ کار می‌کند | breadcrumb افزوده شد |
+| `/offer-letters` | offer_letters | ✅ کار می‌کند | فهرست + ساخت/پیش‌نمایش |
+| `/reports` | reports | ✅ کار می‌کند | خروجی PDF/XLSX/CSV + snapshot |
+| `/import` | imports | ✅ کار می‌کند | آپلود + pipeline پیش‌نمایش |
+| `/trash` | trash | ✅ کار می‌کند | بازیابی رکوردهای حذف‌شده |
+| `/users` | users | ✅ کار می‌کند | فقط admin؛ **خطای 500 فهرست رفع شد** |
+| `/audit` | audit | ✅ کار می‌کند | جدول audit log |
+| `/settings` | settings | ✅ کار می‌کند | تنظیمات برنامه |
+| `/profile` | auth | ✅ کار می‌کند | پروفایل کاربر جاری |
+| `/login` | auth + google_auth | ✅ کار می‌کند | بازطراحی‌شده: nav bar + «Sign in with Google» |
+
+هیچ لینک منو به صفحهٔ ۴۰۴ (broken page) منتهی نمی‌شود — هر آیتم منو به یک
+`page.tsx` واقعی متصل است که router فعال آن در `backend/app/main.py` ثبت شده.
+
+## موارد رفع‌شدهٔ اخیر
+
+- **`GET /api/users` خطای 500 می‌داد** — علت، schema drift در production بود
+  (ستون‌های `auth_provider`/`google_sub`/`picture` در دیتابیس‌های قدیمی‌تر نبودند).
+  self-heal در `backend/app/db_init.py` ستون‌های缺 را اضافه می‌کند و تست رگرسیون
+  `backend/tests/integration/test_users.py::test_list_users_pagination` پاسخ 200
+  صفحه‌بندی‌شده را قفل می‌کند.
+- **ورود با Google** — `GET /api/auth/google/login` و `/callback` با اعتبارسنجی
+  `state` (CSRF) پیاده شده و صفحهٔ login این گزینه را نمایش می‌دهد.

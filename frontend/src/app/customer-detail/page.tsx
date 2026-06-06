@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
+import Breadcrumb from '@/components/Breadcrumb'
 import { customersApi, parseApiError } from '@/lib/api'
 import { CustomerDetail } from '@/types'
 import { ArrowLeft, Building, FileText, Wallet } from 'lucide-react'
@@ -64,6 +65,12 @@ function CustomerDetailInner() {
 
   return (
     <div data-testid="customer-detail-content">
+      <Breadcrumb
+        items={[
+          { label: 'Customers', href: '/customers' },
+          { label: customer.name },
+        ]}
+      />
       <button
         onClick={() => router.push('/customers')}
         className="flex items-center gap-1 text-gray-500 hover:text-gray-700 mb-4"

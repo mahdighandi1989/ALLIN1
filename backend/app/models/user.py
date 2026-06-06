@@ -1,6 +1,6 @@
 """User Model"""
 from sqlalchemy import Column, String, Boolean, DateTime, Text
-from sqlalchemy.orm import validates
+from sqlalchemy.orm import validates, synonym
 from sqlalchemy.sql import func
 import uuid
 
@@ -46,6 +46,10 @@ class User(Base):
     # Google identity (null for local username/password accounts).
     auth_provider = Column(String(20), nullable=False, default="local")
     google_sub = Column(String(64), unique=True, index=True)
+    # ``google_id`` is the OAuth-standard name for Google's stable subject id;
+    # it is an alias of the underlying ``google_sub`` column so either name can
+    # be read/written interchangeably.
+    google_id = synonym("google_sub")
     picture = Column(String(500))
     # Stored only for the account that connects Google Drive for backups.
     google_refresh_token = Column(Text)

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
+import { Button } from '@/components/ui/button'
 import { customersApi, parseApiError, downloadFile } from '@/lib/api'
 import { Customer, CustomerList, CustomerForm as CustomerFormData } from '@/types'
 import { Plus, Search, Edit, Trash2, Download } from 'lucide-react'
@@ -125,15 +126,15 @@ export default function CustomersPage() {
             className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50 text-sm">
             <Download size={16} /> CSV
           </button>
-          <button
+          <Button
             type="button"
             data-testid="add-customer-btn"
             onClick={() => { setEditingCustomer(null); setShowForm(true) }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="gap-2"
           >
             <Plus size={18} />
             Add Customer
-          </button>
+          </Button>
         </div>
       </div>
 

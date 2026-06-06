@@ -5,7 +5,17 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
+import Link from 'next/link'
 import { Eye, EyeOff, Lock, User } from 'lucide-react'
+
+// Marketing/utility links surfaced in the login-page nav bar so the sign-in
+// screen is no longer a dead-end card — the brand + key destinations stay
+// discoverable, matching the header used across the rest of the app.
+const NAV_LINKS = [
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/customers', label: 'Customers' },
+  { href: '/facilities', label: 'Facilities' },
+]
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -64,7 +74,28 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+      <header className="bg-white border-b shadow-sm">
+        <div className="container mx-auto px-4 flex items-center justify-between h-16">
+          <div className="flex items-center gap-8">
+            <span className="text-lg font-bold text-blue-600">Banking Ops</span>
+            <nav className="hidden sm:flex items-center gap-1">
+              {NAV_LINKS.map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          <span className="text-sm text-gray-500">Sign in</span>
+        </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-200">
         <div className="text-center mb-8">
           <div className="mx-auto w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
@@ -155,11 +186,33 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {/* Visible divider so the alternate sign-in option is discoverable. */}
+        <div className="flex items-center gap-3 my-6">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-xs font-medium text-gray-400">OR</span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        <a
+          href="/api/auth/google/login"
+          data-testid="btn-google-login"
+          className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" />
+          </svg>
+          Sign in with Google
+        </a>
+
         <div className="mt-6 text-center">
           <p className="text-xs text-gray-500">
             Secure banking operations system
           </p>
         </div>
+      </div>
       </div>
     </div>
   )

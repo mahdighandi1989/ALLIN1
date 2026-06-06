@@ -159,6 +159,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "verify: regression tests tied to a tracked acceptance criterion",
 ]
 asyncio_mode = "auto"
 # Run every async fixture and test on a single, session-scoped event loop.

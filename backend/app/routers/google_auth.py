@@ -36,9 +36,11 @@ router = APIRouter(tags=["google-auth"])
 _STATE_COOKIE = "g_oauth_state"
 
 
-def _frontend_redirect(path_with_query: str) -> RedirectResponse:
+def _frontend_redirect(
+    path_with_query: str, status_code: int = status.HTTP_302_FOUND
+) -> RedirectResponse:
     # Relative redirect — the SPA is served from the same origin as the API.
-    return RedirectResponse(url=path_with_query, status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=path_with_query, status_code=status_code)
 
 
 async def _unique_username(db: AsyncSession, email: str) -> str:
@@ -109,11 +111,17 @@ async def upsert_google_user(db: AsyncSession, info: dict, tokens: dict) -> User
 
 @router.get("/login")
 async def google_login():
-    """Redirect the browser to Google's consent screen."""
+    """Redirect the browser to Google's consent screen.
+
+    Uses a 307 (Temporary Redirect) so the redirect is an explicit, method-
+    preserving hand-off to Google's OAuth authorization URL.
+    """
     if not settings.google_oauth_configured():
-        return _frontend_redirect("/login?error=google_not_configured")
+        return _frontend_redirect(
+            "/login?error=google_not_configured", status.HTTP_307_TEMPORARY_REDIRECT
+        )
     state = secrets.token_urlsafe(24)
-    resp = _frontend_redirect(build_auth_url(state))
+    resp = _frontend_redirect(build_auth_url(state), status.HTTP_307_TEMPORARY_REDIRECT)
     resp.set_cookie(
         _STATE_COOKIE, state, max_age=600, httponly=True,
         secure=settings.is_production(), samesite="lax", path="/",

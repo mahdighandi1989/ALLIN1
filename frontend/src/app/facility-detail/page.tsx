@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
+import Breadcrumb from '@/components/Breadcrumb'
 import { facilitiesApi, parseApiError } from '@/lib/api'
 import { Facility, FacilityForm as FacilityFormData } from '@/types'
 import { ArrowLeft, Save, Pencil, X } from 'lucide-react'
@@ -131,6 +132,12 @@ function FacilityDetailInner() {
 
   return (
     <div data-testid="facility-detail-content">
+      <Breadcrumb
+        items={[
+          { label: 'Facilities', href: '/facilities' },
+          { label: facility.name || facility.facility_type.toUpperCase() },
+        ]}
+      />
       <button onClick={() => router.push('/facilities')} className="flex items-center gap-1 text-gray-500 hover:text-gray-700 mb-4">
         <ArrowLeft size={16} /> Back to Facilities
       </button>
