@@ -2,17 +2,6 @@
   "version": 1,
   "project": "mahdighandi1989/ALLIN1",
   "watched_id": "b2586b68-22f8-4e8e-a7a8-9b513c5f70fe",
-  "total": 1,
-  "tasks": [
-    {
-      "task_id": "f1726d4c-fcd7-4c73-b6b3-4d1fbb637e6d",
-      "title": "``` (6 مرحله)",
-      "priority": "medium",
-      "execution_priority": 3000,
-      "status": "pending",
-      "external_status": "pending",
-      "path": "prompt/task-f1726d4c-fcd7-4c73-b6b3-4d1fbb637e6d.md",
-      "external_attempts": 0
-    }
-  ]
+  "total": 0,
+  "tasks": []
 }
