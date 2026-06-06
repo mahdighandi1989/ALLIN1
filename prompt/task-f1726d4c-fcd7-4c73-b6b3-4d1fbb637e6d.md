@@ -1,16 +1,16 @@
 ---
 task_id: f1726d4c-fcd7-4c73-b6b3-4d1fbb637e6d
-title: رفع خطای 500 و بازطراحی UI
+title: رفع 500، پیاده‌سازی OAuth و بهبود UI
 type: idea
 priority: medium
-execution_priority: 3450
-status: awaiting_review
-external_status: done
+execution_priority: 3150
+status: pending
+external_status: pending
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:37:50.193741+00:00'
+updated_at: '2026-06-06T08:38:04.099447+00:00'
 target_files:
 - backend/app/main.py
 - backend/app/routers/users.py
@@ -23,7 +23,7 @@ target_files:
 - backend/app/db_init.py
 ---
 
-# رفع خطای 500 و بازطراحی UI
+# رفع 500، پیاده‌سازی OAuth و بهبود UI
 
 ## Raw Idea
 
