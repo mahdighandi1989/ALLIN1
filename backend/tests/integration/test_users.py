@@ -48,3 +48,37 @@ async def test_list_users_requires_admin(
     """A non-admin (editor) is forbidden from listing users."""
     resp = await client.get("/api/users/", headers=auth_headers)
     assert resp.status_code == 403
+
+
+@pytest.mark.verify
+def test_admin_user_response_coerces_legacy_nulls():
+    """Reproduces the production 500: a drifted row with NULL role/auth_provider.
+
+    On a live DB that predates the Google-OAuth work, ``role``/``auth_provider``
+    may still hold NULLs (column added without a backfilled default). Reading
+    such a row used to raise a Pydantic ValidationError, which bubbled up as a
+    500 for the *entire* ``GET /api/users/?page=1&page_size=100`` response. The
+    serializer must coerce those NULLs to the model defaults instead. We feed a
+    plain object with NULL attributes — exactly what SQLAlchemy yields for a
+    dirty row — straight to ``AdminUserResponse``.
+    """
+    from app.schemas.admin_user import AdminUserResponse
+
+    class _DirtyRow:
+        id = "u1"
+        username = "legacy"
+        email = "legacy@example.com"
+        full_name = None
+        is_active = None       # NULL booleans on a drifted DB
+        is_admin = None
+        role = None            # the columns that caused the 500
+        auth_provider = None
+        picture = None
+        created_at = None
+        last_login = None
+
+    out = AdminUserResponse.model_validate(_DirtyRow())
+    assert out.role == "pending"
+    assert out.auth_provider == "local"
+    assert out.is_active is True
+    assert out.is_admin is False

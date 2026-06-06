@@ -18,11 +18,15 @@ npm install
 echo "=== Building frontend ==="
 npm run build
 
-# Copy frontend build output for backend to serve
+# Copy frontend build output for backend to serve. FastAPI serves the directory
+# named "static" (see backend/app/main.py: static_dir = "static"), so the build
+# output must land there — the previous "static_frontend" target was never
+# served, so a fresh build silently had no effect on the deployed UI.
 echo "=== Copying frontend build to backend ==="
 if [ -d "out" ]; then
-    cp -r out/ ../backend/static_frontend/
-    echo "Frontend files copied to backend/static_frontend/"
+    rm -rf ../backend/static
+    cp -r out/ ../backend/static/
+    echo "Frontend files copied to backend/static/"
 else
     echo "WARNING: frontend/out/ directory not found after build"
 fi

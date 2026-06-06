@@ -1,4 +1,5 @@
 """Admin user management (admin-only). Wired at /api/users."""
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -16,6 +17,8 @@ from app.schemas.admin_user import (
 from app.routers.auth import require_admin, get_current_active_user
 from app.utils.security import hash_password
 from app.services.audit import record_audit
+
+logger = logging.getLogger(__name__)
 
 # Every endpoint requires an authenticated admin.
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
@@ -58,7 +61,18 @@ async def list_users(
             .limit(page_size)
         )
     ).scalars().all()
-    return AdminUserListResponse(items=rows, total=total, page=page, page_size=page_size)
+    # Serialise each row individually so a single legacy/corrupt row can never
+    # 500 the whole list. AdminUserResponse already coerces NULLs in
+    # role/auth_provider/is_active/is_admin; this is the belt-and-braces guard
+    # for anything else that slips through — the endpoint must stay a 200.
+    items = []
+    for row in rows:
+        try:
+            items.append(AdminUserResponse.model_validate(row))
+        except Exception as exc:  # pragma: no cover - defensive, depends on dirty data
+            logger.warning("list_users: skipping unserialisable user row id=%s: %s",
+                           getattr(row, "id", "?"), exc)
+    return AdminUserListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 # Admin single-user fetch: a valid REST member of the admin users resource that

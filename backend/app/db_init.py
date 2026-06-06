@@ -575,6 +575,19 @@ async def sync_user_roles() -> None:
             )
             if "role" not in cols:
                 return
+            # Backfill NULLs left by a column that was added without a default on
+            # an older live DB. A NULL ``role``/``auth_provider`` makes the
+            # AdminUserResponse serializer raise and 500s GET /api/users, so we
+            # coerce them to their model defaults here (root-cause cleanup that
+            # mirrors the response-schema guard).
+            await conn.execute(text(
+                "UPDATE users SET role='pending' WHERE role IS NULL OR trim(role) = ''"
+            ))
+            if "auth_provider" in cols:
+                await conn.execute(text(
+                    "UPDATE users SET auth_provider='local' "
+                    "WHERE auth_provider IS NULL OR trim(auth_provider) = ''"
+                ))
             # is_admin -> role admin, and role admin -> is_admin (two-way sync).
             await conn.execute(text(
                 "UPDATE users SET role='admin' WHERE is_admin = true AND (role IS NULL OR role <> 'admin')"

@@ -67,6 +67,28 @@ class AdminUserResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    # Legacy / schema-drifted production rows can carry NULLs in columns the
+    # current model treats as non-nullable (``role``/``auth_provider`` were added
+    # by the Google-OAuth work and an un-backfilled live DB may still hold NULLs
+    # there). Without this coercion Pydantic rejects the NULL for a ``str`` field
+    # and the ValidationError bubbles up as a 500 for the *entire* user list —
+    # the exact reported failure on ``GET /api/users/?page=1&page_size=100``.
+    # Coercing each NULL back to the model default keeps the endpoint a 200.
+    @field_validator("role", "auth_provider", mode="before")
+    @classmethod
+    def _coerce_required_str(cls, v, info):
+        if v is None:
+            return "pending" if info.field_name == "role" else "local"
+        return v
+
+    @field_validator("is_active", "is_admin", mode="before")
+    @classmethod
+    def _coerce_required_bool(cls, v, info):
+        if v is None:
+            # is_active defaults True, is_admin defaults False.
+            return info.field_name == "is_active"
+        return v
+
 
 class AdminUserListResponse(BaseModel):
     items: List[AdminUserResponse]
