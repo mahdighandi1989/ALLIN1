@@ -87,3 +87,26 @@ highlight می‌کنند (`usePathname()`) و یک `Breadcrumb` بازگشت ب
   صفحه‌بندی‌شده را قفل می‌کند.
 - **ورود با Google** — `GET /api/auth/google/login` و `/callback` با اعتبارسنجی
   `state` (CSRF) پیاده شده و صفحهٔ login این گزینه را نمایش می‌دهد.
+
+## وضعیت اعتبارسنجی (۲۰۲۶-۰۶-۰۶)
+
+هر ۶ مرحلهٔ تسک بازطراحی UI + رفع خطای ۵۰۰ به‌صورت کامل در کد موجود است و
+همهٔ gateهای اعتبارسنجی سبز هستند (اجرای دستی روی این repo):
+
+- مرحله ۱ (رفع ۵۰۰ `/api/users`): `backend/app/routers/users.py` فهرست
+  صفحه‌بندی‌شده (`items/page/page_size/total`) برمی‌گرداند؛ تست رگرسیون
+  `tests/integration/test_users.py` پاس می‌شود.
+- مرحله ۲ (ورود Google): روتر `google_auth` با `/login` و `/callback`
+  (اعتبارسنجی `state`)، ستون‌های `auth_provider`/`google_sub` در مدل، و
+  متغیرهای `GOOGLE_*` در `config.py` + `.env.example`.
+- مرحله ۳ (بازطراحی login): دکمهٔ `data-testid="btn-google-login"`، جداکنندهٔ
+  «OR» و nav bar برند «Banking Ops» در `frontend/src/app/login/page.tsx`.
+- مرحله ۴ (صفحات معیوب + گروه‌بندی منو): جدول ممیزی صفحات (همین فایل) و
+  گروه‌بندی منطقی nav (Operations/Finance & Reports/System) در `Layout.tsx`.
+- مرحله ۵ (IA): active-state پویا با `usePathname`، کامپوننت `Breadcrumb` در
+  صفحات detail، و حضور Settings/Users در nav.
+- مرحله ۶ (design system): `frontend/src/components/ui/` (Button/Card/PageHeader)،
+  design tokens در `tailwind.config.js`، و header/nav مشترک در layout.
+
+نتایج اجرا: backend **۳۹۰ pytest پاس**؛ frontend **`tsc --noEmit` پاس**،
+**`next lint` بدون warning**، **۲۳ jest پاس**، **`next build` موفق (۱۸ route)**.
