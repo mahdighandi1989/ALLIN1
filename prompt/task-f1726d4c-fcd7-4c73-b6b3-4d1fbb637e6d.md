@@ -10,7 +10,7 @@ verification_status: applied_externally_pending_verify
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:31:01.291656+00:00'
+updated_at: '2026-06-06T08:31:46.168609+00:00'
 target_files:
 - backend/app/main.py
 - backend/app/routers/users.py
@@ -822,17 +822,17 @@ _(مستقل)_
 
 ## Acceptance Criteria
 
-1. [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: static)_
-2. [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: static)_
-3. [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است. _(verify: static)_
-4. خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: static)_
-5. بازطراحی صفحهٔ ورود و منوی ناوبری از نظر بصری تأیید نشده است؛ خطای 500 backend مانع بارگذاری کامل UI می‌شود. _(verify: static)_
-6. درخواست GET /api/users/?page=1&page_size=100 همچنان پاسخ 500 برمی‌گرداند. _(verify: static)_
-7. تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند. _(verify: static)_
-8. خطای 'Failed to load resource: status 500' برای api/users در کنسول مرورگر تکرار می‌شود. _(verify: static)_
-9. تست‌های پروژه (npm run test / pytest) fail می‌شوند. _(verify: static)_
-10. هیچ تستی fail نمی‌شود (این AC برآورده نشده است). _(verify: static)_
-11. هیچ تستی fail نمی‌شود (`npm run test` / `pytest`) _(verify: static)_
+1. [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: api_response)_
+2. [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: ui_interaction)_
+3. [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است. _(verify: manual_only)_
+4. خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: api_response)_
+5. بازطراحی صفحهٔ ورود و منوی ناوبری از نظر بصری تأیید نشده است؛ خطای 500 backend مانع بارگذاری کامل UI می‌شود. _(verify: ui_interaction)_
+6. درخواست GET /api/users/?page=1&page_size=100 همچنان پاسخ 500 برمی‌گرداند. _(verify: api_response)_
+7. تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند. _(verify: backend_test)_
+8. خطای 'Failed to load resource: status 500' برای api/users در کنسول مرورگر تکرار می‌شود. _(verify: ui_interaction)_
+9. تست‌های پروژه (npm run test / pytest) fail می‌شوند. _(verify: backend_test)_
+10. هیچ تستی fail نمی‌شود (این AC برآورده نشده است). _(verify: backend_test)_
+11. هیچ تستی fail نمی‌شود (`npm run test` / `pytest`) _(verify: backend_test)_
 12. linter بدون warning عبور می‌کند _(verify: static)_
 13. type-check موفق است (`tsc --noEmit` / `mypy`) _(verify: static)_
 
