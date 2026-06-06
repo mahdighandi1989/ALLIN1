@@ -3,14 +3,14 @@ task_id: f1726d4c-fcd7-4c73-b6b3-4d1fbb637e6d
 title: رفع خطای 500 و بازطراحی UI
 type: idea
 priority: medium
-execution_priority: 3100
+execution_priority: 3150
 status: pending
-external_status: pending
+external_status: claimed
 verification_status: partial
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:14:20.863142+00:00'
+updated_at: '2026-06-06T08:14:54.853861+00:00'
 target_files:
 - backend/app/main.py
 - backend/app/routers/users.py
