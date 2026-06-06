@@ -6,11 +6,11 @@ priority: medium
 execution_priority: 3200
 status: pending
 external_status: done
-verification_status: applied_externally_pending_verify
+verification_status: error
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:51:51.520632+00:00'
+updated_at: '2026-06-06T08:58:31.045398+00:00'
 target_files:
 - backend/app/main.py
 - backend/app/routers/users.py
