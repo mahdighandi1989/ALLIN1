@@ -10,17 +10,11 @@ verification_status: error
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:58:31.045398+00:00'
+updated_at: '2026-06-06T17:07:00.637983+00:00'
 target_files:
-- backend/app/main.py
-- backend/app/routers/users.py
-- backend/app/main.py
+- backend/app/api/users.py
 - backend/app/schemas/user.py
-- backend/app/routers/google_auth.py
-- backend/static/_next/static/chunks/app/login/page-24881fa424a45d34.js
-- backend/static/_next/static/chunks/app/layout-d38f6f11bf5727d1.js
-- backend/tests/integration/test_users.py
-- backend/app/db_init.py
+- frontend/src/app/login/page.tsx
 ---
 
 # رفع 500، پیاده‌سازی OAuth و بهبود UI
@@ -696,158 +690,744 @@ injection، یا integration پولی automate شود)، انجام دهید و 
 ---
 
 
+## 📥 درخواست خام کاربر (verbatim — همان متنی که کاربر نوشت)
+_(همهٔ URL ها، آدرس‌ها، نام‌ها، و کلمات کلیدی در این متن دست‌نخورده هستند. بخش‌های بعدی توسط AI ساختار داده شده‌اند و ممکن است ناقص باشند — این متن مرجع اصلی است.)_
+
+```
+```
+1- صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره
+
+2- باید امکان لاگین از طریق جیمیل فراهم باشه
+
+3- خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن
+4- ارتباط اجزا و صفحات خیلی به هم ریخته س
+5- از منظر ظاهری خیلی آشفته اس
+6- در کنسول نیز خطای ارتباط با سرور مشاهده میشه:
+Failed to load resource: the server responded with a status of 500 ()
+api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()
+api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()
+api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()
+
+
+---
+## 📚 پروژه‌های مرجع (الهام از پیاده‌سازی‌های موجود)
+_در زیر خلاصهٔ ساختار/فایل‌های پروژه‌های زیر آمده است. از این منابع به‌عنوان الگو/الهام استفاده کن و در پرامپت نهایی به فایل‌ها/الگوهای مرتبط ارجاع بده._
+
+## 📚 پروژه‌های مرجع (Reference Projects)
+
+کاربر این پروژه‌ها را به‌عنوان منبع الهام برای این تسک انتخاب کرده است. هدف از این بخش: الگوها، معماری، یا منطق این پروژه‌ها را در نظر بگیر و در پیاده‌سازی **پروژهٔ فعلی** اعمال کن — نه کپی کردن صرف.
+
+**کار درخواست‌شده روی پروژهٔ فعلی:** 
+```
+1- صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره
+
+2- باید امکان لاگین از طریق جیمیل فراهم باشه
+
+3- خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن
+4- ارتباط اجزا و صفحات خیلی به هم ریخته س
+5- از منظر ظاهری خیلی آشفته اس
+6- در کنسول نیز خطای ارتباط با سرور مشاهده میشه:
+Failed to load resource: the server responded with a status of 500 ()
+api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()
+api/users/
+
+### 🏠 شناسنامهٔ پروژهٔ فعلی (مرجع اصلی برای پیاده‌سازی)
+
+**هرگاه بین پروژهٔ فعلی و پروژه‌های مرجع تفاوت بود (stack، نام‌گذاری، dependency)، پروژهٔ فعلی برنده است. هرگز syntax یا dependency پروژه‌های مرجع را کورکورانه به پروژهٔ فعلی نیاور.**
+
+- **Repo**: `mahdighandi1989/ALLIN1`
+- **زبان غالب**: HTML
+
+---
+
+### پروژه‌های اسکن‌شده
+
+- ✅ `mahdighandi1989/language` — 12 فایل اسکن‌شده (از 319 کل)
+  - 🎯 **نقطهٔ تمرکز کاربر**: _امکان لاگین از طریق جیمیل و دادن دسترسی و میزن دسترسی به افراد_
+    (فایل‌های اسکن‌شده بالا با اولویت بر اساس همین تمرکز انتخاب شده‌اند — به بقیهٔ پروژه توجه نکن مگر برای زمینه.)
+
+### ⚙️ سرویس‌های Backend (11 فایل)
+
+**`backend/services/index.js`** (799 bytes)
+```
+LyoqCiAqIFNlcnZpY2VzIGxheWVyIGJhcnJlbC4KICoKICogU2luZ2xlIHB1
+YmxpYyBlbnRyeSBwb2ludCBmb3IgdGhlIGRvbWFpbi9zZXJ2aWNlIGxheWVy
+IHNvIGNhbGxlcnMgY2FuCiAqIGBpbXBvcnQgeyDigKYgfSBmcm9tICcuL3Nl
+cnZpY2VzJ2AuIENvdmVycyBhbmFseXRpY3MgY29sbGVjdGlvbiwgZmlsZSBh
+bmFseXNpcywKICogdGhlIEdlbWluaSBSRVNUICsgRmlsZSBBUEkgY2xpZW50
+LCBhdWRpby92aWRlbyBmZm1wZWcgaGVscGVycywgUERGIHRleHQKICogZXh0
+cmFjdGlvbiwgdGhlIExpdmUgQVBJIFdlYlNvY2tldCBwcm94eS9vYnNlcnZl
+ciBhbmQgdGhlIFRlbGVncmFtCiAqIGludGVncmF0aW9uLiBOYW1lZCBleHBv
+cnRzIGFyZSB0aGUgc3RhYmxlIGNvbnRyYWN0OyBwZXItZmlsZSBkZWZhdWx0
+IGV4cG9ydHMKICogYXJlIG5vdCBmb3J3YXJkZWQuCiAqLwpleHBvcnQgKiBm
+cm9tICcuL2FuYWx5c2lzU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4v
+YW5hbHl0aWNzU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4vYXVkaW9T
+ZXJ2aWNlLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9nZW1pbmlTZXJ2aWNlLmpz
+JzsKZXhwb3J0ICogZnJvbSAnLi9saXZlUHJveHlTZXJ2aWNlLmpzJzsKZXhw
+b3J0ICogZnJvbSAnLi9saXZlV3NPYnNlcnZlci5qcyc7CmV4cG9ydCAqIGZy
+b20gJy4vcGRmU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4vcHJvbXB0
+cy5qcyc7CmV4cG9ydCAqIGZyb20gJy4vdmlkZW9TZXJ2aWNlLmpzJzsKZXhw
+b3J0ICogZnJvbSAnLi90ZWxlZ3JhbS9pbmRleC5qcyc7Cg==
+
+```
+
+**`backend/services/telegram/config.js`** (3725 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENlbnRyYWxpc2VkLCBlbnYtZHJpdmVuIGNvbmZp
+Z3VyYXRpb24gZm9yIHRoZSB0d28td2F5IFRlbGVncmFtCiAqIGludGVncmF0
+aW9uLiBSZWFkaW5nIHRoaXMgbW9kdWxlIG5ldmVyIHRocm93cyBhbmQgbmV2
+ZXIgZXhpdHMgdGhlIHByb2Nlc3Mg4oCUCiAqIHRoZSBUZWxlZ3JhbSBib3Qg
+aXMgYW4gKm9wdGlvbmFsKiBmZWF0dXJlLCBzbyB3aGVuIG5vIGJvdCB0b2tl
+biBpcyBjb25maWd1cmVkCiAqIHRoZSByZXN0IG9mIHRoZSBzeXN0ZW0ga2Vl
+cHMgd29ya2luZyBhbmQgdGhlIGJvdCBzaW1wbHkgc3RheXMgZG9ybWFudC4K
+ICoKICogVXBzdHJlYW0gKGlucHV0cyk6IGVudmlyb25tZW50IHZhcmlhYmxl
+cyAoVEVMRUdSQU1fQk9UX1RPS0VOLAogKiBURUxFR1JBTV9XRUJIT09LX1VS
+TCwgVEVMRUdSQU1fQURNSU5fSURTLCBURUxFR1JBTV9BTExPV0VEX1VTRVJf
+SURTLAogKiBURUxFR1JBTV9EQVRBX0RJUiwgVEVMRUdSQU1fTU9ERSwgTk9U
+SUZZX1RFTEVHUkFNX0JPVF9UT0tFTi9DSEFUX0lEIGZvcgogKiBiYWNrd2Fy
+ZC1jb21wYXRpYmxlIG5vdGlmaWNhdGlvbiBkZWxpdmVyeSkuCiAqIERvd25z
+dHJlYW0gKG91dHB1dHMpOiBjb25zdW1lZCBieSBzZXJ2aWNlcy90ZWxlZ3Jh
+bS8qIChjbGllbnQsIGJvdCwgc3RvcmUsCiAqIG5vdGlmaWNhdGlvbnMpIGFu
+ZCB3aXJlZCBpbnRvIHNlcnZlci5qcyB2aWEgc2VydmljZXMvdGVsZWdyYW0v
+aW5kZXguanMuCiAqLwppbXBvcnQgeyBmaWxlVVJMVG9QYXRoIH0gZnJvbSAn
+dXJsJzsKaW1wb3J0IHsgZGlybmFtZSwgam9pbiB9IGZyb20gJ3BhdGgnOwoK
+Y29uc3QgX19kaXJuYW1lID0gZGlybmFtZShmaWxlVVJMVG9QYXRoKGltcG9y
+dC5tZXRhLnVybCkpOwoKLy8gUGFyc2UgYSBjb21tYS9zcGFjZSBzZXBhcmF0
+ZWQgbGlzdCBvZiBudW1lcmljIFRlbGVncmFtIGlkcyBpbnRvIGEgU2V0IG9m
+Ci8vIHN0cmluZ3MgKFRlbGVncmFtIGlkcyBhcmUgNjQtYml0IGFuZCBzYWZl
+ciBjb21wYXJlZCBhcyBzdHJpbmdzKS4KZnVuY3Rpb24gcGFyc2VJZExpc3Qo
+cmF3KSB7CiAgaWYgKCFyYXcpIHJldHVybiBuZXcgU2V0KCk7CiAgcmV0dXJu
+IG5ldyBTZXQoCiAgICBTdHJpbmcocmF3KQog
+...
+```
+
+**`backend/services/telegram/index.js`** (5893 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENvbXBvc2l0aW9uIHJvb3QgKyBFeHByZXNzIHdp
+cmluZyBmb3IgdGhlIFRlbGVncmFtIGludGVncmF0aW9uLiBJdAogKiBhc3Nl
+bWJsZXMgdGhlIGNsaWVudCwgc3RvcmUsIGxvZ2dlciwgbm90aWZpY2F0aW9u
+IHNlcnZpY2UsIHByYWN0aWNlIG1hbmFnZXIsCiAqIGNvbW1hbmRzIGFuZCBi
+b3QgZnJvbSBjb25maWcsIGV4cG9zZXMgdGhlIGFzc2VtYmxlZCBzZXJ2aWNl
+IGFzIGEgc2luZ2xldG9uIHNvCiAqIHJlcXVlc3QgaGFuZGxlcnMgZWxzZXdo
+ZXJlIGNhbiBlbWl0IG5vdGlmaWNhdGlvbnMsIGFuZCByZWdpc3RlcnMgdGhl
+IEhUVFAKICogc3VyZmFjZTogdGhlIGluYm91bmQgd2ViaG9vayBhbmQgdGhl
+IHdlYnNpdGUtc2lkZSBhY2NvdW50LWxpbmsgZW5kcG9pbnQuCiAqCiAqIFVw
+c3RyZWFtIChpbnB1dHMpOiBlbnZpcm9ubWVudCB2aWEgc2VydmljZXMvdGVs
+ZWdyYW0vY29uZmlnLmpzOyB0aGUgZXhpc3RpbmcKICogR2VtaW5pIGNvbmZp
+ZyAoZm9yIHRoZSBwcmFjdGljZSBwcm92aWRlciArIHN0YXR1cykgYW5kIHRo
+ZSBFeHByZXNzIGFwcCBmcm9tCiAqIHNlcnZlci5qcy4KICogRG93bnN0cmVh
+bSAob3V0cHV0cyk6IHdoZW4gYSBib3QgdG9rZW4gaXMgY29uZmlndXJlZCwg
+c3RhcnRzIHBvbGxpbmcgb3Igc2V0cyBhCiAqIHdlYmhvb2s7IHJlZ2lzdGVy
+cyBQT1NUIC9hcGkvdGVsZWdyYW0vd2ViaG9vaywgUE9TVCAvYXBpL3RlbGVn
+cmFtL2xpbmsgYW5kCiAqIEdFVCAvYXBpL3RlbGVncmFtL3N0YXR1cy4gV2hl
+biBubyB0b2tlbiBpcyBjb25maWd1cmVkIGV2ZXJ5IGV4cG9ydCBkZWdyYWRl
+cyB0bwogKiBhIHNhZmUgbm8tb3Agc28gdGhlIHNlcnZlciBib290cyBub3Jt
+YWxseSAoZS5nLiBpbiBDSS90ZXN0cykuCiAqLwppbXBvcnQgeyBsb2FkVGVs
+ZWdyYW1Db25maWcgfSBmcm9tICcuL2NvbmZpZy5qcyc7CmltcG9ydCB7IFRl
+bGVncmFtQ2xpZW50IH0gZnJvbSAnLi9jbGllbnQuanMnOwppbXBvcnQgeyBU
+ZWxlZ3JhbVN0b3JlIH0gZnJvbSAnLi9zdG9yZS5qcyc7CmltcG9ydCB7IFRl
+bGVncmFtTG9nZ2VyIH0gZnJvbSAnLi9sb2dnZXIuanMnOwppbXBvcnQgeyBO
+b3RpZmljYXRpb25TZXJ2aWNlLCBFdmVudEJ1
+...
+```
+
+**`backend/services/prompts.js`** (649 bytes)
+```
+Ly8gQmFja3dhcmQtY29tcGF0aWJsZSByZS1leHBvcnQgc2hpbS4KLy8KLy8g
+VGhlIGNhbm9uaWNhbCBwcm9tcHQgZGVmaW5pdGlvbnMgbm93IGxpdmUgaW4g
+YmFja2VuZC9tb2RlbHMvcHJvbXB0cy5qcyBhcwovLyBwYXJ0IG9mIHRoZSBs
+YXllcmVkLWFyY2hpdGVjdHVyZSByZXN0cnVjdHVyZSAoc3RhdGljIGRvbWFp
+biBkYXRhIGJlbG9uZ3MgaW4KLy8gbW9kZWxzLykuIFNlcnZpY2UtbGF5ZXIg
+Y29kZSBoaXN0b3JpY2FsbHkgaW1wb3J0ZWQgdGhlc2UgZnJvbQovLyBzZXJ2
+aWNlcy9wcm9tcHRzLmpzLCBzbyB0aGlzIG1vZHVsZSByZS1leHBvcnRzIHRo
+ZW0gdG8ga2VlcCB0aG9zZSBpbXBvcnRzCi8vIHdvcmtpbmcgd2l0aG91dCB0
+b3VjaGluZyBldmVyeSBjYWxsIHNpdGUuCi8vCi8vIE5hbWVkIHN5bWJvbHMg
+KExFQkFORVNFX0NPUlJFQ1RJT05fUFJPTVBULCBBTkFMWVNJU19TWVNURU1f
+UFJPTVBULAovLyBkZWZhdWx0TGl2ZVByb21wdHMpIGFyZSBmb3J3YXJkZWQg
+dmVyYmF0aW0gZnJvbSAuLi9tb2RlbHMvcHJvbXB0cy5qcy4KZXhwb3J0IHsK
+ICBMRUJBTkVTRV9DT1JSRUNUSU9OX1BST01QVCwKICBBTkFMWVNJU19TWVNU
+RU1fUFJPTVBULAogIGRlZmF1bHRMaXZlUHJvbXB0cywKfSBmcm9tICcuLi9t
+b2RlbHMvcHJvbXB0cy5qcyc7Cg==
+
+```
+
+**`backend/services/pdfService.js`** (704 bytes)
+```
+Ly8gRXh0cmFjdCB0ZXh0IGZyb20gYSBQREYgYnVmZmVyIHVzaW5nIHBkZi1w
+YXJzZSAoaW1wb3J0ZWQgZHluYW1pY2FsbHkgc28gYQovLyBtaXNzaW5nIG9w
+dGlvbmFsIGRlcGVuZGVuY3kgc3VyZmFjZXMgYXMgYSBjbGVhciBtZXNzYWdl
+IHJhdGhlciB0aGFuIGEgY3Jhc2gpLgpleHBvcnQgYXN5bmMgZnVuY3Rpb24g
+ZXh0cmFjdFBkZlRleHQoYnVmZmVyKSB7CiAgdHJ5IHsKICAgIGNvbnN0IHBk
+ZlBhcnNlID0gKGF3YWl0IGltcG9ydCgncGRmLXBhcnNlJykpLmRlZmF1bHQ7
+CiAgICBjb25zdCBkYXRhID0gYXdhaXQgcGRmUGFyc2UoYnVmZmVyKTsKICAg
+IHJldHVybiBkYXRhLnRleHQ7CiAgfSBjYXRjaCAoZXJyb3IpIHsKICAgIGNv
+bnNvbGUuZXJyb3IoJ1BERiBleHRyYWN0aW9uIGVycm9yOicsIGVycm9yKTsK
+ICAgIGlmIChlcnJvci5jb2RlID09PSAnRVJSX01PRFVMRV9OT1RfRk9VTkQn
+KSB7CiAgICAgIHRocm93IG5ldyBFcnJvcign2YXYp9qY2YjZhCBwZGYtcGFy
+c2Ug2YbYtdioINmG24zYs9iqLiDZhNi32YHYp9mLIG5wbSBpbnN0YWxsIHBk
+Zi1wYXJzZSDYsdinINin2KzYsdinINqp2YbbjNivLicpOwogICAgfQogICAg
+dGhyb3cgbmV3IEVycm9yKCfYrti32Kcg2K/YsSDYp9iz2KrYrtix2KfYrCDZ
+hdiq2YYg2KfYsiBQREY6ICcgKyBlcnJvci5tZXNzYWdlKTsKICB9Cn0KCmV4
+cG9ydCBkZWZhdWx0IGV4dHJhY3RQZGZUZXh0Owo=
+
+```
+
+**`backend/services/languageService.js`** (2045 bytes)
+```
+LyoqCiAqIExhbmd1YWdlLW1hbmFnZW1lbnQgZG9tYWluIGxvZ2ljIChpbi1t
+ZW1vcnksIGRlcGVuZGVuY3ktZnJlZSkuCiAqCiAqIE1vZGVscyB0aGUgc21h
+bGwgY2F0YWxvZ3VlIG9mIHN1cHBvcnRlZCBsYW5ndWFnZXMgcGx1cyBzaW1w
+bGUsIG9mZmxpbmUKICogaGV1cmlzdGljcyBmb3IgbGFuZ3VhZ2UgZGV0ZWN0
+aW9uIChzY3JpcHQtYmFzZWQpIGFuZCBJU08gNjM5LTEgdmFsaWRhdGlvbi4K
+ICogTm8gZGF0YWJhc2UsIG5vIGV4dGVybmFsIHRyYW5zbGF0aW9uL2RldGVj
+dGlvbiBBUEkuCiAqLwoKY29uc3QgSVNPXzYzOV8xX1JFID0gL15bYS16XXsy
+fSQvOwoKY29uc3QgREVGQVVMVF9MQU5HVUFHRVMgPSBbCiAgeyBjb2RlOiAn
+YXInLCBuYW1lOiAnQXJhYmljJyB9LAogIHsgY29kZTogJ2VuJywgbmFtZTog
+J0VuZ2xpc2gnIH0sCiAgeyBjb2RlOiAnZmEnLCBuYW1lOiAnUGVyc2lhbicg
+fSwKXTsKCi8qKiBWYWxpZGF0ZSBhbiBJU08gNjM5LTEgY29kZTogZXhhY3Rs
+eSB0d28gbG93ZXJjYXNlIGxldHRlcnMuICovCmV4cG9ydCBmdW5jdGlvbiBp
+c1ZhbGlkSVNPQ29kZShjb2RlKSB7CiAgcmV0dXJuIHR5cGVvZiBjb2RlID09
+PSAnc3RyaW5nJyAmJiBJU09fNjM5XzFfUkUudGVzdChjb2RlKTsKfQoKLyoq
+IEZyZXNoIGNhdGFsb2d1ZSBzdG9yZSwgc2VlZGVkIHdpdGggdGhlIGRlZmF1
+bHQgbGFuZ3VhZ2VzLiAqLwpleHBvcnQgZnVuY3Rpb24gbmV3X3N0b3JlKCkg
+ewogIHJldHVybiBuZXcgTWFwKERFRkFVTFRfTEFOR1VBR0VTLm1hcCgobCkg
+PT4gW2wuY29kZSwgeyAuLi5sIH1dKSk7Cn0KCi8qKiBBZGQgYSBsYW5ndWFn
+ZS4gUmVqZWN0cyBpbnZhbGlkIGNvZGVzIGFuZCBkdXBsaWNhdGVzLiAqLwpl
+eHBvcnQgZnVuY3Rpb24gYWRkX2xhbmd1YWdlKHN0b3JlLCB7IGNvZGUsIG5h
+bWUgfSkgewogIGlmICghaXNWYWxpZElTT0NvZGUoY29kZSkpIHRocm93IG5l
+dyBFcnJvcignaW52YWxpZCBJU08gNjM5LTEgY29kZScpOwogIGlmICghbmFt
+ZSB8fCAhbmFtZS50cmltKCkpIHRocm93IG5ldyBFcnJvcignbmFtZSBpcyBy
+ZXF1aXJlZCcpOwogIGlmIChzdG9yZS5oYXMoY29kZSkpIHRocm93IG5ldyBF
+cnJvcignbGFuZ3VhZ2UgYWxyZWFkeSBleGlz
+...
+```
+
+**`backend/services/statistics.js`** (2305 bytes)
+```
+LyoqCiAqIExlYXJuaW5nLXN0YXRpc3RpY3MgZG9tYWluIGxvZ2ljIChpbi1t
+ZW1vcnksIGRlcGVuZGVuY3ktZnJlZSkuCiAqCiAqIFB1cmUgZnVuY3Rpb25z
+IG92ZXIgcGxhaW4gInJldmlldyByZWNvcmQiIGFycmF5cyBzbyB0aGUgdW5p
+dCBzdWl0ZSBjYW4KICogYXNzZXJ0IHRoZSBtYXRocyAoYXZlcmFnZXMsIHBy
+b2dyZXNzICUsIHdlYWstd29yZCBzZWxlY3Rpb24pIHdpdGggbW9jayBkYXRh
+CiAqIGFuZCBubyBkYXRhYmFzZSBvciBuZXR3b3JrLgogKgogKiBBIHJldmll
+dyByZWNvcmQgbG9va3MgbGlrZToKICogICB7IHdvcmRJZCwgc2NvcmUgKDAu
+LjEwMCksIHJldmlld2VkQXQgKElTTyBzdHJpbmcgb3IgZXBvY2ggbXMpIH0K
+ICovCgovKiogQXZlcmFnZSBvZiBhIG51bWVyaWMgYXJyYXksIDAgZm9yIGVt
+cHR5IGlucHV0LiAqLwpmdW5jdGlvbiBfYXZnKG51bXMpIHsKICBpZiAobnVt
+cy5sZW5ndGggPT09IDApIHJldHVybiAwOwogIHJldHVybiBudW1zLnJlZHVj
+ZSgoYSwgYikgPT4gYSArIGIsIDApIC8gbnVtcy5sZW5ndGg7Cn0KCi8qKgog
+KiBBZ2dyZWdhdGUgcGVyLXVzZXIgc3RhdHMgZnJvbSB0aGVpciByZXZpZXcg
+cmVjb3Jkcy4KICogQHJldHVybnMge3t0b3RhbFJldmlld3M6bnVtYmVyLCBs
+ZWFybmVkV29yZHM6bnVtYmVyLCBhdmVyYWdlU2NvcmU6bnVtYmVyfX0KICov
+CmV4cG9ydCBmdW5jdGlvbiBnZXRfdXNlcl9zdGF0cyhyZWNvcmRzID0gW10p
+IHsKICBpZiAoIUFycmF5LmlzQXJyYXkocmVjb3JkcykpIHRocm93IG5ldyBF
+cnJvcigncmVjb3JkcyBtdXN0IGJlIGFuIGFycmF5Jyk7CiAgY29uc3QgdG90
+YWxSZXZpZXdzID0gcmVjb3Jkcy5sZW5ndGg7CiAgLy8gQSB3b3JkIGlzICJs
+ZWFybmVkIiBvbmNlIGFueSByZXZpZXcgc2NvcmVzIGl0ID49IDgwLgogIGNv
+bnN0IGxlYXJuZWQgPSBuZXcgU2V0KAogICAgcmVjb3Jkcy5maWx0ZXIoKHIp
+ID0+IHIuc2NvcmUgPj0gODApLm1hcCgocikgPT4gci53b3JkSWQpLAogICk7
+CiAgcmV0dXJuIHsKICAgIHRvdGFsUmV2aWV3cywKICAgIGxlYXJuZWRXb3Jk
+czogbGVhcm5lZC5zaXplLAogICAgYXZlcmFnZVNjb3JlOiBNYXRoLnJvdW5k
+KF9hdmcocmVjb3Jkcy5tYXAoKHIpID0+IHIu
+...
+```
+
+**`backend/services/audioService.js`** (2864 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENyZWRlbnRpYWwtZnJlZSBhdWRpbyBwcm9jZXNz
+aW5nIGJ1aWx0IG9uIHRoZSBidW5kbGVkIHN0YXRpYyBmZm1wZWcKICogYmlu
+YXJ5LiBQb3dlcnMgUE9TVCAvYXBpL2F1ZGlvL3Byb2Nlc3MuIFVubGlrZSB0
+aGUgR2VtaW5pLWJhY2tlZCBUVFMvY2hhdAogKiByb3V0ZXMsIGF1ZGlvIHBy
+b2JpbmcvdHJhbnNjb2RpbmcgaGVyZSBuZWVkcyBubyBleHRlcm5hbCBBUEkg
+a2V5LCBzbyB0aGUKICogZW5kcG9pbnQgYWx3YXlzIHdvcmtzIGFzIGxvbmcg
+YXMgdGhlIHJ1bnRpbWUgZGVwcyAoZmx1ZW50LWZmbXBlZyArCiAqIGZmbXBl
+Zy1zdGF0aWMpIGRlY2xhcmVkIGluIGJhY2tlbmQvcGFja2FnZS5qc29uIGFy
+ZSBpbnN0YWxsZWQuCiAqCiAqIFVwc3RyZWFtIChpbnB1dHMpOiBhbiBvcHRp
+b25hbCB1cGxvYWRlZCBhdWRpbyBmaWxlIChwYXRoIG9uIGRpc2spIGFuZCB0
+aGUKICogYGZsdWVudC1mZm1wZWdgIC8gYGZmbXBlZy1zdGF0aWNgIHBhY2th
+Z2VzLgogKiBEb3duc3RyZWFtIChvdXRwdXRzKTogYSBwbGFpbiBgeyBzdGF0
+dXMsIHJlc3VsdCB9YCBvYmplY3QgY29uc3VtZWQgYnkKICogY29udHJvbGxl
+cnMvYXVkaW9Db250cm9sbGVyLmpzIGFuZCwgaW4gdHVybiwgdGhlIGZyb250
+ZW5kIGF1ZGlvIHRvb2xpbmcuCiAqLwppbXBvcnQgZnMgZnJvbSAnZnMnOwpp
+bXBvcnQgb3MgZnJvbSAnb3MnOwppbXBvcnQgeyBqb2luIH0gZnJvbSAncGF0
+aCc7CmltcG9ydCBmZm1wZWcgZnJvbSAnZmx1ZW50LWZmbXBlZyc7CmltcG9y
+dCBmZm1wZWdTdGF0aWMgZnJvbSAnZmZtcGVnLXN0YXRpYyc7CgovLyBQb2lu
+dCBmbHVlbnQtZmZtcGVnIGF0IHRoZSBidW5kbGVkIHN0YXRpYyBmZm1wZWcg
+YmluYXJ5IHNvIG5vIHN5c3RlbSBpbnN0YWxsCi8vIGlzIHJlcXVpcmVkICht
+aXJyb3JzIHNlcnZpY2VzL3ZpZGVvU2VydmljZS5qcykuCmlmIChmZm1wZWdT
+dGF0aWMpIHsKICBmZm1wZWcuc2V0RmZtcGVnUGF0aChmZm1wZWdTdGF0aWMp
+Owp9CgovLyBBdWRpbyBjb250YWluZXIvY29kZWMgZmFtaWxpZXMgdGhlIHBp
+cGVsaW5lIGFjY2VwdHMgZm9yIHByb2JpbmcvdHJhbnNjb2RpbmcuCmV4cG9y
+dCBjb25zdCBTVVBQT1JURURfQVVESU9fRk9S
+...
+```
+
+### 🔗 Route ها و Endpoint ها (1 فایل)
+
+**`backend/controllers/index.js`** (718 bytes)
+```
+LyoqCiAqIENvbnRyb2xsZXJzIGxheWVyIGJhcnJlbC4KICoKICogU2luZ2xl
+IHB1YmxpYyBlbnRyeSBwb2ludCBmb3IgdGhlIEhUVFAgaGFuZGxlciBsYXll
+ciBzbyB0aGUgcmVzdCBvZiB0aGUgYXBwCiAqIChyb3V0ZXMsIHNlcnZlciBj
+b21wb3NpdGlvbikgY2FuIGBpbXBvcnQgeyDigKYgfSBmcm9tICcuL2NvbnRy
+b2xsZXJzJ2AgaW5zdGVhZAogKiBvZiByZWFjaGluZyBpbnRvIGluZGl2aWR1
+YWwgaGFuZGxlciBmaWxlcy4gRWFjaCBjb250cm9sbGVyIG93bnMgdGhlCiAq
+IHJlcXVlc3QvcmVzcG9uc2Ugc2hhcGUgZm9yIG9uZSBzbGljZSBvZiB0aGUg
+QVBJOyB0aGlzIGluZGV4IHNpbXBseSByZS1leHBvcnRzCiAqIHRoZWlyIHB1
+YmxpYyBoYW5kbGVycy4gRGVmYXVsdCBleHBvcnRzIGFyZSBpbnRlbnRpb25h
+bGx5IG5vdCBmb3J3YXJkZWQg4oCUIHRoZQogKiBuYW1lZCBoYW5kbGVycyBh
+cmUgdGhlIHN0YWJsZSBjb250cmFjdC4KICovCmV4cG9ydCAqIGZyb20gJy4v
+YW5hbHlzaXNDb250cm9sbGVyLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9hbmFs
+eXRpY3NDb250cm9sbGVyLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9hdWRpb0Nv
+bnRyb2xsZXIuanMnOwpleHBvcnQgKiBmcm9tICcuL2ZhbGxiYWNrQ29udHJv
+bGxlci5qcyc7CmV4cG9ydCAqIGZyb20gJy4vZ2VtaW5pQ29udHJvbGxlci5q
+cyc7CmV4cG9ydCAqIGZyb20gJy4vdXBsb2FkQ29udHJvbGxlci5qcyc7Cg==
+
+```
+
+---
+
+### 💡 دستورالعمل ادغام
+
+- الگوهای بالا را **شناسایی** کن: ساختار فایل‌ها، نام‌گذاری، patternهای معماری، روش‌های handle errors، …
+- اما **در پروژهٔ فعلی** پیاده‌سازی کن — با stack، نام‌گذاری، و سبک کد همان پروژه. نه stack پروژه‌های مرجع.
+- اگر پروژه‌های مرجع stack متفاوت دارند (مثلاً Vue ولی پروژه فعلی React)، **منطق** را منتقل کن نه syntax را.
+
+---
+
+---
+## 📚 پروژه‌های مرجع (الهام از پیاده‌سازی‌های موجود)
+_در زیر خلاصهٔ ساختار/فایل‌های پروژه‌های زیر آمده است. از این منابع به‌عنوان الگو/الهام استفاده کن و در پرامپت نهایی به فایل‌ها/الگوهای مرتبط ارجاع بده._
+
+## 📚 پروژه‌های مرجع (Reference Projects)
+
+کاربر این پروژه‌ها را به‌عنوان منبع الهام برای این تسک انتخاب کرده است. هدف از این بخش: الگوها، معماری، یا منطق این پروژه‌ها را در نظر بگیر و در پیاده‌سازی **پروژهٔ فعلی** اعمال کن — نه کپی کردن صرف.
+
+**کار درخواست‌شده روی پروژهٔ فعلی:** ```
+1- صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره
+
+2- باید امکان لاگین از طریق جیمیل فراهم باشه
+
+3- خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن
+4- ارتباط اجزا و صفحات خیلی به هم ریخته س
+5- از منظر ظاهری خیلی آشفته اس
+6- در کنسول نیز خطای ارتباط با سرور مشاهده میشه:
+Failed to load resource: the server responded with a status of 500 ()
+api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()
+api/users/?
+
+### 🏠 شناسنامهٔ پروژهٔ فعلی (مرجع اصلی برای پیاده‌سازی)
+
+**هرگاه بین پروژهٔ فعلی و پروژه‌های مرجع تفاوت بود (stack، نام‌گذاری، dependency)، پروژهٔ فعلی برنده است. هرگز syntax یا dependency پروژه‌های مرجع را کورکورانه به پروژهٔ فعلی نیاور.**
+
+- **Repo**: `mahdighandi1989/ALLIN1`
+- **زبان غالب**: HTML
+
+---
+
+### پروژه‌های اسکن‌شده
+
+- ✅ `mahdighandi1989/language` — 12 فایل اسکن‌شده (از 359 کل)
+  - 🎯 **نقطهٔ تمرکز کاربر**: _امکان لاگین از طریق جیمیل و دادن دسترسی و میزن دسترسی به افراد_
+    (فایل‌های اسکن‌شده بالا با اولویت بر اساس همین تمرکز انتخاب شده‌اند — به بقیهٔ پروژه توجه نکن مگر برای زمینه.)
+
+### ⚙️ سرویس‌های Backend (11 فایل)
+
+**`backend/services/index.js`** (799 bytes)
+```
+LyoqCiAqIFNlcnZpY2VzIGxheWVyIGJhcnJlbC4KICoKICogU2luZ2xlIHB1
+YmxpYyBlbnRyeSBwb2ludCBmb3IgdGhlIGRvbWFpbi9zZXJ2aWNlIGxheWVy
+IHNvIGNhbGxlcnMgY2FuCiAqIGBpbXBvcnQgeyDigKYgfSBmcm9tICcuL3Nl
+cnZpY2VzJ2AuIENvdmVycyBhbmFseXRpY3MgY29sbGVjdGlvbiwgZmlsZSBh
+bmFseXNpcywKICogdGhlIEdlbWluaSBSRVNUICsgRmlsZSBBUEkgY2xpZW50
+LCBhdWRpby92aWRlbyBmZm1wZWcgaGVscGVycywgUERGIHRleHQKICogZXh0
+cmFjdGlvbiwgdGhlIExpdmUgQVBJIFdlYlNvY2tldCBwcm94eS9vYnNlcnZl
+ciBhbmQgdGhlIFRlbGVncmFtCiAqIGludGVncmF0aW9uLiBOYW1lZCBleHBv
+cnRzIGFyZSB0aGUgc3RhYmxlIGNvbnRyYWN0OyBwZXItZmlsZSBkZWZhdWx0
+IGV4cG9ydHMKICogYXJlIG5vdCBmb3J3YXJkZWQuCiAqLwpleHBvcnQgKiBm
+cm9tICcuL2FuYWx5c2lzU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4v
+YW5hbHl0aWNzU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4vYXVkaW9T
+ZXJ2aWNlLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9nZW1pbmlTZXJ2aWNlLmpz
+JzsKZXhwb3J0ICogZnJvbSAnLi9saXZlUHJveHlTZXJ2aWNlLmpzJzsKZXhw
+b3J0ICogZnJvbSAnLi9saXZlV3NPYnNlcnZlci5qcyc7CmV4cG9ydCAqIGZy
+b20gJy4vcGRmU2VydmljZS5qcyc7CmV4cG9ydCAqIGZyb20gJy4vcHJvbXB0
+cy5qcyc7CmV4cG9ydCAqIGZyb20gJy4vdmlkZW9TZXJ2aWNlLmpzJzsKZXhw
+b3J0ICogZnJvbSAnLi90ZWxlZ3JhbS9pbmRleC5qcyc7Cg==
+
+```
+
+**`backend/services/telegram/config.js`** (3725 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENlbnRyYWxpc2VkLCBlbnYtZHJpdmVuIGNvbmZp
+Z3VyYXRpb24gZm9yIHRoZSB0d28td2F5IFRlbGVncmFtCiAqIGludGVncmF0
+aW9uLiBSZWFkaW5nIHRoaXMgbW9kdWxlIG5ldmVyIHRocm93cyBhbmQgbmV2
+ZXIgZXhpdHMgdGhlIHByb2Nlc3Mg4oCUCiAqIHRoZSBUZWxlZ3JhbSBib3Qg
+aXMgYW4gKm9wdGlvbmFsKiBmZWF0dXJlLCBzbyB3aGVuIG5vIGJvdCB0b2tl
+biBpcyBjb25maWd1cmVkCiAqIHRoZSByZXN0IG9mIHRoZSBzeXN0ZW0ga2Vl
+cHMgd29ya2luZyBhbmQgdGhlIGJvdCBzaW1wbHkgc3RheXMgZG9ybWFudC4K
+ICoKICogVXBzdHJlYW0gKGlucHV0cyk6IGVudmlyb25tZW50IHZhcmlhYmxl
+cyAoVEVMRUdSQU1fQk9UX1RPS0VOLAogKiBURUxFR1JBTV9XRUJIT09LX1VS
+TCwgVEVMRUdSQU1fQURNSU5fSURTLCBURUxFR1JBTV9BTExPV0VEX1VTRVJf
+SURTLAogKiBURUxFR1JBTV9EQVRBX0RJUiwgVEVMRUdSQU1fTU9ERSwgTk9U
+SUZZX1RFTEVHUkFNX0JPVF9UT0tFTi9DSEFUX0lEIGZvcgogKiBiYWNrd2Fy
+ZC1jb21wYXRpYmxlIG5vdGlmaWNhdGlvbiBkZWxpdmVyeSkuCiAqIERvd25z
+dHJlYW0gKG91dHB1dHMpOiBjb25zdW1lZCBieSBzZXJ2aWNlcy90ZWxlZ3Jh
+bS8qIChjbGllbnQsIGJvdCwgc3RvcmUsCiAqIG5vdGlmaWNhdGlvbnMpIGFu
+ZCB3aXJlZCBpbnRvIHNlcnZlci5qcyB2aWEgc2VydmljZXMvdGVsZWdyYW0v
+aW5kZXguanMuCiAqLwppbXBvcnQgeyBmaWxlVVJMVG9QYXRoIH0gZnJvbSAn
+dXJsJzsKaW1wb3J0IHsgZGlybmFtZSwgam9pbiB9IGZyb20gJ3BhdGgnOwoK
+Y29uc3QgX19kaXJuYW1lID0gZGlybmFtZShmaWxlVVJMVG9QYXRoKGltcG9y
+dC5tZXRhLnVybCkpOwoKLy8gUGFyc2UgYSBjb21tYS9zcGFjZSBzZXBhcmF0
+ZWQgbGlzdCBvZiBudW1lcmljIFRlbGVncmFtIGlkcyBpbnRvIGEgU2V0IG9m
+Ci8vIHN0cmluZ3MgKFRlbGVncmFtIGlkcyBhcmUgNjQtYml0IGFuZCBzYWZl
+ciBjb21wYXJlZCBhcyBzdHJpbmdzKS4KZnVuY3Rpb24gcGFyc2VJZExpc3Qo
+cmF3KSB7CiAgaWYgKCFyYXcpIHJldHVybiBuZXcgU2V0KCk7CiAgcmV0dXJu
+IG5ldyBTZXQoCiAgICBTdHJpbmcocmF3KQog
+...
+```
+
+**`backend/services/telegram/index.js`** (5893 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENvbXBvc2l0aW9uIHJvb3QgKyBFeHByZXNzIHdp
+cmluZyBmb3IgdGhlIFRlbGVncmFtIGludGVncmF0aW9uLiBJdAogKiBhc3Nl
+bWJsZXMgdGhlIGNsaWVudCwgc3RvcmUsIGxvZ2dlciwgbm90aWZpY2F0aW9u
+IHNlcnZpY2UsIHByYWN0aWNlIG1hbmFnZXIsCiAqIGNvbW1hbmRzIGFuZCBi
+b3QgZnJvbSBjb25maWcsIGV4cG9zZXMgdGhlIGFzc2VtYmxlZCBzZXJ2aWNl
+IGFzIGEgc2luZ2xldG9uIHNvCiAqIHJlcXVlc3QgaGFuZGxlcnMgZWxzZXdo
+ZXJlIGNhbiBlbWl0IG5vdGlmaWNhdGlvbnMsIGFuZCByZWdpc3RlcnMgdGhl
+IEhUVFAKICogc3VyZmFjZTogdGhlIGluYm91bmQgd2ViaG9vayBhbmQgdGhl
+IHdlYnNpdGUtc2lkZSBhY2NvdW50LWxpbmsgZW5kcG9pbnQuCiAqCiAqIFVw
+c3RyZWFtIChpbnB1dHMpOiBlbnZpcm9ubWVudCB2aWEgc2VydmljZXMvdGVs
+ZWdyYW0vY29uZmlnLmpzOyB0aGUgZXhpc3RpbmcKICogR2VtaW5pIGNvbmZp
+ZyAoZm9yIHRoZSBwcmFjdGljZSBwcm92aWRlciArIHN0YXR1cykgYW5kIHRo
+ZSBFeHByZXNzIGFwcCBmcm9tCiAqIHNlcnZlci5qcy4KICogRG93bnN0cmVh
+bSAob3V0cHV0cyk6IHdoZW4gYSBib3QgdG9rZW4gaXMgY29uZmlndXJlZCwg
+c3RhcnRzIHBvbGxpbmcgb3Igc2V0cyBhCiAqIHdlYmhvb2s7IHJlZ2lzdGVy
+cyBQT1NUIC9hcGkvdGVsZWdyYW0vd2ViaG9vaywgUE9TVCAvYXBpL3RlbGVn
+cmFtL2xpbmsgYW5kCiAqIEdFVCAvYXBpL3RlbGVncmFtL3N0YXR1cy4gV2hl
+biBubyB0b2tlbiBpcyBjb25maWd1cmVkIGV2ZXJ5IGV4cG9ydCBkZWdyYWRl
+cyB0bwogKiBhIHNhZmUgbm8tb3Agc28gdGhlIHNlcnZlciBib290cyBub3Jt
+YWxseSAoZS5nLiBpbiBDSS90ZXN0cykuCiAqLwppbXBvcnQgeyBsb2FkVGVs
+ZWdyYW1Db25maWcgfSBmcm9tICcuL2NvbmZpZy5qcyc7CmltcG9ydCB7IFRl
+bGVncmFtQ2xpZW50IH0gZnJvbSAnLi9jbGllbnQuanMnOwppbXBvcnQgeyBU
+ZWxlZ3JhbVN0b3JlIH0gZnJvbSAnLi9zdG9yZS5qcyc7CmltcG9ydCB7IFRl
+bGVncmFtTG9nZ2VyIH0gZnJvbSAnLi9sb2dnZXIuanMnOwppbXBvcnQgeyBO
+b3RpZmljYXRpb25TZXJ2aWNlLCBFdmVudEJ1
+...
+```
+
+**`backend/services/prompts.js`** (649 bytes)
+```
+Ly8gQmFja3dhcmQtY29tcGF0aWJsZSByZS1leHBvcnQgc2hpbS4KLy8KLy8g
+VGhlIGNhbm9uaWNhbCBwcm9tcHQgZGVmaW5pdGlvbnMgbm93IGxpdmUgaW4g
+YmFja2VuZC9tb2RlbHMvcHJvbXB0cy5qcyBhcwovLyBwYXJ0IG9mIHRoZSBs
+YXllcmVkLWFyY2hpdGVjdHVyZSByZXN0cnVjdHVyZSAoc3RhdGljIGRvbWFp
+biBkYXRhIGJlbG9uZ3MgaW4KLy8gbW9kZWxzLykuIFNlcnZpY2UtbGF5ZXIg
+Y29kZSBoaXN0b3JpY2FsbHkgaW1wb3J0ZWQgdGhlc2UgZnJvbQovLyBzZXJ2
+aWNlcy9wcm9tcHRzLmpzLCBzbyB0aGlzIG1vZHVsZSByZS1leHBvcnRzIHRo
+ZW0gdG8ga2VlcCB0aG9zZSBpbXBvcnRzCi8vIHdvcmtpbmcgd2l0aG91dCB0
+b3VjaGluZyBldmVyeSBjYWxsIHNpdGUuCi8vCi8vIE5hbWVkIHN5bWJvbHMg
+KExFQkFORVNFX0NPUlJFQ1RJT05fUFJPTVBULCBBTkFMWVNJU19TWVNURU1f
+UFJPTVBULAovLyBkZWZhdWx0TGl2ZVByb21wdHMpIGFyZSBmb3J3YXJkZWQg
+dmVyYmF0aW0gZnJvbSAuLi9tb2RlbHMvcHJvbXB0cy5qcy4KZXhwb3J0IHsK
+ICBMRUJBTkVTRV9DT1JSRUNUSU9OX1BST01QVCwKICBBTkFMWVNJU19TWVNU
+RU1fUFJPTVBULAogIGRlZmF1bHRMaXZlUHJvbXB0cywKfSBmcm9tICcuLi9t
+b2RlbHMvcHJvbXB0cy5qcyc7Cg==
+
+```
+
+**`backend/services/pdfService.js`** (704 bytes)
+```
+Ly8gRXh0cmFjdCB0ZXh0IGZyb20gYSBQREYgYnVmZmVyIHVzaW5nIHBkZi1w
+YXJzZSAoaW1wb3J0ZWQgZHluYW1pY2FsbHkgc28gYQovLyBtaXNzaW5nIG9w
+dGlvbmFsIGRlcGVuZGVuY3kgc3VyZmFjZXMgYXMgYSBjbGVhciBtZXNzYWdl
+IHJhdGhlciB0aGFuIGEgY3Jhc2gpLgpleHBvcnQgYXN5bmMgZnVuY3Rpb24g
+ZXh0cmFjdFBkZlRleHQoYnVmZmVyKSB7CiAgdHJ5IHsKICAgIGNvbnN0IHBk
+ZlBhcnNlID0gKGF3YWl0IGltcG9ydCgncGRmLXBhcnNlJykpLmRlZmF1bHQ7
+CiAgICBjb25zdCBkYXRhID0gYXdhaXQgcGRmUGFyc2UoYnVmZmVyKTsKICAg
+IHJldHVybiBkYXRhLnRleHQ7CiAgfSBjYXRjaCAoZXJyb3IpIHsKICAgIGNv
+bnNvbGUuZXJyb3IoJ1BERiBleHRyYWN0aW9uIGVycm9yOicsIGVycm9yKTsK
+ICAgIGlmIChlcnJvci5jb2RlID09PSAnRVJSX01PRFVMRV9OT1RfRk9VTkQn
+KSB7CiAgICAgIHRocm93IG5ldyBFcnJvcign2YXYp9qY2YjZhCBwZGYtcGFy
+c2Ug2YbYtdioINmG24zYs9iqLiDZhNi32YHYp9mLIG5wbSBpbnN0YWxsIHBk
+Zi1wYXJzZSDYsdinINin2KzYsdinINqp2YbbjNivLicpOwogICAgfQogICAg
+dGhyb3cgbmV3IEVycm9yKCfYrti32Kcg2K/YsSDYp9iz2KrYrtix2KfYrCDZ
+hdiq2YYg2KfYsiBQREY6ICcgKyBlcnJvci5tZXNzYWdlKTsKICB9Cn0KCmV4
+cG9ydCBkZWZhdWx0IGV4dHJhY3RQZGZUZXh0Owo=
+
+```
+
+**`backend/services/languageService.js`** (2045 bytes)
+```
+LyoqCiAqIExhbmd1YWdlLW1hbmFnZW1lbnQgZG9tYWluIGxvZ2ljIChpbi1t
+ZW1vcnksIGRlcGVuZGVuY3ktZnJlZSkuCiAqCiAqIE1vZGVscyB0aGUgc21h
+bGwgY2F0YWxvZ3VlIG9mIHN1cHBvcnRlZCBsYW5ndWFnZXMgcGx1cyBzaW1w
+bGUsIG9mZmxpbmUKICogaGV1cmlzdGljcyBmb3IgbGFuZ3VhZ2UgZGV0ZWN0
+aW9uIChzY3JpcHQtYmFzZWQpIGFuZCBJU08gNjM5LTEgdmFsaWRhdGlvbi4K
+ICogTm8gZGF0YWJhc2UsIG5vIGV4dGVybmFsIHRyYW5zbGF0aW9uL2RldGVj
+dGlvbiBBUEkuCiAqLwoKY29uc3QgSVNPXzYzOV8xX1JFID0gL15bYS16XXsy
+fSQvOwoKY29uc3QgREVGQVVMVF9MQU5HVUFHRVMgPSBbCiAgeyBjb2RlOiAn
+YXInLCBuYW1lOiAnQXJhYmljJyB9LAogIHsgY29kZTogJ2VuJywgbmFtZTog
+J0VuZ2xpc2gnIH0sCiAgeyBjb2RlOiAnZmEnLCBuYW1lOiAnUGVyc2lhbicg
+fSwKXTsKCi8qKiBWYWxpZGF0ZSBhbiBJU08gNjM5LTEgY29kZTogZXhhY3Rs
+eSB0d28gbG93ZXJjYXNlIGxldHRlcnMuICovCmV4cG9ydCBmdW5jdGlvbiBp
+c1ZhbGlkSVNPQ29kZShjb2RlKSB7CiAgcmV0dXJuIHR5cGVvZiBjb2RlID09
+PSAnc3RyaW5nJyAmJiBJU09fNjM5XzFfUkUudGVzdChjb2RlKTsKfQoKLyoq
+IEZyZXNoIGNhdGFsb2d1ZSBzdG9yZSwgc2VlZGVkIHdpdGggdGhlIGRlZmF1
+bHQgbGFuZ3VhZ2VzLiAqLwpleHBvcnQgZnVuY3Rpb24gbmV3X3N0b3JlKCkg
+ewogIHJldHVybiBuZXcgTWFwKERFRkFVTFRfTEFOR1VBR0VTLm1hcCgobCkg
+PT4gW2wuY29kZSwgeyAuLi5sIH1dKSk7Cn0KCi8qKiBBZGQgYSBsYW5ndWFn
+ZS4gUmVqZWN0cyBpbnZhbGlkIGNvZGVzIGFuZCBkdXBsaWNhdGVzLiAqLwpl
+eHBvcnQgZnVuY3Rpb24gYWRkX2xhbmd1YWdlKHN0b3JlLCB7IGNvZGUsIG5h
+bWUgfSkgewogIGlmICghaXNWYWxpZElTT0NvZGUoY29kZSkpIHRocm93IG5l
+dyBFcnJvcignaW52YWxpZCBJU08gNjM5LTEgY29kZScpOwogIGlmICghbmFt
+ZSB8fCAhbmFtZS50cmltKCkpIHRocm93IG5ldyBFcnJvcignbmFtZSBpcyBy
+ZXF1aXJlZCcpOwogIGlmIChzdG9yZS5oYXMoY29kZSkpIHRocm93IG5ldyBF
+cnJvcignbGFuZ3VhZ2UgYWxyZWFkeSBleGlz
+...
+```
+
+**`backend/services/statistics.js`** (2305 bytes)
+```
+LyoqCiAqIExlYXJuaW5nLXN0YXRpc3RpY3MgZG9tYWluIGxvZ2ljIChpbi1t
+ZW1vcnksIGRlcGVuZGVuY3ktZnJlZSkuCiAqCiAqIFB1cmUgZnVuY3Rpb25z
+IG92ZXIgcGxhaW4gInJldmlldyByZWNvcmQiIGFycmF5cyBzbyB0aGUgdW5p
+dCBzdWl0ZSBjYW4KICogYXNzZXJ0IHRoZSBtYXRocyAoYXZlcmFnZXMsIHBy
+b2dyZXNzICUsIHdlYWstd29yZCBzZWxlY3Rpb24pIHdpdGggbW9jayBkYXRh
+CiAqIGFuZCBubyBkYXRhYmFzZSBvciBuZXR3b3JrLgogKgogKiBBIHJldmll
+dyByZWNvcmQgbG9va3MgbGlrZToKICogICB7IHdvcmRJZCwgc2NvcmUgKDAu
+LjEwMCksIHJldmlld2VkQXQgKElTTyBzdHJpbmcgb3IgZXBvY2ggbXMpIH0K
+ICovCgovKiogQXZlcmFnZSBvZiBhIG51bWVyaWMgYXJyYXksIDAgZm9yIGVt
+cHR5IGlucHV0LiAqLwpmdW5jdGlvbiBfYXZnKG51bXMpIHsKICBpZiAobnVt
+cy5sZW5ndGggPT09IDApIHJldHVybiAwOwogIHJldHVybiBudW1zLnJlZHVj
+ZSgoYSwgYikgPT4gYSArIGIsIDApIC8gbnVtcy5sZW5ndGg7Cn0KCi8qKgog
+KiBBZ2dyZWdhdGUgcGVyLXVzZXIgc3RhdHMgZnJvbSB0aGVpciByZXZpZXcg
+cmVjb3Jkcy4KICogQHJldHVybnMge3t0b3RhbFJldmlld3M6bnVtYmVyLCBs
+ZWFybmVkV29yZHM6bnVtYmVyLCBhdmVyYWdlU2NvcmU6bnVtYmVyfX0KICov
+CmV4cG9ydCBmdW5jdGlvbiBnZXRfdXNlcl9zdGF0cyhyZWNvcmRzID0gW10p
+IHsKICBpZiAoIUFycmF5LmlzQXJyYXkocmVjb3JkcykpIHRocm93IG5ldyBF
+cnJvcigncmVjb3JkcyBtdXN0IGJlIGFuIGFycmF5Jyk7CiAgY29uc3QgdG90
+YWxSZXZpZXdzID0gcmVjb3Jkcy5sZW5ndGg7CiAgLy8gQSB3b3JkIGlzICJs
+ZWFybmVkIiBvbmNlIGFueSByZXZpZXcgc2NvcmVzIGl0ID49IDgwLgogIGNv
+bnN0IGxlYXJuZWQgPSBuZXcgU2V0KAogICAgcmVjb3Jkcy5maWx0ZXIoKHIp
+ID0+IHIuc2NvcmUgPj0gODApLm1hcCgocikgPT4gci53b3JkSWQpLAogICk7
+CiAgcmV0dXJuIHsKICAgIHRvdGFsUmV2aWV3cywKICAgIGxlYXJuZWRXb3Jk
+czogbGVhcm5lZC5zaXplLAogICAgYXZlcmFnZVNjb3JlOiBNYXRoLnJvdW5k
+KF9hdmcocmVjb3Jkcy5tYXAoKHIpID0+IHIu
+...
+```
+
+**`backend/services/audioService.js`** (2864 bytes)
+```
+LyoqCiAqIFB1cnBvc2U6IENyZWRlbnRpYWwtZnJlZSBhdWRpbyBwcm9jZXNz
+aW5nIGJ1aWx0IG9uIHRoZSBidW5kbGVkIHN0YXRpYyBmZm1wZWcKICogYmlu
+YXJ5LiBQb3dlcnMgUE9TVCAvYXBpL2F1ZGlvL3Byb2Nlc3MuIFVubGlrZSB0
+aGUgR2VtaW5pLWJhY2tlZCBUVFMvY2hhdAogKiByb3V0ZXMsIGF1ZGlvIHBy
+b2JpbmcvdHJhbnNjb2RpbmcgaGVyZSBuZWVkcyBubyBleHRlcm5hbCBBUEkg
+a2V5LCBzbyB0aGUKICogZW5kcG9pbnQgYWx3YXlzIHdvcmtzIGFzIGxvbmcg
+YXMgdGhlIHJ1bnRpbWUgZGVwcyAoZmx1ZW50LWZmbXBlZyArCiAqIGZmbXBl
+Zy1zdGF0aWMpIGRlY2xhcmVkIGluIGJhY2tlbmQvcGFja2FnZS5qc29uIGFy
+ZSBpbnN0YWxsZWQuCiAqCiAqIFVwc3RyZWFtIChpbnB1dHMpOiBhbiBvcHRp
+b25hbCB1cGxvYWRlZCBhdWRpbyBmaWxlIChwYXRoIG9uIGRpc2spIGFuZCB0
+aGUKICogYGZsdWVudC1mZm1wZWdgIC8gYGZmbXBlZy1zdGF0aWNgIHBhY2th
+Z2VzLgogKiBEb3duc3RyZWFtIChvdXRwdXRzKTogYSBwbGFpbiBgeyBzdGF0
+dXMsIHJlc3VsdCB9YCBvYmplY3QgY29uc3VtZWQgYnkKICogY29udHJvbGxl
+cnMvYXVkaW9Db250cm9sbGVyLmpzIGFuZCwgaW4gdHVybiwgdGhlIGZyb250
+ZW5kIGF1ZGlvIHRvb2xpbmcuCiAqLwppbXBvcnQgZnMgZnJvbSAnZnMnOwpp
+bXBvcnQgb3MgZnJvbSAnb3MnOwppbXBvcnQgeyBqb2luIH0gZnJvbSAncGF0
+aCc7CmltcG9ydCBmZm1wZWcgZnJvbSAnZmx1ZW50LWZmbXBlZyc7CmltcG9y
+dCBmZm1wZWdTdGF0aWMgZnJvbSAnZmZtcGVnLXN0YXRpYyc7CgovLyBQb2lu
+dCBmbHVlbnQtZmZtcGVnIGF0IHRoZSBidW5kbGVkIHN0YXRpYyBmZm1wZWcg
+YmluYXJ5IHNvIG5vIHN5c3RlbSBpbnN0YWxsCi8vIGlzIHJlcXVpcmVkICht
+aXJyb3JzIHNlcnZpY2VzL3ZpZGVvU2VydmljZS5qcykuCmlmIChmZm1wZWdT
+dGF0aWMpIHsKICBmZm1wZWcuc2V0RmZtcGVnUGF0aChmZm1wZWdTdGF0aWMp
+Owp9CgovLyBBdWRpbyBjb250YWluZXIvY29kZWMgZmFtaWxpZXMgdGhlIHBp
+cGVsaW5lIGFjY2VwdHMgZm9yIHByb2JpbmcvdHJhbnNjb2RpbmcuCmV4cG9y
+dCBjb25zdCBTVVBQT1JURURfQVVESU9fRk9S
+...
+```
+
+### 🔗 Route ها و Endpoint ها (1 فایل)
+
+**`backend/controllers/index.js`** (718 bytes)
+```
+LyoqCiAqIENvbnRyb2xsZXJzIGxheWVyIGJhcnJlbC4KICoKICogU2luZ2xl
+IHB1YmxpYyBlbnRyeSBwb2ludCBmb3IgdGhlIEhUVFAgaGFuZGxlciBsYXll
+ciBzbyB0aGUgcmVzdCBvZiB0aGUgYXBwCiAqIChyb3V0ZXMsIHNlcnZlciBj
+b21wb3NpdGlvbikgY2FuIGBpbXBvcnQgeyDigKYgfSBmcm9tICcuL2NvbnRy
+b2xsZXJzJ2AgaW5zdGVhZAogKiBvZiByZWFjaGluZyBpbnRvIGluZGl2aWR1
+YWwgaGFuZGxlciBmaWxlcy4gRWFjaCBjb250cm9sbGVyIG93bnMgdGhlCiAq
+IHJlcXVlc3QvcmVzcG9uc2Ugc2hhcGUgZm9yIG9uZSBzbGljZSBvZiB0aGUg
+QVBJOyB0aGlzIGluZGV4IHNpbXBseSByZS1leHBvcnRzCiAqIHRoZWlyIHB1
+YmxpYyBoYW5kbGVycy4gRGVmYXVsdCBleHBvcnRzIGFyZSBpbnRlbnRpb25h
+bGx5IG5vdCBmb3J3YXJkZWQg4oCUIHRoZQogKiBuYW1lZCBoYW5kbGVycyBh
+cmUgdGhlIHN0YWJsZSBjb250cmFjdC4KICovCmV4cG9ydCAqIGZyb20gJy4v
+YW5hbHlzaXNDb250cm9sbGVyLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9hbmFs
+eXRpY3NDb250cm9sbGVyLmpzJzsKZXhwb3J0ICogZnJvbSAnLi9hdWRpb0Nv
+bnRyb2xsZXIuanMnOwpleHBvcnQgKiBmcm9tICcuL2ZhbGxiYWNrQ29udHJv
+bGxlci5qcyc7CmV4cG9ydCAqIGZyb20gJy4vZ2VtaW5pQ29udHJvbGxlci5q
+cyc7CmV4cG9ydCAqIGZyb20gJy4vdXBsb2FkQ29udHJvbGxlci5qcyc7Cg==
+
+```
+
+---
+
+### 💡 دستورالعمل ادغام
+
+- الگوهای بالا را **شناسایی** کن: ساختار فایل‌ها، نام‌گذاری، patternهای معماری، روش‌های handle errors، …
+- اما **در پروژهٔ فعلی** پیاده‌سازی کن — با stack، نام‌گذاری، و سبک کد همان پروژه. نه stack پروژه‌های مرجع.
+- اگر پروژه‌های مرجع stack متفاوت دارند (مثلاً Vue ولی پروژه فعلی React)، **منطق** را منتقل کن نه syntax را.
+
+---
+```
+
 ## 🎯 هدف (خلاصه ساختاریافته)
-ادامه (دور 3): رفع خطای 500 و بازطراحی UI
+رفع خطای 500 در api/users و بازطراحی صفحه ورود و ناوبری
 
 ## 📍 موقعیت دقیق در پروژه
 _(file:line — symbol — snippet)_
 
-- `backend/app/main.py:191` — `include_router(users.router)`
-- `backend/app/routers/users.py` — `list users handler (GET /)`
-- `backend/app/main.py:122-155` — `unhandled_exception_handler_500`
-- `backend/app/schemas/user.py` — `User / UserList schema`
-- `backend/app/routers/google_auth.py`
-- `backend/static/_next/static/chunks/app/login/page-24881fa424a45d34.js`
-- `backend/static/_next/static/chunks/app/layout-d38f6f11bf5727d1.js`
-- `backend/tests/integration/test_users.py`
-- `backend/app/db_init.py` — از evidence verifier در دور 2
+- `backend/app/api/users.py:نامشخص — توسط مجری تأیید شود` — `list_users / get_users` — بر اساس Tech Stack (FastAPI/SQLAlchemy 2.0) — deep_context واقعی پروژهٔ بانکی موجود نبود. مجری باید مسیر دقیق و علت 500 را از traceback پیدا کند.
+  ```python
+  # مسیر واقعی در اختیار نبود؛ الگوی محتمل FastAPI:
+  @router.get('/', response_model=Page[UserOut])
+  async def list_users(page: int = 1, page_size: int = 100, db: AsyncSession = Depends(get_db)):
+      stmt = select(User).offset((page-1)*page_size).limit(page_size)
+      result = await db.execute(stmt)
+      return result.scalars().all()
+  ```
+- `backend/app/schemas/user.py:نامشخص — توسط مجری تأیید شود` — `UserOut (Pydantic model)` — اگر علت 500 از serialization باشد، فیلدها باید Optional شوند. مجری تأیید کند.
+  ```python
+  # منبع محتمل 500: فیلد non-Optional که در DB مقدار NULL دارد
+  class UserOut(BaseModel):
+      id: int
+      email: str
+      full_name: str  # اگر در DB NULL باشد → ValidationError → 500
+  ```
+- `frontend/src/app/login/page.tsx:نامشخص — توسط مجری تأیید شود` — `LoginPage` — مسیر استاندارد Next.js 14 App Router. مجری مسیر دقیق را تأیید کند.
+  ```tsx
+  // صفحهٔ ورود فعلی — فاقد دکمهٔ Google و ناوبری طبق گزارش کاربر
+  ```
 
 ## 🧭 هدف اصلی پروژه (از یادداشت کاربر)
 (کاربر یادداشتی ثبت نکرده است)
 
+## 🧱 پشتهٔ فناوری و معماری
+پروژهٔ مقصد: FastAPI (Python 3.11+) + PostgreSQL + Redis + SQLAlchemy 2.0 + JWT (با refresh token) + Google OAuth 2.0 (فعلاً فقط Drive، scope drive.file) | Frontend: Next.js 14 (App Router) + React 18 + Tailwind.
+
+تفاوت کلیدی با پروژهٔ مرجع `mahdighandi1989/language`: مرجع **Node.js/Express (ESM)** است با endpoint هایی مثل `POST /api/telegram/webhook`، `POST /api/telegram/link`، `GET /api/telegram/status` و الگوی optional-integration (در نبود token به no-op تبدیل می‌شود). در FastAPI signature متفاوت است (async + Depends + Pydantic) و routing کاملاً متفاوت — هیچ کد Express قابل کپی نیست.
+
+## 🔗 فایل‌های مرتبط (Cross-references)
+_(فایل‌هایی که با موقعیت‌های هدف در ارتباط هستند — import، caller، shared state)_
+
+- `frontend/src/lib/api.ts` — client که `api/users/?page=1&page_size=100` را call می‌کند و 500 می‌گیرد
+- `backend/app/core/security.py` — JWT و auth dependency که برای Google OAuth login و permission باید استفاده شود
+- `backend/app/services/google_oauth.py` — OAuth فعلی Drive backup با scope drive.file — باید scope احراز هویت اضافه شود
+- `frontend/src/app/layout.tsx` — layout مشترک که navbar/sidebar ناوبری باید در آن اضافه شود
+
+## 🌐 نقشهٔ وابستگی‌ها
+endpoint `/api/users/` توسط client فرانت (احتمالاً `frontend/src/lib/api.ts`) و هر صفحه‌ای که لیست کاربران را نمایش می‌دهد (مدیریت کاربران/تنظیمات) فراخوانی می‌شود؛ پس رفع 500 روی همهٔ این صفحات اثر می‌گذارد. اضافه‌کردن Google OAuth login، `backend/app/core/security.py` (تولید JWT) و `backend/app/services/google_oauth.py` (که الان فقط scope `drive.file` دارد) را تحت تأثیر قرار می‌دهد و ممکن است با flow backup تداخل کند. بازطراحی ناوبری در `frontend/src/app/layout.tsx` روی همهٔ صفحات authenticated اثر می‌گذارد. مدل/اسکیمای User (`backend/app/schemas/user.py` و model مربوطه) اگر فیلدها Optional شوند، روی هر endpoint دیگری که UserOut برمی‌گرداند اثر دارد.
+
 ## 🔍 Context و وضعیت فعلی
-این پرامپت برای **دور 3** ادامهٔ کار است. verifier در دور قبلی نشان داد کار به‌طور کامل انجام نشده.
+کاربر شش مشکل به‌هم‌مرتبط را در سیستم Banking Operations System (FastAPI + PostgreSQL + SQLAlchemy 2.0 backend و Next.js 14 frontend) گزارش کرده است:
 
-📋 وضعیت چک‌لیست مراحل (0/6 انجام‌شده) — پیشرفت کلی: **50%**:
-  - [~] **مرحله 1: رفع خطای 500 در endpoint لیست کاربران (api/users)** — باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست.
-  - [~] **مرحله 2: افزودن امکان لاگین از طریق Gmail (Google OAuth)** — باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست.
-  - [~] **مرحله 3: بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر** — باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند.
-  - [~] **مرحله 4: تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها** — باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست.
-  - [~] **مرحله 5: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)** — باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است.
-  - [~] **مرحله 6: یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)** — باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست.
+۱) «صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره» — صفحهٔ login فاقد منوی ناوبری و گزینه‌های جانبی (مثل ورود با Google) است.
+۲) «باید امکان لاگین از طریق جیمیل فراهم باشه» — نیاز به Google OAuth login (Sign in with Google). نکته: README می‌گوید Google OAuth 2.0 فعلاً فقط برای Drive backup با scope `drive.file` استفاده می‌شود، نه برای authentication کاربر. پس باید scope احراز هویت (openid/email/profile) و یک flow جدید login اضافه شود.
+۳) «خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن» — صفحات ناقص/خراب و دسته‌بندی نامرتب.
+۴) «ارتباط اجزا و صفحات خیلی به هم ریخته س» — routing و ناوبری بین صفحات نامنظم است.
+۵) «از منظر ظاهری خیلی آشفته اس» — ناهماهنگی بصری (UX/UI).
+۶) خطای صریح در کنسول مرورگر که چند بار تکرار شده:
+`Failed to load resource: the server responded with a status of 500 ()`
+`api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()`
+یعنی endpoint با مسیر `api/users/?page=1&page_size=100` در سمت backend خطای 500 (Internal Server Error) می‌دهد و لیست کاربران لود نمی‌شود.
 
-🎯 **در این دور، فقط روی مراحل بالا که `[ ]` یا `[~]` دارند تمرکز کن.** مراحلی که `[x]` خورده‌اند قبلاً تأیید شده‌اند — نگران آن‌ها نباش، ولی regression نکن.
+شواهد در کد (بر اساس Tech Stack اعلام‌شده در README — مسیرهای دقیق توسط مجری باید تأیید شوند چون deep_context واقعی پروژهٔ بانکی در اختیار نبود): این پروژه FastAPI است، پس endpoint کاربران احتمالاً در `backend/app/api/users.py` یا `backend/app/routers/users.py` با یک router به prefix `/api/users` و پارامترهای pagination (`page`, `page_size`) تعریف شده. خطای 500 معمولاً از یکی از این موارد است: (الف) خطای serialization در Pydantic response_model وقتی یک فیلد NULL/ناسازگار از DB می‌آید، (ب) خطای query در SQLAlchemy 2.0 (مثلاً استفادهٔ نادرست از `.offset()/.limit()` یا session منقضی)، (ج) خطای permission/role که exception را به 500 تبدیل کرده به‌جای 403. صفحهٔ ورود و ناوبری در Next.js 14 احتمالاً در `frontend/src/app/login/page.tsx` و یک layout/sidebar مشترک قرار دارند.
 
-✅ بخش‌هایی که در دور قبل انجام شد:
-  - کد رفع خطای 500 در endpoint `/api/users` (مدیریت NULL و serialization) پیاده‌سازی شده است.
-  - کد مربوط به افزودن امکان لاگین با Google OAuth در backend پیاده‌سازی شده است.
-  - کد بازطراحی صفحه ورود و افزودن منوی ناوبری در frontend پیاده‌سازی شده است.
-  - کد برای تکمیل و دسته‌بندی صفحات ناقص و بهبود IA در frontend پیاده‌سازی شده است.
-  - کد برای یکدست‌سازی ظاهر کلی برنامه در frontend پیاده‌سازی شده است.
-  - لینتر بدون warning عبور می‌کند (بر اساس code analysis).
-
-⏳ بخش‌هایی که هنوز باقی مانده (تمرکز روی این‌ها):
-  - خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد.
-  - صفحه مدیریت کاربران (UI) به دلیل خطای 404 قابل دسترسی نیست.
-  - بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند.
-  - دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست.
-  - تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند (pytest internal error).
-  - تست‌های پروژه (npm run test / pytest) fail می‌شوند.
-  - type-check موفق نیست (هیچ شواهدی از اجرای موفقیت‌آمیز type-check یافت نشد).
-
-📝 خلاصهٔ verifier:
-```json
-{
-  "status": "partial",
-  "done_parts": [
-    "کد رفع خطای 500 در endpoint `/api/users` (مدیریت NULL و serialization) پیاده‌سازی شده است.",
-    "کد مربوط به افزودن امکان لاگین با Google OAuth در backend پیاده‌سازی شده است.",
-    "کد بازطراحی صفحه ورود و افزودن منوی ناوبری در frontend پیاده‌سازی شده است.",
-    "کد برای تکمیل و دسته‌بندی صفحات ناقص و بهبود IA در frontend پیاده‌سازی شده است.",
-    "کد برای یکدست‌سازی ظاهر کلی برنامه در frontend پیاده‌سازی شده است.",
-    "لینتر بدون warning
-
-🪜 اقدامات بعدی پیشنهادی verifier:
-  - بررسی علت خطای 500 در endpoint `/api/users` در محیط deployed.
-  - دیباگ و رفع خطای 404 برای صفحه `/users-management`.
-  - بررسی علت عدم نمایش عناصر UI بازطراحی شده در صفحات ورود و ناوبری.
-  - بررسی علت خطای `pytest internal error` و اطمینان از اجرای موفقیت‌آمیز تست‌ها.
-  - اطمینان از اجرای موفقیت‌آمیز type-check.
-  - بررسی وضعیت deploy و اطمینان از اعمال صحیح تغییرات کد در محیط Render.
+نکتهٔ مرجع: کاربر پروژهٔ `mahdighandi1989/language` را به‌عنوان الهام انتخاب کرده (به بخش پروژه‌های مرجع مراجعه شود).
 
 ## ✅ معیار پذیرش (Acceptance Criteria) — رفتار-محور
 **مهم:** هر AC رفتار قابل مشاهده را تعریف می‌کند، نه نام فایل/کلاس.
 verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز را قبول کند.
 
-- [ ] [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست.
-- [ ] [مرحله 2 — افزودن امکان لاگین از طریق Gmail (Google OAuth)] باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست.
-- [ ] [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند.
-- [ ] [مرحله 4 — تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها] باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست.
-- [ ] [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است.
-- [ ] [مرحله 6 — یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)] باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست.
-- [ ] خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد.
-- [ ] صفحه مدیریت کاربران (UI) به دلیل خطای 404 قابل دسترسی نیست.
-- [ ] بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند.
-- [ ] دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست.
-- [ ] تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند (pytest internal error).
-- [ ] تست‌های پروژه (npm run test / pytest) fail می‌شوند.
-- [ ] type-check موفق نیست (هیچ شواهدی از اجرای موفقیت‌آمیز type-check یافت نشد).
+- [ ] GET /api/users/?page=1&page_size=100 به‌جای 500 باید 200 با لیست کاربران برگرداند
+- [ ] endpoint های Google OAuth login (`/api/auth/google/login` و callback) تعریف شده باشند و scope احراز هویت داشته باشند
+- [ ] صفحهٔ ورود باید دکمهٔ «ورود با Google» را نمایش دهد
+- [ ] صفحات authenticated باید یک منوی ناوبری مشترک (navbar/sidebar) داشته باشند
+- [ ] exception handler عمومی باید خطاهای داخلی را به پاسخ structured (نه 500 خام) تبدیل کند
+- [ ] الگوی برداشت‌شده از پروژهٔ مرجع mahdighandi1989/language با dependency و naming پروژهٔ فعلی (FastAPI async + Depends + Next.js App Router) سازگار است، نه copy-paste از Express
 - [ ] هیچ تستی fail نمی‌شود (`npm run test` / `pytest`)
 - [ ] linter بدون warning عبور می‌کند
 - [ ] type-check موفق است (`tsc --noEmit` / `mypy`)
 
 ## 🪜 مراحل اجرایی پیشنهادی
-1. پیاده‌سازی AC های باقی‌مانده با حفظ کارهای انجام‌شدهٔ دور قبل.
+1. پیاده‌سازی در چهار فاز:
+
+**فاز ۱ — رفع خطای 500 در api/users (اولویت اول، blocking):**
+1. لاگ کامل backend را هنگام فراخوانی `GET /api/users/?page=1&page_size=100` بررسی کن (traceback واقعی).
+2. handler مربوط به users list را پیدا کن (احتمالاً `backend/app/api/users.py` یا `backend/app/routers/users.py`).
+3. علت ریشه‌ای را شناسایی کن: serialization (Pydantic response_model با فیلد NULL)، query SQLAlchemy، یا permission. تست با pagination دقیق `page=1&page_size=100`.
+4. اگر serialization است: فیلدهای Optional را اصلاح کن یا `from_attributes=True` و default مناسب بگذار. اگر query است: pagination را با `select().offset((page-1)*page_size).limit(page_size)` درست کن.
+5. یک exception handler عمومی اضافه کن تا خطاهای داخلی به‌جای 500 خام، structured error بدهند.
+
+**فاز ۲ — Google OAuth برای login:**
+6. در README ذکر شده OAuth فعلاً فقط `drive.file` است. یک flow جدید login با Google اضافه کن: endpoint های `GET /api/auth/google/login` و `GET /api/auth/google/callback` با scope های `openid email profile`.
+7. در callback، کاربر را بر اساس email در جدول users پیدا/بساز کن و JWT (همان refresh token موجود) صادر کن.
+
+**فاز ۳ — صفحهٔ ورود و ناوبری:**
+8. صفحهٔ `frontend/src/app/login/page.tsx` را بازطراحی کن: افزودن دکمهٔ «ورود با Google»، layout تمیز، و اگر منوی ناوبری لازم است در صفحات authenticated یک sidebar/navbar مشترک در layout اضافه کن.
+
+**فاز ۴ — سامان‌دهی routing و صفحات ناقص:**
+9. صفحات ناقص/خراب را فهرست و دسته‌بندی کن؛ routing نامرتب را در App Router مرتب کن.
+
+**هشدار تطبیق با stack:** الگوهای پروژهٔ مرجع `mahdighandi1989/language` با **Node.js/Express + Telegram/Gemini** نوشته شده‌اند (مثل `backend/services/telegram/index.js` با `POST /api/telegram/link`). این پروژه **FastAPI + Next.js** است — هرگز import یا syntax Express را کپی نکن؛ فقط الگوی معماری (لایهٔ service/controller جدا، optional integration که در نبود token به no-op تبدیل می‌شود) را به FastAPI dependency injection و Next.js منتقل کن.
+
+## 💡 نمونه‌های قبل/بعد
+**رفع 500 ناشی از serialization در users list (الگوی محتمل — مجری تأیید کند)**
+
+_قبل:_
+```
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str  # NULL در DB → ValidationError → 500
+```
+
+_بعد:_
+```
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str | None = None
+    model_config = ConfigDict(from_attributes=True)
+```
 
 ## 📤 خروجی مورد انتظار
 تغییر کد در فایل‌های مرتبط، commit یا PR جدید با پیام واضح، و عبور تمام معیارهای پذیرش.
 
 ## 🧪 دستورات اعتبارسنجی
-- `cd backend && pytest tests/integration/test_users.py -v`
-- `cd backend && pytest --cov=app --cov-report=term-missing`
-- `cd frontend && npm run build`
+- `pytest backend/tests/ -k users`
+- `curl -i 'http://localhost:8000/api/users/?page=1&page_size=100'`
+- `npm run build --prefix frontend`
 
 ## ⚠️ ریسک‌ها و موارد احتیاط
-موارد زیر در دور قبل ناقص ماندند — مراقب رگرشن باش:
-  - بررسی علت خطای 500 در endpoint `/api/users` در محیط deployed.
-  - دیباگ و رفع خطای 404 برای صفحه `/users-management`.
-  - بررسی علت عدم نمایش عناصر UI بازطراحی شده در صفحات ورود و ناوبری.
-  - بررسی علت خطای `pytest internal error` و اطمینان از اجرای موفقیت‌آمیز تست‌ها.
-  - اطمینان از اجرای موفقیت‌آمیز type-check.
+۱) اگر علت 500 صرفاً serialization باشد ولی به‌جای آن query را تغییر دهیم، باگ پنهان می‌ماند — باید ابتدا traceback واقعی دیده شود. ۲) افزودن scope احراز هویت به Google OAuth که فعلاً فقط `drive.file` دارد می‌تواند consent screen موجود و flow backup را بشکند یا token های قبلی را invalidate کند. ۳) Optional کردن فیلدهای UserOut روی هر endpoint دیگری که این schema را برمی‌گرداند اثر می‌گذارد. ۴) بازطراحی layout/navbar روی همهٔ صفحات authenticated اثر سراسری دارد و ممکن است صفحات سالم را بشکند. ۵) خطر mixing stack: اگر developer الگوی Express از `backend/services/telegram/index.js` مرجع را بدون تطبیق با FastAPI/SQLAlchemy پیاده کند، routing و session ناسازگار می‌شود.
 
 ## 🔗 وابستگی‌های تسکی
 _(مستقل)_
 
 ## 🏷 دسته‌بندی
-- نوع: idea
-- اولویت: medium
-- تخمین زمان: medium
-
-## 📋 چک‌لیست مراحل (دور 3)
-
-این مراحل از پرامپت اصلی نگه داشته شده‌اند تا verifier در هر دور وضعیت هر مرحله را به‌روز کند. `[x]` = انجام‌شده، `[~]` = ناقص، `[ ]` = هنوز انجام نشده.
-
-- [~] **مرحله 1: رفع خطای 500 در endpoint لیست کاربران (api/users)** — این مرحله شامل دیباگ و رفع خطای سرور 500 روی endpoint `api/users/?page=1&page_size=100` است که در کنسول مرورگر چندین بار تکرار می‌شود. باید علت خطا (مثلاً مشکل در pagination با پارامتر `page_size`، خطای کوئری دیتابیس، یا handler ناقص controller) شناسایی و اصلاح شود. خارج از این مرحله: تغییرات UI یا 
-      _باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست._
-- [~] **مرحله 2: افزودن امکان لاگین از طریق Gmail (Google OAuth)** — این مرحله شامل پیاده‌سازی احراز هویت از طریق حساب Gmail/Google است تا کاربران بتوانند با گزینهٔ «Login with Google» وارد شوند. باید جریان OAuth (redirect، callback، صدور session/token) در backend و دکمهٔ مربوطه در صفحهٔ ورود فراهم شود. می‌توان از الگوی پروژهٔ مرجع `mahdighandi1989/language` (تمرکز ر
-      _باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست._
-- [~] **مرحله 3: بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر** — این مرحله شامل بهبود ظاهر و کارکرد صفحهٔ ورود است: صفحهٔ ورود فعلی جذاب نیست، گزینه‌های دیگر در آن دیده نمی‌شوند و منوی ناوبری ندارد. باید طراحی صفحهٔ ورود بهبود یابد، گزینه‌های دیگر (مثل ورود با Gmail که در مرحلهٔ ۲ اضافه شد) به‌وضوح نمایش داده شوند و یک منوی ناوبری (nav bar) اضافه شود. خارج از این
-      _باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند._
-- [~] **مرحله 4: تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها** — این مرحله شامل بررسی، تکمیل و اصلاح صفحاتی است که کاربر گفته ناقص هستند، کار نمی‌کنند یا درست دسته‌بندی نشده‌اند. باید هر صفحهٔ معیوب شناسایی، تکمیل و در ساختار/دسته‌بندی منطقی قرار گیرد (مثلاً گروه‌بندی منطقی صفحات در منو). خارج از این مرحله: رفع خطای endpoint کاربران و طراحی بصری کلی. نکتهٔ حیاتی:
-      _باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست._
-- [~] **مرحله 5: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)** — این مرحله شامل ساماندهی ارتباط بین اجزا و صفحات است؛ کاربر گفته ارتباط اجزا و صفحات به‌هم‌ریخته است. باید جریان ناوبری بین صفحات، لینک‌ها و انتقال‌ها منسجم و قابل پیش‌بینی شود (information architecture منظم، breadcrumb یا منوی یکپارچه). خارج از این مرحله: استایل بصری صرف و رفع backend. نکتهٔ حیاتی: 
-      _باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است._
-- [~] **مرحله 6: یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)** — این مرحله شامل رفع آشفتگی بصری کلی برنامه است؛ کاربر گفته از منظر ظاهری خیلی آشفته است. باید یک سیستم طراحی منسجم (رنگ‌ها، فاصله‌ها، تایپوگرافی، کامپوننت‌های مشترک) در سراسر صفحات اعمال شود تا ظاهر یکدست و تمیز شود. خارج از این مرحله: منطق backend و کارکرد صفحات. نکتهٔ حیاتی: consistency در همهٔ صفح
-      _باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست._
+- نوع: bug
+- اولویت: high
+- تخمین زمان: large
 
 ## Acceptance Criteria
 
-1. [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست. _(verify: api_response)_
-2. [مرحله 2 — افزودن امکان لاگین از طریق Gmail (Google OAuth)] باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: ui_interaction)_
-3. [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: ui_interaction)_
-4. [مرحله 4 — تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها] باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: ui_interaction)_
-5. [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است. _(verify: manual_only)_
-6. [مرحله 6 — یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)] باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: manual_only)_
-7. خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: api_response)_
-8. صفحه مدیریت کاربران (UI) به دلیل خطای 404 قابل دسترسی نیست. _(verify: ui_interaction)_
-9. بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: ui_interaction)_
-10. دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: ui_interaction)_
-11. تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند (pytest internal error). _(verify: backend_test)_
-12. تست‌های پروژه (npm run test / pytest) fail می‌شوند. _(verify: backend_test)_
-13. type-check موفق نیست (هیچ شواهدی از اجرای موفقیت‌آمیز type-check یافت نشد). _(verify: static)_
-14. هیچ تستی fail نمی‌شود (`npm run test` / `pytest`) _(verify: backend_test)_
-15. linter بدون warning عبور می‌کند _(verify: static)_
-16. type-check موفق است (`tsc --noEmit` / `mypy`) _(verify: static)_
+1. GET /api/users/?page=1&page_size=100 به‌جای 500 باید 200 با لیست کاربران برگرداند _(verify: api_response)_
+2. endpoint های Google OAuth login (`/api/auth/google/login` و callback) تعریف شده باشند و scope احراز هویت داشته باشند _(verify: static)_
+3. صفحهٔ ورود باید دکمهٔ «ورود با Google» را نمایش دهد _(verify: ui_interaction)_
+4. صفحات authenticated باید یک منوی ناوبری مشترک (navbar/sidebar) داشته باشند _(verify: static)_
+5. exception handler عمومی باید خطاهای داخلی را به پاسخ structured (نه 500 خام) تبدیل کند _(verify: static)_
+6. الگوی برداشت‌شده از پروژهٔ مرجع mahdighandi1989/language با dependency و naming پروژهٔ فعلی (FastAPI async + Depends + Next.js App Router) سازگار است، نه copy-paste از Express _(verify: manual_only)_
 
 ## Task Steps
 
