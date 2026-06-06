@@ -10,7 +10,7 @@ verification_status: applied_externally_pending_verify
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T08:51:09.856990+00:00'
+updated_at: '2026-06-06T08:51:51.520632+00:00'
 target_files:
 - backend/app/main.py
 - backend/app/routers/users.py
@@ -832,20 +832,20 @@ _(مستقل)_
 
 ## Acceptance Criteria
 
-1. [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست. _(verify: static)_
-2. [مرحله 2 — افزودن امکان لاگین از طریق Gmail (Google OAuth)] باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: static)_
-3. [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: static)_
-4. [مرحله 4 — تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها] باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: static)_
-5. [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است. _(verify: static)_
-6. [مرحله 6 — یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)] باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: static)_
-7. خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: static)_
-8. صفحه مدیریت کاربران (UI) به دلیل خطای 404 قابل دسترسی نیست. _(verify: static)_
-9. بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: static)_
-10. دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: static)_
-11. تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند (pytest internal error). _(verify: static)_
-12. تست‌های پروژه (npm run test / pytest) fail می‌شوند. _(verify: static)_
+1. [مرحله 1 — رفع خطای 500 در endpoint لیست کاربران (api/users)] باقی‌مانده: خطای 500 در endpoint `/api/users` در محیط deployed همچنان وجود دارد و صفحه مدیریت کاربران (UI) قابل دسترسی نیست. _(verify: api_response)_
+2. [مرحله 2 — افزودن امکان لاگین از طریق Gmail (Google OAuth)] باقی‌مانده: دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: ui_interaction)_
+3. [مرحله 3 — بازطراحی صفحهٔ ورود و افزودن منوی ناوبری و نمایش گزینه‌های دیگر] باقی‌مانده: بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: ui_interaction)_
+4. [مرحله 4 — تکمیل و رفع صفحات ناقص یا غیرفعال و دسته‌بندی صحیح آن‌ها] باقی‌مانده: تکمیل و دسته‌بندی صفحات ناقص به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: ui_interaction)_
+5. [مرحله 5 — بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture)] باقی‌مانده: بهبود ارتباط و انسجام بین اجزا و صفحات (information architecture) از نظر بصری تأیید نشده است. _(verify: manual_only)_
+6. [مرحله 6 — یکدست‌سازی و بهبود ظاهر کلی برنامه (visual consistency)] باقی‌مانده: یکدست‌سازی و بهبود ظاهر کلی برنامه به دلیل عدم بارگذاری صحیح UI قابل تأیید نیست. _(verify: manual_only)_
+7. خطای 500 در endpoint `/api/users/?page=1&page_size=100` همچنان در محیط deployed وجود دارد. _(verify: api_response)_
+8. صفحه مدیریت کاربران (UI) به دلیل خطای 404 قابل دسترسی نیست. _(verify: ui_interaction)_
+9. بازطراحی صفحه ورود و منوی ناوبری از نظر بصری تأیید نشده و عناصر UI مربوطه دیده نمی‌شوند. _(verify: ui_interaction)_
+10. دکمه ورود با Google در صفحه لاگین دیده نمی‌شود و جریان OAuth در UI قابل تأیید نیست. _(verify: ui_interaction)_
+11. تست‌های backend رگرسیون برای endpoint کاربران fail می‌شوند (pytest internal error). _(verify: backend_test)_
+12. تست‌های پروژه (npm run test / pytest) fail می‌شوند. _(verify: backend_test)_
 13. type-check موفق نیست (هیچ شواهدی از اجرای موفقیت‌آمیز type-check یافت نشد). _(verify: static)_
-14. هیچ تستی fail نمی‌شود (`npm run test` / `pytest`) _(verify: static)_
+14. هیچ تستی fail نمی‌شود (`npm run test` / `pytest`) _(verify: backend_test)_
 15. linter بدون warning عبور می‌کند _(verify: static)_
 16. type-check موفق است (`tsc --noEmit` / `mypy`) _(verify: static)_
 
