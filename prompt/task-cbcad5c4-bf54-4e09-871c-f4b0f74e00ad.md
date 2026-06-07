@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-07T16:54:00.139220+00:00'
-updated_at: '2026-06-07T16:54:00.139224+00:00'
+updated_at: '2026-06-07T22:04:43.613661+00:00'
 target_files:
 - backend/app/routers/imports.py
 - backend/app/utils/rate_limit.py
@@ -465,10 +465,10 @@ _(مستقل)_
 
 ## Acceptance Criteria
 
-1. Import endpoints (`/api/imports/*`) are rate-limited to 10 operations per user per hour.
-2. Users exceeding the rate limit receive a 429 HTTP status code with an informative message.
-3. Rate limit status and violations are logged for monitoring.
-4. New unit or integration tests are added to verify the rate limiting functionality for imports.
+1. Import endpoints (`/api/imports/*`) are rate-limited to 10 operations per user per hour. _(verify: backend_test)_
+2. Users exceeding the rate limit receive a 429 HTTP status code with an informative message. _(verify: api_response)_
+3. Rate limit status and violations are logged for monitoring. _(verify: backend_test)_
+4. New unit or integration tests are added to verify the rate limiting functionality for imports. _(verify: static)_
 
 ## Task Steps
 
