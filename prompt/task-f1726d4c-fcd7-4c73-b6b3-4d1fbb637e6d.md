@@ -5,12 +5,12 @@ type: idea
 priority: medium
 execution_priority: 3250
 status: pending
-external_status: claimed
-verification_status: error
+external_status: done
+verification_status: applied_externally_pending_verify
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-07T20:05:28.934884+00:00'
+updated_at: '2026-06-07T20:13:32.183000+00:00'
 target_files:
 - backend/app/api/endpoints/auth.py
 - backend/app/services/google_auth_service.py
