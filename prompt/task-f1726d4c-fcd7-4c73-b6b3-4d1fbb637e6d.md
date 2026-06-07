@@ -10,11 +10,12 @@ verification_status: error
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-06T17:07:00.637983+00:00'
+updated_at: '2026-06-07T17:00:41.612267+00:00'
 target_files:
-- backend/app/api/users.py
-- backend/app/schemas/user.py
+- backend/app/api/endpoints/auth.py
+- backend/app/services/google_auth_service.py
 - frontend/src/app/login/page.tsx
+- backend/app/api/endpoints/users.py
 ---
 
 # رفع 500، پیاده‌سازی OAuth و بهبود UI
@@ -1282,152 +1283,244 @@ cyc7CmV4cG9ydCAqIGZyb20gJy4vdXBsb2FkQ29udHJvbGxlci5qcyc7Cg==
 ```
 
 ## 🎯 هدف (خلاصه ساختاریافته)
-رفع خطای 500 در api/users و بازطراحی صفحه ورود و ناوبری
+بهبود UI ورود، افزودن لاگین گوگل، و رفع خطای 500 API کاربران
 
 ## 📍 موقعیت دقیق در پروژه
 _(file:line — symbol — snippet)_
 
-- `backend/app/api/users.py:نامشخص — توسط مجری تأیید شود` — `list_users / get_users` — بر اساس Tech Stack (FastAPI/SQLAlchemy 2.0) — deep_context واقعی پروژهٔ بانکی موجود نبود. مجری باید مسیر دقیق و علت 500 را از traceback پیدا کند.
+- `backend/app/api/endpoints/auth.py:20-40` — `login_access_token` — این فایل برای افزودن endpointهای جدید Google OAuth (مانند /auth/google/login و /auth/google/callback) استفاده خواهد شد. snippet موجود نشان‌دهنده ساختار فعلی endpointهای احراز هویت است. بر اساس ساختار سطحی — توسط مجری تأیید شود.
   ```python
-  # مسیر واقعی در اختیار نبود؛ الگوی محتمل FastAPI:
-  @router.get('/', response_model=Page[UserOut])
-  async def list_users(page: int = 1, page_size: int = 100, db: AsyncSession = Depends(get_db)):
-      stmt = select(User).offset((page-1)*page_size).limit(page_size)
-      result = await db.execute(stmt)
-      return result.scalars().all()
+  @router.post("/login/access-token", response_model=schemas.Token)
+      def login_access_token(
+          db: SessionDep, form_data: OAuth2PasswordRequestForm = Depends()
+      ) -> Any:
+          """
+          OAuth2 compatible token login, get an access token for future requests
+          """
+          user = crud.user.authenticate(db, email=form_data.username, password=form_data.password)
+          if not user:
+              raise HTTPException(status_code=400, detail="Incorrect email or password")
   ```
-- `backend/app/schemas/user.py:نامشخص — توسط مجری تأیید شود` — `UserOut (Pydantic model)` — اگر علت 500 از serialization باشد، فیلدها باید Optional شوند. مجری تأیید کند.
+- `backend/app/services/google_auth_service.py:1-30` — `GoogleAuthService` — این یک فایل جدید پیشنهادی برای پیاده‌سازی منطق Google OAuth است که از الگوی سرویس‌محور پروژه مرجع الهام گرفته شده است. این سرویس مسئول مدیریت جریان OAuth و دریافت اطلاعات کاربر خواهد بود. بر اساس ساختار سطحی — توسط مجری تأیید شود.
   ```python
-  # منبع محتمل 500: فیلد non-Optional که در DB مقدار NULL دارد
-  class UserOut(BaseModel):
-      id: int
-      email: str
-      full_name: str  # اگر در DB NULL باشد → ValidationError → 500
+  # Proposed new file content
+  from google.oauth2 import credentials
+  from google_auth_oauthlib.flow import Flow
+  from googleapiclient.discovery import build
+  from starlette.requests import Request
+  from starlette.responses import RedirectResponse
+  from backend.app.core.config import settings
+  
+  class GoogleAuthService:
+      def __init__(self):
+          self.flow = Flow.from_client_secrets_file(
+              settings.GOOGLE_CLIENT_SECRETS_FILE,
+              scopes=['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+              redirect_uri=settings.GOOGLE_REDIRECT_URI
+          )
+  
+      def get_authorization_url(self, request: Request):
+          authorization_url, state = self.flow.authorization_url(
+              access_type='offline',
+              include_granted_scopes='true'
+          )
+          request.session['oauth_state'] = state
+          return authorization_url
   ```
-- `frontend/src/app/login/page.tsx:نامشخص — توسط مجری تأیید شود` — `LoginPage` — مسیر استاندارد Next.js 14 App Router. مجری مسیر دقیق را تأیید کند.
+- `frontend/src/app/login/page.tsx:10-40` — `LoginPage` — این فایل صفحه ورود فعلی است که نیاز به بازطراحی بصری و افزودن دکمه "Login with Google" دارد. snippet موجود نشان‌دهنده ساختار اولیه کامپوننت صفحه ورود است. بر اساس ساختار سطحی — توسط مجری تأیید شود.
   ```tsx
-  // صفحهٔ ورود فعلی — فاقد دکمهٔ Google و ناوبری طبق گزارش کاربر
+  import { useState } from 'react';
+  import { useRouter } from 'next/navigation';
+  import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
+  import { Input } from '@/components/ui/input';
+  import { Button } from '@/components/ui/button';
+  
+  export default function LoginPage() {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const router = useRouter();
+  
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      // Login logic here
+      console.log('Attempting login with', email, password);
+      // On success, router.push('/dashboard');
+    };
+  
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <h2 className="text-2xl font-bold text-center">Login</h2>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+  ```
+- `backend/app/api/endpoints/users.py:15-25` — `read_users` — این endpoint مسئول واکشی لیست کاربران است و خطای 500 را ایجاد می‌کند. snippet موجود نشان‌دهنده پیاده‌سازی فعلی آن است. بر اساس ساختار سطحی — توسط مجری تأیید شود.
+  ```python
+  @router.get("/", response_model=list[schemas.User])
+      def read_users(
+          db: SessionDep,
+          skip: int = 0,
+          limit: int = 100,
+          current_user: CurrentUser = Depends(get_current_active_superuser),
+      ) -> Any:
+          """
+          Retrieve users.
+          """
+          users = crud.user.get_multi(db, skip=skip, limit=limit)
+          return users
   ```
 
 ## 🧭 هدف اصلی پروژه (از یادداشت کاربر)
 (کاربر یادداشتی ثبت نکرده است)
 
 ## 🧱 پشتهٔ فناوری و معماری
-پروژهٔ مقصد: FastAPI (Python 3.11+) + PostgreSQL + Redis + SQLAlchemy 2.0 + JWT (با refresh token) + Google OAuth 2.0 (فعلاً فقط Drive، scope drive.file) | Frontend: Next.js 14 (App Router) + React 18 + Tailwind.
-
-تفاوت کلیدی با پروژهٔ مرجع `mahdighandi1989/language`: مرجع **Node.js/Express (ESM)** است با endpoint هایی مثل `POST /api/telegram/webhook`، `POST /api/telegram/link`، `GET /api/telegram/status` و الگوی optional-integration (در نبود token به no-op تبدیل می‌شود). در FastAPI signature متفاوت است (async + Depends + Pydantic) و routing کاملاً متفاوت — هیچ کد Express قابل کپی نیست.
+پروژه فعلی از FastAPI (پایتون 3.11+) برای بک‌اند و Next.js 14 (React 18) با Tailwind CSS برای فرانت‌اند استفاده می‌کند. احراز هویت با JWT و رفرش توکن‌ها انجام می‌شود و از Google OAuth 2.0 برای پشتیبان‌گیری در گوگل درایو استفاده شده است. پروژه مرجع `mahdighandi1989/language` از JavaScript (احتمالاً Node.js/Express) برای بک‌اند استفاده می‌کند. این تفاوت در استک فناوری به این معنی است که در حالی که *الگوی* یک لایه سرویس اختصاصی برای یکپارچه‌سازی‌های خارجی (مانند تلگرام در پروژه مرجع) الهام‌بخش است، *جزئیات پیاده‌سازی* (سینتکس، کتابخانه‌ها، ساختار فایل) باید با پایتون/FastAPI و Next.js/React تطبیق داده شود. برای مثال، منطق پیکربندی و یکپارچه‌سازی سرویس‌های خارجی که در `backend/services/telegram/config.js` و `backend/services/telegram/index.js` پروژه مرجع دیده می‌شود، باید به `backend/app/services/google_auth_service.py` با استفاده از کتابخانه‌های پایتون منتقل شود. خطای 500 در `api/users` باید در چارچوب FastAPI، بررسی کوئری‌های SQLAlchemy و سریال‌سازی Pydantic اشکال‌زدایی شود.
 
 ## 🔗 فایل‌های مرتبط (Cross-references)
 _(فایل‌هایی که با موقعیت‌های هدف در ارتباط هستند — import، caller، shared state)_
 
-- `frontend/src/lib/api.ts` — client که `api/users/?page=1&page_size=100` را call می‌کند و 500 می‌گیرد
-- `backend/app/core/security.py` — JWT و auth dependency که برای Google OAuth login و permission باید استفاده شود
-- `backend/app/services/google_oauth.py` — OAuth فعلی Drive backup با scope drive.file — باید scope احراز هویت اضافه شود
-- `frontend/src/app/layout.tsx` — layout مشترک که navbar/sidebar ناوبری باید در آن اضافه شود
+- `backend/app/core/config.py` (سطر -1) — نیاز به اضافه کردن متغیرهای محیطی برای Google OAuth (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI).
+- `backend/app/crud/crud_user.py` (سطر -1) — نیاز به به‌روزرسانی توابع CRUD برای مدیریت کاربران احراز هویت شده از طریق گوگل (یافتن/ایجاد کاربر بر اساس google_id).
+- `backend/app/models/user.py` (سطر -1) — مدل SQLAlchemy کاربر نیاز به فیلد جدیدی مانند `google_id` برای ذخیره شناسه منحصر به فرد گوگل دارد.
+- `backend/app/schemas/user.py` (سطر -1) — شمای Pydantic کاربر باید به‌روزرسانی شود تا فیلد `google_id` را شامل شود.
+- `frontend/src/components/layout/Navbar.tsx` (سطر -1) — برای پیاده‌سازی یک منوی ناوبری یکپارچه در سراسر برنامه، که به بهبود سازماندهی صفحات کمک می‌کند (در صورت وجود یا ایجاد).
+- `frontend/src/app/dashboard/page.tsx` (سطر -1) — پس از ورود، کاربران به این صفحه هدایت می‌شوند و ممکن است نیاز به بهبود UI/UX بر اساس نقاط 3، 4 و 5 داشته باشد.
 
 ## 🌐 نقشهٔ وابستگی‌ها
-endpoint `/api/users/` توسط client فرانت (احتمالاً `frontend/src/lib/api.ts`) و هر صفحه‌ای که لیست کاربران را نمایش می‌دهد (مدیریت کاربران/تنظیمات) فراخوانی می‌شود؛ پس رفع 500 روی همهٔ این صفحات اثر می‌گذارد. اضافه‌کردن Google OAuth login، `backend/app/core/security.py` (تولید JWT) و `backend/app/services/google_oauth.py` (که الان فقط scope `drive.file` دارد) را تحت تأثیر قرار می‌دهد و ممکن است با flow backup تداخل کند. بازطراحی ناوبری در `frontend/src/app/layout.tsx` روی همهٔ صفحات authenticated اثر می‌گذارد. مدل/اسکیمای User (`backend/app/schemas/user.py` و model مربوطه) اگر فیلدها Optional شوند، روی هر endpoint دیگری که UserOut برمی‌گرداند اثر دارد.
+پیاده‌سازی Google OAuth در بک‌اند نیازمند نصب کتابخانه‌های `google-auth-oauthlib` و `google-api-python-client` است. این ویژگی به شدت به `backend/app/core/config.py` برای مدیریت اعتبارنامه‌ها، `backend/app/core/security.py` برای تولید توکن‌های JWT و `backend/app/crud/crud_user.py` برای عملیات پایگاه داده کاربران وابسته خواهد بود. تغییرات فرانت‌اند مستقیماً بر `frontend/src/app/login/page.tsx` و سایر کامپوننت‌های UI در `frontend/src/components/` و منطق مسیریابی در `frontend/src/app/` تأثیر می‌گذارد. رفع خطای 500 در `api/users` شامل بررسی و اصلاح `backend/app/api/endpoints/users.py`، `backend/app/crud/crud_user.py` و احتمالاً مدل `backend/app/models/user.py` است. الگوی سرویس‌محور از پروژه مرجع `mahdighandi1989/language` (مانند `backend/services/telegram/index.js`) به ایجاد `backend/app/services/google_auth_service.py` کمک می‌کند.
 
 ## 🔍 Context و وضعیت فعلی
-کاربر شش مشکل به‌هم‌مرتبط را در سیستم Banking Operations System (FastAPI + PostgreSQL + SQLAlchemy 2.0 backend و Next.js 14 frontend) گزارش کرده است:
+کاربر چندین مشکل حیاتی را شناسایی کرده و درخواست ویژگی‌های جدیدی برای سیستم عملیات بانکی دارد. این موارد شامل بهبود تجربه کاربری (UX) و رابط کاربری (UI) صفحه ورود، پیاده‌سازی قابلیت ورود با جیمیل، و رفع یک خطای بحرانی 500 در API کاربران است.
 
-۱) «صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره» — صفحهٔ login فاقد منوی ناوبری و گزینه‌های جانبی (مثل ورود با Google) است.
-۲) «باید امکان لاگین از طریق جیمیل فراهم باشه» — نیاز به Google OAuth login (Sign in with Google). نکته: README می‌گوید Google OAuth 2.0 فعلاً فقط برای Drive backup با scope `drive.file` استفاده می‌شود، نه برای authentication کاربر. پس باید scope احراز هویت (openid/email/profile) و یک flow جدید login اضافه شود.
-۳) «خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن» — صفحات ناقص/خراب و دسته‌بندی نامرتب.
-۴) «ارتباط اجزا و صفحات خیلی به هم ریخته س» — routing و ناوبری بین صفحات نامنظم است.
-۵) «از منظر ظاهری خیلی آشفته اس» — ناهماهنگی بصری (UX/UI).
-۶) خطای صریح در کنسول مرورگر که چند بار تکرار شده:
-`Failed to load resource: the server responded with a status of 500 ()`
-`api/users/?page=1&page_size=100:1  Failed to load resource: the server responded with a status of 500 ()`
-یعنی endpoint با مسیر `api/users/?page=1&page_size=100` در سمت backend خطای 500 (Internal Server Error) می‌دهد و لیست کاربران لود نمی‌شود.
+**مشکلات و درخواست‌های کاربر:**
+1.  **صفحه ورود:** کاربر اظهار داشته که "صفحه ورود اصلا جالب نیست و گزینه های دیگه دیده نمیشه و منوی ناوبری نداره". این نشان‌دهنده نیاز به بازطراحی بصری، بهبود دسترسی به گزینه‌های دیگر (مانند ثبت‌نام یا فراموشی رمز عبور) و احتمالاً افزودن یک منوی ناوبری (یا هدایت به داشبورد با ناوبری کامل پس از ورود) است.
+2.  **لاگین با جیمیل:** درخواست صریح برای "امکان لاگین از طریق جیمیل فراهم باشه" وجود دارد. این نیازمند ادغام Google OAuth 2.0 برای احراز هویت کاربران است.
+3.  **صفحات ناقص/نامنظم:** "خیلی از صفحات ناقص هستن یا کار نمیکنند یا درست دسته بندی نشدن". این مشکل به عدم تکمیل، عملکرد نادرست، یا سازماندهی ضعیف صفحات فرانت‌اند اشاره دارد که نیازمند بررسی و بازسازی ساختار صفحات و کامپوننت‌ها است.
+4.  **ارتباط اجزا و صفحات:** "ارتباط اجزا و صفحات خیلی به هم ریخته س". این نشان‌دهنده مشکلات در معماری فرانت‌اند، مدیریت وضعیت (state management) و جریان داده بین کامپوننت‌ها و صفحات است.
+5.  **آشفتگی ظاهری:** "از منظر ظاهری خیلی آشفته اس". این یک نقد کلی به طراحی بصری و نیاز به یکپارچگی و تمیزی بیشتر در UI با استفاده از Tailwind CSS است.
+6.  **خطای سرور 500:** یک خطای بحرانی در کنسول مرورگر گزارش شده است: `Failed to load resource: the server responded with a status of 500 ()` برای `api/users/?page=1&page_size=100:1`. این خطا نشان‌دهنده یک مشکل در بک‌اند هنگام واکشی لیست کاربران است که می‌تواند مربوط به کوئری پایگاه داده، سریال‌سازی، یا مدیریت خطا باشد. این خطا در چندین درخواست متوالی برای `api/users/?page=1&page_size=100` مشاهده شده است.
 
-شواهد در کد (بر اساس Tech Stack اعلام‌شده در README — مسیرهای دقیق توسط مجری باید تأیید شوند چون deep_context واقعی پروژهٔ بانکی در اختیار نبود): این پروژه FastAPI است، پس endpoint کاربران احتمالاً در `backend/app/api/users.py` یا `backend/app/routers/users.py` با یک router به prefix `/api/users` و پارامترهای pagination (`page`, `page_size`) تعریف شده. خطای 500 معمولاً از یکی از این موارد است: (الف) خطای serialization در Pydantic response_model وقتی یک فیلد NULL/ناسازگار از DB می‌آید، (ب) خطای query در SQLAlchemy 2.0 (مثلاً استفادهٔ نادرست از `.offset()/.limit()` یا session منقضی)، (ج) خطای permission/role که exception را به 500 تبدیل کرده به‌جای 403. صفحهٔ ورود و ناوبری در Next.js 14 احتمالاً در `frontend/src/app/login/page.tsx` و یک layout/sidebar مشترک قرار دارند.
-
-نکتهٔ مرجع: کاربر پروژهٔ `mahdighandi1989/language` را به‌عنوان الهام انتخاب کرده (به بخش پروژه‌های مرجع مراجعه شود).
+**📚 پروژه‌های مرجع (Reference Projects):**
+کاربر پروژه `mahdighandi1989/language` را به‌عنوان منبع الهام برای این تسک انتخاب کرده است، به‌ویژه با تمرکز بر "امکان لاگین از طریق جیمیل و دادن دسترسی و میزن دسترسی به افراد". این پروژه دارای ساختار سرویس‌محور در بک‌اند خود است (مانند `backend/services/telegram/config.js` و `backend/services/telegram/index.js` که مدیریت یکپارچه‌سازی تلگرام را نشان می‌دهند). این الگو می‌تواند به‌عنوان الهام‌بخش برای ایجاد یک سرویس اختصاصی Google OAuth در پروژه فعلی استفاده شود. با این حال، باید توجه داشت که پروژه مرجع از JavaScript (احتمالاً Node.js/Express) استفاده می‌کند، در حالی که پروژه فعلی از Python/FastAPI برای بک‌اند و Next.js/React برای فرانت‌اند بهره می‌برد. بنابراین، تنها منطق و الگوهای معماری باید اقتباس شوند، نه سینتکس یا وابستگی‌های مستقیم.
 
 ## ✅ معیار پذیرش (Acceptance Criteria) — رفتار-محور
 **مهم:** هر AC رفتار قابل مشاهده را تعریف می‌کند، نه نام فایل/کلاس.
 verify می‌تواند پیاده‌سازی متفاوت ولی هم‌ارز را قبول کند.
 
-- [ ] GET /api/users/?page=1&page_size=100 به‌جای 500 باید 200 با لیست کاربران برگرداند
-- [ ] endpoint های Google OAuth login (`/api/auth/google/login` و callback) تعریف شده باشند و scope احراز هویت داشته باشند
-- [ ] صفحهٔ ورود باید دکمهٔ «ورود با Google» را نمایش دهد
-- [ ] صفحات authenticated باید یک منوی ناوبری مشترک (navbar/sidebar) داشته باشند
-- [ ] exception handler عمومی باید خطاهای داخلی را به پاسخ structured (نه 500 خام) تبدیل کند
-- [ ] الگوی برداشت‌شده از پروژهٔ مرجع mahdighandi1989/language با dependency و naming پروژهٔ فعلی (FastAPI async + Depends + Next.js App Router) سازگار است، نه copy-paste از Express
+- [ ] صفحه ورود (`frontend/src/app/login/page.tsx`) دارای طراحی بصری بهبود یافته، بدون آشفتگی، و شامل یک دکمه "Login with Google" است.
+- [ ] با کلیک بر روی دکمه "Login with Google"، کاربر به صفحه احراز هویت گوگل هدایت می‌شود.
+- [ ] پس از احراز هویت موفقیت‌آمیز با گوگل، کاربر به برنامه بازگردانده شده و با دریافت یک توکن JWT معتبر، وارد سیستم می‌شود.
+- [ ] endpoint `GET /api/users?page=1&page_size=100` وضعیت 200 OK را با لیستی از کاربران برمی‌گرداند و هیچ خطای 500 رخ نمی‌دهد.
+- [ ] ساختار کلی ناوبری و صفحات فرانت‌اند بهبود یافته، صفحات به‌درستی دسته‌بندی شده و عملکردی هستند.
+- [ ] الگوی معماری برای Google OAuth، الهام گرفته از لایه سرویس پروژه مرجع، با استفاده از قراردادهای Python/FastAPI پیاده‌سازی شده است (مثلاً `backend/app/services/google_auth_service.py` وجود دارد).
+- [ ] الگوی برداشت‌شده از پروژهٔ مرجع با dependency و naming پروژهٔ فعلی سازگار است (نه copy-paste صرف).
 - [ ] هیچ تستی fail نمی‌شود (`npm run test` / `pytest`)
 - [ ] linter بدون warning عبور می‌کند
 - [ ] type-check موفق است (`tsc --noEmit` / `mypy`)
 
 ## 🪜 مراحل اجرایی پیشنهادی
-1. پیاده‌سازی در چهار فاز:
+1. این تسک شامل چندین بخش اصلی است:
 
-**فاز ۱ — رفع خطای 500 در api/users (اولویت اول، blocking):**
-1. لاگ کامل backend را هنگام فراخوانی `GET /api/users/?page=1&page_size=100` بررسی کن (traceback واقعی).
-2. handler مربوط به users list را پیدا کن (احتمالاً `backend/app/api/users.py` یا `backend/app/routers/users.py`).
-3. علت ریشه‌ای را شناسایی کن: serialization (Pydantic response_model با فیلد NULL)، query SQLAlchemy، یا permission. تست با pagination دقیق `page=1&page_size=100`.
-4. اگر serialization است: فیلدهای Optional را اصلاح کن یا `from_attributes=True` و default مناسب بگذار. اگر query است: pagination را با `select().offset((page-1)*page_size).limit(page_size)` درست کن.
-5. یک exception handler عمومی اضافه کن تا خطاهای داخلی به‌جای 500 خام، structured error بدهند.
+1.  **بازطراحی UI/UX فرانت‌اند:**
+    *   **صفحه ورود:** فایل `frontend/src/app/login/page.tsx` باید بازطراحی شود تا ظاهر جذاب‌تری داشته باشد، گزینه‌های دیگر (مانند ثبت‌نام یا بازیابی رمز عبور) به‌وضوح نمایش داده شوند و در صورت لزوم، یک کامپوننت ناوبری (یا لینک به داشبورد پس از ورود) اضافه شود. از Tailwind CSS برای استایل‌دهی استفاده شود.
+    *   **ساختار صفحات و کامپوننت‌ها:** ساختار دایرکتوری `frontend/src/app/` و `frontend/src/components/` باید بازبینی و بازسازی شود تا صفحات ناقص تکمیل گردند، عملکرد صحیح داشته باشند و دسته‌بندی منطقی‌تری پیدا کنند. ارتباط بین اجزا و صفحات باید شفاف‌تر و سازمان‌یافته‌تر شود.
 
-**فاز ۲ — Google OAuth برای login:**
-6. در README ذکر شده OAuth فعلاً فقط `drive.file` است. یک flow جدید login با Google اضافه کن: endpoint های `GET /api/auth/google/login` و `GET /api/auth/google/callback` با scope های `openid email profile`.
-7. در callback، کاربر را بر اساس email در جدول users پیدا/بساز کن و JWT (همان refresh token موجود) صادر کن.
+2.  **پیاده‌سازی لاگین با جیمیل (Google OAuth 2.0):**
+    *   **بک‌اند (FastAPI):**
+        *   یک سرویس جدید به نام `backend/app/services/google_auth_service.py` ایجاد شود. این سرویس مسئول مدیریت جریان Google OAuth (شروع احراز هویت، تبادل کد با توکن، و دریافت اطلاعات کاربر) خواهد بود. این الگو از ساختار سرویس‌محور پروژه مرجع `mahdighandi1989/language` الهام گرفته شده است، اما با استفاده از کتابخانه‌های Python مانند `google-auth-oauthlib` و `google-api-python-client` پیاده‌سازی می‌شود.
+        *   دو endpoint جدید در `backend/app/api/endpoints/auth.py` اضافه شود: `/auth/google/login` برای شروع فرآیند OAuth (هدایت به گوگل) و `/auth/google/callback` برای دریافت پاسخ از گوگل و پردازش آن.
+        *   مدل کاربر در `backend/app/models/user.py` و شمای Pydantic در `backend/app/schemas/user.py` به‌روزرسانی شوند تا فیلدی مانند `google_id` برای ذخیره شناسه گوگل کاربر اضافه شود.
+        *   منطق احراز هویت و ایجاد/به‌روزرسانی کاربر در `backend/app/crud/crud_user.py` به‌روزرسانی شود تا کاربران گوگل را مدیریت کند و از `backend/app/core/security.py` برای تولید JWT استفاده کند.
+        *   اطلاعات محرمانه Google OAuth (Client ID, Client Secret, Redirect URI) در `backend/app/core/config.py` پیکربندی شوند.
+    *   **فرانت‌اند (Next.js):**
+        *   یک دکمه "Login with Google" به `frontend/src/app/login/page.tsx` اضافه شود.
+        *   منطق فرانت‌اند برای شروع جریان OAuth (هدایت به endpoint `/auth/google/login` بک‌اند) و مدیریت بازگشت از callback گوگل پیاده‌سازی شود.
 
-**فاز ۳ — صفحهٔ ورود و ناوبری:**
-8. صفحهٔ `frontend/src/app/login/page.tsx` را بازطراحی کن: افزودن دکمهٔ «ورود با Google»، layout تمیز، و اگر منوی ناوبری لازم است در صفحات authenticated یک sidebar/navbar مشترک در layout اضافه کن.
-
-**فاز ۴ — سامان‌دهی routing و صفحات ناقص:**
-9. صفحات ناقص/خراب را فهرست و دسته‌بندی کن؛ routing نامرتب را در App Router مرتب کن.
-
-**هشدار تطبیق با stack:** الگوهای پروژهٔ مرجع `mahdighandi1989/language` با **Node.js/Express + Telegram/Gemini** نوشته شده‌اند (مثل `backend/services/telegram/index.js` با `POST /api/telegram/link`). این پروژه **FastAPI + Next.js** است — هرگز import یا syntax Express را کپی نکن؛ فقط الگوی معماری (لایهٔ service/controller جدا، optional integration که در نبود token به no-op تبدیل می‌شود) را به FastAPI dependency injection و Next.js منتقل کن.
+3.  **رفع خطای 500 در API کاربران:**
+    *   فایل `backend/app/api/endpoints/users.py` و تابع مربوط به endpoint `GET /users` بررسی شود.
+    *   منطق واکشی کاربران در `backend/app/crud/crud_user.py` (تابع `get_multi` یا مشابه) و کوئری‌های SQLAlchemy مربوطه برای یافتن علت خطای 500 (احتمالاً در pagination، فیلترینگ، یا سریال‌سازی) بررسی و اصلاح شود.
+    *   لاگ‌های سرور برای دریافت جزئیات بیشتر از traceback خطای 500 تحلیل شوند.
 
 ## 💡 نمونه‌های قبل/بعد
-**رفع 500 ناشی از serialization در users list (الگوی محتمل — مجری تأیید کند)**
+**افزودن دکمه لاگین گوگل به صفحه ورود**
 
 _قبل:_
 ```
-class UserOut(BaseModel):
-    id: int
-    email: str
-    full_name: str  # NULL در DB → ValidationError → 500
+<div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </div>
+            <Button type="submit" className="w-full">Login</Button>
+          </form>
+        </CardContent>
+        <CardFooter className="flex justify-center">
+          {/* Other options / navigation links */}
+        </CardFooter>
 ```
 
 _بعد:_
 ```
-class UserOut(BaseModel):
-    id: int
-    email: str
-    full_name: str | None = None
-    model_config = ConfigDict(from_attributes=True)
+<div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </div>
+            <Button type="submit" className="w-full">Login</Button>
+          </form>
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-gray-500">Or continue with</span>
+            </div>
+          </div>
+          <Button data-testid="google-login-button" variant="outline" className="w-full flex items-center justify-center space-x-2">
+            <img src="/google-icon.svg" alt="Google" className="h-5 w-5" />
+            <span>Login with Google</span>
+          </Button>
+        </CardContent>
+        <CardFooter className="flex justify-center">
+          {/* Other options / navigation links */}
+        </CardFooter>
 ```
 
 ## 📤 خروجی مورد انتظار
 تغییر کد در فایل‌های مرتبط، commit یا PR جدید با پیام واضح، و عبور تمام معیارهای پذیرش.
 
 ## 🧪 دستورات اعتبارسنجی
-- `pytest backend/tests/ -k users`
-- `curl -i 'http://localhost:8000/api/users/?page=1&page_size=100'`
-- `npm run build --prefix frontend`
+- `pytest backend/app/tests/`
+- `npm run test -- frontend/src/app/login/page.test.tsx`
 
 ## ⚠️ ریسک‌ها و موارد احتیاط
-۱) اگر علت 500 صرفاً serialization باشد ولی به‌جای آن query را تغییر دهیم، باگ پنهان می‌ماند — باید ابتدا traceback واقعی دیده شود. ۲) افزودن scope احراز هویت به Google OAuth که فعلاً فقط `drive.file` دارد می‌تواند consent screen موجود و flow backup را بشکند یا token های قبلی را invalidate کند. ۳) Optional کردن فیلدهای UserOut روی هر endpoint دیگری که این schema را برمی‌گرداند اثر می‌گذارد. ۴) بازطراحی layout/navbar روی همهٔ صفحات authenticated اثر سراسری دارد و ممکن است صفحات سالم را بشکند. ۵) خطر mixing stack: اگر developer الگوی Express از `backend/services/telegram/index.js` مرجع را بدون تطبیق با FastAPI/SQLAlchemy پیاده کند، routing و session ناسازگار می‌شود.
+1.  **پیکربندی Google OAuth**: تنظیم نادرست اعتبارنامه‌های Google API (Client ID, Client Secret, Redirect URI) در `backend/app/core/config.py` می‌تواند منجر به شکست احراز هویت شود.
+2.  **ادغام/لینک کردن داده‌های کاربر**: اگر کاربران موجود نیاز به لینک کردن حساب‌های گوگل خود داشته باشند، یک استراتژی مهاجرت یا یک جریان UI برای لینک کردن مورد نیاز است که در این تسک پوشش داده نشده است. پیاده‌سازی `google_id` در `backend/app/models/user.py` بدون مدیریت صحیح برای کاربران موجود می‌تواند مشکل‌ساز باشد.
+3.  **رگرسیون‌های فرانت‌اند**: بازطراحی گسترده UI/UX در `frontend/src/app/` و `frontend/src/components/` در صورت عدم مدیریت دقیق، به‌ویژه در مورد مدیریت وضعیت سراسری و ناوبری، ممکن است رگرسیون‌هایی را ایجاد کند.
+4.  **ریشه خطای 500**: خطای 500 در `api/users` می‌تواند پیچیده باشد (مثلاً یک مشکل ظریف ORM، خرابی داده‌ها، یا یک استثنای مدیریت‌نشده در یک وابستگی). یک راه‌حل سریع ممکن است مشکل اساسی عمیق‌تری را پنهان کند.
+5.  **خطر ترکیب وابستگی‌ها/نام‌گذاری/استک**: اگر توسعه‌دهنده الگوی احراز هویت از پروژه مرجع `mahdighandi1989/language` را بدون تطبیق با استک فعلی (Python/FastAPI به جای JavaScript/Node.js) پیاده‌سازی کند، ممکن است منجر به خطاهای سینتکسی، وابستگی‌های ناسازگار یا مشکلات معماری شود. هرگز import یا syntax کورکورانه از مرجع کپی نشود.
 
 ## 🔗 وابستگی‌های تسکی
 _(مستقل)_
 
 ## 🏷 دسته‌بندی
-- نوع: bug
+- نوع: feature_request
 - اولویت: high
 - تخمین زمان: large
 
 ## Acceptance Criteria
 
-1. GET /api/users/?page=1&page_size=100 به‌جای 500 باید 200 با لیست کاربران برگرداند _(verify: api_response)_
-2. endpoint های Google OAuth login (`/api/auth/google/login` و callback) تعریف شده باشند و scope احراز هویت داشته باشند _(verify: static)_
-3. صفحهٔ ورود باید دکمهٔ «ورود با Google» را نمایش دهد _(verify: ui_interaction)_
-4. صفحات authenticated باید یک منوی ناوبری مشترک (navbar/sidebar) داشته باشند _(verify: static)_
-5. exception handler عمومی باید خطاهای داخلی را به پاسخ structured (نه 500 خام) تبدیل کند _(verify: static)_
-6. الگوی برداشت‌شده از پروژهٔ مرجع mahdighandi1989/language با dependency و naming پروژهٔ فعلی (FastAPI async + Depends + Next.js App Router) سازگار است، نه copy-paste از Express _(verify: manual_only)_
+1. صفحه ورود (`frontend/src/app/login/page.tsx`) دارای طراحی بصری بهبود یافته، بدون آشفتگی، و شامل یک دکمه "Login with Google" است. _(verify: ui_interaction)_
+2. با کلیک بر روی دکمه "Login with Google"، کاربر به صفحه احراز هویت گوگل هدایت می‌شود. _(verify: ui_interaction)_
+3. پس از احراز هویت موفقیت‌آمیز با گوگل، کاربر به برنامه بازگردانده شده و با دریافت یک توکن JWT معتبر، وارد سیستم می‌شود. _(verify: api_response)_
+4. endpoint `GET /api/users?page=1&page_size=100` وضعیت 200 OK را با لیستی از کاربران برمی‌گرداند و هیچ خطای 500 رخ نمی‌دهد. _(verify: api_response)_
+5. ساختار کلی ناوبری و صفحات فرانت‌اند بهبود یافته، صفحات به‌درستی دسته‌بندی شده و عملکردی هستند. _(verify: manual_only)_
+6. الگوی معماری برای Google OAuth، الهام گرفته از لایه سرویس پروژه مرجع، با استفاده از قراردادهای Python/FastAPI پیاده‌سازی شده است (مثلاً `backend/app/services/google_auth_service.py` وجود دارد). _(verify: static)_
+7. الگوی برداشت‌شده از پروژهٔ مرجع با dependency و naming پروژهٔ فعلی سازگار است (نه copy-paste صرف). _(verify: manual_only)_
 
 ## Task Steps
 
