@@ -10,7 +10,7 @@ verification_status: pending
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-07T16:55:02.706824+00:00'
-updated_at: '2026-06-07T16:55:02.752442+00:00'
+updated_at: '2026-06-07T22:06:19.282687+00:00'
 target_files:
 - backend/app/routers/settings.py
 ---
@@ -468,6 +468,6 @@ _(مستقل)_
 
 ## Acceptance Criteria
 
-1. ریشه anti-pattern تشخیص داده شد
-2. یا کد اصلاح شد، یا کامنت توجیهی اضافه شد
-3. تست edge case نوشته شد
+1. ریشه anti-pattern تشخیص داده شد _(verify: manual_only)_
+2. یا کد اصلاح شد، یا کامنت توجیهی اضافه شد _(verify: static)_
+3. تست edge case نوشته شد _(verify: backend_test)_
