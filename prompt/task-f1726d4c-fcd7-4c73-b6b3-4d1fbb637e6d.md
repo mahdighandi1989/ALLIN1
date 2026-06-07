@@ -3,14 +3,14 @@ task_id: f1726d4c-fcd7-4c73-b6b3-4d1fbb637e6d
 title: رفع 500، پیاده‌سازی OAuth و بهبود UI
 type: idea
 priority: medium
-execution_priority: 3200
+execution_priority: 3250
 status: pending
-external_status: done
+external_status: claimed
 verification_status: error
 watched_id: b2586b68-22f8-4e8e-a7a8-9b513c5f70fe
 project: mahdighandi1989/ALLIN1
 created_at: '2026-06-06T07:33:27.680004+00:00'
-updated_at: '2026-06-07T17:00:41.612267+00:00'
+updated_at: '2026-06-07T20:05:28.934884+00:00'
 target_files:
 - backend/app/api/endpoints/auth.py
 - backend/app/services/google_auth_service.py
