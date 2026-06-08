@@ -8,7 +8,7 @@ import { customersApi, crmApi, parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
-  CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote,
+  CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote, Mail,
 } from 'lucide-react'
 import { PROPERTIES } from '../properties/data'
 
@@ -71,6 +71,10 @@ function CustomerDetailInner() {
   const chequeRows = guarantors.filter((g: any) => g.cheque_no || g.cheque_amount)
   const chequeTotal = guarantors.reduce((s: number, g: any) => s + num(g.cheque_amount), 0)
   const fdRows = guarantors.filter((g: any) => fdShown(g.fd))
+  const partners = [1, 2, 3, 4, 5, 6, 7, 8]
+    .map((i) => [pdata[`Partner${i}Name`], pdata[`Partner${i}Nationality`], pdata[`Partner${i}Share`]])
+    .filter((r) => r[0])
+  const isCorporate = String(profile?.account_type || customer.account_type || '').toLowerCase().includes('corp')
 
   const toggleStep = async (step: number, isDone: boolean) => {
     try {
@@ -148,6 +152,14 @@ function CustomerDetailInner() {
     document.body.classList.add('print-summary')
     setTimeout(() => { window.print(); document.body.classList.remove('print-summary') }, 60)
   }
+  const emailSummary = async () => {
+    const to = window.prompt('Email the credit summary to:')
+    if (!to || !to.trim()) return
+    try {
+      const r = await crmApi.emailSummary(acc, to.trim())
+      toast.success(r?.message || 'Summary emailed')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: Building },
@@ -173,9 +185,14 @@ function CustomerDetailInner() {
           <p className="text-gray-500">{acc} · <span className="capitalize">{profile?.account_type || customer.account_type}</span>{customer.branch ? ` · ${customer.branch}` : ''}{profile?.rating ? ` · Rating ${profile.rating}` : ''}</p>
         </div>
         <div className="text-right">
-          <button onClick={printSummary} type="button" className="mb-2 flex items-center gap-1.5 ml-auto bg-gray-800 hover:bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm">
-            <FileText size={14} /> Print Summary
-          </button>
+          <div className="mb-2 flex items-center gap-2 justify-end">
+            <button onClick={emailSummary} type="button" className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm">
+              <Mail size={14} /> Email
+            </button>
+            <button onClick={printSummary} type="button" className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm">
+              <FileText size={14} /> Print Summary
+            </button>
+          </div>
           <span className={`px-3 py-1 rounded-full text-sm ${statusBadge(customer.status)}`}>{customer.status}</span>
           <div className="text-xs text-gray-400 mt-1">Completeness: {completeness}</div>
         </div>
@@ -475,6 +492,24 @@ function CustomerDetailInner() {
           <tr><th>Name</th><th>Account</th><th>Cheque No</th><th>Amount</th></tr>
           {guarantors.map((g: any, i: number) => <tr key={i}><td>{val(g.guarantor_name)}</td><td>{val(g.guarantor_account)}</td><td>{val(g.cheque_no)}</td><td>{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td></tr>)}
         </tbody></table>
+
+        <h4>Securities & Collateral Summary</h4>
+        <table className="kv"><tbody>
+          <tr><td><b>Cheques Total:</b> AED {chequeTotal.toLocaleString()}</td><td><b>Cheques:</b> {chequeRows.length}</td><td><b>Fixed Deposits:</b> {fdRows.length}</td></tr>
+          <tr><td><b>Collateral (AED):</b> {val(pdata.Sec_Collateral_AED)}</td><td><b>Underlien (AED):</b> {val(pdata.Sec_Underlien_AED)}</td><td><b>Outstanding:</b> {money(summary.total_outstanding)}</td></tr>
+        </tbody></table>
+
+        {isCorporate && partners.length > 0 && (<><h4>Partners / Shareholders</h4>
+        <table><tbody>
+          <tr><th>Name</th><th>Nationality</th><th>Share %</th></tr>
+          {partners.map((p: any, i: number) => <tr key={i}><td>{val(p[0])}</td><td>{val(p[1])}</td><td>{val(p[2])}</td></tr>)}
+        </tbody></table></>)}
+
+        {checklist && (<><h4>Credit-File Checklist</h4>
+        <table className="kv"><tbody>
+          <tr><td><b>Completed:</b> {CHECKLIST_STEPS.filter((_, i) => done(checklist?.[`item${i + 1}`])).length} / {CHECKLIST_STEPS.length}</td>
+          <td><b>Last action:</b> {val(checklist.last_action)}</td><td><b>By:</b> {val(checklist.last_user)}</td></tr>
+        </tbody></table></>)}
 
         {myProps.length > 0 && (<><h4>Mortgaged Properties ({myProps.length})</h4>
         <table><tbody>

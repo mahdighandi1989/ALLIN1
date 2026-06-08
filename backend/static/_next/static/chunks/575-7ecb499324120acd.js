@@ -1,4 +1,4 @@
-"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[631],{5032:function(t,e,h){h.d(e,{Z:function(){return a}});/**
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[575],{5032:function(t,e,h){h.d(e,{Z:function(){return a}});/**
  * @license lucide-react v0.312.0 - ISC
  *
  * This source code is licensed under the ISC license.
@@ -83,7 +83,12 @@
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
- */let a=(0,h(7461).Z)("LogOut",[["path",{d:"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4",key:"1uf3rs"}],["polyline",{points:"16 17 21 12 16 7",key:"1gabdz"}],["line",{x1:"21",x2:"9",y1:"12",y2:"12",key:"1uyos4"}]])},223:function(t,e,h){h.d(e,{Z:function(){return a}});/**
+ */let a=(0,h(7461).Z)("LogOut",[["path",{d:"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4",key:"1uf3rs"}],["polyline",{points:"16 17 21 12 16 7",key:"1gabdz"}],["line",{x1:"21",x2:"9",y1:"12",y2:"12",key:"1uyos4"}]])},684:function(t,e,h){h.d(e,{Z:function(){return a}});/**
+ * @license lucide-react v0.312.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */let a=(0,h(7461).Z)("Mail",[["rect",{width:"20",height:"16",x:"2",y:"4",rx:"2",key:"18n3k1"}],["path",{d:"m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7",key:"1ocrg3"}]])},223:function(t,e,h){h.d(e,{Z:function(){return a}});/**
  * @license lucide-react v0.312.0 - ISC
  *
  * This source code is licensed under the ISC license.

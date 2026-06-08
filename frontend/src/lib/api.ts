@@ -266,6 +266,10 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/notes/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async emailSummary(accountNo: string, to: string): Promise<any> {
+    const { data } = await api.post(`/api/crm/email-summary/${encodeURIComponent(accountNo)}`, { to })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
