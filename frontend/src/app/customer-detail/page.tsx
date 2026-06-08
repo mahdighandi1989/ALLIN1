@@ -135,6 +135,10 @@ function CustomerDetailInner() {
       setNewNote(''); toast.success('Note added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  const printSummary = () => {
+    document.body.classList.add('print-summary')
+    setTimeout(() => { window.print(); document.body.classList.remove('print-summary') }, 60)
+  }
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: Building },
@@ -160,6 +164,9 @@ function CustomerDetailInner() {
           <p className="text-gray-500">{acc} · <span className="capitalize">{profile?.account_type || customer.account_type}</span>{customer.branch ? ` · ${customer.branch}` : ''}{profile?.rating ? ` · Rating ${profile.rating}` : ''}</p>
         </div>
         <div className="text-right">
+          <button onClick={printSummary} type="button" className="mb-2 flex items-center gap-1.5 ml-auto bg-gray-800 hover:bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm">
+            <FileText size={14} /> Print Summary
+          </button>
           <span className={`px-3 py-1 rounded-full text-sm ${statusBadge(customer.status)}`}>{customer.status}</span>
           <div className="text-xs text-gray-400 mt-1">Completeness: {completeness}</div>
         </div>
@@ -398,6 +405,60 @@ function CustomerDetailInner() {
             empty="No activity" />
         </Section>
       )}
+
+      {/* ---- Printable credit summary (Excel GenerateSummaryReport equivalent) ---- */}
+      <style>{`
+        #credit-summary { position: fixed; left: -9999px; top: 0; width: 190mm; }
+        @media print {
+          body.print-summary * { visibility: hidden !important; }
+          body.print-summary #credit-summary, body.print-summary #credit-summary * { visibility: visible !important; }
+          body.print-summary #credit-summary { position: absolute; left: 0; top: 0; }
+          @page { size: A4 portrait; margin: 12mm; }
+        }
+        #credit-summary .cs-h { font-size: 16pt; font-weight: 800; }
+        #credit-summary .cs-sub { font-size: 10pt; color:#444; margin-bottom: 6mm; }
+        #credit-summary h4 { font-size: 11pt; font-weight: 700; background:#eee; padding: 2px 6px; margin: 5mm 0 2mm; }
+        #credit-summary table { width:100%; border-collapse: collapse; font-size: 9.5pt; }
+        #credit-summary td, #credit-summary th { border: 0.5pt solid #999; padding: 2px 5px; text-align: left; }
+        #credit-summary .kv { font-size: 9.5pt; }
+        #credit-summary .kv td { border: 0; padding: 1px 4px; }
+      `}</style>
+      <div id="credit-summary" dir="ltr">
+        <div className="cs-h">CREDIT FILE SUMMARY</div>
+        <div className="cs-sub">Bank Saderat Iran — R.O. &nbsp;|&nbsp; Generated {new Date().toLocaleDateString()}</div>
+        <table className="kv"><tbody>
+          <tr><td><b>Customer:</b> {customer.name}</td><td><b>Account:</b> {acc}</td><td><b>Branch:</b> {val(customer.branch)}</td></tr>
+          <tr><td><b>Type:</b> {val(profile?.account_type || customer.account_type)}</td><td><b>Rating:</b> {val(profile?.rating)}</td><td><b>Business:</b> {val(profile?.business_type)}</td></tr>
+        </tbody></table>
+
+        <h4>Facilities — Total Exposure {money(summary.total_exposure)}</h4>
+        <table><tbody>
+          <tr><th>Ref</th><th>Type</th><th>Amount</th><th>Status</th></tr>
+          {facilities.map((f: any) => <tr key={f.id}><td>{val(f.name)}</td><td>{(f.facility_type || '').toUpperCase()}</td><td>{money(f.amount, f.currency)}</td><td>{f.status}</td></tr>)}
+        </tbody></table>
+
+        <h4>KYC Documents</h4>
+        <table><tbody>
+          <tr><th>Document</th><th>Number</th><th>Expiry</th></tr>
+          {KYC_DOCS.map(([t, nk, ek]) => <tr key={nk}><td>{t}</td><td>{val(profile?.[nk])}</td><td>{val(profile?.[ek])}</td></tr>)}
+        </tbody></table>
+
+        <h4>Guarantors ({guarantors.length})</h4>
+        <table><tbody>
+          <tr><th>Name</th><th>Account</th><th>Cheque No</th><th>Amount</th></tr>
+          {guarantors.map((g: any, i: number) => <tr key={i}><td>{val(g.guarantor_name)}</td><td>{val(g.guarantor_account)}</td><td>{val(g.cheque_no)}</td><td>{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td></tr>)}
+        </tbody></table>
+
+        {myProps.length > 0 && (<><h4>Mortgaged Properties ({myProps.length})</h4>
+        <table><tbody>
+          <tr><th>Deed</th><th>City</th><th>Type</th><th>Valuation</th></tr>
+          {myProps.map((p, i) => <tr key={i}><td>{val(p.deed_no)}</td><td>{val(p.city)}</td><td>{val(p.type)}</td><td>{p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '—'}</td></tr>)}
+        </tbody></table></>)}
+
+        <div style={{ marginTop: '14mm', display: 'flex', justifyContent: 'space-between', fontSize: '9.5pt', fontWeight: 700 }}>
+          <div>Prepared By: __________________</div><div>Authorized: __________________</div>
+        </div>
+      </div>
     </div>
   )
 }
