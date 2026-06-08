@@ -651,6 +651,37 @@ async def backfill_customer_names() -> None:
         logger.warning("backfill_customer_names skipped: %s", exc)
 
 
+async def cleanup_empty_facilities() -> None:
+    """Soft-delete the empty placeholder facilities left by an earlier import.
+
+    Those rows carry no information (amount 0, outstanding 0, type 'other', no
+    name). Soft-deleting (is_deleted = true) moves them to the recycle bin so they
+    disappear from every view but stay fully recoverable. The condition is strict
+    enough that a real facility (which always has a name or a non-zero amount) is
+    never touched. Idempotent.
+    """
+    try:
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            if "facilities" not in await conn.run_sync(
+                lambda c: inspect(c).get_table_names()
+            ):
+                return
+            res = await conn.execute(text(
+                "UPDATE facilities SET is_deleted = true "
+                "WHERE is_deleted = false "
+                "AND (amount IS NULL OR amount = 0) "
+                "AND (outstanding IS NULL OR outstanding = 0) "
+                "AND (facility_type = 'other' OR facility_type IS NULL) "
+                "AND (name IS NULL OR name = '')"
+            ))
+            n = res.rowcount or 0
+            if n:
+                logger.info("cleanup: soft-deleted %d empty placeholder facilities", n)
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("cleanup_empty_facilities skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
@@ -664,6 +695,8 @@ async def init_database() -> None:
     await sync_user_roles()
     # Fill missing customer names from the bundled account directory (idempotent).
     await backfill_customer_names()
+    # Soft-delete the empty placeholder facilities from the earlier import.
+    await cleanup_empty_facilities()
     await refresh_expiry_notifications()
     # Currency exchange rates (default table on first run).
     try:
