@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { settingsApi, fxApi, parseApiError } from '@/lib/api'
+import { settingsApi, fxApi, crmApi, parseApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
-import { Settings as SettingsIcon, Save, Lock, Coins } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -19,8 +19,23 @@ export default function SettingsPage() {
   const [fx, setFx] = useState<FxRates | null>(null)
   const [fxForm, setFxForm] = useState<Record<string, string>>({})
   const [savingFx, setSavingFx] = useState(false)
+  const [mergeInfo, setMergeInfo] = useState<any>(null)
+  const [merging, setMerging] = useState(false)
 
   const isAdmin = authDisabled || !!user?.is_admin
+
+  useEffect(() => {
+    if (isAdmin) crmApi.mergeStatus().then(setMergeInfo).catch(() => {})
+  }, [isAdmin])
+  const runMerge = async () => {
+    setMerging(true)
+    try {
+      const r = await crmApi.runMerge()
+      toast.success('Data merge complete')
+      const s = await crmApi.mergeStatus()
+      setMergeInfo(s)
+    } catch (e) { toast.error(parseApiError(e)) } finally { setMerging(false) }
+  }
 
   useEffect(() => {
     if (authLoading) return
@@ -153,6 +168,28 @@ export default function SettingsPage() {
               </button>
             )}
           </form>
+        )}
+
+        {/* Legacy data merge (admin) */}
+        {isAdmin && (
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Legacy data merge</h3>
+            <p className="text-sm text-gray-500 mb-3">داده‌های سیستمِ اکسلِ قبلی (ضامن‌ها، تسهیلات، KYC، …) را در دیتابیسِ پنل ادغام/به‌روزرسانی می‌کند. خودکار در هر startup اجرا می‌شود؛ این دکمه برای اجرای دستی و بررسی است.</p>
+            {mergeInfo && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
+                {Object.entries(mergeInfo).map(([k, v]) => (
+                  <div key={k} className="bg-gray-50 rounded p-2">
+                    <div className="text-gray-400 text-xs">{k.replace(/_/g, ' ')}</div>
+                    <div className="font-bold tabular-nums">{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={runMerge} disabled={merging} type="button"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              <RefreshCw size={16} className={merging ? 'animate-spin' : ''} /> {merging ? 'Merging…' : 'Run data merge now'}
+            </button>
+          </div>
         )}
 
         {/* Read-only runtime config */}

@@ -253,21 +253,34 @@ async def _merge_journal(session) -> int:
             notes=r.get("notes") or "", source=(r.get("source") or "")[:60], action=(r.get("action") or "")[:60]))
 
 
-async def run_data_merge() -> None:
-    """Entry point — called once at startup from init_database()."""
-    try:
-        async with AsyncSessionLocal() as session:
-            counts = {
-                "guarantors": await _merge_guarantors(session),
-                "facilities": await _merge_facilities(session),
-                "profiles": await _merge_profiles(session),
-                "checklists": await _merge_checklist(session),
-                "tasks": await _merge_tasks(session),
-                "attachments": await _merge_attachments(session),
-                "journal": await _merge_journal(session),
-            }
-            await session.commit()
-            if any(counts.values()):
-                logger.info("data-merge: %s", counts)
-    except Exception as exc:  # pragma: no cover - depends on live DB
-        logger.warning("data merge skipped: %s", exc)
+_STEPS = [
+    ("guarantors", _merge_guarantors),
+    ("facilities", _merge_facilities),
+    ("profiles", _merge_profiles),
+    ("checklists", _merge_checklist),
+    ("tasks", _merge_tasks),
+    ("attachments", _merge_attachments),
+    ("journal", _merge_journal),
+]
+
+
+async def run_data_merge() -> dict:
+    """Run every merge step INDEPENDENTLY and return a per-step report.
+
+    Each step gets its own session + commit + try/except, so a single failing
+    step (e.g. a constraint hiccup) can never silently skip the others — the
+    bug where the whole merge was wrapped in one try/except and one early error
+    abandoned the rest (leaving facilities un-filled in production).
+    """
+    report: dict = {}
+    for name, fn in _STEPS:
+        try:
+            async with AsyncSessionLocal() as session:
+                n = await fn(session)
+                await session.commit()
+            report[name] = n
+        except Exception as exc:  # pragma: no cover - depends on live DB
+            logger.warning("data-merge step %s failed: %s", name, exc)
+            report[name] = f"error: {str(exc)[:140]}"
+    logger.info("data-merge report: %s", report)
+    return report

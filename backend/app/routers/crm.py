@@ -21,7 +21,7 @@ from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, Cus
 from app.models.guarantor import Guarantor
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
-from app.routers.auth import require_editor
+from app.routers.auth import require_editor, require_admin
 
 router = APIRouter(tags=["crm"])
 
@@ -280,3 +280,41 @@ async def update_profile(
     cp.updated_by = getattr(user, "username", "") or ""
     await db.commit()
     return {k: getattr(cp, k, None) for k in _KYC_FIELDS}
+
+
+# ---------------------------------------------------------------------------
+# Data-merge: manual trigger + status (admin) — so the legacy Excel data can be
+# (re)merged on demand and verified, without waiting for a restart.
+# ---------------------------------------------------------------------------
+@router.post("/run-merge")
+async def run_merge(user=Depends(require_admin)):
+    """Run the legacy-data merge now and return a per-step report."""
+    from app.services.data_merge import run_data_merge
+    report = await run_data_merge()
+    return {"ok": True, "report": report}
+
+
+@router.get("/merge-status")
+async def merge_status(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    """Row counts of the merged CRM tables (to verify the merge landed)."""
+    from sqlalchemy import func
+    from app.models.crm import Attachment, JournalEntry
+
+    out = {}
+    checks = {
+        "guarantors": Guarantor, "customer_profiles": CustomerProfile,
+        "checklist_progress": ChecklistProgress, "custom_tasks": CustomTask,
+        "attachments": Attachment, "journal_entries": JournalEntry,
+    }
+    for label, model in checks.items():
+        try:
+            out[label] = (await db.execute(select(func.count()).select_from(model))).scalar() or 0
+        except Exception as exc:
+            out[label] = f"error: {str(exc)[:80]}"
+    # facilities with a real (non-zero) amount = the fill worked
+    try:
+        out["facilities_total"] = (await db.execute(select(func.count()).select_from(Facility).where(Facility.is_deleted == False))).scalar() or 0
+        out["facilities_with_amount"] = (await db.execute(select(func.count()).select_from(Facility).where(Facility.is_deleted == False, Facility.amount > 0))).scalar() or 0
+    except Exception as exc:
+        out["facilities"] = f"error: {str(exc)[:80]}"
+    return out

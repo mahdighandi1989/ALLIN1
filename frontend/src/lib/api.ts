@@ -254,6 +254,14 @@ export const crmApi = {
     const { data } = await api.patch(`/api/crm/profile/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async runMerge(): Promise<any> {
+    const { data } = await api.post('/api/crm/run-merge')
+    return data
+  },
+  async mergeStatus(): Promise<any> {
+    const { data } = await api.get('/api/crm/merge-status')
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
