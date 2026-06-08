@@ -69,3 +69,63 @@ class ChecklistProgress(Base):
     item9 = Column(String(10))
     last_user = Column(String(80))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CustomTask(Base):
+    """Follow-up tasks per customer/facility."""
+    __tablename__ = "custom_tasks"
+
+    id = Column(String(60), primary_key=True)
+    account_no = Column(String(50), index=True)
+    facility_id = Column(String(60))
+    task_name = Column(String(200))
+    status = Column(String(30))
+    followup_date = Column(String(30))
+    notes = Column(Text)
+    priority = Column(String(20))
+    created_by = Column(String(80))
+    created_date = Column(String(30))
+    completed_date = Column(String(30))
+    is_active = Column(String(5))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Attachment(Base):
+    """Document attachments per customer/facility (metadata; files live on the
+    bank's S: share, so only the metadata is mirrored here)."""
+    __tablename__ = "attachments"
+
+    id = Column(String(60), primary_key=True)
+    account_no = Column(String(50), index=True)
+    facility_id = Column(String(60))
+    row_index = Column(String(10))
+    file_name = Column(String(255))
+    original_name = Column(String(255))
+    file_path = Column(Text)
+    file_size = Column(String(20))
+    upload_date = Column(String(30))
+    uploaded_by = Column(String(80))
+    is_shared = Column(String(10))
+    notes = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class JournalEntry(Base):
+    """Per-customer activity log (who did what / which workflow step)."""
+    __tablename__ = "journal_entries"
+
+    id = Column(String(60), primary_key=True)
+    account_no = Column(String(50), index=True)
+    branch = Column(String(20))
+    account_name = Column(String(200))
+    category = Column(String(40))
+    item = Column(String(100))
+    status = Column(String(20))
+    date = Column(String(30))
+    time = Column(String(20))
+    user = Column(String(80))
+    priority = Column(String(20))
+    notes = Column(Text)
+    source = Column(String(60))
+    action = Column(String(60))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -18,7 +18,9 @@ from app.database import AsyncSessionLocal
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.models.guarantor import Guarantor
-from app.models.crm import CustomerProfile, ChecklistProgress
+from app.models.crm import (
+    CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry,
+)
 
 logger = logging.getLogger(__name__)
 _DIR = Path(__file__).resolve().parent.parent / "data" / "merge"
@@ -200,19 +202,72 @@ async def _merge_checklist(session) -> int:
     return added
 
 
+async def _insert_missing(session, Model, rows, id_key, build) -> int:
+    """Generic: insert rows whose id is not already present (idempotent)."""
+    if not rows:
+        return 0
+    existing = set((await session.execute(select(Model.id))).scalars().all())
+    added = 0
+    for r in rows:
+        rid = str(r.get(id_key) or "").strip()
+        if not rid or rid in existing:
+            continue
+        session.add(build(rid, r))
+        existing.add(rid)
+        added += 1
+    return added
+
+
+async def _merge_tasks(session) -> int:
+    return await _insert_missing(
+        session, CustomTask, _load("tasks.json"), "task_id",
+        lambda i, r: CustomTask(
+            id=i, account_no=str(r.get("account_no") or "")[:50], facility_id=(r.get("facility_id") or "")[:60],
+            task_name=(r.get("task_name") or "")[:200], status=(r.get("status") or "")[:30],
+            followup_date=str(r.get("followup_date") or "")[:30], notes=r.get("notes") or "",
+            priority=(r.get("priority") or "")[:20], created_by=(r.get("created_by") or "")[:80],
+            created_date=str(r.get("created_date") or "")[:30], completed_date=str(r.get("completed_date") or "")[:30],
+            is_active=str(r.get("is_active") or "")[:5]))
+
+
+async def _merge_attachments(session) -> int:
+    return await _insert_missing(
+        session, Attachment, _load("attachments.json"), "attachment_id",
+        lambda i, r: Attachment(
+            id=i, account_no=str(r.get("account_no") or "")[:50], facility_id=(r.get("facility_id") or "")[:60],
+            row_index=str(r.get("row_index") or "")[:10], file_name=(r.get("file_name") or "")[:255],
+            original_name=(r.get("original_name") or "")[:255], file_path=r.get("file_path") or "",
+            file_size=str(r.get("file_size") or "")[:20], upload_date=str(r.get("upload_date") or "")[:30],
+            uploaded_by=(r.get("uploaded_by") or "")[:80], is_shared=str(r.get("is_shared") or "")[:10],
+            notes=r.get("notes") or ""))
+
+
+async def _merge_journal(session) -> int:
+    return await _insert_missing(
+        session, JournalEntry, _load("journal.json"), "record_id",
+        lambda i, r: JournalEntry(
+            id=i, account_no=str(r.get("account_no") or "")[:50], branch=str(r.get("branch") or "")[:20],
+            account_name=(r.get("account_name") or "")[:200], category=(r.get("category") or "")[:40],
+            item=(r.get("item") or "")[:100], status=(r.get("status") or "")[:20], date=str(r.get("date") or "")[:30],
+            time=str(r.get("time") or "")[:20], user=(r.get("user") or "")[:80], priority=(r.get("priority") or "")[:20],
+            notes=r.get("notes") or "", source=(r.get("source") or "")[:60], action=(r.get("action") or "")[:60]))
+
+
 async def run_data_merge() -> None:
     """Entry point — called once at startup from init_database()."""
     try:
         async with AsyncSessionLocal() as session:
-            g = await _merge_guarantors(session)
-            f = await _merge_facilities(session)
-            p = await _merge_profiles(session)
-            c = await _merge_checklist(session)
+            counts = {
+                "guarantors": await _merge_guarantors(session),
+                "facilities": await _merge_facilities(session),
+                "profiles": await _merge_profiles(session),
+                "checklists": await _merge_checklist(session),
+                "tasks": await _merge_tasks(session),
+                "attachments": await _merge_attachments(session),
+                "journal": await _merge_journal(session),
+            }
             await session.commit()
-            if g or f or p or c:
-                logger.info(
-                    "data-merge: +%d guarantors, %d facilities, +%d profiles, +%d checklists",
-                    g, f, p, c,
-                )
+            if any(counts.values()):
+                logger.info("data-merge: %s", counts)
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("data merge skipped: %s", exc)
