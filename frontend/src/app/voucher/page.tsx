@@ -105,7 +105,7 @@ export default function VoucherPage() {
     <Layout>
       <style>{`
         /* ---- Voucher (matches the source Excel form) ---- */
-        .vch { box-sizing: border-box; width: 100%; height: 142.5mm; border: 1.6pt solid #000;
+        .vch { box-sizing: border-box; width: 100%; height: 139mm; border: 1.6pt solid #000;
                padding: 5mm 6mm 4mm; display: flex; flex-direction: column; color: #000;
                font-family: Arial, "Segoe UI", sans-serif; background: #fff; overflow: hidden; }
         .vch + .vch { border-top: 0; }
@@ -140,7 +140,7 @@ export default function VoucherPage() {
           main { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
           .voucher-grid { display: block !important; }
           #voucher-print { width: 100% !important; margin: 0 !important; }
-          @page { size: A4 portrait; margin: 6mm; }
+          @page { size: A4 portrait; margin: 4mm; }
         }
       `}</style>
 
