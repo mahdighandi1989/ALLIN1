@@ -281,3 +281,112 @@ async def test_monthly_revenue_no_overflow_large_amounts(legacy_pg, monkeypatch)
         assert float(val) > 0
     finally:
         await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_uppercase_varchar_enums_are_canonicalised(legacy_pg, monkeypatch):
+    """VARCHAR enum columns holding UPPERCASE values must be lowercased in place.
+
+    Distinct from the native-enum test above: here the columns are plain VARCHAR
+    (the state prod reaches after schema-sync converts a native enum to varchar,
+    OR when the column was native_enum=False from the start). Values like
+    'CORPORATE'/'LOAN' are valid once lowercased, so the old coerce-to-default
+    step skipped them and they stayed UPPERCASE — TolerantEnum then coerced
+    'CORPORATE'->retail and 'LOAN'->other on every read (the exact production
+    log symptom and the "Customers by Type" / facility-type dashboard bug).
+    normalize_enum_data() must rewrite them to the canonical lowercase value,
+    while still mapping legacy aliases (OD->overdraft) and coercing true garbage.
+    """
+    eng, db_url = legacy_pg
+    import app.db_init as db_init
+
+    test_engine = create_async_engine(db_url)
+    test_sessionmaker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(db_init, "engine", test_engine)
+    monkeypatch.setattr(db_init, "AsyncSessionLocal", test_sessionmaker)
+
+    # Pre-create the tables as VARCHAR(50) so legacy values of any length fit,
+    # mirroring prod after the native-enum -> varchar conversion.
+    async with test_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "CREATE TABLE customers (id VARCHAR(36) PRIMARY KEY,"
+                " account_no VARCHAR(50) UNIQUE NOT NULL, name VARCHAR(200) NOT NULL,"
+                " account_type VARCHAR(50), status VARCHAR(50),"
+                " is_deleted BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE TABLE facilities (id VARCHAR(33) PRIMARY KEY,"
+                " customer_id VARCHAR(36) NOT NULL, name VARCHAR(200),"
+                " facility_type VARCHAR(50), status VARCHAR(50),"
+                " amount NUMERIC(18,2) DEFAULT 0, outstanding NUMERIC(18,2) DEFAULT 0,"
+                " currency VARCHAR(3) DEFAULT 'AED',"
+                " is_deleted BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO customers (id, account_no, name, account_type, status) VALUES"
+                " ('u1','UC-1','Up Corp','CORPORATE','ACTIVE'),"      # valid-but-UPPERCASE
+                " ('u2','UC-2','Up Retail','RETAIL','active'),"
+                " ('u3','UC-3','Legacy Indiv','INDIVIDUAL','INACTIVE'),"  # alias
+                " ('u4','UC-4','Garbage','ZZZ','???')"                 # true garbage -> default
+            )
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO facilities (id, customer_id, name, facility_type, status) VALUES"
+                " ('f1','u1','Loan A','LOAN','ACTIVE'),"               # valid-but-UPPERCASE
+                " ('f2','u1','OD B','OD','active'),"                   # alias
+                " ('f3','u2','LC C','LC','CLOSED'),"
+                " ('f4','u3','Mystery','WTF','???')"                   # true garbage -> default
+            )
+        )
+
+    try:
+        # ensure_schema() adds any missing model columns; normalize_enum_data()
+        # canonicalises the dirty values. (Both are what init_database runs.)
+        await db_init.ensure_schema()
+        await db_init.normalize_enum_data()
+
+        # 1) Stored values are now canonical lowercase / mapped / coerced.
+        async with test_engine.connect() as conn:
+            cust = dict(
+                (r[0], r[1]) for r in (
+                    await conn.execute(text("SELECT account_no, account_type FROM customers"))
+                ).all()
+            )
+            cstat = dict(
+                (r[0], r[1]) for r in (
+                    await conn.execute(text("SELECT account_no, status FROM customers"))
+                ).all()
+            )
+            fac = dict(
+                (r[0], r[1]) for r in (
+                    await conn.execute(text("SELECT name, facility_type FROM facilities"))
+                ).all()
+            )
+        assert cust == {"UC-1": "corporate", "UC-2": "retail",
+                        "UC-3": "retail", "UC-4": "retail"}, cust   # UPPERCASE fixed, alias+garbage too
+        assert cstat["UC-1"] == "active" and cstat["UC-3"] == "inactive", cstat
+        assert fac == {"Loan A": "loan", "OD B": "overdraft",
+                       "LC C": "lc", "Mystery": "other"}, fac       # LOAN no longer -> other
+
+        # 2) Reading through the ORM/TolerantEnum yields zero coercion (the prod log).
+        import warnings
+        from sqlalchemy import select as sa_select
+        from app.models.customer import Customer
+        from app.models.facility import Facility
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            async with test_sessionmaker() as s:
+                custs = (await s.execute(sa_select(Customer))).scalars().all()
+                facs = (await s.execute(sa_select(Facility))).scalars().all()
+            coerced = [str(w.message) for w in caught if "coerc" in str(w.message).lower()]
+        assert coerced == [], coerced
+        assert {c.account_no: c.account_type.value for c in custs}["UC-1"] == "corporate"
+        assert {f.name: f.facility_type.value for f in facs}["Loan A"] == "loan"
+    finally:
+        await test_engine.dispose()

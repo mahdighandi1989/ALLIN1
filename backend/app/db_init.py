@@ -272,6 +272,8 @@ async def normalize_enum_data() -> None:
             for table, col, enum_type, default, aliases in _ENUM_COLUMNS:
                 if table not in existing_tables:
                     continue
+                allowed = _ENUMS[enum_type]
+                allowed_sql = ", ".join("'" + v.replace("'", "''") + "'" for v in allowed)
                 # 1) Map known legacy/abbreviated codes to the canonical value
                 #    (case-insensitive). Only assigns valid labels.
                 for alias, canonical in aliases.items():
@@ -281,9 +283,21 @@ async def normalize_enum_data() -> None:
                             f'WHERE lower(trim("{col}"::text)) = :alias'
                         ).bindparams(canon=canonical, alias=alias)
                     )
-                # 2) Coerce anything still outside the allowed set to the default.
-                allowed = _ENUMS[enum_type]
-                allowed_sql = ", ".join("'" + v.replace("'", "''") + "'" for v in allowed)
+                # 2) Canonicalise case/whitespace for values that ARE valid once
+                #    lowercased+trimmed (e.g. 'CORPORATE' -> 'corporate', 'LOAN' ->
+                #    'loan', ' Active ' -> 'active'). Without this they stay as
+                #    stored and TolerantEnum coerces them to the fallback on read
+                #    (corporate shown as retail, loan shown as other) — the visible
+                #    "Customers by Type" / facility-type dashboard bug.
+                await conn.execute(
+                    text(
+                        f'UPDATE "{table}" SET "{col}" = lower(trim("{col}"::text)) '
+                        f'WHERE "{col}" IS NOT NULL '
+                        f'AND "{col}"::text <> lower(trim("{col}"::text)) '
+                        f'AND lower(trim("{col}"::text)) IN ({allowed_sql})'
+                    )
+                )
+                # 3) Coerce anything still outside the allowed set to the default.
                 await conn.execute(
                     text(
                         f'UPDATE "{table}" SET "{col}" = :default '
