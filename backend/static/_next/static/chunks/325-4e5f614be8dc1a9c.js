@@ -1,4 +1,4 @@
-"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[494],{5032:function(t,e,h){h.d(e,{Z:function(){return n}});/**
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[325],{5032:function(t,e,h){h.d(e,{Z:function(){return n}});/**
  * @license lucide-react v0.312.0 - ISC
  *
  * This source code is licensed under the ISC license.
@@ -108,7 +108,12 @@
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
- */let n=(0,h(7461).Z)("ShieldCheck",[["path",{d:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10",key:"1irkt0"}],["path",{d:"m9 12 2 2 4-4",key:"dzmm74"}]])},489:function(t,e,h){h.d(e,{Z:function(){return n}});/**
+ */let n=(0,h(7461).Z)("ShieldCheck",[["path",{d:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10",key:"1irkt0"}],["path",{d:"m9 12 2 2 4-4",key:"dzmm74"}]])},5222:function(t,e,h){h.d(e,{Z:function(){return n}});/**
+ * @license lucide-react v0.312.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */let n=(0,h(7461).Z)("StickyNote",[["path",{d:"M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z",key:"qazsjp"}],["path",{d:"M15 3v4a2 2 0 0 0 2 2h4",key:"40519r"}]])},489:function(t,e,h){h.d(e,{Z:function(){return n}});/**
  * @license lucide-react v0.312.0 - ISC
  *
  * This source code is licensed under the ISC license.

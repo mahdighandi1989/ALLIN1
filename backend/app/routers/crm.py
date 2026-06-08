@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile
+from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
 from app.models.guarantor import Guarantor
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
@@ -318,3 +318,38 @@ async def merge_status(db: AsyncSession = Depends(get_db), user=Depends(require_
     except Exception as exc:
         out["facilities"] = f"error: {str(exc)[:80]}"
     return out
+
+
+# ---------------------------------------------------------------------------
+# Notes (free-text notes / reminders per customer)
+# ---------------------------------------------------------------------------
+class NoteCreate(BaseModel):
+    title: str = ""
+    content: str = Field(..., min_length=1)
+    category: str = "General"
+    priority: str = "Medium"
+    reminder_date: str = ""
+
+
+@router.post("/notes/{account_no}")
+async def add_note(
+    account_no: str,
+    payload: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a note / reminder to a customer."""
+    nid = f"N-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    n = CustomerNote(
+        id=nid, account_no=account_no, title=(payload.title or "")[:200], content=payload.content,
+        category=(payload.category or "General")[:40], priority=(payload.priority or "Medium")[:20],
+        created_by=getattr(user, "username", "") or "", created_date=date.today().isoformat(),
+        reminder_date=(payload.reminder_date or "")[:30],
+    )
+    db.add(n)
+    await db.commit()
+    return {
+        "id": n.id, "account_no": n.account_no, "title": n.title, "content": n.content,
+        "category": n.category, "priority": n.priority, "created_by": n.created_by,
+        "created_date": n.created_date, "reminder_date": n.reminder_date,
+    }

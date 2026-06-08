@@ -8,7 +8,7 @@ import { customersApi, crmApi, parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
-  CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon,
+  CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote,
 } from 'lucide-react'
 import { PROPERTIES } from '../properties/data'
 
@@ -42,6 +42,7 @@ function CustomerDetailInner() {
   const [nf, setNf] = useState<any>({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
   const [kycEdit, setKycEdit] = useState(false)
   const [kycForm, setKycForm] = useState<any>({})
+  const [newNote, setNewNote] = useState('')
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -56,7 +57,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], tasks = [], attachments = [], journal = [], profile, checklist, summary = {} } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {} } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
@@ -126,6 +127,14 @@ function CustomerDetailInner() {
       setKycEdit(false); toast.success('KYC updated')
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  const addNote = async () => {
+    if (!newNote.trim()) return
+    try {
+      const n = await crmApi.addNote(acc, { content: newNote.trim() })
+      setData((d: any) => ({ ...d, notes: [n, ...(d.notes || [])] }))
+      setNewNote(''); toast.success('Note added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: Building },
@@ -135,6 +144,7 @@ function CustomerDetailInner() {
     { id: 'collateral', label: 'Collateral & Property', icon: Building2 },
     { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
+    { id: 'notes', label: 'Notes', icon: StickyNote },
     { id: 'attachments', label: 'Attachments', icon: Paperclip },
     { id: 'activity', label: 'Activity', icon: Activity },
   ]
@@ -346,6 +356,27 @@ function CustomerDetailInner() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {tab === 'notes' && (
+        <Section title={`Notes (${notes.length})`}>
+          <div className="flex gap-2 mb-4">
+            <input value={newNote} onChange={(e) => setNewNote(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addNote()}
+              placeholder="Write a note…" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button onClick={addNote} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium">Add Note</button>
+          </div>
+          {notes.length === 0 ? <Empty>No notes</Empty> : (
+            <div className="space-y-2">
+              {notes.map((n: any) => (
+                <div key={n.id} className="border border-gray-200 rounded-lg p-3">
+                  {n.title && <div className="font-medium text-sm">{n.title}</div>}
+                  <div className="text-sm text-gray-700">{n.content}</div>
+                  <div className="text-xs text-gray-400 mt-1">{val(n.created_date)} · {val(n.created_by)}{n.category ? ` · ${n.category}` : ''}</div>
+                </div>
+              ))}
             </div>
           )}
         </Section>

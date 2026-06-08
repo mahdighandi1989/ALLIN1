@@ -277,7 +277,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     from sqlalchemy import inspect as _sa_inspect
     from app.models.guarantor import Guarantor
     from app.models.crm import (
-        CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry,
+        CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
     )
 
     def _to_dict(obj):
@@ -299,6 +299,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     tasks = await _by_acc(CustomTask)
     attachments = await _by_acc(Attachment)
     journal = await _by_acc(JournalEntry, order=JournalEntry.date.desc(), limit=60)
+    notes = await _by_acc(CustomerNote)
     profile_row = (
         await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
     ).scalar_one_or_none()
@@ -330,6 +331,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "tasks": [_to_dict(t) for t in tasks],
         "attachments": [_to_dict(a) for a in attachments],
         "journal": [_to_dict(j) for j in journal],
+        "notes": [_to_dict(n) for n in notes],
         "profile": profile,
         "checklist": _to_dict(checklist_row) if checklist_row is not None else None,
         "summary": {

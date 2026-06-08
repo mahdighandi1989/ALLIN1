@@ -110,6 +110,22 @@ class Attachment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class CustomerNote(Base):
+    """Free-text notes / reminders per customer."""
+    __tablename__ = "customer_notes"
+
+    id = Column(String(60), primary_key=True)
+    account_no = Column(String(50), index=True)
+    title = Column(String(200))
+    content = Column(Text)
+    category = Column(String(40))
+    priority = Column(String(20))
+    created_by = Column(String(80))
+    created_date = Column(String(30))
+    reminder_date = Column(String(30))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class JournalEntry(Base):
     """Per-customer activity log (who did what / which workflow step)."""
     __tablename__ = "journal_entries"

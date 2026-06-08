@@ -32,7 +32,7 @@ from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.offer_letter import OfferStatus, RepaymentType, CollateralType
 from app.models.guarantor import Guarantor  # noqa: F401  (register table for create_all)
 from app.models.crm import (  # noqa: F401
-    CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry,
+    CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
 )
 
 logger = logging.getLogger(__name__)
