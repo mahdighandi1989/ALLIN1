@@ -63,6 +63,15 @@ function CustomerDetailInner() {
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
   const completeness = profile?.profile_completeness || '—'
 
+  // Live securities aggregation from the merged guarantor data — mirrors the
+  // Excel CalculateTotalChequesFromBackend / GetGuarantorSummary and the FD
+  // management forms (FD is stored on each guarantor row).
+  const num = (v: any) => { const n = Number(String(v ?? '').replace(/[^0-9.-]/g, '')); return isFinite(n) ? n : 0 }
+  const fdShown = (v: any) => { const f = String(v ?? '').trim(); return f && f !== '-' && f !== '—' && f !== '0' }
+  const chequeRows = guarantors.filter((g: any) => g.cheque_no || g.cheque_amount)
+  const chequeTotal = guarantors.reduce((s: number, g: any) => s + num(g.cheque_amount), 0)
+  const fdRows = guarantors.filter((g: any) => fdShown(g.fd))
+
   const toggleStep = async (step: number, isDone: boolean) => {
     try {
       await crmApi.toggleChecklistStep(acc, step, !isDone)
@@ -280,12 +289,30 @@ function CustomerDetailInner() {
 
       {tab === 'collateral' && (
         <div className="space-y-5">
-          <Section title="Security Summary">
+          <Section title="Security Cheques & Fixed Deposits">
             <Grid items={[
-              ['Cheques Total (AED)', pdata.Sec_Cheques_AED_Total], ['Cheques Count', pdata.Sec_Cheques_Count],
+              ['Cheques Total (AED)', chequeTotal ? chequeTotal.toLocaleString() : (pdata.Sec_Cheques_AED_Total || '—')],
+              ['Cheques Count', chequeRows.length || pdata.Sec_Cheques_Count || '0'],
+              ['Fixed Deposits (FD)', fdRows.length || '0'],
               ['Collateral (AED)', pdata.Sec_Collateral_AED], ['Underlien (AED)', pdata.Sec_Underlien_AED],
-              ['Borrower Chq No', pdata.Borrower_ChqNo], ['Borrower Chq Amount', pdata.Borrower_ChqAmount],
+              ['Borrower Chq No', pdata.Borrower_ChqNo],
             ]} />
+            {chequeRows.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Security cheques held ({chequeRows.length})</p>
+                <SimpleTable head={['Guarantor', 'Cheque No', 'Amount (AED)', 'Issuing Bank', 'FD Ref']}
+                  rows={chequeRows.map((g: any) => [g.guarantor_name || g.customer_name || '—', g.cheque_no || '—', g.cheque_amount ? num(g.cheque_amount).toLocaleString() : '—', g.issuing_bank || '—', fdShown(g.fd) ? g.fd : '—'])}
+                  empty="" />
+              </div>
+            )}
+            {fdRows.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Fixed deposits held as security ({fdRows.length})</p>
+                <SimpleTable head={['Holder', 'FD Reference', 'Linked Cheque', 'Issuing Bank']}
+                  rows={fdRows.map((g: any) => [g.guarantor_name || g.customer_name || '—', g.fd, g.cheque_no || '—', g.issuing_bank || '—'])}
+                  empty="" />
+              </div>
+            )}
           </Section>
           <Section title="Property / Mortgage">
             <Grid items={[
