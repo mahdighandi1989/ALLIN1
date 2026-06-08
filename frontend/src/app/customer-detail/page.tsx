@@ -39,6 +39,7 @@ function CustomerDetailInner() {
   const [newTask, setNewTask] = useState('')
   const [newTaskDate, setNewTaskDate] = useState('')
   const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
+  const [nf, setNf] = useState<any>({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -93,6 +94,15 @@ function CustomerDetailInner() {
       setData((d: any) => ({ ...d, guarantors: [...(d.guarantors || []), g], summary: { ...d.summary, total_guarantors: (d.summary?.total_guarantors || 0) + 1 } }))
       setNg({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
       toast.success('Guarantor added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const addFacility = async () => {
+    if (!nf.amount || Number(nf.amount) <= 0) { toast.error('Amount required'); return }
+    try {
+      const f = await crmApi.addFacility(acc, { facility_type: nf.facility_type, amount: Number(nf.amount), currency: nf.currency, name: nf.name })
+      setData((d: any) => ({ ...d, facilities: [f, ...(d.facilities || [])], summary: { ...d.summary, total_facilities: (d.summary?.total_facilities || 0) + 1, total_exposure: (d.summary?.total_exposure || 0) + Number(nf.amount) } }))
+      setNf({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
+      toast.success('Facility added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
 
@@ -173,7 +183,24 @@ function CustomerDetailInner() {
         </Section>
       )}
 
-      {tab === 'facilities' && <FacilitiesTable facilities={facilities} standalone />}
+      {tab === 'facilities' && (
+        <Section title={`Facilities (${facilities.length})`}>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
+            <select value={nf.facility_type} onChange={(e) => setNf((s: any) => ({ ...s, facility_type: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm">
+              <option value="overdraft">Overdraft</option><option value="loan">Loan</option>
+              <option value="lc">LC</option><option value="lg">LG</option><option value="other">Other</option>
+            </select>
+            <input value={nf.amount} onChange={(e) => setNf((s: any) => ({ ...s, amount: e.target.value }))} placeholder="Amount" inputMode="numeric" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+            <input value={nf.currency} onChange={(e) => setNf((s: any) => ({ ...s, currency: e.target.value }))} placeholder="AED" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+            <input value={nf.name} onChange={(e) => setNf((s: any) => ({ ...s, name: e.target.value }))} placeholder="Ref / Offer Letter No" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+            <button onClick={addFacility} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add Facility</button>
+          </div>
+          <SimpleTable head={['Name / Ref', 'Type', 'Amount', 'Outstanding', 'Status']}
+            rows={facilities.map((f: any) => [f.name, (f.facility_type || '').toUpperCase(), money(f.amount, f.currency), money(f.outstanding, f.currency), f.status])}
+            empty="No facilities" />
+        </Section>
+      )}
 
       {tab === 'guarantors' && (
         <Section title={`Guarantors & Security Cheques (${guarantors.length})`}>

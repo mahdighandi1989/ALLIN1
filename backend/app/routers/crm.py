@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask
 from app.models.guarantor import Guarantor
+from app.models.customer import Customer
+from app.models.facility import Facility, FacilityType
 from app.routers.auth import require_editor
 
 router = APIRouter(tags=["crm"])
@@ -173,4 +175,55 @@ async def add_guarantor(
         "guarantor_account": g.guarantor_account, "cheque_no": g.cheque_no,
         "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
         "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Facilities (add a facility to a customer, linked via account_no)
+# ---------------------------------------------------------------------------
+def _facility_type(raw: str) -> FacilityType:
+    u = (raw or "").strip().lower()
+    if "overdraft" in u or u == "od":
+        return FacilityType.OVERDRAFT
+    if "loan" in u:
+        return FacilityType.LOAN
+    if u == "lc" or "letter of credit" in u:
+        return FacilityType.LC
+    if u == "lg" or "guarantee" in u:
+        return FacilityType.LG
+    return FacilityType.OTHER
+
+
+class FacilityCreate(BaseModel):
+    facility_type: str = "loan"
+    amount: float = Field(..., ge=0)
+    currency: str = "AED"
+    name: str = ""  # facility / offer-letter reference
+
+
+@router.post("/facilities/{account_no}")
+async def add_facility(
+    account_no: str,
+    payload: FacilityCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a facility to a customer (resolved by account_no)."""
+    cid = (
+        await db.execute(select(Customer.id).where(Customer.account_no == account_no))
+    ).scalar_one_or_none()
+    if not cid:
+        raise HTTPException(status_code=404, detail="Customer not found for this account")
+    fid = f"F-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    f = Facility(
+        id=fid, customer_id=cid, name=(payload.name or "")[:200], amount=payload.amount,
+        currency=(payload.currency or "AED")[:3], facility_type=_facility_type(payload.facility_type),
+        risk_rating="medium", is_deleted=False,
+    )
+    db.add(f)
+    await db.commit()
+    return {
+        "id": f.id, "name": f.name, "amount": float(f.amount or 0),
+        "currency": f.currency, "facility_type": f.facility_type.value,
+        "status": "active", "outstanding": 0,
     }

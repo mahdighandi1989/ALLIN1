@@ -246,6 +246,10 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/guarantors/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async addFacility(accountNo: string, body: { facility_type: string; amount: number; currency?: string; name?: string }): Promise<any> {
+    const { data } = await api.post(`/api/crm/facilities/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
