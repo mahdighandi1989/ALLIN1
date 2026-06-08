@@ -18,6 +18,7 @@ from app.database import AsyncSessionLocal
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.models.guarantor import Guarantor
+from app.models.crm import CustomerProfile, ChecklistProgress
 
 logger = logging.getLogger(__name__)
 _DIR = Path(__file__).resolve().parent.parent / "data" / "merge"
@@ -131,14 +132,87 @@ async def _merge_facilities(session) -> int:
     return touched
 
 
+async def _merge_profiles(session) -> int:
+    """Merge the comprehensive customer profiles (credit file + KYC)."""
+    blob = _load("customer_profiles.json")
+    records = blob.get("records") if isinstance(blob, dict) else (blob or [])
+    if not records:
+        return 0
+    existing = set((await session.execute(select(CustomerProfile.account_no))).scalars().all())
+    added = 0
+    for rec in records:
+        acc = str(rec.get("AccountNo") or "").strip()
+        if not acc or acc in existing:
+            continue
+        g = lambda k: (rec.get(k) or "")
+        session.add(CustomerProfile(
+            account_no=acc,
+            customer_name=g("CustomerName")[:200],
+            account_type=g("AccountType")[:30],
+            branch=g("Branch")[:20],
+            business_type=g("BusinessType")[:200],
+            rating=g("Rating")[:10],
+            customer_status=g("CustomerStatus")[:50],
+            trade_license_no=g("TradeLicenseNo")[:80],
+            trade_license_expiry=g("TradeLicenseExpiry")[:30],
+            passport_no=g("PassportNo")[:80],
+            passport_expiry=g("PassportExpiry")[:30],
+            emirates_id_no=g("EmiratesIDNo")[:80],
+            emirates_id_expiry=g("EmiratesIDExpiry")[:30],
+            visa_no=g("VisaNo")[:80],
+            visa_expiry=g("VisaExpiry")[:30],
+            tenancy_no=g("TenancyNo")[:80],
+            tenancy_expiry=g("TenancyExpiry")[:30],
+            profile_completeness=str(g("ProfileCompleteness"))[:20],
+            updated_by=g("UpdatedBy")[:80],
+            last_updated=g("LastUpdated")[:30],
+            data_json=json.dumps({k: v for k, v in rec.items() if v not in (None, "")}, ensure_ascii=False),
+        ))
+        existing.add(acc)
+        added += 1
+    return added
+
+
+async def _merge_checklist(session) -> int:
+    """Merge the 9-step credit-file workflow progress per customer."""
+    rows = _load("checklist_progress.json")
+    if not rows:
+        return 0
+    existing = set((await session.execute(select(ChecklistProgress.account_no))).scalars().all())
+    added = 0
+    for r in rows:
+        acc = str(r.get("account_no") or "").strip()
+        if not acc or acc in existing or acc == "Account No":
+            continue
+        session.add(ChecklistProgress(
+            account_no=acc, branch=str(r.get("branch") or "")[:20],
+            account_name=(r.get("account_name") or "")[:200], category=(r.get("category") or "")[:40],
+            first_action=str(r.get("first_action") or "")[:30], last_action=str(r.get("last_action") or "")[:30],
+            total=str(r.get("total") or "")[:10],
+            item1=str(r.get("item1") or "")[:10], item2=str(r.get("item2") or "")[:10],
+            item3=str(r.get("item3") or "")[:10], item4=str(r.get("item4") or "")[:10],
+            item5=str(r.get("item5") or "")[:10], item6=str(r.get("item6") or "")[:10],
+            item7=str(r.get("item7") or "")[:10], item8=str(r.get("item8") or "")[:10],
+            item9=str(r.get("item9") or "")[:10], last_user=(r.get("last_user") or "")[:80],
+        ))
+        existing.add(acc)
+        added += 1
+    return added
+
+
 async def run_data_merge() -> None:
     """Entry point — called once at startup from init_database()."""
     try:
         async with AsyncSessionLocal() as session:
             g = await _merge_guarantors(session)
             f = await _merge_facilities(session)
+            p = await _merge_profiles(session)
+            c = await _merge_checklist(session)
             await session.commit()
-            if g or f:
-                logger.info("data-merge: +%d guarantors, %d facilities merged", g, f)
+            if g or f or p or c:
+                logger.info(
+                    "data-merge: +%d guarantors, %d facilities, +%d profiles, +%d checklists",
+                    g, f, p, c,
+                )
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("data merge skipped: %s", exc)
