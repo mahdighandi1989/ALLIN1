@@ -38,6 +38,7 @@ function CustomerDetailInner() {
   const [tab, setTab] = useState('overview')
   const [newTask, setNewTask] = useState('')
   const [newTaskDate, setNewTaskDate] = useState('')
+  const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -82,6 +83,16 @@ function CustomerDetailInner() {
       await crmApi.updateTask(id, { status: 'Done' })
       setData((d: any) => ({ ...d, tasks: (d.tasks || []).map((t: any) => t.id === id ? { ...t, status: 'Done' } : t) }))
       toast.success('Task completed')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const addGuarantor = async () => {
+    if (!ng.guarantor_name?.trim()) { toast.error('Guarantor name required'); return }
+    try {
+      const body = { ...ng, cheque_amount: ng.cheque_amount ? Number(ng.cheque_amount) : undefined }
+      const g = await crmApi.addGuarantor(acc, body)
+      setData((d: any) => ({ ...d, guarantors: [...(d.guarantors || []), g], summary: { ...d.summary, total_guarantors: (d.summary?.total_guarantors || 0) + 1 } }))
+      setNg({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
+      toast.success('Guarantor added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
 
@@ -166,6 +177,14 @@ function CustomerDetailInner() {
 
       {tab === 'guarantors' && (
         <Section title={`Guarantors & Security Cheques (${guarantors.length})`}>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mb-4">
+            {[['guarantor_name', 'Guarantor name'], ['guarantor_account', 'Account'], ['cheque_no', 'Cheque No'], ['cheque_amount', 'Amount'], ['issuing_bank', 'Bank']].map(([k, ph]) => (
+              <input key={k} value={ng[k] || ''} onChange={(e) => setNg((s: any) => ({ ...s, [k]: e.target.value }))}
+                placeholder={ph} inputMode={k === 'cheque_amount' ? 'numeric' : undefined}
+                className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            ))}
+            <button onClick={addGuarantor} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
+          </div>
           <SimpleTable head={['Guarantor', 'Account', 'Cheque No', 'Amount', 'Bank', 'Ref']}
             rows={guarantors.map((g: any) => [g.guarantor_name, g.guarantor_account, g.cheque_no, g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—', g.issuing_bank, g.pim_ref])}
             empty="No guarantors" />

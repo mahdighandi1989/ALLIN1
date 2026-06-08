@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask
+from app.models.guarantor import Guarantor
 from app.routers.auth import require_editor
 
 router = APIRouter(tags=["crm"])
@@ -135,3 +136,41 @@ async def update_task(
         t.is_active = payload.is_active[:5]
     await db.commit()
     return _task_dict(t)
+
+
+# ---------------------------------------------------------------------------
+# Guarantors (add a guarantor + security cheque to a customer)
+# ---------------------------------------------------------------------------
+class GuarantorCreate(BaseModel):
+    guarantor_name: str = Field(..., min_length=1, max_length=200)
+    guarantor_account: str = ""
+    cheque_no: str = ""
+    cheque_amount: Optional[float] = None
+    issuing_bank: str = "BSI"
+    pim_ref: str = ""
+
+
+@router.post("/guarantors/{account_no}")
+async def add_guarantor(
+    account_no: str,
+    payload: GuarantorCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a guarantor + security cheque to a customer."""
+    gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
+    g = Guarantor(
+        id=gid, account_no=account_no, guarantor_name=payload.guarantor_name[:200],
+        guarantor_account=(payload.guarantor_account or "")[:50], cheque_no=(payload.cheque_no or "")[:50],
+        cheque_amount=payload.cheque_amount, issuing_bank=(payload.issuing_bank or "BSI")[:50],
+        pim_ref=(payload.pim_ref or "")[:80], date_added=date.today().isoformat(),
+        created_by=getattr(user, "username", "") or "",
+    )
+    db.add(g)
+    await db.commit()
+    return {
+        "id": g.id, "account_no": g.account_no, "guarantor_name": g.guarantor_name,
+        "guarantor_account": g.guarantor_account, "cheque_no": g.cheque_no,
+        "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
+        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref,
+    }
