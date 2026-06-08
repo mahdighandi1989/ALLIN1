@@ -113,7 +113,12 @@ def _add_missing_columns(sync_conn) -> None:
         existing_cols = {c["name"] for c in db_columns}
         model_cols = {c.name for c in table.columns}
 
-        # 1) Add columns the model defines but the live table is missing.
+        # 1) Add columns the model defines but the live table is missing. Each
+        #    ALTER is committed and guarded INDEPENDENTLY (autocommit + per-column
+        #    try/except) so one failing column can never poison the transaction and
+        #    abandon every other column — the bug where a single bad ALTER rolled
+        #    back the whole batch, leaving e.g. users.auth_provider unadded and
+        #    500-ing every auth query.
         for col in table.columns:
             if col.name in existing_cols:
                 continue
@@ -125,8 +130,13 @@ def _add_missing_columns(sync_conn) -> None:
             default = _default_sql(col)
             if default is not None:
                 ddl += f" DEFAULT {default}"
-            logger.info("schema-sync: %s", ddl)
-            sync_conn.execute(text(ddl))
+            try:
+                logger.info("schema-sync: %s", ddl)
+                sync_conn.execute(text(ddl))
+            except Exception as exc:  # pragma: no cover - depends on live DB
+                logger.warning(
+                    "schema-sync: could not add %s.%s: %s", table.name, col.name, exc
+                )
 
         # 2) Relax NOT NULL on columns the live table requires but the model does
         #    NOT know about (e.g. a legacy ``users.role``). Otherwise every INSERT
@@ -230,9 +240,12 @@ async def ensure_schema() -> None:
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("schema-sync: enum->varchar conversion skipped: %s", exc)
 
-    # Add any missing columns.
+    # Add any missing columns. AUTOCOMMIT so each ALTER persists on its own and a
+    # later failure can't roll back the columns already added (each is also guarded
+    # individually inside _add_missing_columns).
     try:
-        async with engine.begin() as conn:
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
             await conn.run_sync(_add_missing_columns)
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.error("schema-sync: add-missing-columns failed: %s", exc)
