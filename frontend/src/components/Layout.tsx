@@ -85,8 +85,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-20">
+      {/* Sidebar — never part of a printout */}
+      <aside className="fixed inset-y-0 left-0 w-60 bg-white border-r border-gray-200 flex flex-col z-20 print:hidden">
         <div className="h-16 flex items-center gap-2.5 px-5 border-b border-gray-100">
           <img src={BANK_LOGO} alt="Bank Saderat Iran" className="h-9 w-9 rounded object-contain bg-white" />
           <div className="leading-tight">
@@ -123,9 +123,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
 
-      {/* Main column */}
-      <div className="pl-60">
-        <header className="h-16 bg-white border-b border-gray-200 sticky top-0 z-10 flex items-center justify-between gap-4 px-6">
+      {/* Main column — drops the sidebar offset + chrome when printing */}
+      <div className="pl-60 print:pl-0">
+        <header className="h-16 bg-white border-b border-gray-200 sticky top-0 z-10 flex items-center justify-between gap-4 px-6 print:hidden">
           <h1 className="text-base font-semibold text-gray-800">{currentTitle(pathname)}</h1>
           <div className="flex items-center gap-4">
             <NotificationBell />
@@ -142,7 +142,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
-        <main className="p-6 max-w-7xl mx-auto">{children}</main>
+        <main className="p-6 max-w-7xl mx-auto print:p-0 print:max-w-none">{children}</main>
       </div>
     </div>
   )
