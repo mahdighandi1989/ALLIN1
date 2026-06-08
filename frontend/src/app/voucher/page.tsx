@@ -105,7 +105,7 @@ export default function VoucherPage() {
     <Layout>
       <style>{`
         /* ---- Voucher (matches the source Excel form) ---- */
-        .vch { box-sizing: border-box; width: 100%; height: 139mm; border: 1.6pt solid #000;
+        .vch { box-sizing: border-box; width: 100%; height: 135mm; border: 1.6pt solid #000;
                padding: 5mm 6mm 4mm; display: flex; flex-direction: column; color: #000;
                font-family: Arial, "Segoe UI", sans-serif; background: #fff; overflow: hidden; }
         .vch + .vch { border-top: 0; }
@@ -136,11 +136,21 @@ export default function VoucherPage() {
         #voucher-print { width: 190mm; margin: 0 auto; background: #fff; }
 
         @media print {
+          /* Own the whole sheet: no @page margin (so nothing spills to a 2nd
+             page and the browser adds no header/footer); the safe inner margins
+             live on the voucher block itself. */
+          @page { size: A4 portrait; margin: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; }
           header, .no-print { display: none !important; }
           main { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
-          .voucher-grid { display: block !important; }
-          #voucher-print { width: 100% !important; margin: 0 !important; }
-          @page { size: A4 portrait; margin: 4mm; }
+          .voucher-grid { display: block !important; margin: 0 !important; }
+          /* Fixed, centred block — 188mm wide leaves ~11mm each side and 8mm top,
+             so left/right borders never reach the printer's non-printable edge.
+             Two 135mm vouchers = 270mm; +8mm top = 278mm of a 297mm page →
+             ~19mm bottom safety → always one page with full borders visible. */
+          #voucher-print { width: 188mm !important; margin: 8mm 11mm 0 11mm !important;
+                           page-break-inside: avoid; break-inside: avoid; }
+          .vch { page-break-inside: avoid; break-inside: avoid; }
         }
       `}</style>
 
