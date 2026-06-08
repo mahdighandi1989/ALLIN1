@@ -6,7 +6,8 @@ import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
 import { customersApi, parseApiError } from '@/lib/api'
 import { CustomerDetail } from '@/types'
-import { ArrowLeft, Building, FileText, Wallet } from 'lucide-react'
+import { ArrowLeft, Building, FileText, Wallet, Building2 } from 'lucide-react'
+import { PROPERTIES } from '../properties/data'
 
 function money(n: number | null | undefined, cur = 'AED') {
   return `${cur} ${Number(n || 0).toLocaleString()}`
@@ -62,6 +63,10 @@ function CustomerDetailInner() {
   }
 
   const { customer, facilities, offer_letters, summary } = data
+  // Connect the customer to their mortgaged properties by matching the account
+  // number against the consolidated property register (no longer a silo).
+  const acc = String(customer.account_no || '').trim()
+  const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
 
   return (
     <div data-testid="customer-detail-content">
@@ -180,6 +185,47 @@ function CustomerDetailInner() {
           </table>
         ) : (
           <p className="px-4 py-6 text-gray-500 text-center">No offer letters</p>
+        )}
+      </div>
+
+      {/* Mortgaged properties — connected to this customer by account number */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden mt-8">
+        <div className="px-4 py-3 border-b font-medium flex items-center gap-2">
+          <Building2 size={16} className="text-blue-600" />
+          Mortgaged Properties
+          <span className="text-gray-400 font-normal">({myProps.length})</span>
+        </div>
+        {myProps.length > 0 ? (
+          <div className="overflow-auto">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-gray-500">
+                  <th className="px-4 py-2">Deed No.</th>
+                  <th className="px-4 py-2">City</th>
+                  <th className="px-4 py-2">Type</th>
+                  <th className="px-4 py-2">Mortgage Date</th>
+                  <th className="px-4 py-2 text-right">Valuation</th>
+                  <th className="px-4 py-2">Insurance Expiry</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {myProps.map((p, i) => (
+                  <tr key={i}>
+                    <td className="px-4 py-2">{p.deed_no || '-'}</td>
+                    <td className="px-4 py-2">{p.city || '-'}</td>
+                    <td className="px-4 py-2">{p.type || '-'}</td>
+                    <td className="px-4 py-2">{p.mortgage_date || '-'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '-'}
+                    </td>
+                    <td className="px-4 py-2">{p.insurance_expiry || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="px-4 py-6 text-gray-500 text-center">No mortgaged properties</p>
         )}
       </div>
     </div>
