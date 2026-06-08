@@ -160,6 +160,47 @@ def _add_missing_columns(sync_conn) -> None:
                     "schema-sync: could not relax %s.%s: %s", table.name, name, exc
                 )
 
+        # 3) Widen existing varchar columns that are narrower than the model now
+        #    requires. create_all / ADD COLUMN never ALTER an existing column, so a
+        #    column first created at a smaller width keeps that width forever — e.g.
+        #    facilities.customer_id was created varchar(33) and later widened to 36
+        #    in the model (real customer ids are 36-char UUIDs), but the live column
+        #    stayed varchar(33); every INSERT of a 36-char id then fails with "value
+        #    too long", silently rolling back the whole data-merge step (facilities
+        #    end up with no amounts). Widening a varchar is a safe, metadata-only
+        #    change (no table/index rewrite, no data loss).
+        db_by_name = {c["name"]: c for c in db_columns}
+        for col in table.columns:
+            db_col = db_by_name.get(col.name)
+            if db_col is None or not isinstance(col.type, sa.String):
+                continue  # String/VARCHAR/Text/Enum (all String-backed); never numerics
+            model_len = getattr(col.type, "length", None)
+            db_len = getattr(db_col.get("type"), "length", None)
+            # Enum columns are varchar-backed too: a still-native enum reports no
+            # length (db_len None) so it's skipped, and a varchar enum is only ever
+            # widened UP to its label length — both safe.
+            if model_len is None:
+                # model is unbounded TEXT — only act if the live column is capped.
+                if db_len is None:
+                    continue
+                new_type = "text"
+            elif db_len is not None and db_len < model_len:
+                new_type = f"varchar({model_len})"
+            else:
+                continue
+            try:
+                logger.info(
+                    "schema-sync: widening %s.%s %s -> %s",
+                    table.name, col.name, db_len, new_type,
+                )
+                sync_conn.execute(
+                    text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" TYPE {new_type}')
+                )
+            except Exception as exc:  # pragma: no cover - depends on live DB
+                logger.warning(
+                    "schema-sync: could not widen %s.%s: %s", table.name, col.name, exc
+                )
+
 
 async def ensure_schema() -> None:
     """Create missing tables/columns/enum values so the schema matches the models."""

@@ -390,3 +390,87 @@ async def test_uppercase_varchar_enums_are_canonicalised(legacy_pg, monkeypatch)
         assert {f.name: f.facility_type.value for f in facs}["Loan A"] == "loan"
     finally:
         await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_narrow_varchar_column_is_widened_to_model(legacy_pg, monkeypatch):
+    """An existing varchar narrower than the model must be widened by schema-sync.
+
+    Reproduces the production bug where facilities.customer_id was first created
+    varchar(33) and later widened to varchar(36) in the model (real customer ids
+    are 36-char UUIDs). create_all / ADD COLUMN never ALTER an existing column,
+    so the live column stayed varchar(33); every facility INSERT with a 36-char
+    customer_id then failed with "value too long for type character varying(33)",
+    rolling back the entire data-merge step and leaving facilities with no amounts
+    (Monthly Revenue / AED exposure stuck at 0 on the dashboard).
+    """
+    eng, db_url = legacy_pg
+    import app.db_init as db_init
+
+    test_engine = create_async_engine(db_url)
+    monkeypatch.setattr(db_init, "engine", test_engine)
+
+    async with test_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "CREATE TABLE customers (id VARCHAR(36) PRIMARY KEY,"
+                " account_no VARCHAR(50) UNIQUE NOT NULL, name VARCHAR(200) NOT NULL,"
+                " is_deleted BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        )
+        # facilities.customer_id deliberately too narrow (the legacy width).
+        await conn.execute(
+            text(
+                "CREATE TABLE facilities (id VARCHAR(33) PRIMARY KEY,"
+                " customer_id VARCHAR(33) NOT NULL, name VARCHAR(200),"
+                " amount NUMERIC(18,2) DEFAULT 0, currency VARCHAR(3) DEFAULT 'AED',"
+                " is_deleted BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        )
+
+    try:
+        # Before: a 36-char customer_id does NOT fit.
+        async with test_engine.connect() as conn:
+            before = (
+                await conn.execute(
+                    text(
+                        "SELECT character_maximum_length FROM information_schema.columns "
+                        "WHERE table_name='facilities' AND column_name='customer_id'"
+                    )
+                )
+            ).scalar()
+        assert before == 33
+
+        await db_init.ensure_schema()  # must widen customer_id 33 -> 36 (model width)
+
+        async with test_engine.connect() as conn:
+            after = (
+                await conn.execute(
+                    text(
+                        "SELECT character_maximum_length FROM information_schema.columns "
+                        "WHERE table_name='facilities' AND column_name='customer_id'"
+                    )
+                )
+            ).scalar()
+        assert after >= 36, after
+
+        # And a 36-char-UUID-keyed facility now inserts without truncation.
+        async with test_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO customers (id, account_no, name) "
+                    "VALUES ('dbcbfebf-5ae1-428e-8ba6-a0de5b8d10c1','W-1','Wide Co')"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO facilities (id, customer_id, name, amount) "
+                    "VALUES ('F-1','dbcbfebf-5ae1-428e-8ba6-a0de5b8d10c1','Loan',1000)"
+                )
+            )
+            linked = (
+                await conn.execute(text("SELECT customer_id FROM facilities WHERE id='F-1'"))
+            ).scalar()
+        assert linked == "dbcbfebf-5ae1-428e-8ba6-a0de5b8d10c1"
+    finally:
+        await test_engine.dispose()

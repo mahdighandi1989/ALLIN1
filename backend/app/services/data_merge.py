@@ -280,7 +280,9 @@ async def run_data_merge() -> dict:
                 await session.commit()
             report[name] = n
         except Exception as exc:  # pragma: no cover - depends on live DB
-            logger.warning("data-merge step %s failed: %s", name, exc)
-            report[name] = f"error: {str(exc)[:140]}"
+            logger.warning("data-merge step %s failed: %s", name, exc, exc_info=True)
+            # Surface the exception TYPE + a generous slice of the message so the
+            # /run-merge report alone is enough to diagnose a live failure.
+            report[name] = f"error: {type(exc).__name__}: {str(exc)[:300]}"
     logger.info("data-merge report: %s", report)
     return report
