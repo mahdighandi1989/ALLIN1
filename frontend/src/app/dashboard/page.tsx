@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation'
 import { statsApi, parseApiError } from '@/lib/api'
 import type { DashboardStats } from '@/types'
 import { DonutChart, BarChart, LineChart } from '@/components/charts'
+import Layout from '@/components/Layout'
 
 function riskColor(label: string): string {
   const l = (label || '').toLowerCase()
@@ -78,6 +79,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
+      <Layout>
       <div className="container mx-auto p-6" data-testid="dashboard-loading">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -99,11 +101,13 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+      </Layout>
     )
   }
 
   if (staticUnavailable) {
     return (
+      <Layout>
       <div className="container mx-auto p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -117,11 +121,13 @@ export default function DashboardPage() {
           <AlertDescription>Dashboard data unavailable in static mode</AlertDescription>
         </Alert>
       </div>
+      </Layout>
     )
   }
 
   if (error) {
     return (
+      <Layout>
       <div className="container mx-auto p-6">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -146,10 +152,12 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+      </Layout>
     )
   }
 
   return (
+    <Layout>
     <div className="container mx-auto p-6" data-testid="dashboard-content">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -413,5 +421,6 @@ export default function DashboardPage() {
         </Card>
       )}
     </div>
+    </Layout>
   )
 }
