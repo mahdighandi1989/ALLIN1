@@ -272,6 +272,49 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         )
     ).scalars().all()
 
+    # ---- Connected CRM data (merged from the legacy system), keyed by account_no ----
+    import json as _json
+    from sqlalchemy import inspect as _sa_inspect
+    from app.models.guarantor import Guarantor
+    from app.models.crm import (
+        CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry,
+    )
+
+    def _to_dict(obj):
+        return {c.key: getattr(obj, c.key) for c in _sa_inspect(obj).mapper.column_attrs}
+
+    acc = customer.account_no
+
+    async def _by_acc(model, order=None, limit=None):
+        q = select(model).where(model.account_no == acc)
+        if hasattr(model, "is_deleted"):
+            q = q.where(model.is_deleted == False)
+        if order is not None:
+            q = q.order_by(order)
+        if limit:
+            q = q.limit(limit)
+        return (await db.execute(q)).scalars().all()
+
+    guarantors = await _by_acc(Guarantor)
+    tasks = await _by_acc(CustomTask)
+    attachments = await _by_acc(Attachment)
+    journal = await _by_acc(JournalEntry, order=JournalEntry.date.desc(), limit=60)
+    profile_row = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    checklist_row = (
+        await db.execute(select(ChecklistProgress).where(ChecklistProgress.account_no == acc))
+    ).scalar_one_or_none()
+
+    profile = None
+    if profile_row is not None:
+        profile = _to_dict(profile_row)
+        try:
+            profile["data"] = _json.loads(profile_row.data_json or "{}")
+        except Exception:
+            profile["data"] = {}
+        profile.pop("data_json", None)
+
     total_exposure = sum(float(f.amount or 0) for f in facilities)
     total_outstanding = sum(float(f.outstanding or 0) for f in facilities)
     active_facilities = sum(
@@ -283,10 +326,17 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "customer": CustomerResponse.model_validate(customer),
         "facilities": [FacilityResponse.model_validate(f) for f in facilities],
         "offer_letters": [OfferLetterResponse.model_validate(o) for o in offers],
+        "guarantors": [_to_dict(g) for g in guarantors],
+        "tasks": [_to_dict(t) for t in tasks],
+        "attachments": [_to_dict(a) for a in attachments],
+        "journal": [_to_dict(j) for j in journal],
+        "profile": profile,
+        "checklist": _to_dict(checklist_row) if checklist_row is not None else None,
         "summary": {
             "total_facilities": len(facilities),
             "active_facilities": active_facilities,
             "total_offers": len(offers),
+            "total_guarantors": len(guarantors),
             "total_exposure": total_exposure,
             "total_outstanding": total_outstanding,
             "currency": "AED",
