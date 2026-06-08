@@ -36,6 +36,8 @@ function CustomerDetailInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState('overview')
+  const [newTask, setNewTask] = useState('')
+  const [newTaskDate, setNewTaskDate] = useState('')
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -64,6 +66,23 @@ function CustomerDetailInner() {
     } catch (e) {
       toast.error(parseApiError(e))
     }
+  }
+
+  const addTask = async () => {
+    if (!newTask.trim()) return
+    try {
+      const t = await crmApi.createTask(acc, { task_name: newTask.trim(), followup_date: newTaskDate })
+      setData((d: any) => ({ ...d, tasks: [t, ...(d.tasks || [])] }))
+      setNewTask(''); setNewTaskDate('')
+      toast.success('Task added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const completeTask = async (id: string) => {
+    try {
+      await crmApi.updateTask(id, { status: 'Done' })
+      setData((d: any) => ({ ...d, tasks: (d.tasks || []).map((t: any) => t.id === id ? { ...t, status: 'Done' } : t) }))
+      toast.success('Task completed')
+    } catch (e) { toast.error(parseApiError(e)) }
   }
 
   const TABS = [
@@ -206,9 +225,40 @@ function CustomerDetailInner() {
 
       {tab === 'tasks' && (
         <Section title={`Tasks & Follow-ups (${tasks.length})`}>
-          <SimpleTable head={['Task', 'Status', 'Follow-up', 'Priority', 'Created By']}
-            rows={tasks.map((t: any) => [t.task_name, t.status || '—', t.followup_date, t.priority, t.created_by])}
-            empty="No tasks" />
+          <div className="flex flex-wrap gap-2 mb-4">
+            <input value={newTask} onChange={(e) => setNewTask(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addTask()}
+              placeholder="New task…" className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={newTaskDate} onChange={(e) => setNewTaskDate(e.target.value)} type="date"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <button onClick={addTask} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium">Add Task</button>
+          </div>
+          {tasks.length === 0 ? <Empty>No tasks</Empty> : (
+            <div className="overflow-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead className="bg-gray-50"><tr className="text-left text-gray-500">
+                  <th className="px-3 py-2">Task</th><th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Follow-up</th><th className="px-3 py-2">Priority</th>
+                  <th className="px-3 py-2">By</th><th className="px-3 py-2"></th>
+                </tr></thead>
+                <tbody className="divide-y">
+                  {tasks.map((t: any) => {
+                    const isDone = done(t.status) || String(t.status).toLowerCase() === 'done'
+                    return (
+                      <tr key={t.id} className={isDone ? 'bg-green-50' : ''}>
+                        <td className="px-3 py-1.5">{val(t.task_name)}</td>
+                        <td className="px-3 py-1.5">{isDone ? <span className="text-green-700">✓ Done</span> : (val(t.status) === '—' ? 'Open' : t.status)}</td>
+                        <td className="px-3 py-1.5">{val(t.followup_date)}</td>
+                        <td className="px-3 py-1.5">{val(t.priority)}</td>
+                        <td className="px-3 py-1.5">{val(t.created_by)}</td>
+                        <td className="px-3 py-1.5">{!isDone && <button onClick={() => completeTask(t.id)} type="button" className="text-xs text-blue-600 hover:underline">Complete</button>}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Section>
       )}
 

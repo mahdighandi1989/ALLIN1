@@ -234,6 +234,14 @@ export const crmApi = {
     const { data } = await api.patch(`/api/crm/checklist/${encodeURIComponent(accountNo)}`, { step, done })
     return data
   },
+  async createTask(accountNo: string, body: { task_name: string; followup_date?: string; priority?: string; notes?: string }): Promise<any> {
+    const { data } = await api.post(`/api/crm/tasks/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updateTask(taskId: string, body: { status?: string; is_active?: string }): Promise<any> {
+    const { data } = await api.patch(`/api/crm/tasks/${encodeURIComponent(taskId)}`, body)
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------

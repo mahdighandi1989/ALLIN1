@@ -8,7 +8,8 @@ SubmitChecklist + WriteToJournal).
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -16,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry
+from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask
 from app.routers.auth import require_editor
 
 router = APIRouter(tags=["crm"])
@@ -67,3 +68,70 @@ async def toggle_checklist_step(
     ))
     await db.commit()
     return {"account_no": account_no, "step": payload.step, "done": payload.done, "total": cp.total}
+
+
+# ---------------------------------------------------------------------------
+# Tasks / follow-ups (add + complete/deactivate)
+# ---------------------------------------------------------------------------
+def _task_dict(t: CustomTask) -> dict:
+    return {
+        "id": t.id, "account_no": t.account_no, "facility_id": t.facility_id,
+        "task_name": t.task_name, "status": t.status, "followup_date": t.followup_date,
+        "notes": t.notes, "priority": t.priority, "created_by": t.created_by,
+        "created_date": t.created_date, "completed_date": t.completed_date, "is_active": t.is_active,
+    }
+
+
+class TaskCreate(BaseModel):
+    task_name: str = Field(..., min_length=1, max_length=200)
+    followup_date: str = ""
+    priority: str = "Medium"
+    notes: str = ""
+    facility_id: str = ""
+
+
+@router.post("/tasks/{account_no}")
+async def create_task(
+    account_no: str,
+    payload: TaskCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a follow-up task for a customer."""
+    tid = f"T-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    t = CustomTask(
+        id=tid, account_no=account_no, facility_id=(payload.facility_id or "")[:60],
+        task_name=payload.task_name[:200], status="", followup_date=(payload.followup_date or "")[:30],
+        notes=payload.notes or "", priority=(payload.priority or "Medium")[:20],
+        created_by=getattr(user, "username", "") or "", created_date=date.today().isoformat(),
+        completed_date="", is_active="1",
+    )
+    db.add(t)
+    await db.commit()
+    return _task_dict(t)
+
+
+class TaskUpdate(BaseModel):
+    status: Optional[str] = None
+    is_active: Optional[str] = None
+
+
+@router.patch("/tasks/{task_id}")
+async def update_task(
+    task_id: str,
+    payload: TaskUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Complete (status) or deactivate (is_active='0') a task."""
+    t = (await db.execute(select(CustomTask).where(CustomTask.id == task_id))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if payload.status is not None:
+        t.status = payload.status[:30]
+        if payload.status.strip().lower() in ("done", "completed", "✓"):
+            t.completed_date = date.today().isoformat()
+    if payload.is_active is not None:
+        t.is_active = payload.is_active[:5]
+    await db.commit()
+    return _task_dict(t)
