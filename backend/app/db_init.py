@@ -695,8 +695,10 @@ async def init_database() -> None:
     await sync_user_roles()
     # Fill missing customer names from the bundled account directory (idempotent).
     await backfill_customer_names()
-    # Soft-delete the empty placeholder facilities from the earlier import.
-    await cleanup_empty_facilities()
+    # NOTE: the empty placeholder facilities are NOT auto-deleted — the real data
+    # (amounts/types/refs) exists in the source workbook and will be merged in,
+    # so they are kept and filled rather than removed. (cleanup_empty_facilities
+    # remains available but is intentionally not called.)
     await refresh_expiry_notifications()
     # Currency exchange rates (default table on first run).
     try:
