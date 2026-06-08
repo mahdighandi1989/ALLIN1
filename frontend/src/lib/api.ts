@@ -250,6 +250,10 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/facilities/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async updateProfile(accountNo: string, body: Record<string, string>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/profile/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------

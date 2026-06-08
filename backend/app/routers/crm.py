@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask
+from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile
 from app.models.guarantor import Guarantor
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
@@ -227,3 +227,56 @@ async def add_facility(
         "currency": f.currency, "facility_type": f.facility_type.value,
         "status": "active", "outstanding": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Customer profile / KYC editing
+# ---------------------------------------------------------------------------
+_KYC_FIELDS = [
+    "business_type", "rating", "customer_status",
+    "trade_license_no", "trade_license_expiry",
+    "passport_no", "passport_expiry",
+    "emirates_id_no", "emirates_id_expiry",
+    "visa_no", "visa_expiry",
+    "tenancy_no", "tenancy_expiry",
+]
+
+
+class ProfileUpdate(BaseModel):
+    business_type: Optional[str] = None
+    rating: Optional[str] = None
+    customer_status: Optional[str] = None
+    trade_license_no: Optional[str] = None
+    trade_license_expiry: Optional[str] = None
+    passport_no: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    emirates_id_no: Optional[str] = None
+    emirates_id_expiry: Optional[str] = None
+    visa_no: Optional[str] = None
+    visa_expiry: Optional[str] = None
+    tenancy_no: Optional[str] = None
+    tenancy_expiry: Optional[str] = None
+
+
+@router.patch("/profile/{account_no}")
+async def update_profile(
+    account_no: str,
+    payload: ProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Edit a customer's profile / KYC fields (creates the profile if missing)."""
+    cp = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == account_no))
+    ).scalar_one_or_none()
+    if cp is None:
+        cp = CustomerProfile(account_no=account_no)
+        db.add(cp)
+    data = payload.model_dump(exclude_unset=True)
+    for k, v in data.items():
+        if v is not None and k in _KYC_FIELDS:
+            setattr(cp, k, str(v)[:80])
+    cp.last_updated = date.today().isoformat()
+    cp.updated_by = getattr(user, "username", "") or ""
+    await db.commit()
+    return {k: getattr(cp, k, None) for k in _KYC_FIELDS}

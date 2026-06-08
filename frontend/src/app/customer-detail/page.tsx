@@ -40,6 +40,8 @@ function CustomerDetailInner() {
   const [newTaskDate, setNewTaskDate] = useState('')
   const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
   const [nf, setNf] = useState<any>({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
+  const [kycEdit, setKycEdit] = useState(false)
+  const [kycForm, setKycForm] = useState<any>({})
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -103,6 +105,25 @@ function CustomerDetailInner() {
       setData((d: any) => ({ ...d, facilities: [f, ...(d.facilities || [])], summary: { ...d.summary, total_facilities: (d.summary?.total_facilities || 0) + 1, total_exposure: (d.summary?.total_exposure || 0) + Number(nf.amount) } }))
       setNf({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
       toast.success('Facility added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const KYC_DOCS = [
+    ['Trade License', 'trade_license_no', 'trade_license_expiry'],
+    ['Passport', 'passport_no', 'passport_expiry'],
+    ['Emirates ID', 'emirates_id_no', 'emirates_id_expiry'],
+    ['Visa', 'visa_no', 'visa_expiry'],
+    ['Tenancy', 'tenancy_no', 'tenancy_expiry'],
+  ]
+  const startKycEdit = () => {
+    const f: any = { business_type: profile?.business_type || '', rating: profile?.rating || '' }
+    KYC_DOCS.forEach(([, nk, ek]) => { f[nk] = profile?.[nk] || ''; f[ek] = profile?.[ek] || '' })
+    setKycForm(f); setKycEdit(true)
+  }
+  const saveKyc = async () => {
+    try {
+      const updated = await crmApi.updateProfile(acc, kycForm)
+      setData((d: any) => ({ ...d, profile: { ...(d.profile || { account_no: acc }), ...updated } }))
+      setKycEdit(false); toast.success('KYC updated')
     } catch (e) { toast.error(parseApiError(e)) }
   }
 
@@ -172,14 +193,36 @@ function CustomerDetailInner() {
 
       {tab === 'kyc' && (
         <Section title="KYC Documents">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <KycCard title="Trade License" no={profile?.trade_license_no} expiry={profile?.trade_license_expiry} />
-            <KycCard title="Passport" no={profile?.passport_no} expiry={profile?.passport_expiry} />
-            <KycCard title="Emirates ID" no={profile?.emirates_id_no} expiry={profile?.emirates_id_expiry} />
-            <KycCard title="Visa" no={profile?.visa_no} expiry={profile?.visa_expiry} />
-            <KycCard title="Tenancy" no={profile?.tenancy_no} expiry={profile?.tenancy_expiry} />
+          <div className="flex justify-end mb-3">
+            {!kycEdit ? (
+              <button onClick={startKycEdit} type="button" className="text-sm text-blue-600 hover:underline">Edit</button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => setKycEdit(false)} type="button" className="text-sm text-gray-500">Cancel</button>
+                <button onClick={saveKyc} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium">Save</button>
+              </div>
+            )}
           </div>
-          {!profile && <Empty>No profile/KYC data</Empty>}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {KYC_DOCS.map(([title, nk, ek]) => (
+              <div key={nk} className="border border-gray-200 rounded-lg p-3">
+                <div className="text-xs text-gray-400">{title}</div>
+                {kycEdit ? (
+                  <>
+                    <input value={kycForm[nk] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [nk]: e.target.value }))}
+                      placeholder="Number" className="w-full border border-gray-300 rounded px-2 py-1 text-sm mt-1" />
+                    <input value={kycForm[ek] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [ek]: e.target.value }))}
+                      placeholder="Expiry (YYYY-MM-DD)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
+                  </>
+                ) : (
+                  <>
+                    <div className="font-medium text-sm">{val(profile?.[nk])}</div>
+                    <div className="text-xs text-gray-500 mt-1">Expiry: {val(profile?.[ek])}</div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
         </Section>
       )}
 
@@ -345,15 +388,6 @@ function Grid({ items }: { items: any[][] }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
       {items.map(([k, v], i) => <div key={i}><p className="text-gray-400 text-xs">{k}</p><p>{val(v)}</p></div>)}
-    </div>
-  )
-}
-function KycCard({ title, no, expiry }: any) {
-  return (
-    <div className="border border-gray-200 rounded-lg p-3">
-      <div className="text-xs text-gray-400">{title}</div>
-      <div className="font-medium text-sm">{val(no)}</div>
-      <div className="text-xs text-gray-500 mt-1">Expiry: {val(expiry)}</div>
     </div>
   )
 }
