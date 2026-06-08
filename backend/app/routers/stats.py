@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, and_, cast as sa_cast, Float
+from sqlalchemy import select, func, and_, cast as sa_cast, Float, String
 from sqlalchemy.orm import load_only
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,10 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         try:
             active_customers_result = await db.execute(
                 select(func.count(Customer.id)).where(
-                    and_(Customer.is_deleted == False, Customer.status == 'active')
+                    and_(
+                        Customer.is_deleted == False,
+                        func.lower(func.trim(sa_cast(Customer.status, String))) == 'active',
+                    )
                 )
             )
             active_customers = active_customers_result.scalar() or 0
@@ -77,7 +80,10 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         try:
             active_facilities_result = await db.execute(
                 select(func.count(Facility.id)).where(
-                    and_(Facility.is_deleted == False, Facility.status == 'active')
+                    and_(
+                        Facility.is_deleted == False,
+                        func.lower(func.trim(sa_cast(Facility.status, String))) == 'active',
+                    )
                 )
             )
             active_facilities = active_facilities_result.scalar() or 0
@@ -269,17 +275,27 @@ async def _breakdown_by(db: AsyncSession, model, column, *, with_amount: bool):
             .order_by(func.count(model.id).desc())
         )
         rows = (await db.execute(query)).all()
-        items = []
+        # Merge rows whose label normalises to the same value. The DB column may
+        # hold mixed-case / legacy variants (e.g. 'retail' and 'Retail') that the
+        # tolerant enum coerces to the same canonical value on read — without this
+        # merge they would otherwise show up as two identical chart segments.
+        merged: dict[str, list[float]] = {}
+        order: list[str] = []
         for row in rows:
             raw_label = row[0]
             label = getattr(raw_label, "value", raw_label)
-            items.append(
-                BreakdownItem(
-                    label=str(label) if label is not None else "unknown",
-                    count=int(row[1] or 0),
-                    amount=float(row[2]) if with_amount and len(row) > 2 else 0.0,
-                )
-            )
+            label = str(label).strip().lower() if label is not None else "unknown"
+            if label not in merged:
+                merged[label] = [0.0, 0.0]
+                order.append(label)
+            merged[label][0] += int(row[1] or 0)
+            if with_amount and len(row) > 2:
+                merged[label][1] += float(row[2] or 0)
+        items = [
+            BreakdownItem(label=lbl, count=int(merged[lbl][0]), amount=merged[lbl][1])
+            for lbl in order
+        ]
+        items.sort(key=lambda it: it.count, reverse=True)
         return items
     except Exception as e:  # pragma: no cover - defensive
         logger.error("Error building breakdown for %s: %s", getattr(column, "key", column), e)
