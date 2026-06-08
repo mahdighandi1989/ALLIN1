@@ -604,6 +604,53 @@ async def sync_user_roles() -> None:
         logger.warning("schema-sync: user role sync skipped: %s", exc)
 
 
+async def backfill_customer_names() -> None:
+    """Fill missing customer names from the bundled account directory.
+
+    Production holds ~650 customers that are just an account number with an empty
+    name (imported without identity). This looks each account number up in
+    ``data/account_names.json`` — a directory merged from the securities account
+    database and the mortgaged-property register — and fills the name. It is
+    strictly non-destructive: only rows whose name is NULL/'' are touched, so it
+    is safe to re-run on every startup and never overwrites a real name.
+    """
+    try:
+        import json
+        from pathlib import Path
+
+        path = Path(__file__).parent / "data" / "account_names.json"
+        if not path.exists():
+            return
+        name_map = json.loads(path.read_text(encoding="utf-8")).get("names", {})
+        if not name_map:
+            return
+        async with engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            if "customers" not in await conn.run_sync(
+                lambda c: inspect(c).get_table_names()
+            ):
+                return
+            rows = await conn.execute(text(
+                "SELECT DISTINCT account_no FROM customers "
+                "WHERE (name IS NULL OR name = '') AND account_no IS NOT NULL"
+            ))
+            empties = [str(r[0]).strip() for r in rows if r[0] is not None]
+            filled = 0
+            for acc in empties:
+                nm = name_map.get(acc)
+                if not nm:
+                    continue
+                await conn.execute(text(
+                    "UPDATE customers SET name = :nm "
+                    "WHERE account_no = :acc AND (name IS NULL OR name = '')"
+                ).bindparams(nm=nm, acc=acc))
+                filled += 1
+            if filled:
+                logger.info("backfill: filled %d missing customer names", filled)
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.warning("backfill_customer_names skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
@@ -615,6 +662,8 @@ async def init_database() -> None:
     await seed_admin_user()
     # Keep role/is_admin/ADMIN_EMAILS consistent (after users exist).
     await sync_user_roles()
+    # Fill missing customer names from the bundled account directory (idempotent).
+    await backfill_customer_names()
     await refresh_expiry_notifications()
     # Currency exchange rates (default table on first run).
     try:
