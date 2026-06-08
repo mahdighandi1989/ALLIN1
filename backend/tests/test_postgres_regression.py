@@ -562,3 +562,85 @@ async def test_type_drift_and_orphan_pk_are_reconciled(legacy_pg, monkeypatch):
         assert tm == "24"
     finally:
         await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_overstrict_notnull_and_orphan_fk_are_reconciled(legacy_pg, monkeypatch):
+    """A NOT NULL stricter than the model, and an orphan FK, must be reconciled.
+
+    The second wave of the production /run-merge report (after the type drift was
+    fixed) surfaced two more legacy-schema mismatches that create_all never undoes:
+      * facilities.updated_at created NOT NULL though the model marks it nullable
+        (it is only set on UPDATE) → INSERTs that omit it fail with a not-null
+        violation;
+      * custom_tasks.facility_id / attachments.facility_id carry a leftover FK to
+        facilities.id from an older model — the column is now free text (values
+        like '182-4-249-2026' or '') so every merge INSERT fails the FK.
+    schema-sync must relax the NOT NULL toward the model and drop the orphan FK.
+    """
+    eng, db_url = legacy_pg
+    import app.db_init as db_init
+
+    test_engine = create_async_engine(db_url)
+    monkeypatch.setattr(db_init, "engine", test_engine)
+
+    await db_init.ensure_schema()
+    async with test_engine.connect() as conn:
+        await conn.execution_options(isolation_level="AUTOCOMMIT")
+        await conn.execute(text("ALTER TABLE facilities ALTER COLUMN updated_at SET NOT NULL"))
+        await conn.execute(
+            text(
+                "ALTER TABLE custom_tasks ADD CONSTRAINT custom_tasks_facility_id_fkey "
+                "FOREIGN KEY (facility_id) REFERENCES facilities(id)"
+            )
+        )
+
+    try:
+        await db_init.ensure_schema()  # relax updated_at + drop the orphan FK
+
+        async with test_engine.connect() as conn:
+            updated_at_nullable = (
+                await conn.execute(
+                    text(
+                        "SELECT is_nullable FROM information_schema.columns "
+                        "WHERE table_name='facilities' AND column_name='updated_at'"
+                    )
+                )
+            ).scalar()
+            fk_left = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.table_constraints "
+                        "WHERE table_name='custom_tasks' AND constraint_type='FOREIGN KEY' "
+                        "AND constraint_name='custom_tasks_facility_id_fkey'"
+                    )
+                )
+            ).scalar()
+            # The model-declared FK (facilities.customer_id -> customers) must remain.
+            kept_fk = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.table_constraints "
+                        "WHERE table_name='facilities' AND constraint_type='FOREIGN KEY'"
+                    )
+                )
+            ).scalar()
+        assert updated_at_nullable == "YES"
+        assert fk_left == 0, "orphan custom_tasks.facility_id FK should be dropped"
+        assert kept_fk >= 1, "model-declared facilities.customer_id FK must be kept"
+
+        # A facility omitting updated_at, and a task whose facility_id is free text
+        # (not a real facility), now both insert.
+        async with test_engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(text("INSERT INTO customers (id, account_no, name) VALUES ('c9','A9','C9')"))
+            await conn.execute(
+                text("INSERT INTO facilities (id, customer_id, name, amount, risk_rating) VALUES ('F9','c9','L',1,'low')")
+            )
+            await conn.execute(
+                text("INSERT INTO custom_tasks (id, account_no, facility_id, task_name) VALUES ('T9','A9','182-4-249-2026','t')")
+            )
+            ok = (await conn.execute(text("SELECT facility_id FROM custom_tasks WHERE id='T9'"))).scalar()
+        assert ok == "182-4-249-2026"
+    finally:
+        await test_engine.dispose()

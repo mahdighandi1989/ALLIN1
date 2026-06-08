@@ -270,6 +270,67 @@ def _add_missing_columns(sync_conn) -> None:
                     "schema-sync: could not reconcile %s.%s: %s", table.name, col.name, exc
                 )
 
+        # 4) Relax NOT NULL on KNOWN columns the model marks nullable but an older
+        #    schema created NOT NULL — e.g. facilities.updated_at (model nullable,
+        #    populated only on UPDATE). Our INSERTs legitimately omit such columns,
+        #    so a stricter live constraint fails them. The model is the source of
+        #    truth for nullability; never touch PK columns or columns the model
+        #    itself requires (nullable=False).
+        for col in table.columns:
+            db_col = db_by_name.get(col.name)
+            if db_col is None or col.name in pk_cols:
+                continue
+            if col.nullable and not db_col.get("nullable", True):
+                try:
+                    logger.info(
+                        "schema-sync: relaxing NOT NULL on %s.%s (model allows null)",
+                        table.name, col.name,
+                    )
+                    sync_conn.execute(
+                        text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" DROP NOT NULL')
+                    )
+                except Exception as exc:  # pragma: no cover - depends on live DB
+                    logger.warning(
+                        "schema-sync: could not relax %s.%s: %s", table.name, col.name, exc
+                    )
+
+        # 5) Drop foreign-key constraints the live table has but the model no longer
+        #    declares. An older model defined custom_tasks.facility_id /
+        #    attachments.facility_id as a ForeignKey to facilities.id; the model has
+        #    since made them free-text references (values like '182-4-249-2026' or ''
+        #    that are not real facility ids), but create_all never drops the old
+        #    constraint, so every merge INSERT hits a FK violation. Keep only the FKs
+        #    the model still declares.
+        model_fks = set()
+        for col in table.columns:
+            for fk in col.foreign_keys:
+                try:
+                    model_fks.add((col.name, fk.column.table.name))
+                except Exception:  # pragma: no cover
+                    pass
+        try:
+            live_fks = inspector.get_foreign_keys(table.name)
+        except Exception:  # pragma: no cover - depends on live DB
+            live_fks = []
+        for fk in live_fks:
+            name = fk.get("name")
+            ref = fk.get("referred_table")
+            cols = tuple(fk.get("constrained_columns") or ())
+            if not name or any((c, ref) in model_fks for c in cols):
+                continue  # unnamed, or still declared by the model — keep it
+            try:
+                logger.info(
+                    "schema-sync: dropping orphan FK %s on %s (%s -> %s)",
+                    name, table.name, cols, ref,
+                )
+                sync_conn.execute(
+                    text(f'ALTER TABLE "{table.name}" DROP CONSTRAINT IF EXISTS "{name}"')
+                )
+            except Exception as exc:  # pragma: no cover - depends on live DB
+                logger.warning(
+                    "schema-sync: could not drop FK %s on %s: %s", name, table.name, exc
+                )
+
 
 async def ensure_schema() -> None:
     """Create missing tables/columns/enum values so the schema matches the models."""
