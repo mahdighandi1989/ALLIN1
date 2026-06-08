@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
-import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, FileSpreadsheet, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2, ScrollText, FileSpreadsheet, Settings, LogOut, BookOpen } from 'lucide-react'
 
 // A nav item may list extra path prefixes whose detail pages belong to it, so
 // that e.g. /customer-detail/123 keeps the "Customers" item highlighted.
@@ -35,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Finance & Reports',
     items: [
       { href: '/reports', label: 'Reports', icon: BarChart3 },
+      { href: '/knowledge', label: 'دانش‌نامه', icon: BookOpen },
       { href: '/import', label: 'Import', icon: FileSpreadsheet },
     ],
   },
