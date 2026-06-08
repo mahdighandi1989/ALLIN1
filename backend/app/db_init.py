@@ -30,6 +30,7 @@ from app.models.user import User  # noqa: F401
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.offer_letter import OfferStatus, RepaymentType, CollateralType
+from app.models.guarantor import Guarantor  # noqa: F401  (register table for create_all)
 
 logger = logging.getLogger(__name__)
 
@@ -695,6 +696,12 @@ async def init_database() -> None:
     await sync_user_roles()
     # Fill missing customer names from the bundled account directory (idempotent).
     await backfill_customer_names()
+    # Merge the legacy Excel CRM data (guarantors, real facility data, ...).
+    try:
+        from app.services.data_merge import run_data_merge
+        await run_data_merge()
+    except Exception as exc:  # pragma: no cover
+        logger.error("data merge skipped: %s", exc)
     # NOTE: the empty placeholder facilities are NOT auto-deleted — the real data
     # (amounts/types/refs) exists in the source workbook and will be merged in,
     # so they are kept and filled rather than removed. (cleanup_empty_facilities
