@@ -219,12 +219,20 @@ class CachedStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
         try:
+            last = path.rsplit("/", 1)[-1]
             if path.startswith("_next/static") or "/_next/static/" in path:
+                # Content-hashed bundles — safe to cache forever.
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-            elif path.endswith(".html") or path in ("", "."):
-                response.headers["Cache-Control"] = "no-cache"
-            else:
+            elif "." in last and not last.startswith(".") and not last.endswith(".html"):
+                # A real asset file (image/font/json/etc.) — short cache.
                 response.headers.setdefault("Cache-Control", "public, max-age=3600")
+            else:
+                # An HTML document OR a directory/SPA route (e.g. "dashboard/",
+                # "customers/", "" for root). These resolve to index.html and MUST
+                # revalidate every load, otherwise a new deploy's layout/UI changes
+                # stay invisible behind a stale cached page (the bug where the old
+                # top-nav persisted while live API data was already fresh).
+                response.headers["Cache-Control"] = "no-cache"
         except Exception:  # never let header tweaking break static serving
             pass
         return response
