@@ -4,31 +4,28 @@ import { useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
+import { BANK_LOGO } from './logo'
 
 // Faithful re-implementation of the macro workbook
-// "Securities (Contra-PerContra) (FOR CHQS)". The user types a few fields; the
-// account name is looked up from the embedded 601-row database; the GL accounts,
-// reference and description are computed; pressing Print sends the two internal
-// vouchers (SECURITIES debit + PER CONTRA credit) to the default printer.
-//
-// GL logic (from the workbook):
+// "Securities (Contra-PerContra) (FOR CHQS)" — laid out to match the original
+// Excel form (DEBIT/CREDIT headings, Bank Saderat logo, lavender banner) and
+// sized so the two vouchers fill one A4 page: cutting it in half gives two A5
+// vouchers. GL logic:
 //   DEBIT  (SECURITIES) = <branch>-860185-784-090
 //   CREDIT (PER CONTRA) = <branch>-869900-784-590
-//   OUR REF             = <account no> _ <facility id>
-//   DESCRIPTION         = CHQ NO <chq no>_<Borrower|Guarantor Name>: <name>
 
 function todayDMY(): string {
   const d = new Date()
   const p = (n: number) => String(n).padStart(2, '0')
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
 }
-
 function money(n: string): string {
   const v = Number(String(n).replace(/,/g, ''))
   return isFinite(v) && v !== 0 ? v.toLocaleString('en-US') : ''
 }
 
-type VoucherProps = {
+type VProps = {
+  kind: 'DEBIT' | 'CREDIT'
   title: string
   date: string
   acNo: string
@@ -39,43 +36,39 @@ type VoucherProps = {
   acName: string
 }
 
-function Voucher({ title, date, acNo, amount, currency, ourRef, description, acName }: VoucherProps) {
+function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName }: VProps) {
   return (
-    <div className="voucher" dir="ltr">
-      <div className="v-top">
-        <div className="v-bank">Bank Saderat Iran — R.O.</div>
-        <div className="v-iv">INTERNAL VOUCHER</div>
+    <div className="vch" dir="ltr">
+      <div className="vch-head">
+        <div className="vch-kind">{kind}</div>
+        <div className="vch-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+          <div className="vch-iv">INTERNAL VOUCHER</div>
+        </div>
       </div>
-      <div className="v-banner">{title}</div>
-      <table className="v-grid">
-        <tbody>
-          <tr>
-            <td className="v-lbl">DATE :</td>
-            <td className="v-val">{date}</td>
-            <td className="v-lbl">AMOUNT :</td>
-            <td className="v-val v-amt">{currency} {money(amount)}</td>
-          </tr>
-          <tr>
-            <td className="v-lbl">A/c No. :</td>
-            <td className="v-val" colSpan={3}>{acNo}</td>
-          </tr>
-          <tr>
-            <td className="v-lbl">OUR REF :</td>
-            <td className="v-val" colSpan={3}>{ourRef}</td>
-          </tr>
-          <tr>
-            <td className="v-lbl">DESC. :</td>
-            <td className="v-val" colSpan={3}>{description}</td>
-          </tr>
-          <tr>
-            <td className="v-lbl">A/c Name :</td>
-            <td className="v-val" colSpan={3}>{acName}</td>
-          </tr>
-        </tbody>
-      </table>
-      <div className="v-sign">
-        <div>Prepared By.<br /><span className="v-line" /></div>
-        <div>Authorized Signatures<br /><span className="v-line" /></div>
+
+      <div className="vch-banner">
+        <span className="vch-title">{title}</span>
+        <span className="vch-date">DATE : {date}</span>
+      </div>
+
+      <div className="vch-body">
+        <div className="vch-acrow">
+          <div><span className="vch-lbl">A/c No. :</span> <span className="vch-ac">{acNo}</span></div>
+          <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>
+        </div>
+
+        <div className="vch-ref">
+          <div><span className="vch-lbl">OUR REF :</span> {ourRef}</div>
+          <div>{description}</div>
+          <div className="vch-name">{acName}</div>
+        </div>
+      </div>
+
+      <div className="vch-foot">
+        <div>Prepared By.<span className="vch-sigline" /></div>
+        <div>Authorized Signatures<span className="vch-sigline" /></div>
       </div>
     </div>
   )
@@ -97,13 +90,8 @@ export default function VoucherPage() {
   const onAcctLookup = (value: string) => {
     setAcNo(value)
     const hit = lookupAccount(value)
-    if (hit) {
-      setAcName(hit.name)
-      setBranch(hit.branch)
-      setNotFound(false)
-    } else {
-      setNotFound(value.trim().length > 0)
-    }
+    if (hit) { setAcName(hit.name); setBranch(hit.branch); setNotFound(false) }
+    else setNotFound(value.trim().length > 0)
   }
 
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
@@ -116,26 +104,38 @@ export default function VoucherPage() {
 
   return (
     <Layout>
-      {/* Print rules: hide everything except #voucher-print when printing. */}
       <style>{`
+        /* ---- Voucher styling (matches the source Excel form) ---- */
+        .vch { box-sizing: border-box; width: 100%; height: 142.5mm; border: 1.4pt solid #000;
+               padding: 5mm 6mm; display: flex; flex-direction: column; color: #000;
+               font-family: Arial, "Segoe UI", sans-serif; background: #fff; }
+        .vch + .vch { border-top: 0; }                 /* shared middle line = the cut */
+        .vch-head { display: flex; justify-content: space-between; align-items: flex-start; }
+        .vch-kind { font-size: 26pt; font-weight: 800; letter-spacing: 1px; line-height: 1; }
+        .vch-logo { text-align: right; }
+        .vch-logo img { height: 13mm; width: auto; display: inline-block; }
+        .vch-iv { font-size: 7.5pt; font-weight: 700; border: 1pt solid #000; padding: 1px 6px;
+                  display: inline-block; margin-top: 2px; }
+        .vch-banner { background: #CCCCFF; border: 1pt solid #8a86c9; margin-top: 4mm;
+                      display: flex; align-items: center; padding: 1.5mm 3mm; }
+        .vch-title { flex: 1; text-align: center; font-size: 15pt; font-weight: 800; letter-spacing: 2px; }
+        .vch-date { font-size: 9.5pt; font-weight: 700; white-space: nowrap; }
+        .vch-body { flex: 1; padding-top: 5mm; }
+        .vch-acrow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4mm; }
+        .vch-lbl { font-weight: 700; }
+        .vch-ac { font-size: 13pt; font-weight: 700; letter-spacing: 0.5px; }
+        .vch-amt { font-size: 12pt; font-weight: 800; white-space: nowrap; }
+        .vch-ref { border: 1pt solid #000; padding: 2.5mm 3mm; font-size: 10pt; line-height: 1.7; min-height: 22mm; }
+        .vch-name { font-weight: 700; }
+        .vch-foot { display: flex; justify-content: space-between; font-size: 9.5pt; font-weight: 700; }
+        .vch-sigline { display: block; width: 46mm; border-top: 1pt solid #000; margin-top: 9mm; }
+
         @media print {
           body * { visibility: hidden !important; }
           #voucher-print, #voucher-print * { visibility: visible !important; }
           #voucher-print { position: absolute; top: 0; left: 0; width: 100%; }
-          @page { size: A4 portrait; margin: 14mm; }
+          @page { size: A4 portrait; margin: 6mm; }
         }
-        .voucher { border: 1.5px solid #111; padding: 14px 16px; margin-bottom: 22px; font-family: Arial, sans-serif; color:#111; }
-        .v-top { display:flex; justify-content:space-between; align-items:flex-start; }
-        .v-bank { font-size: 12px; font-weight:600; }
-        .v-iv { font-size: 12px; font-weight:700; border:1px solid #111; padding:2px 8px; }
-        .v-banner { text-align:center; font-size:18px; font-weight:800; letter-spacing:2px; margin:10px 0 12px; }
-        .v-grid { width:100%; border-collapse:collapse; font-size:13px; }
-        .v-grid td { padding:6px 6px; border-bottom:1px dotted #999; vertical-align:top; }
-        .v-lbl { width:90px; font-weight:700; white-space:nowrap; }
-        .v-val { font-weight:500; }
-        .v-amt { font-weight:800; }
-        .v-sign { display:flex; justify-content:space-between; margin-top:30px; font-size:12px; font-weight:600; }
-        .v-line { display:block; width:170px; border-top:1px solid #111; margin-top:34px; }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -143,12 +143,12 @@ export default function VoucherPage() {
           <div className="bg-blue-600 text-white rounded-xl p-2.5"><Printer size={22} /></div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
-            <p className="text-gray-500 text-sm">با وارد کردن چند مقدار، نامِ حساب از دیتابیس ({ACCOUNT_COUNT} حساب) پر می‌شود و دو واچر چاپ می‌شود.</p>
+            <p className="text-gray-500 text-sm">با وارد کردن چند مقدار، نامِ حساب از دیتابیس ({ACCOUNT_COUNT} حساب) پر می‌شود. دو سند در یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
           </div>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6 items-start mt-4">
-          {/* ---- Input form (not printed) ---- */}
+          {/* ---- inputs (not printed) ---- */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 no-print" dir="rtl">
             <h2 className="font-bold text-gray-800 mb-4">ورودی‌ها</h2>
             <div className="grid grid-cols-2 gap-3">
@@ -188,7 +188,7 @@ export default function VoucherPage() {
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">مبلغ چک (CHQ AMOUNT)</span>
-                <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="144000" />
+                <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="240000" />
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">شناسه تسهیلات (FACILITY ID)</span>
@@ -202,20 +202,19 @@ export default function VoucherPage() {
                 </div>
               </label>
             </div>
-            <button
-              onClick={() => window.print()}
-              className="mt-5 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2.5"
-              type="button"
-            >
+            <button onClick={() => window.print()} type="button"
+              className="mt-5 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2.5">
               <Printer size={18} /> چاپ (Print)
             </button>
             <p className="text-xs text-gray-400 mt-2 text-center">پنجرهٔ چاپ باز می‌شود؛ پرینتر پیش‌فرض از قبل انتخاب شده — کافیست Print را بزنید.</p>
           </div>
 
-          {/* ---- Printable vouchers ---- */}
-          <div id="voucher-print">
-            <Voucher title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
-            <Voucher title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+          {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
+          <div className="overflow-auto">
+            <div id="voucher-print" style={{ width: '198mm', background: '#fff' }}>
+              <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+              <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+            </div>
           </div>
         </div>
       </div>
