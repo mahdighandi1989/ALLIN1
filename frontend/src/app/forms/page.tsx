@@ -27,6 +27,15 @@ const FORMS: FormDef[] = [
     category: 'Vouchers',
     ready: true,
   },
+  {
+    href: '/offer-letter',
+    title: 'Offer Letter',
+    subtitle: 'نامهٔ پیشنهادِ تسهیلات (Credit Facility)',
+    description: 'نامهٔ پیشنهادِ اعتباریِ سه‌صفحه‌ای (A4) با سربرگ، جدولِ تسهیلات، مدارکِ تضمینی و ۲۵ شرط؛ داده‌ها تا حدِ ممکن از پروفایلِ حساب پر می‌شوند و دقیقاً مثلِ قالبِ Word چاپ می‌شود.',
+    icon: FileSignature,
+    category: 'Credit',
+    ready: true,
+  },
 ]
 
 export default function FormsPage() {

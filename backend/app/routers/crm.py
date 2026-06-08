@@ -7,6 +7,7 @@ SubmitChecklist + WriteToJournal).
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime
 from typing import Optional
@@ -417,6 +418,77 @@ async def email_summary(
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
     return {"ok": True, "message": f"Summary emailed to {payload.to}"}
+
+
+# ---------------------------------------------------------------------------
+# Offer-letter prefill: map an account's profile + facility to the Word
+# template's placeholders, so the Offer Letter form fills itself from the file.
+# ---------------------------------------------------------------------------
+_FTYPE_LABEL = {
+    "overdraft": "Overdraft", "loan": "Loan", "lc": "Letter of Credit",
+    "lg": "Letter of Guarantee", "other": "Credit Facility",
+}
+
+
+@router.get("/offer-letter-data/{account_no}")
+async def offer_letter_data(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Best-effort prefill for the Offer Letter from the account's profile +
+    largest active facility. Unknown fields come back empty for the user to fill."""
+    acc = (account_no or "").strip()
+    cust = (
+        await db.execute(
+            select(Customer).where(Customer.account_no == acc, Customer.is_deleted == False)
+        )
+    ).scalar_one_or_none()
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    prof = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    pdata = {}
+    if prof is not None and prof.data_json:
+        try:
+            pdata = json.loads(prof.data_json)
+        except Exception:
+            pdata = {}
+
+    def pget(*keys):
+        for k in keys:
+            for kk in (k, k.replace(" ", ""), k.lower()):
+                v = pdata.get(kk)
+                if v not in (None, "", "-"):
+                    return str(v).strip()
+        return ""
+
+    facs = (
+        await db.execute(
+            select(Facility).where(Facility.customer_id == cust.id, Facility.is_deleted == False)
+        )
+    ).scalars().all()
+    fac = max(facs, key=lambda f: float(f.amount or 0), default=None) if facs else None
+    ftype = (getattr(fac.facility_type, "value", fac.facility_type) if fac else "") or ""
+    rate = None
+    if fac is not None and fac.interest_rate is not None:
+        rate = f"{float(fac.interest_rate):g}% p.a."
+    return {
+        "CompanyName": cust.name or "",
+        "AccountNumber": acc,
+        "POBox": pget("POBox", "PO Box", "P.O.Box", "POBOX", "Po Box"),
+        "CityCountry": pget("CityCountry", "City", "Emirate") or "DUBAI - U.A.E.",
+        "Branch": cust.branch or "",
+        "Rating": (getattr(prof, "rating", "") or "") if prof else "",
+        "BusinessType": ((getattr(prof, "business_type", "") or "") if prof else "") or pget("BusinessType"),
+        "FacilityType": _FTYPE_LABEL.get(ftype, "Overdraft"),
+        "CreditLimit": (f"{float(fac.amount):,.0f}" if fac and fac.amount else ""),
+        "InterestRate": rate or "",
+        "ExpiryDate": (str(fac.expiry_date) if fac and getattr(fac, "expiry_date", None) else ""),
+        "ValidUntil": (str(fac.expiry_date) if fac and getattr(fac, "expiry_date", None) else ""),
+        "facilities_count": len(facs),
+    }
 
 
 # ---------------------------------------------------------------------------
