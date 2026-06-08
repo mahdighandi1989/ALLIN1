@@ -434,3 +434,75 @@ async def capture_snapshot_now(db: AsyncSession = Depends(get_db)):
     from app.services.snapshots import capture_current_snapshot
     await capture_current_snapshot()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# KYC / document expiry alerts (replicates the Excel "CheckAllExpiries").
+# Scans the merged customer profiles for documents expiring soon or expired.
+# ---------------------------------------------------------------------------
+def _parse_kyc_date(s):
+    """Parse the mixed date formats in the legacy KYC data to a date.
+
+    Handles ISO (YYYY-MM-DD) and DD/MM/YYYY (or DD-MM-YYYY). Persian-calendar and
+    garbage years are skipped (returns None) so they don't create false alerts.
+    """
+    from datetime import datetime as _dt
+    s = str(s or "").strip()[:10]
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            d = _dt.strptime(s, fmt).date()
+            if 2000 <= d.year <= 2100:
+                return d
+        except ValueError:
+            continue
+    return None
+
+
+@router.get("/expiring-documents")
+async def expiring_documents(
+    db: AsyncSession = Depends(get_db),
+    days: int = 90,
+):
+    """KYC documents that are expired or expiring within `days` (default 90)."""
+    from datetime import date as _date
+    from app.models.crm import CustomerProfile
+
+    fields = [
+        ("Trade License", "trade_license_no", "trade_license_expiry"),
+        ("Passport", "passport_no", "passport_expiry"),
+        ("Emirates ID", "emirates_id_no", "emirates_id_expiry"),
+        ("Visa", "visa_no", "visa_expiry"),
+        ("Tenancy", "tenancy_no", "tenancy_expiry"),
+    ]
+    today = _date.today()
+    alerts = []
+    try:
+        rows = (await db.execute(select(CustomerProfile))).scalars().all()
+    except Exception as e:  # pragma: no cover
+        logger.error("expiring-documents: %s", e)
+        rows = []
+    for p in rows:
+        for label, no_attr, exp_attr in fields:
+            exp = _parse_kyc_date(getattr(p, exp_attr, None))
+            if not exp:
+                continue
+            days_left = (exp - today).days
+            if days_left <= days:
+                alerts.append({
+                    "account_no": p.account_no,
+                    "customer_name": p.customer_name,
+                    "document": label,
+                    "number": getattr(p, no_attr, None),
+                    "expiry_date": exp.isoformat(),
+                    "days_left": days_left,
+                    "expired": days_left < 0,
+                })
+    alerts.sort(key=lambda a: a["days_left"])
+    return {
+        "days": days,
+        "total": len(alerts),
+        "expired": sum(1 for a in alerts if a["expired"]),
+        "items": alerts,
+    }

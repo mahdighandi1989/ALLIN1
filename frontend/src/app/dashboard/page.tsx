@@ -37,6 +37,7 @@ export default function DashboardPage() {
   // True when the API could not be reached at all (e.g. a static export served
   // without its backend), as opposed to a normal HTTP error response.
   const [staticUnavailable, setStaticUnavailable] = useState(false)
+  const [docAlerts, setDocAlerts] = useState<any>(null)
   const router = useRouter()
 
   const fetchDashboardData = useCallback(async () => {
@@ -46,6 +47,7 @@ export default function DashboardPage() {
     try {
       const data = await statsApi.dashboard()
       setStats(data)
+      statsApi.expiringDocuments(90).then(setDocAlerts).catch(() => {})
     } catch (err: any) {
       // A network error (no response) while running as a static export means
       // there is no backend to talk to.
@@ -369,6 +371,47 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* KYC / Document expiry alerts (from merged customer profiles) */}
+      {docAlerts && docAlerts.total > 0 && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Document Expiry Alerts
+              <span className="text-xs font-normal text-red-600">{docAlerts.expired} expired</span>
+              <span className="text-xs font-normal text-amber-600">/ {docAlerts.total} within 90 days</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-auto" style={{ maxHeight: 320 }}>
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr className="text-left text-gray-500">
+                    <th className="px-3 py-2">Customer</th>
+                    <th className="px-3 py-2">Account</th>
+                    <th className="px-3 py-2">Document</th>
+                    <th className="px-3 py-2">Expiry</th>
+                    <th className="px-3 py-2">Days</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {docAlerts.items.slice(0, 40).map((a: any, i: number) => (
+                    <tr key={i} className={a.expired ? 'bg-red-50' : ''}>
+                      <td className="px-3 py-1.5">{a.customer_name || '—'}</td>
+                      <td className="px-3 py-1.5">{a.account_no}</td>
+                      <td className="px-3 py-1.5">{a.document}</td>
+                      <td className="px-3 py-1.5">{a.expiry_date}</td>
+                      <td className={`px-3 py-1.5 font-medium ${a.expired ? 'text-red-600' : 'text-amber-600'}`}>
+                        {a.expired ? `${Math.abs(a.days_left)}d ago` : `${a.days_left}d`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

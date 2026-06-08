@@ -220,6 +220,10 @@ export const statsApi = {
   async captureSnapshot(): Promise<void> {
     await api.post('/api/stats/snapshot')
   },
+  async expiringDocuments(days = 90): Promise<any> {
+    const { data } = await api.get(`/api/stats/expiring-documents?days=${days}`)
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
