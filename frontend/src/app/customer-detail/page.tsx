@@ -57,7 +57,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {} } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {} } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
@@ -68,6 +68,8 @@ function CustomerDetailInner() {
   // management forms (FD is stored on each guarantor row).
   const num = (v: any) => { const n = Number(String(v ?? '').replace(/[^0-9.-]/g, '')); return isFinite(n) ? n : 0 }
   const fdShown = (v: any) => { const f = String(v ?? '').trim(); return f && f !== '-' && f !== '—' && f !== '0' }
+  const flag = (v: any) => { const t = String(v ?? '').toLowerCase(); return t.includes('avail') ? '✓' : (!t || t === '-' ? '—' : v) }
+  const secTotal = securities.reduce((t: number, s: any) => t + Number(s.cheque_amount_num || 0), 0)
   const chequeRows = guarantors.filter((g: any) => g.cheque_no || g.cheque_amount)
   const chequeTotal = guarantors.reduce((s: number, g: any) => s + num(g.cheque_amount), 0)
   const fdRows = guarantors.filter((g: any) => fdShown(g.fd))
@@ -331,6 +333,41 @@ function CustomerDetailInner() {
               </div>
             )}
           </Section>
+
+          {securities.length > 0 && (
+            <Section title={`Securities Register — Securities List (${securities.length} entries · ${new Set(securities.map((s: any) => s.year)).size} years)`}>
+              <p className="text-xs text-gray-500 mb-2">سابقهٔ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs whitespace-nowrap">
+                  <thead className="bg-gray-50 text-gray-500 text-left">
+                    <tr>{['Year', 'Date', 'Cheque No', 'Amount (AED)', 'Bank', 'FD', 'U/Taking', 'Guarantee', 'Cr.Facility', 'Offer', 'Property', 'Mortgage', 'Stored', 'Taken Out', 'Remarks'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}</tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {securities.map((s: any, i: number) => (
+                      <tr key={i} className="hover:bg-gray-50 align-top">
+                        <td className="px-2 py-1 font-semibold">{s.year}<div className="text-[10px] font-normal text-gray-400 capitalize">{s.segment}</div></td>
+                        <td className="px-2 py-1">{val(s.date)}</td>
+                        <td className="px-2 py-1 whitespace-pre-line">{val(s.cheque_no)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{s.cheque_amount_num ? Number(s.cheque_amount_num).toLocaleString() : val(s.cheque_amount)}</td>
+                        <td className="px-2 py-1 whitespace-pre-line">{val(s.issuing_bank)}</td>
+                        <td className="px-2 py-1">{fdShown(s.fd) ? s.fd : '—'}</td>
+                        <td className="px-2 py-1 text-center">{flag(s.undertaking)}</td>
+                        <td className="px-2 py-1 text-center">{flag(s.guarantee)}</td>
+                        <td className="px-2 py-1 text-center">{flag(s.credit_facility)}</td>
+                        <td className="px-2 py-1 text-center">{flag(s.original_offer)}</td>
+                        <td className="px-2 py-1 whitespace-pre-line">{val(s.property_no)}</td>
+                        <td className="px-2 py-1">{val(s.mortgage_aed)}</td>
+                        <td className="px-2 py-1">{val(s.stored_date)}</td>
+                        <td className="px-2 py-1">{val(s.taken_out_date)}</td>
+                        <td className="px-2 py-1 max-w-[160px] whitespace-normal">{val(s.remarks)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          )}
+
           <Section title="Property / Mortgage">
             <Grid items={[
               ['Property No', pdata.Property_No], ['Address', pdata.Property_Address],

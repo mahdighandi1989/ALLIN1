@@ -18,6 +18,7 @@ from app.database import AsyncSessionLocal
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.models.guarantor import Guarantor
+from app.models.security import Security
 from app.models.crm import (
     CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry,
 )
@@ -253,6 +254,26 @@ async def _merge_journal(session) -> int:
             notes=r.get("notes") or "", source=(r.get("source") or "")[:60], action=(r.get("action") or "")[:60]))
 
 
+async def _merge_securities(session) -> int:
+    """Merge the multi-year Securities List register (Retail + Corporate), linked
+    to each account by account_no."""
+    return await _insert_missing(
+        session, Security, _load("securities.json"), "security_id",
+        lambda i, r: Security(
+            id=i, year=str(r.get("year") or "")[:8], segment=(r.get("segment") or "")[:20],
+            date=str(r.get("date") or "")[:30], seq_no=str(r.get("seq_no") or "")[:10],
+            branch=str(r.get("branch") or "")[:20], account_no=str(r.get("account_no") or "")[:50],
+            customer_name=(r.get("customer_name") or "")[:200], fd=(r.get("fd") or "")[:200],
+            guarantor=r.get("guarantor") or "", cheque_no=r.get("cheque_no") or "",
+            issuing_bank=r.get("issuing_bank") or "", cheque_amount=r.get("cheque_amount") or "",
+            cheque_amount_num=r.get("cheque_amount_num") or 0,
+            undertaking=(r.get("undertaking") or "")[:40], guarantee=(r.get("guarantee") or "")[:40],
+            credit_facility=(r.get("credit_facility") or "")[:40], original_offer=(r.get("original_offer") or "")[:40],
+            property_no=r.get("property_no") or "", mortgage_aed=(r.get("mortgage_aed") or "")[:60],
+            remarks=r.get("remarks") or "", stored_date=str(r.get("stored_date") or "")[:30],
+            taken_out_date=str(r.get("taken_out_date") or "")[:30]))
+
+
 _STEPS = [
     ("guarantors", _merge_guarantors),
     ("facilities", _merge_facilities),
@@ -261,6 +282,7 @@ _STEPS = [
     ("tasks", _merge_tasks),
     ("attachments", _merge_attachments),
     ("journal", _merge_journal),
+    ("securities", _merge_securities),
 ]
 
 

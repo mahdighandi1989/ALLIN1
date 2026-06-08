@@ -303,12 +303,14 @@ async def merge_status(db: AsyncSession = Depends(get_db), user=Depends(require_
     """Row counts of the merged CRM tables (to verify the merge landed)."""
     from sqlalchemy import func
     from app.models.crm import Attachment, JournalEntry
+    from app.models.security import Security
 
     out = {}
     checks = {
         "guarantors": Guarantor, "customer_profiles": CustomerProfile,
         "checklist_progress": ChecklistProgress, "custom_tasks": CustomTask,
         "attachments": Attachment, "journal_entries": JournalEntry,
+        "securities": Security,
     }
     for label, model in checks.items():
         try:

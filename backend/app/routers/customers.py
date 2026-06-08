@@ -276,6 +276,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     import json as _json
     from sqlalchemy import inspect as _sa_inspect
     from app.models.guarantor import Guarantor
+    from app.models.security import Security
     from app.models.crm import (
         CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
     )
@@ -296,6 +297,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         return (await db.execute(q)).scalars().all()
 
     guarantors = await _by_acc(Guarantor)
+    securities = await _by_acc(Security, order=Security.year.desc())
     tasks = await _by_acc(CustomTask)
     attachments = await _by_acc(Attachment)
     journal = await _by_acc(JournalEntry, order=JournalEntry.date.desc(), limit=60)
@@ -328,6 +330,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "facilities": [FacilityResponse.model_validate(f) for f in facilities],
         "offer_letters": [OfferLetterResponse.model_validate(o) for o in offers],
         "guarantors": [_to_dict(g) for g in guarantors],
+        "securities": [_to_dict(s) for s in securities],
         "tasks": [_to_dict(t) for t in tasks],
         "attachments": [_to_dict(a) for a in attachments],
         "journal": [_to_dict(j) for j in journal],
@@ -339,6 +342,8 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
             "active_facilities": active_facilities,
             "total_offers": len(offers),
             "total_guarantors": len(guarantors),
+            "total_securities": len(securities),
+            "securities_cheque_total": float(sum((s.cheque_amount_num or 0) for s in securities)),
             "total_exposure": total_exposure,
             "total_outstanding": total_outstanding,
             "currency": "AED",
