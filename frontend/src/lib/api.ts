@@ -227,6 +227,16 @@ export const statsApi = {
 }
 
 // ---------------------------------------------------------------------------
+// CRM interactive actions (credit-file workflow)
+// ---------------------------------------------------------------------------
+export const crmApi = {
+  async toggleChecklistStep(accountNo: string, step: number, done: boolean): Promise<any> {
+    const { data } = await api.patch(`/api/crm/checklist/${encodeURIComponent(accountNo)}`, { step, done })
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Offer letters
 // ---------------------------------------------------------------------------
 export const offerLettersApi = {

@@ -4,7 +4,8 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, parseApiError } from '@/lib/api'
+import { customersApi, crmApi, parseApiError } from '@/lib/api'
+import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
   CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon,
@@ -54,6 +55,16 @@ function CustomerDetailInner() {
   const acc = String(customer.account_no || '').trim()
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
   const completeness = profile?.profile_completeness || '—'
+
+  const toggleStep = async (step: number, isDone: boolean) => {
+    try {
+      await crmApi.toggleChecklistStep(acc, step, !isDone)
+      setData((d: any) => ({ ...d, checklist: { ...(d.checklist || { account_no: acc }), [`item${step}`]: !isDone ? '✓' : '' } }))
+      toast.success(`${CHECKLIST_STEPS[step - 1]}: ${!isDone ? 'done' : 'pending'}`)
+    } catch (e) {
+      toast.error(parseApiError(e))
+    }
+  }
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: Building },
@@ -173,11 +184,23 @@ function CustomerDetailInner() {
 
       {tab === 'checklist' && (
         <Section title="Credit-File Workflow (9 steps)">
-          <SimpleTable head={['#', 'Step', 'Status']}
-            rows={CHECKLIST_STEPS.map((s, i) => [String(i + 1), s, done(checklist?.[`item${i + 1}`]) ? '✓ Done' : 'Pending'])}
-            empty="" />
-          {checklist && <p className="text-xs text-gray-400 mt-2">Total {checklist.total} · last action {val(checklist.last_action)} by {val(checklist.last_user)}</p>}
-          {!checklist && <Empty>No checklist progress recorded</Empty>}
+          <p className="text-xs text-gray-400 mb-3">روی هر مرحله بزنید تا انجام‌شده/در‌انتظار شود (در Journal ثبت می‌شود).</p>
+          <div className="space-y-1.5">
+            {CHECKLIST_STEPS.map((s, i) => {
+              const isDone = done(checklist?.[`item${i + 1}`])
+              return (
+                <button key={i} type="button" onClick={() => toggleStep(i + 1, isDone)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${isDone ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isDone ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                    {isDone ? '✓' : i + 1}
+                  </span>
+                  <span className={`flex-1 text-sm ${isDone ? 'text-green-800 font-medium' : 'text-gray-700'}`}>{s}</span>
+                  <span className="text-xs text-gray-400">{isDone ? 'Done' : 'Pending'}</span>
+                </button>
+              )
+            })}
+          </div>
+          {checklist && <p className="text-xs text-gray-400 mt-3">Total {checklist.total} · last action {val(checklist.last_action)} by {val(checklist.last_user)}</p>}
         </Section>
       )}
 
