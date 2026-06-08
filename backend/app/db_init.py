@@ -138,67 +138,136 @@ def _add_missing_columns(sync_conn) -> None:
                     "schema-sync: could not add %s.%s: %s", table.name, col.name, exc
                 )
 
-        # 2) Relax NOT NULL on columns the live table requires but the model does
-        #    NOT know about (e.g. a legacy ``users.role``). Otherwise every INSERT
-        #    from this codebase — which never sets those columns — would fail.
+        # 2) Make columns the model does NOT set insertable. A column the live
+        #    table requires (NOT NULL, no default) but the model doesn't know about
+        #    breaks every INSERT from this codebase (which never sets it) — e.g. a
+        #    legacy ``users.role`` or an old ``customer_profiles.id`` PRIMARY KEY
+        #    left over from a previous schema. Relax the NOT NULL where we can; if
+        #    the column is part of the PRIMARY KEY (so it cannot be nullable) give
+        #    it a generating DEFAULT instead, so an INSERT that omits it still gets
+        #    a unique value.
+        try:
+            pk_cols = set(inspector.get_pk_constraint(table.name).get("constrained_columns") or [])
+        except Exception:  # pragma: no cover - depends on live DB
+            pk_cols = set()
         for db_col in db_columns:
             name = db_col["name"]
             if name in model_cols:
                 continue
             if db_col.get("nullable", True) or db_col.get("default") is not None:
                 continue
+            db_type = db_col.get("type")
+            if name not in pk_cols:
+                try:
+                    logger.info(
+                        "schema-sync: relaxing NOT NULL on unknown column %s.%s",
+                        table.name, name,
+                    )
+                    sync_conn.execute(
+                        text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" DROP NOT NULL')
+                    )
+                    continue
+                except Exception as exc:  # pragma: no cover - depends on live DB
+                    logger.warning(
+                        "schema-sync: could not relax %s.%s: %s", table.name, name, exc
+                    )
+            # PRIMARY KEY (or un-relaxable): attach a generating default so the
+            # column fills itself when our INSERTs omit it. (md5(random()) needs no
+            # extension and works on every Postgres version; a sequence keeps an
+            # integer key unique.)
             try:
-                logger.info(
-                    "schema-sync: relaxing NOT NULL on unknown column %s.%s",
-                    table.name, name,
-                )
-                sync_conn.execute(
-                    text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" DROP NOT NULL')
-                )
+                if isinstance(db_type, sa.String):
+                    sync_conn.execute(
+                        text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" TYPE text')
+                    )
+                    sync_conn.execute(
+                        text(
+                            f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" '
+                            f"SET DEFAULT md5(random()::text || clock_timestamp()::text)"
+                        )
+                    )
+                    logger.info("schema-sync: defaulted unknown key %s.%s (random text)", table.name, name)
+                elif isinstance(db_type, sa.Integer):
+                    seq = f"{table.name}_{name}_seq"
+                    sync_conn.execute(
+                        text(f'CREATE SEQUENCE IF NOT EXISTS "{seq}" OWNED BY "{table.name}"."{name}"')
+                    )
+                    # Start above any existing key so generated values never collide.
+                    sync_conn.execute(
+                        text(
+                            f'SELECT setval(\'"{seq}"\', '
+                            f'COALESCE((SELECT MAX("{name}") FROM "{table.name}"), 0) + 1, false)'
+                        )
+                    )
+                    sync_conn.execute(
+                        text(
+                            f'ALTER TABLE "{table.name}" ALTER COLUMN "{name}" '
+                            f"SET DEFAULT nextval('\"{seq}\"'::regclass)"
+                        )
+                    )
+                    logger.info("schema-sync: defaulted unknown key %s.%s (sequence)", table.name, name)
+                else:
+                    logger.warning(
+                        "schema-sync: unknown NOT NULL %s.%s has no default strategy (type %s)",
+                        table.name, name, db_type,
+                    )
             except Exception as exc:  # pragma: no cover - depends on live DB
                 logger.warning(
-                    "schema-sync: could not relax %s.%s: %s", table.name, name, exc
+                    "schema-sync: could not default %s.%s: %s", table.name, name, exc
                 )
 
-        # 3) Widen existing varchar columns that are narrower than the model now
-        #    requires. create_all / ADD COLUMN never ALTER an existing column, so a
-        #    column first created at a smaller width keeps that width forever — e.g.
-        #    facilities.customer_id was created varchar(33) and later widened to 36
-        #    in the model (real customer ids are 36-char UUIDs), but the live column
-        #    stayed varchar(33); every INSERT of a 36-char id then fails with "value
-        #    too long", silently rolling back the whole data-merge step (facilities
-        #    end up with no amounts). Widening a varchar is a safe, metadata-only
-        #    change (no table/index rewrite, no data loss).
+        # 3) Reconcile existing columns whose live definition no longer matches the
+        #    model. create_all / ADD COLUMN never ALTER an existing column, so a
+        #    column keeps whatever type/width it had when first created:
+        #      * width drift — created varchar(33), the model later widened it to 36
+        #        (facilities.customer_id holds real 36-char UUID ids) → INSERT fails
+        #        with "value too long for type character varying(33)";
+        #      * type drift — created integer / bigint / timestamptz, the model is
+        #        now a string (facilities.tenor_months, attachments.file_size,
+        #        custom_tasks.completed_date) → asyncpg rejects the bind with
+        #        "column X is of type integer but expression is of type character
+        #        varying".
+        #    Either one silently rolls back the whole data-merge step. We only ever
+        #    widen or stringify (never shrink or re-number), so no data is lost —
+        #    ``::text`` losslessly converts a number/timestamp to the string form the
+        #    String model column expects, and TEXT accepts the model's varchar binds.
         db_by_name = {c["name"]: c for c in db_columns}
         for col in table.columns:
             db_col = db_by_name.get(col.name)
             if db_col is None or not isinstance(col.type, sa.String):
-                continue  # String/VARCHAR/Text/Enum (all String-backed); never numerics
+                continue  # only String/VARCHAR/Text/Enum model columns; never numerics
+            db_type = db_col.get("type")
             model_len = getattr(col.type, "length", None)
-            db_len = getattr(db_col.get("type"), "length", None)
-            # Enum columns are varchar-backed too: a still-native enum reports no
-            # length (db_len None) so it's skipped, and a varchar enum is only ever
-            # widened UP to its label length — both safe.
-            if model_len is None:
-                # model is unbounded TEXT — only act if the live column is capped.
-                if db_len is None:
-                    continue
-                new_type = "text"
-            elif db_len is not None and db_len < model_len:
-                new_type = f"varchar({model_len})"
+            if not isinstance(db_type, sa.String):
+                # TYPE drift: the live column is non-character (int/bigint/timestamp)
+                # but the model is a string. Stringify it (TEXT never overflows and
+                # accepts varchar binds). Enum columns are String-backed so they are
+                # never caught here.
+                ddl = (
+                    f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" '
+                    f'TYPE text USING "{col.name}"::text'
+                )
+                kind = "stringifying"
             else:
-                continue
+                # WIDTH drift among character columns. A still-native enum reports no
+                # length (skipped); a varchar enum is only ever widened UP — safe.
+                db_len = getattr(db_type, "length", None)
+                if model_len is None:
+                    if db_len is None:
+                        continue  # both unbounded TEXT — nothing to do
+                    new_type = "text"
+                elif db_len is not None and db_len < model_len:
+                    new_type = f"varchar({model_len})"
+                else:
+                    continue
+                ddl = f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" TYPE {new_type}'
+                kind = "widening"
             try:
-                logger.info(
-                    "schema-sync: widening %s.%s %s -> %s",
-                    table.name, col.name, db_len, new_type,
-                )
-                sync_conn.execute(
-                    text(f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" TYPE {new_type}')
-                )
+                logger.info("schema-sync: %s %s.%s", kind, table.name, col.name)
+                sync_conn.execute(text(ddl))
             except Exception as exc:  # pragma: no cover - depends on live DB
                 logger.warning(
-                    "schema-sync: could not widen %s.%s: %s", table.name, col.name, exc
+                    "schema-sync: could not reconcile %s.%s: %s", table.name, col.name, exc
                 )
 
 

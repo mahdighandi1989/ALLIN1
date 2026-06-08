@@ -474,3 +474,91 @@ async def test_narrow_varchar_column_is_widened_to_model(legacy_pg, monkeypatch)
         assert linked == "dbcbfebf-5ae1-428e-8ba6-a0de5b8d10c1"
     finally:
         await test_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_type_drift_and_orphan_pk_are_reconciled(legacy_pg, monkeypatch):
+    """Legacy columns with the wrong TYPE / an orphan NOT-NULL PK must be repaired.
+
+    The production /run-merge report showed every failing step was the same class
+    of bug — a column created by an older model with a different type than the
+    model now declares, which create_all never alters:
+      * facilities.tenor_months  integer       (model String) }  asyncpg: "column
+      * attachments.file_size     bigint        (model String) }  X is of type ..
+      * custom_tasks.completed_date timestamptz (model String) }  but expression
+                                                                  is character varying"
+      * customer_profiles.id      orphan NOT-NULL PRIMARY KEY the model never sets
+                                  → "null value in column id violates not-null".
+    schema-sync must stringify the type-drifted columns and give the orphan PK a
+    generating default, so the merge INSERTs (which send strings / omit id) work.
+    """
+    eng, db_url = legacy_pg
+    import app.db_init as db_init
+
+    test_engine = create_async_engine(db_url)
+    monkeypatch.setattr(db_init, "engine", test_engine)
+
+    # Start from the real model schema, then introduce the exact production drift.
+    await db_init.ensure_schema()
+    async with test_engine.connect() as conn:
+        await conn.execution_options(isolation_level="AUTOCOMMIT")
+        await conn.execute(text("ALTER TABLE facilities ALTER COLUMN tenor_months TYPE integer USING NULL"))
+        await conn.execute(text("ALTER TABLE attachments ALTER COLUMN file_size TYPE bigint USING NULL"))
+        await conn.execute(text("ALTER TABLE custom_tasks ALTER COLUMN completed_date TYPE timestamptz USING NULL"))
+        # customer_profiles: legacy orphan `id` PK (model's PK is account_no, no id).
+        await conn.execute(text("ALTER TABLE customer_profiles DROP CONSTRAINT customer_profiles_pkey"))
+        await conn.execute(text("ALTER TABLE customer_profiles ADD COLUMN id varchar(60)"))
+        await conn.execute(text("ALTER TABLE customer_profiles ALTER COLUMN id SET NOT NULL"))
+        await conn.execute(text("ALTER TABLE customer_profiles ADD PRIMARY KEY (id)"))
+
+    try:
+        await db_init.ensure_schema()  # must stringify the drift + default the orphan PK
+
+        async def coltype(table, col):
+            async with test_engine.connect() as conn:
+                return (
+                    await conn.execute(
+                        text(
+                            "SELECT data_type FROM information_schema.columns "
+                            "WHERE table_name=:t AND column_name=:c"
+                        ).bindparams(t=table, c=col)
+                    )
+                ).scalar()
+
+        # 1) Type-drifted columns are now character types (no more datatype mismatch).
+        assert (await coltype("facilities", "tenor_months")) in ("text", "character varying")
+        assert (await coltype("attachments", "file_size")) in ("text", "character varying")
+        assert (await coltype("custom_tasks", "completed_date")) in ("text", "character varying")
+
+        # 2) The orphan id PK now has a generating default, so an INSERT that omits
+        #    it (exactly what the merge does — it only sets account_no etc.) works.
+        async with test_engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(
+                text("INSERT INTO customer_profiles (account_no, customer_name) VALUES ('505559','Drift Co')")
+            )
+            await conn.execute(
+                text("INSERT INTO customer_profiles (account_no, customer_name) VALUES ('114748','Other Co')")
+            )
+            rows = (await conn.execute(text("SELECT id, account_no FROM customer_profiles ORDER BY account_no"))).all()
+        # Both rows got a non-null, unique, auto-generated id.
+        ids = [r[0] for r in rows]
+        assert all(i for i in ids) and len(set(ids)) == 2, rows
+        assert {r[1] for r in rows} == {"114748", "505559"}
+
+        # 3) And a string tenor_months now inserts into the (formerly integer) column.
+        async with test_engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(
+                text("INSERT INTO customers (id, account_no, name) VALUES ('c-1','D-1','Cust')")
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO facilities (id, customer_id, name, amount, tenor_months, risk_rating) "
+                    "VALUES ('F-1','c-1','Loan',1000,'24','low')"
+                )
+            )
+            tm = (await conn.execute(text("SELECT tenor_months FROM facilities WHERE id='F-1'"))).scalar()
+        assert tm == "24"
+    finally:
+        await test_engine.dispose()
