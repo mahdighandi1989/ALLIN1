@@ -70,7 +70,7 @@ class OfferLetter(Base):
     __tablename__ = "offer_letters"
 
     id = Column(String(10), primary_key=True, default=generate_offer_id)
-    customer_id = Column(String(33), ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False, index=True)
     facility_id = Column(String(8), ForeignKey("facilities.id"), nullable=True, index=True)
     
     # Basic Information

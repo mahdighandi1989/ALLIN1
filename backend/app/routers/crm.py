@@ -286,9 +286,13 @@ async def update_profile(
 # Data-merge: manual trigger + status (admin) — so the legacy Excel data can be
 # (re)merged on demand and verified, without waiting for a restart.
 # ---------------------------------------------------------------------------
-@router.post("/run-merge")
+@router.api_route("/run-merge", methods=["GET", "POST"])
 async def run_merge(user=Depends(require_admin)):
-    """Run the legacy-data merge now and return a per-step report."""
+    """Run the legacy-data merge now and return a per-step report.
+
+    Accepts GET too, so an admin can trigger + inspect it straight from the
+    browser address bar (handy when AUTH_DISABLED is on).
+    """
     from app.services.data_merge import run_data_merge
     report = await run_data_merge()
     return {"ok": True, "report": report}

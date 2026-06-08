@@ -42,7 +42,7 @@ def _enum_col(enum_cls, **kw):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(String(33), primary_key=True, default=generate_customer_id)
+    id = Column(String(36), primary_key=True, default=generate_customer_id)
     account_no = Column(String(50), unique=True, index=True, nullable=False)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))
