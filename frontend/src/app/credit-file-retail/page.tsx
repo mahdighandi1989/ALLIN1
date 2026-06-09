@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
-import { crmApi, parseApiError } from '@/lib/api'
+import { customersApi, parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 type FormData = {
@@ -114,9 +114,9 @@ export default function CreditFileRetailPage() {
     if (!a) { toast.error('شماره حساب را وارد کنید'); return }
     setLoading(true)
     try {
-      const d = await crmApi.detail(a)
+      const d: any = await customersApi.detail(a)
       const { customer, profile = {}, facilities = [], guarantors = [] } = d
-      const pdata = (profile.data || {})
+      const pdata = (profile && profile.data) || {}
 
       setData((s) => ({
         ...s,

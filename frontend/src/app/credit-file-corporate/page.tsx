@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
-import { crmApi, parseApiError } from '@/lib/api'
+import { customersApi, parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 type FormData = {
@@ -166,9 +166,9 @@ export default function CreditFileCorporatePage() {
     if (!a) { toast.error('شماره حساب را وارد کنید'); return }
     setLoading(true)
     try {
-      const d = await crmApi.detail(a)
+      const d: any = await customersApi.detail(a)
       const { customer, profile = {}, facilities = [] } = d
-      const pdata = (profile.data || {})
+      const pdata = (profile && profile.data) || {}
 
       setData((s) => ({
         ...s,
@@ -364,18 +364,19 @@ export default function CreditFileCorporatePage() {
                 <th style={{ width: '15%' }}>Share</th>
                 <th style={{ width: '27%' }}>Remarks</th>
               </tr>
-              {[1, 2, 3].map((i) => {
-                const key = `partner${i}` as const
-                return (
-                  <tr key={i}>
-                    <td>{i}.0</td>
-                    <td><input type="text" value={data[`${key}Name`]} onChange={set(`${key}Name`)} /></td>
-                    <td><input type="text" value={data[`${key}Nationality`]} onChange={set(`${key}Nationality`)} /></td>
-                    <td><input type="text" value={data[`${key}Share`]} onChange={set(`${key}Share`)} /></td>
-                    <td><input type="text" value={data[`${key}Remarks`]} onChange={set(`${key}Remarks`)} /></td>
-                  </tr>
-                )
-              })}
+              {[
+                { name: 'partner1Name', nat: 'partner1Nationality', share: 'partner1Share', rem: 'partner1Remarks' },
+                { name: 'partner2Name', nat: 'partner2Nationality', share: 'partner2Share', rem: 'partner2Remarks' },
+                { name: 'partner3Name', nat: 'partner3Nationality', share: 'partner3Share', rem: 'partner3Remarks' },
+              ].map((fields, i) => (
+                <tr key={i}>
+                  <td>{i + 1}.0</td>
+                  <td><input type="text" value={data[fields.name as keyof FormData]} onChange={set(fields.name as keyof FormData)} /></td>
+                  <td><input type="text" value={data[fields.nat as keyof FormData]} onChange={set(fields.nat as keyof FormData)} /></td>
+                  <td><input type="text" value={data[fields.share as keyof FormData]} onChange={set(fields.share as keyof FormData)} /></td>
+                  <td><input type="text" value={data[fields.rem as keyof FormData]} onChange={set(fields.rem as keyof FormData)} /></td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
