@@ -36,6 +36,24 @@ const FORMS: FormDef[] = [
     category: 'Credit',
     ready: true,
   },
+  {
+    href: '/credit-file-retail',
+    title: 'Credit File Summary (Retail)',
+    subtitle: 'خلاصهٔ فایلِ اعتباری (حقیقی)',
+    description: 'فرمِ خلاصهٔ فایلِ اعتباری برای مشتریانِ حقیقی؛ شامل اطلاعاتِ حساب، K.Y.C، تسهیلات، ضمانت‌ها و گمانکنندگان برای چاپِ A4.',
+    icon: FileSignature,
+    category: 'Credit',
+    ready: true,
+  },
+  {
+    href: '/credit-file-corporate',
+    title: 'Credit File Summary (Corporate)',
+    subtitle: 'خلاصهٔ فایلِ اعتباری (حقوقی)',
+    description: 'فرمِ خلاصهٔ فایلِ اعتباری برای مشتریانِ حقوقی؛ شامل اطلاعاتِ شرکت، K.Y.C، شرکا، تسهیلات، ضمانت‌ها و اسناد گمانکنندگان برای چاپِ A4.',
+    icon: FileSignature,
+    category: 'Credit',
+    ready: true,
+  },
 ]
 
 export default function FormsPage() {
