@@ -248,7 +248,7 @@ export default function CreditFileCorporatePage() {
         {/* HEADER */}
         <div className="cf-form-section" style={{ textAlign: 'center', marginBottom: '6px' }}>
           <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>CREDIT FILE SUMMARY (Corporate)</div>
-          <div style={{ fontSize: '12px', color: '#666' }}>Bank Saderat Iran — R.O.</div>
+          <div style={{ fontSize: '12px', color: '#666' }}>Bank Saderat Iran &mdash; R.O.</div>
         </div>
 
         {/* BRANCH */}
@@ -285,7 +285,7 @@ export default function CreditFileCorporatePage() {
               </tr>
               <tr>
                 <td>1.0</td>
-                <td>Customer's Name</td>
+                <td>Customer&rsquo;s Name</td>
                 <td><input type="text" value={data.customerName} onChange={set('customerName')} /></td>
                 <td>4.0</td>
                 <td>Rating</td>
@@ -475,7 +475,7 @@ export default function CreditFileCorporatePage() {
                 <th>Description</th>
                 <th>AED</th>
                 <th>USD</th>
-                <th>IRR '000'</th>
+                <th>IRR &rsquo;000&rsquo;</th>
                 <th>OTHERS</th>
               </tr>
               <tr>
@@ -516,7 +516,7 @@ export default function CreditFileCorporatePage() {
 
         {/* GUARANTOR DETAILS */}
         <div className="cf-form-section">
-          <div className="cf-form-title">Guarantor's Name</div>
+          <div className="cf-form-title">Guarantor&rsquo;s Name</div>
           <div className="cf-field">
             <input type="text" value={data.guarantorNames} onChange={set('guarantorNames')} placeholder="Enter guarantor names" />
           </div>
@@ -524,7 +524,7 @@ export default function CreditFileCorporatePage() {
 
         {/* CUSTOMER STATUS */}
         <div className="cf-form-section">
-          <div className="cf-form-title">Customer's History and Current Status</div>
+          <div className="cf-form-title">Customer&rsquo;s History and Current Status</div>
           <div className="cf-grid">
             <div className="cf-field">
               <label className={label}>Status</label>
