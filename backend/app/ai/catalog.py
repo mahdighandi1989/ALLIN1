@@ -118,6 +118,7 @@ TASK_TYPES = [
 # ---------------------------------------------------------------------------
 class _ModelDef(TypedDict, total=False):
     model_key: str
+    api_model_id: str   # actual id sent to the provider (defaults to model_key)
     display_name: str
     capabilities: List[str]
     max_output_tokens: int
@@ -131,6 +132,7 @@ class _ProviderDef(TypedDict, total=False):
     display_name: str
     base_url: str
     env_key: str
+    auth_scheme: str    # "api_key" (default) or "oauth_bearer"
     recommended: bool
     notes: str
     models: List[_ModelDef]
@@ -148,12 +150,53 @@ _WEB = Capability.WEB_SEARCH.value
 
 
 PROVIDER_CATALOG: Dict[str, _ProviderDef] = {
+    # Claude via a subscription / Claude Code OAuth token. Uses your existing
+    # plan instead of a separately-billed API key — the token (sk-ant-oat01-…)
+    # is sent as a Bearer credential. Same Claude models as the API-key provider.
+    "claude_subscription": {
+        "display_name": "Claude (subscription · OAuth token)",
+        "base_url": "https://api.anthropic.com",
+        "env_key": "CLAUDE_CODE_OAUTH_TOKEN",
+        "auth_scheme": "oauth_bearer",
+        "recommended": True,
+        "notes": "Recommended if you have a Claude / Claude Code subscription. "
+                 "Uses your OAuth token (sk-ant-oat01-…) — no separate API billing.",
+        "models": [
+            {
+                "model_key": "claude-opus-4-8-sub",
+                "api_model_id": "claude-opus-4-8",
+                "display_name": "Claude Opus 4.8 (subscription)",
+                "capabilities": [_TEXT, _VISION, _REASON, _LONG, _CODE, _STRUCT, _DOCS],
+                "max_output_tokens": 128000,
+                "context_window": 1000000,
+                "priority": 1,
+            },
+            {
+                "model_key": "claude-sonnet-4-6-sub",
+                "api_model_id": "claude-sonnet-4-6",
+                "display_name": "Claude Sonnet 4.6 (subscription)",
+                "capabilities": [_TEXT, _VISION, _REASON, _LONG, _CODE, _STRUCT, _DOCS],
+                "max_output_tokens": 64000,
+                "context_window": 1000000,
+                "priority": 2,
+            },
+            {
+                "model_key": "claude-haiku-4-5-sub",
+                "api_model_id": "claude-haiku-4-5",
+                "display_name": "Claude Haiku 4.5 (subscription)",
+                "capabilities": [_TEXT, _VISION, _FAST, _STRUCT],
+                "max_output_tokens": 64000,
+                "context_window": 200000,
+                "priority": 3,
+            },
+        ],
+    },
     "anthropic": {
-        "display_name": "Anthropic (Claude)",
+        "display_name": "Anthropic (Claude · API key)",
         "base_url": "https://api.anthropic.com",
         "env_key": "ANTHROPIC_API_KEY",
-        "recommended": True,
-        "notes": "Recommended. Claude models — strong reasoning, vision, and long context.",
+        "auth_scheme": "api_key",
+        "notes": "Pay-per-use Claude API key — strong reasoning, vision, and long context.",
         "models": [
             {
                 "model_key": "claude-opus-4-8",
