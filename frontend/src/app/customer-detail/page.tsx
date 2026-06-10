@@ -50,7 +50,7 @@ function CustomerDetailInner() {
   const [npt, setNpt] = useState<any>({})
   const [chkFacility, setChkFacility] = useState('')  // '' = account-level checklist
   const [comp, setComp] = useState<any>(null)
-  const [upFile, setUpFile] = useState<File | null>(null)
+  const [upFiles, setUpFiles] = useState<File[]>([])
   const [upOpts, setUpOpts] = useState<any>({ facility_id: '', row_index: '', is_shared: false })
 
   useEffect(() => {
@@ -190,12 +190,13 @@ function CustomerDetailInner() {
     } catch (e) { toast.error(parseApiError(e)) }
   }
   const doUpload = async () => {
-    if (!upFile) { toast.error('Choose a file'); return }
+    if (!upFiles.length) { toast.error('Choose file(s)'); return }
     try {
-      const a = await crmApi.uploadAttachment(acc, upFile, upOpts)
-      setData((d: any) => ({ ...d, attachments: [a, ...(d.attachments || [])] }))
-      setUpFile(null); setUpOpts({ facility_id: '', row_index: '', is_shared: false })
-      toast.success('Document uploaded')
+      const created: any[] = []
+      for (const f of upFiles) created.push(await crmApi.uploadAttachment(acc, f, upOpts))
+      setData((d: any) => ({ ...d, attachments: [...created, ...(d.attachments || [])] }))
+      setUpFiles([]); setUpOpts({ facility_id: '', row_index: '', is_shared: false })
+      toast.success(`${created.length} document(s) uploaded`)
     } catch (e) { toast.error(parseApiError(e)) }
   }
   const openAttachment = async (a: any) => {
@@ -751,7 +752,7 @@ function CustomerDetailInner() {
       {tab === 'attachments' && (
         <Section title={`Documents (${attachments.length})`}>
           <div className="flex flex-wrap items-center gap-2 mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
-            <input type="file" onChange={(e) => setUpFile(e.target.files?.[0] || null)} className="text-sm" />
+            <input type="file" multiple onChange={(e) => setUpFiles(Array.from(e.target.files || []))} className="text-sm" />
             <select value={upOpts.facility_id} onChange={(e) => setUpOpts((s: any) => ({ ...s, facility_id: e.target.value }))}
               className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm">
               <option value="">No facility</option>

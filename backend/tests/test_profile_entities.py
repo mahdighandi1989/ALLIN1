@@ -188,6 +188,35 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestDailyLogAndBackup:
+    async def test_daily_log_smart_routing(self, client: AsyncClient, auth_headers: dict, db_session):
+        from app.models.customer import Customer, AccountType, CustomerStatus
+        c = Customer(account_no="182255", name="Six Digit Co", account_type=AccountType.CORPORATE, status=CustomerStatus.ACTIVE)
+        db_session.add(c)
+        await db_session.commit()
+
+        text = "Followed up 182255 re renewal; amount 500000 AED received; ref 999999"
+        r = await client.post("/api/crm/daily-log", headers=auth_headers, json={"text": text})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "182255" in body["accounts_found"]
+        assert "500000" not in body["accounts_found"]      # amount (followed by AED), not an account
+        assert any(x["account_no"] == "182255" for x in body["routed"])
+        assert "999999" in body["unknown_accounts"]         # 6-digit but no such customer
+
+        d = await client.get(f"/api/customers/{c.id}/detail", headers=auth_headers)
+        assert any("renewal" in (t["task_name"] or "") for t in d.json()["tasks"])
+
+    async def test_backup_export_admin_only(self, client: AsyncClient, auth_headers: dict, admin_headers: dict, test_customer: Customer):
+        assert (await client.get("/api/crm/backup/export.json", headers=auth_headers)).status_code == 403
+        r = await client.get("/api/crm/backup/export.json", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.headers.get("content-type", "").startswith("application/json")
+        body = r.json()
+        assert "data" in body and "customers" in body["data"]
+        assert any(c["account_no"] == test_customer.account_no for c in body["data"]["customers"])
+
+
 class TestPersonalNotes:
     async def test_crud(self, client: AsyncClient, auth_headers: dict):
         a = await client.post("/api/personal/notes", headers=auth_headers, json={"content": "call client", "category": "Today"})

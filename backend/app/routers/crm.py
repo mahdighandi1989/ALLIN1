@@ -12,6 +12,8 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -1089,4 +1091,126 @@ async def export_summary_pdf(
     return Response(
         content=content, media_type=media,
         headers={"Content-Disposition": f'attachment; filename="credit-summary-{acc}.{ext}"'},
+    )
+
+
+# ===========================================================================
+# Daily log — smart routing (A22). Free text in; 6-digit account numbers are
+# extracted (a number immediately followed by a currency word is treated as an
+# amount, not an account), matched against known customers, and routed to each
+# as a follow-up task. A journal entry is always recorded; unknown numbers come
+# back for the user to confirm/create.
+# ===========================================================================
+_CURRENCY_WORDS = {
+    "ریال", "ریالی", "درهم", "دلار", "تومان", "irr", "rial", "rials",
+    "dirham", "dirhams", "aed", "usd", "eur", "$",
+}
+
+
+def _extract_accounts(text: str) -> list[str]:
+    out: list[str] = []
+    for m in re.finditer(r"(?<!\d)(\d{6})(?!\d)", text or ""):
+        tail = (text[m.end():m.end() + 18]).strip().lower()
+        nxt = re.split(r"[\s,.:;()/\-]+", tail, maxsplit=1)[0] if tail else ""
+        if nxt in _CURRENCY_WORDS:
+            continue  # it's an amount, not an account number
+        out.append(m.group(1))
+    seen, uniq = set(), []
+    for a in out:
+        if a not in seen:
+            seen.add(a)
+            uniq.append(a)
+    return uniq
+
+
+class DailyLog(BaseModel):
+    text: str = Field(..., min_length=1)
+    followup_date: str = ""
+
+
+@router.post("/daily-log")
+async def daily_log(
+    payload: DailyLog,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Record a daily-log line and route it to any customer account mentioned."""
+    text = payload.text.strip()
+    accounts = _extract_accounts(text)
+    uname = getattr(user, "username", "") or ""
+    today = date.today().isoformat()
+
+    jid = "J-" + uuid.uuid4().hex[:18]
+    db.add(JournalEntry(
+        id=jid, account_no=(accounts[0] if accounts else ""), item=text[:100],
+        action="Daily log", source="Daily Log", date=today, user=uname, notes=text[:1000],
+    ))
+
+    matched: list[dict] = []
+    unknown: list[str] = []
+    for acc in accounts:
+        cust = (
+            await db.execute(select(Customer).where(Customer.account_no == acc, Customer.is_deleted == False))  # noqa: E712
+        ).scalar_one_or_none()
+        if cust is None:
+            unknown.append(acc)
+            continue
+        tid = f"T-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
+        db.add(CustomTask(
+            id=tid, account_no=acc, facility_id="", task_name=text[:200], status="",
+            followup_date=(payload.followup_date or "")[:30], notes="Routed from daily log",
+            priority="Medium", created_by=uname, created_date=today, completed_date="", is_active="1",
+        ))
+        matched.append({"account_no": acc, "customer_name": cust.name, "task_id": tid})
+    await db.commit()
+    return {"journal_id": jid, "accounts_found": accounts, "routed": matched, "unknown_accounts": unknown}
+
+
+# ===========================================================================
+# Backup — download the whole CRM dataset as JSON (A21, web equivalent). A true
+# incremental, offline-resync backup of file shares is a desktop concern; for the
+# cloud DB the appropriate backup is a portable export an admin can download/keep.
+# ===========================================================================
+@router.get("/backup/export.json")
+async def backup_export(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    """Export all CRM business data (excludes users/personal notes) as JSON."""
+    import json as _json
+    from app.models.security import Security
+    from app.models.general import GeneralProfile, GeneralChecklist, GeneralChecklistItem
+
+    def _ser(o) -> dict:
+        row = {}
+        for c in o.__table__.columns:
+            v = getattr(o, c.name)
+            if isinstance(v, Decimal):
+                v = float(v)
+            elif hasattr(v, "value"):
+                v = v.value
+            elif hasattr(v, "isoformat"):
+                v = v.isoformat()
+            row[c.name] = v
+        return row
+
+    data: dict = {}
+    targets = {
+        "customers": Customer, "facilities": Facility, "customer_profiles": CustomerProfile,
+        "guarantors": Guarantor, "securities": Security, "mortgaged_properties": MortgagedProperty,
+        "fixed_deposits": FixedDeposit, "partners": Partner, "checklist_progress": ChecklistProgress,
+        "facility_checklists": FacilityChecklist, "custom_tasks": CustomTask, "customer_notes": CustomerNote,
+        "journal_entries": JournalEntry, "attachments": Attachment, "general_profiles": GeneralProfile,
+        "general_checklists": GeneralChecklist, "general_checklist_items": GeneralChecklistItem,
+    }
+    for name, model in targets.items():
+        try:
+            objs = (await db.execute(select(model))).scalars().all()
+            data[name] = [_ser(o) for o in objs]
+        except Exception as exc:  # pragma: no cover - defensive
+            data[name] = {"error": str(exc)[:120]}
+
+    payload = {"generated": datetime.utcnow().isoformat() + "Z", "counts": {k: (len(v) if isinstance(v, list) else 0) for k, v in data.items()}, "data": data}
+    content = _json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=content, media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="allin1-backup-{stamp}.json"'},
     )

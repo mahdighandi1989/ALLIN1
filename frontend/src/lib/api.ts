@@ -274,6 +274,10 @@ export const crmApi = {
     const { data } = await api.post('/api/crm/run-expiry-scan')
     return data
   },
+  async dailyLog(text: string, followup_date = ''): Promise<{ accounts_found: string[]; routed: any[]; unknown_accounts: string[] }> {
+    const { data } = await api.post('/api/crm/daily-log', { text, followup_date })
+    return data
+  },
   async addNote(accountNo: string, body: { title?: string; content: string; category?: string; reminder_date?: string }): Promise<any> {
     const { data } = await api.post(`/api/crm/notes/${encodeURIComponent(accountNo)}`, body)
     return data
