@@ -126,17 +126,16 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = Field(default=30, ge=10, le=300)
     METRICS_ENABLED: bool = Field(default=True)
 
-    # ⚠️ TEMPORARY — login/auth toggle.
-    # When True, the login requirement is bypassed everywhere: protected
-    # endpoints accept requests without a JWT and operate as a shared "demo"
-    # user, and the frontend skips the login screen. This was requested to
-    # remove the login "for now". Set AUTH_DISABLED=false to restore mandatory
-    # authentication (no rebuild needed — the frontend adapts at runtime via
-    # GET /api/auth/config). The default here is True; production overrides it
-    # to false in render.yaml.
+    # Login/auth toggle. Login is ENFORCED by default (secure by default): every
+    # request must carry a valid session. Set AUTH_DISABLED=true ONLY to
+    # temporarily bypass login everywhere — protected endpoints then accept
+    # requests without a JWT and operate as a shared "demo" admin, and the
+    # frontend skips the login screen (it adapts at runtime via
+    # GET /api/auth/config, no rebuild needed). Intended only as a local/dev
+    # convenience; it must never be left on in production.
     AUTH_DISABLED: bool = Field(
-        default=True,
-        description="TEMPORARY: bypass login/auth when True. Set to false to enforce auth.",
+        default=False,
+        description="Bypass login/auth when True (dev only). Login is enforced by default.",
     )
 
     # Bootstrap admin account, created at startup if the users table is empty so
