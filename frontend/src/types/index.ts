@@ -1,4 +1,9 @@
 // User types
+// Access level (role) hierarchy: pending < viewer < editor < admin. A freshly
+// signed-in Google user starts as 'pending' (no access) until an admin grants a
+// role. `is_admin` mirrors role === 'admin' for backward compatibility.
+export type Role = 'pending' | 'viewer' | 'editor' | 'admin'
+
 export interface User {
   id: string
   username: string
@@ -6,6 +11,9 @@ export interface User {
   full_name: string | null
   is_active: boolean
   is_admin: boolean
+  role?: Role
+  picture?: string | null
+  auth_provider?: string
 }
 
 // Customer types
@@ -208,6 +216,9 @@ export interface AdminUser {
   full_name: string | null
   is_active: boolean
   is_admin: boolean
+  role: Role
+  picture?: string | null
+  auth_provider?: string
   created_at: string | null
   last_login: string | null
 }
@@ -226,6 +237,7 @@ export interface AdminUserForm {
   full_name: string
   is_admin: boolean
   is_active: boolean
+  role: Role
 }
 
 export interface FacilityDetail {

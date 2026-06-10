@@ -99,16 +99,20 @@ async def create_user(
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # Honour an explicit access level when given; otherwise an admin-created
+    # account is trusted and defaults to 'admin' (if is_admin) or 'editor' — never
+    # the 'pending' approval state used for self-service Google sign-ups. role and
+    # is_admin are kept in sync so the two never disagree.
+    role = payload.role or ("admin" if payload.is_admin else "editor")
+    is_admin = payload.is_admin or role == "admin"
     user = User(
         username=username,
         email=email,
         hashed_password=hash_password(payload.password),
         full_name=payload.full_name,
         is_active=payload.is_active,
-        is_admin=payload.is_admin,
-        # An admin-created account is trusted: admins are 'admin', others default
-        # to 'editor' (a working role) rather than the 'pending' approval state.
-        role="admin" if payload.is_admin else "editor",
+        is_admin=is_admin,
+        role=role,
     )
     db.add(user)
     await db.commit()

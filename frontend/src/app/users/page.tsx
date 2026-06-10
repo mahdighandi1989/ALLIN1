@@ -5,9 +5,26 @@ import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { usersApi, parseApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { AdminUser, AdminUserList, AdminUserForm } from '@/types'
+import { AdminUser, AdminUserList, AdminUserForm, Role } from '@/types'
 import { Plus, Shield, ShieldOff, UserX, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+// Access levels, from least to most privileged. This is the "میزان و سطح دسترسی"
+// an admin assigns to each account; the backend enforces it on every endpoint
+// (pending = no access, viewer = read-only, editor = create/edit, admin = full).
+const ROLE_OPTIONS: { value: Role; label: string; hint: string }[] = [
+  { value: 'pending', label: 'Pending', hint: 'No access — awaiting approval' },
+  { value: 'viewer', label: 'Viewer', hint: 'Read-only access' },
+  { value: 'editor', label: 'Editor', hint: 'Can create and edit data' },
+  { value: 'admin', label: 'Admin', hint: 'Full access + user management' },
+]
+
+const ROLE_BADGE: Record<string, string> = {
+  admin: 'bg-purple-100 text-purple-700',
+  editor: 'bg-blue-100 text-blue-700',
+  viewer: 'bg-green-100 text-green-700',
+  pending: 'bg-amber-100 text-amber-700',
+}
 
 export default function UsersPage() {
   const router = useRouter()
@@ -109,8 +126,8 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-sm">{u.full_name || '-'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
                   <td className="px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs ${u.is_admin ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {u.is_admin ? 'admin' : 'user'}
+                    <span className={`px-2 py-1 rounded text-xs capitalize ${ROLE_BADGE[u.role] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {u.role || (u.is_admin ? 'admin' : 'pending')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -160,24 +177,28 @@ function UserFormModal({ existing, onClose, onSaved }: {
     full_name: existing?.full_name || '',
     is_admin: existing?.is_admin || false,
     is_active: existing?.is_active ?? true,
+    role: existing?.role || 'editor',
   })
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
+      // role is the source of truth for the access level; is_admin is kept in
+      // sync (admin <=> role === 'admin') so the two never disagree.
       if (isEdit && existing) {
         const payload: any = {
           email: form.email,
           full_name: form.full_name,
-          is_admin: form.is_admin,
+          role: form.role,
+          is_admin: form.role === 'admin',
           is_active: form.is_active,
         }
         if (form.password) payload.password = form.password
         await usersApi.update(existing.id, payload)
         toast.success('User updated')
       } else {
-        await usersApi.create(form)
+        await usersApi.create({ ...form, is_admin: form.role === 'admin' })
         toast.success('User created')
       }
       onSaved()
@@ -219,18 +240,26 @@ function UserFormModal({ existing, onClose, onSaved }: {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg" required={!isEdit} minLength={8} />
           </div>
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_admin}
-                onChange={(e) => setForm({ ...form, is_admin: e.target.checked })} />
-              Admin
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.is_active}
-                onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
-              Active
-            </label>
+          <div>
+            <label className="block text-sm font-medium mb-1">Access level *</label>
+            <select
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
+              className="w-full px-3 py-2 border rounded-lg bg-white"
+            >
+              {ROLE_OPTIONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label} — {r.hint}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {ROLE_OPTIONS.find((r) => r.value === form.role)?.hint}
+            </p>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
+            Active
+          </label>
           <div className="flex gap-2 pt-2">
             <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={saving}
