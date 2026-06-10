@@ -384,6 +384,31 @@ export const generalApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Personal (private, per-user) notes + email digest (A8/A11/A16)
+// ---------------------------------------------------------------------------
+export const personalApi = {
+  async list(): Promise<{ items: any[]; total: number }> {
+    const { data } = await api.get('/api/personal/notes')
+    return data
+  },
+  async add(body: { content: string; category?: string }): Promise<any> {
+    const { data } = await api.post('/api/personal/notes', body)
+    return data
+  },
+  async update(id: string, body: { is_done?: boolean; content?: string }): Promise<any> {
+    const { data } = await api.patch(`/api/personal/notes/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/api/personal/notes/${encodeURIComponent(id)}`)
+  },
+  async sendEmail(): Promise<{ ok: boolean; sent: number; to?: string; message?: string }> {
+    const { data } = await api.post('/api/personal/notes/send-email')
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Offer letters
 // ---------------------------------------------------------------------------
 export const offerLettersApi = {

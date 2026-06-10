@@ -41,6 +41,7 @@ from app.models.profile_entities import (  # noqa: F401  (register tables for cr
 from app.models.general import (  # noqa: F401  (register tables for create_all)
     GeneralProfile, GeneralChecklist, GeneralChecklistItem,
 )
+from app.models.personal import PersonalNote  # noqa: F401  (register table for create_all)
 
 logger = logging.getLogger(__name__)
 

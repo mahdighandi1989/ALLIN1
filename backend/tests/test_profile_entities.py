@@ -188,6 +188,32 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestPersonalNotes:
+    async def test_crud(self, client: AsyncClient, auth_headers: dict):
+        a = await client.post("/api/personal/notes", headers=auth_headers, json={"content": "call client", "category": "Today"})
+        assert a.status_code == 200, a.text
+        nid = a.json()["id"]
+        assert any(x["id"] == nid for x in (await client.get("/api/personal/notes", headers=auth_headers)).json()["items"])
+        u = await client.patch(f"/api/personal/notes/{nid}", headers=auth_headers, json={"is_done": True})
+        assert u.json()["is_done"] is True
+        assert (await client.delete(f"/api/personal/notes/{nid}", headers=auth_headers)).status_code == 200
+
+    async def test_user_scoped(self, client: AsyncClient, auth_headers: dict, admin_headers: dict):
+        a = await client.post("/api/personal/notes", headers=auth_headers, json={"content": "mine only"})
+        nid = a.json()["id"]
+        adm = await client.get("/api/personal/notes", headers=admin_headers)
+        assert not any(x["id"] == nid for x in adm.json()["items"])  # admin can't see editor's note
+        assert (await client.patch(f"/api/personal/notes/{nid}", headers=admin_headers, json={"is_done": True})).status_code == 404
+
+    async def test_requires_auth(self, client: AsyncClient):
+        assert (await client.get("/api/personal/notes")).status_code == 401
+
+    async def test_send_email_without_smtp_400(self, client: AsyncClient, auth_headers: dict):
+        await client.post("/api/personal/notes", headers=auth_headers, json={"content": "x"})
+        r = await client.post("/api/personal/notes/send-email", headers=auth_headers)
+        assert r.status_code == 400
+
+
 class TestGeneralProfiles:
     async def test_profile_checklist_item_flow(self, client: AsyncClient, auth_headers: dict):
         p = await client.post("/api/general/profiles", headers=auth_headers, json={"title": "Recurring KYC reviews", "category": "Ops"})
