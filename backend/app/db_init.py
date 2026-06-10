@@ -38,6 +38,9 @@ from app.models.crm import (  # noqa: F401
 from app.models.profile_entities import (  # noqa: F401  (register tables for create_all)
     MortgagedProperty, FixedDeposit, Partner,
 )
+from app.models.general import (  # noqa: F401  (register tables for create_all)
+    GeneralProfile, GeneralChecklist, GeneralChecklistItem,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -188,6 +188,37 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestGeneralProfiles:
+    async def test_profile_checklist_item_flow(self, client: AsyncClient, auth_headers: dict):
+        p = await client.post("/api/general/profiles", headers=auth_headers, json={"title": "Recurring KYC reviews", "category": "Ops"})
+        assert p.status_code == 200, p.text
+        pid = p.json()["id"]
+        assert any(x["id"] == pid for x in (await client.get("/api/general/profiles", headers=auth_headers)).json()["items"])
+
+        c = await client.post(f"/api/general/profiles/{pid}/checklists", headers=auth_headers, json={"title": "Monthly"})
+        cid = c.json()["id"]
+        i1 = await client.post(f"/api/general/checklists/{cid}/items", headers=auth_headers, json={"text": "Check expiries"})
+        iid = i1.json()["id"]
+
+        u = await client.patch(f"/api/general/items/{iid}", headers=auth_headers, json={"is_done": True})
+        assert u.json()["is_done"] is True
+
+        cls = await client.get(f"/api/general/profiles/{pid}/checklists", headers=auth_headers)
+        chk = cls.json()["checklists"][0]
+        assert chk["id"] == cid and chk["items"][0]["is_done"] is True
+
+        assert (await client.delete(f"/api/general/items/{iid}", headers=auth_headers)).status_code == 200
+        assert (await client.delete(f"/api/general/checklists/{cid}", headers=auth_headers)).status_code == 200
+        assert (await client.delete(f"/api/general/profiles/{pid}", headers=auth_headers)).status_code == 200
+        assert not any(x["id"] == pid for x in (await client.get("/api/general/profiles", headers=auth_headers)).json()["items"])
+
+    async def test_requires_auth(self, client: AsyncClient):
+        assert (await client.get("/api/general/profiles")).status_code == 401
+
+    async def test_title_required(self, client: AsyncClient, auth_headers: dict):
+        assert (await client.post("/api/general/profiles", headers=auth_headers, json={"category": "x"})).status_code == 422
+
+
 class TestSummaryPdf:
     async def test_export_pdf(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, test_facility):
         r = await client.get(f"/api/crm/summary/{test_customer.account_no}/export.pdf", headers=auth_headers)

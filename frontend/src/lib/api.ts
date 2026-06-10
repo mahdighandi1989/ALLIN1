@@ -345,6 +345,45 @@ export const crmApi = {
 }
 
 // ---------------------------------------------------------------------------
+// General (non-account) profiles + checklists (A7)
+// ---------------------------------------------------------------------------
+export const generalApi = {
+  async listProfiles(): Promise<{ items: any[]; total: number }> {
+    const { data } = await api.get('/api/general/profiles')
+    return data
+  },
+  async createProfile(body: { title: string; category?: string }): Promise<any> {
+    const { data } = await api.post('/api/general/profiles', body)
+    return data
+  },
+  async deleteProfile(id: string): Promise<void> {
+    await api.delete(`/api/general/profiles/${encodeURIComponent(id)}`)
+  },
+  async listChecklists(profileId: string): Promise<{ profile_id: string; checklists: any[] }> {
+    const { data } = await api.get(`/api/general/profiles/${encodeURIComponent(profileId)}/checklists`)
+    return data
+  },
+  async createChecklist(profileId: string, body: { title: string }): Promise<any> {
+    const { data } = await api.post(`/api/general/profiles/${encodeURIComponent(profileId)}/checklists`, body)
+    return data
+  },
+  async deleteChecklist(id: string): Promise<void> {
+    await api.delete(`/api/general/checklists/${encodeURIComponent(id)}`)
+  },
+  async addItem(checklistId: string, body: { text: string }): Promise<any> {
+    const { data } = await api.post(`/api/general/checklists/${encodeURIComponent(checklistId)}/items`, body)
+    return data
+  },
+  async updateItem(id: string, body: { is_done?: boolean; text?: string }): Promise<any> {
+    const { data } = await api.patch(`/api/general/items/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteItem(id: string): Promise<void> {
+    await api.delete(`/api/general/items/${encodeURIComponent(id)}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Offer letters
 // ---------------------------------------------------------------------------
 export const offerLettersApi = {
