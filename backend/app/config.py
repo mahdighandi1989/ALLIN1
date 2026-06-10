@@ -164,6 +164,40 @@ class Settings(BaseSettings):
     BACKUP_DAILY_ENABLED: bool = Field(default=True)
     BACKUP_INTERVAL_HOURS: int = Field(default=24, ge=1, le=168)
 
+    # ---- Google Drive sync (Service Account) ----
+    # Automated, server-to-server Drive sync that does NOT depend on a user being
+    # logged in. Everything the app pushes (DB snapshots, document attachments) is
+    # written into GOOGLE_DRIVE_FOLDER_ID, organised into per-category/type
+    # sub-folders with precise, traceable file names. To enable it:
+    #   1. Create a Service Account in the Google Cloud console and download its
+    #      JSON key; paste the WHOLE JSON (or its base64) into GOOGLE_CREDENTIALS_JSON.
+    #   2. Create a destination folder in Google Drive, share it with the Service
+    #      Account's client_email (Editor), and put the folder id in
+    #      GOOGLE_DRIVE_FOLDER_ID.
+    #   3. Set GOOGLE_DRIVE_ENABLED=true.
+    # When disabled / unconfigured every sync call is a graceful no-op, so the rest
+    # of the app keeps working unchanged.
+    GOOGLE_DRIVE_ENABLED: bool = Field(default=False)
+    GOOGLE_CREDENTIALS_JSON: str = Field(
+        default="",
+        description="Service Account key JSON (raw or base64) used to authenticate Drive sync",
+    )
+    GOOGLE_DRIVE_FOLDER_ID: str = Field(
+        default="",
+        description="Drive folder id (shared with the Service Account) that is the sync root",
+    )
+    # How often the background snapshot sync runs (reuses BACKUP_INTERVAL_HOURS).
+    # The on-disk attachment uploads happen immediately, not on this cadence.
+    DRIVE_SYNC_INTERVAL_HOURS: int = Field(default=24, ge=1, le=168)
+
+    def google_drive_configured(self) -> bool:
+        """True when Drive sync is switched on AND has the creds + folder it needs."""
+        return bool(
+            self.GOOGLE_DRIVE_ENABLED
+            and self.GOOGLE_CREDENTIALS_JSON.strip()
+            and self.GOOGLE_DRIVE_FOLDER_ID.strip()
+        )
+
     def get_admin_emails(self) -> set[str]:
         """Lowercased set of always-admin emails parsed from ADMIN_EMAILS."""
         raw = (self.ADMIN_EMAILS or "").replace(",", " ")

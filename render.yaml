@@ -55,6 +55,19 @@ services:
         sync: false
       - key: ADMIN_EMAILS
         sync: false
+      # ---- Google Drive sync (Service Account) ----
+      # Server-to-server mirroring of DB snapshots + attachments into the Drive
+      # folder GOOGLE_DRIVE_FOLDER_ID (shared with the Service Account's
+      # client_email). Values are managed in the Render dashboard (sync:false).
+      #  • GOOGLE_DRIVE_ENABLED   — "true" to switch the sync on.
+      #  • GOOGLE_CREDENTIALS_JSON — the Service Account key JSON (raw or base64).
+      #  • GOOGLE_DRIVE_FOLDER_ID  — destination folder id (the sync root).
+      - key: GOOGLE_DRIVE_ENABLED
+        sync: false
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
     healthCheckPath: /health
     autoDeploy: true
 

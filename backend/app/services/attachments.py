@@ -33,19 +33,34 @@ def storage_dir(account_no: str, facility_id: str = "") -> Path:
     return UPLOAD_DIR / acc / fac
 
 
+def save_bytes_sync(account_no: str, facility_id: str, filename: str, data: bytes) -> tuple[str, int, str]:
+    """Persist already-read bytes under the customer/facility folder.
+
+    Returns ``(relative_path, size_bytes, stored_filename)``. Used when the caller
+    needs the bytes for more than just disk (e.g. to also mirror to Drive) and has
+    therefore already read the UploadFile.
+    """
+    folder = storage_dir(account_no, facility_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    original = _safe(filename or "file", "file")
+    stored = f"{uuid.uuid4().hex[:12]}_{original}"
+    dest = folder / stored
+    dest.write_bytes(data)
+    return str(dest.relative_to(UPLOAD_DIR)), len(data), stored
+
+
+async def save_bytes(account_no: str, facility_id: str, filename: str, data: bytes) -> tuple[str, int, str]:
+    """Async-friendly wrapper around :func:`save_bytes_sync`."""
+    return save_bytes_sync(account_no, facility_id, filename, data)
+
+
 async def save_upload(account_no: str, facility_id: str, upload) -> tuple[str, int, str]:
     """Persist an UploadFile under the customer/facility folder.
 
     Returns ``(relative_path, size_bytes, stored_filename)``.
     """
-    folder = storage_dir(account_no, facility_id)
-    folder.mkdir(parents=True, exist_ok=True)
-    original = _safe(getattr(upload, "filename", "") or "file", "file")
-    stored = f"{uuid.uuid4().hex[:12]}_{original}"
-    dest = folder / stored
     data = await upload.read()
-    dest.write_bytes(data)
-    return str(dest.relative_to(UPLOAD_DIR)), len(data), stored
+    return save_bytes_sync(account_no, facility_id, getattr(upload, "filename", "") or "file", data)
 
 
 def resolve(file_path: str) -> Path | None:

@@ -930,8 +930,16 @@ async def upload_attachment(
     user=Depends(require_editor),
 ):
     """Upload a document, store it on disk under the customer/facility folder and
-    record its metadata (scoped to a facility + checklist row, or shared)."""
-    rel, size, stored = await attachments_store.save_upload(account_no, facility_id, file)
+    record its metadata (scoped to a facility + checklist row, or shared).
+
+    When Google Drive sync is enabled the bytes are also mirrored to Drive, filed
+    under attachments/cust-<acc>/fac-<fac> with a traceable name. The Drive push is
+    best-effort and never blocks/fails the local upload.
+    """
+    data = await file.read()
+    rel, size, stored = await attachments_store.save_bytes(
+        account_no, facility_id, file.filename, data
+    )
     aid = f"A-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     a = Attachment(
         id=aid, account_no=account_no, facility_id=(facility_id or "")[:60],
@@ -943,6 +951,22 @@ async def upload_attachment(
     )
     db.add(a)
     await db.commit()
+
+    # Mirror to Google Drive (best-effort; a Drive failure must not fail the upload).
+    try:
+        from app.services import drive_sync
+
+        if drive_sync.is_enabled():
+            await drive_sync.sync_attachment(
+                account_no=account_no,
+                facility_id=facility_id or "",
+                original_name=file.filename or stored,
+                data=data,
+                mimetype=file.content_type or "application/octet-stream",
+            )
+    except Exception:  # noqa: BLE001 - Drive sync is strictly best-effort
+        pass
+
     return _attachment_dict(a)
 
 
@@ -1175,42 +1199,38 @@ async def daily_log(
 async def backup_export(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     """Export all CRM business data (excludes users/personal notes) as JSON."""
     import json as _json
-    from app.models.security import Security
-    from app.models.general import GeneralProfile, GeneralChecklist, GeneralChecklistItem
+    from app.services.backup import build_backup_payload
 
-    def _ser(o) -> dict:
-        row = {}
-        for c in o.__table__.columns:
-            v = getattr(o, c.name)
-            if isinstance(v, Decimal):
-                v = float(v)
-            elif hasattr(v, "value"):
-                v = v.value
-            elif hasattr(v, "isoformat"):
-                v = v.isoformat()
-            row[c.name] = v
-        return row
-
-    data: dict = {}
-    targets = {
-        "customers": Customer, "facilities": Facility, "customer_profiles": CustomerProfile,
-        "guarantors": Guarantor, "securities": Security, "mortgaged_properties": MortgagedProperty,
-        "fixed_deposits": FixedDeposit, "partners": Partner, "checklist_progress": ChecklistProgress,
-        "facility_checklists": FacilityChecklist, "custom_tasks": CustomTask, "customer_notes": CustomerNote,
-        "journal_entries": JournalEntry, "attachments": Attachment, "general_profiles": GeneralProfile,
-        "general_checklists": GeneralChecklist, "general_checklist_items": GeneralChecklistItem,
-    }
-    for name, model in targets.items():
-        try:
-            objs = (await db.execute(select(model))).scalars().all()
-            data[name] = [_ser(o) for o in objs]
-        except Exception as exc:  # pragma: no cover - defensive
-            data[name] = {"error": str(exc)[:120]}
-
-    payload = {"generated": datetime.utcnow().isoformat() + "Z", "counts": {k: (len(v) if isinstance(v, list) else 0) for k, v in data.items()}, "data": data}
+    payload = await build_backup_payload(db)
     content = _json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return Response(
         content=content, media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="allin1-backup-{stamp}.json"'},
     )
+
+
+# ===========================================================================
+# Google Drive sync — push the DB snapshot (and, automatically, attachments) to
+# the configured Drive folder. Admin-only. Both endpoints degrade gracefully when
+# Drive sync is disabled/unconfigured (no crash, clear status).
+# ===========================================================================
+@router.get("/backup/drive/status")
+async def drive_sync_status(user=Depends(require_admin)):
+    """Report Drive sync configuration and verify the Service Account connects."""
+    from app.services import drive_sync
+
+    return await drive_sync.status()
+
+
+@router.post("/backup/drive/sync")
+async def drive_sync_now(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
+    """Trigger an immediate full DB snapshot sync to Drive."""
+    from app.services import drive_sync
+
+    result = await drive_sync.sync_database_snapshot(db, reason="manual")
+    if not result.get("ok"):
+        # 409 when sync is simply switched off; 502 when an upstream Drive call failed.
+        code = 409 if result.get("skipped") else 502
+        raise HTTPException(status_code=code, detail=result)
+    return result
