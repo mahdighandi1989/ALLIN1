@@ -188,6 +188,128 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestDailyLogAndBackup:
+    async def test_daily_log_smart_routing(self, client: AsyncClient, auth_headers: dict, db_session):
+        from app.models.customer import Customer, AccountType, CustomerStatus
+        c = Customer(account_no="182255", name="Six Digit Co", account_type=AccountType.CORPORATE, status=CustomerStatus.ACTIVE)
+        db_session.add(c)
+        await db_session.commit()
+
+        text = "Followed up 182255 re renewal; amount 500000 AED received; ref 999999"
+        r = await client.post("/api/crm/daily-log", headers=auth_headers, json={"text": text})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "182255" in body["accounts_found"]
+        assert "500000" not in body["accounts_found"]      # amount (followed by AED), not an account
+        assert any(x["account_no"] == "182255" for x in body["routed"])
+        assert "999999" in body["unknown_accounts"]         # 6-digit but no such customer
+
+        d = await client.get(f"/api/customers/{c.id}/detail", headers=auth_headers)
+        assert any("renewal" in (t["task_name"] or "") for t in d.json()["tasks"])
+
+    async def test_backup_export_admin_only(self, client: AsyncClient, auth_headers: dict, admin_headers: dict, test_customer: Customer):
+        assert (await client.get("/api/crm/backup/export.json", headers=auth_headers)).status_code == 403
+        r = await client.get("/api/crm/backup/export.json", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.headers.get("content-type", "").startswith("application/json")
+        body = r.json()
+        assert "data" in body and "customers" in body["data"]
+        assert any(c["account_no"] == test_customer.account_no for c in body["data"]["customers"])
+
+
+class TestPersonalNotes:
+    async def test_crud(self, client: AsyncClient, auth_headers: dict):
+        a = await client.post("/api/personal/notes", headers=auth_headers, json={"content": "call client", "category": "Today"})
+        assert a.status_code == 200, a.text
+        nid = a.json()["id"]
+        assert any(x["id"] == nid for x in (await client.get("/api/personal/notes", headers=auth_headers)).json()["items"])
+        u = await client.patch(f"/api/personal/notes/{nid}", headers=auth_headers, json={"is_done": True})
+        assert u.json()["is_done"] is True
+        assert (await client.delete(f"/api/personal/notes/{nid}", headers=auth_headers)).status_code == 200
+
+    async def test_user_scoped(self, client: AsyncClient, auth_headers: dict, admin_headers: dict):
+        a = await client.post("/api/personal/notes", headers=auth_headers, json={"content": "mine only"})
+        nid = a.json()["id"]
+        adm = await client.get("/api/personal/notes", headers=admin_headers)
+        assert not any(x["id"] == nid for x in adm.json()["items"])  # admin can't see editor's note
+        assert (await client.patch(f"/api/personal/notes/{nid}", headers=admin_headers, json={"is_done": True})).status_code == 404
+
+    async def test_requires_auth(self, client: AsyncClient):
+        assert (await client.get("/api/personal/notes")).status_code == 401
+
+    async def test_send_email_without_smtp_400(self, client: AsyncClient, auth_headers: dict):
+        await client.post("/api/personal/notes", headers=auth_headers, json={"content": "x"})
+        r = await client.post("/api/personal/notes/send-email", headers=auth_headers)
+        assert r.status_code == 400
+
+
+class TestGeneralProfiles:
+    async def test_profile_checklist_item_flow(self, client: AsyncClient, auth_headers: dict):
+        p = await client.post("/api/general/profiles", headers=auth_headers, json={"title": "Recurring KYC reviews", "category": "Ops"})
+        assert p.status_code == 200, p.text
+        pid = p.json()["id"]
+        assert any(x["id"] == pid for x in (await client.get("/api/general/profiles", headers=auth_headers)).json()["items"])
+
+        c = await client.post(f"/api/general/profiles/{pid}/checklists", headers=auth_headers, json={"title": "Monthly"})
+        cid = c.json()["id"]
+        i1 = await client.post(f"/api/general/checklists/{cid}/items", headers=auth_headers, json={"text": "Check expiries"})
+        iid = i1.json()["id"]
+
+        u = await client.patch(f"/api/general/items/{iid}", headers=auth_headers, json={"is_done": True})
+        assert u.json()["is_done"] is True
+
+        cls = await client.get(f"/api/general/profiles/{pid}/checklists", headers=auth_headers)
+        chk = cls.json()["checklists"][0]
+        assert chk["id"] == cid and chk["items"][0]["is_done"] is True
+
+        assert (await client.delete(f"/api/general/items/{iid}", headers=auth_headers)).status_code == 200
+        assert (await client.delete(f"/api/general/checklists/{cid}", headers=auth_headers)).status_code == 200
+        assert (await client.delete(f"/api/general/profiles/{pid}", headers=auth_headers)).status_code == 200
+        assert not any(x["id"] == pid for x in (await client.get("/api/general/profiles", headers=auth_headers)).json()["items"])
+
+    async def test_requires_auth(self, client: AsyncClient):
+        assert (await client.get("/api/general/profiles")).status_code == 401
+
+    async def test_title_required(self, client: AsyncClient, auth_headers: dict):
+        assert (await client.post("/api/general/profiles", headers=auth_headers, json={"category": "x"})).status_code == 422
+
+
+class TestSummaryPdf:
+    async def test_export_pdf(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, test_facility):
+        r = await client.get(f"/api/crm/summary/{test_customer.account_no}/export.pdf", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        ct = r.headers.get("content-type", "")
+        assert ct.startswith("application/pdf") or ct.startswith("text/html")
+        assert r.content[:4] == b"%PDF" or r.content[:9].lower() == b"<!doctype"
+        assert "credit-summary" in r.headers.get("content-disposition", "")
+
+    async def test_missing_customer_returns_404(self, client: AsyncClient, auth_headers: dict):
+        r = await client.get("/api/crm/summary/NOPE/export.pdf", headers=auth_headers)
+        assert r.status_code == 404
+
+
+class TestExpiryScan:
+    async def test_scan_raises_facility_alert_task(self, client: AsyncClient, auth_headers: dict, admin_headers: dict, test_customer: Customer, test_facility):
+        # test_facility expires 2024-12-31 (past) -> inside the alert window
+        r = await client.post("/api/crm/run-expiry-scan", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["facilities"] >= 1 and r.json()["total"] >= 1
+
+        d = await client.get(f"/api/customers/{test_customer.id}/detail", headers=auth_headers)
+        alerts = [t for t in d.json()["tasks"] if "expire" in (t["task_name"] or "").lower() and t["priority"] == "High"]
+        assert alerts, "expiry alert task not found on the customer"
+
+        # idempotent — a second scan refreshes, never duplicates
+        await client.post("/api/crm/run-expiry-scan", headers=admin_headers)
+        d2 = await client.get(f"/api/customers/{test_customer.id}/detail", headers=auth_headers)
+        alerts2 = [t for t in d2.json()["tasks"] if "expire" in (t["task_name"] or "").lower()]
+        assert len(alerts2) == len(alerts)
+
+    async def test_requires_admin(self, client: AsyncClient, auth_headers: dict):
+        r = await client.post("/api/crm/run-expiry-scan", headers=auth_headers)
+        assert r.status_code == 403
+
+
 class TestAttachments:
     async def test_upload_download_delete(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, tmp_path, monkeypatch):
         from app.services import attachments as store

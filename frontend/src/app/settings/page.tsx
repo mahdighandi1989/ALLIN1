@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { settingsApi, fxApi, crmApi, parseApiError } from '@/lib/api'
+import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
 import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw } from 'lucide-react'
@@ -21,6 +21,20 @@ export default function SettingsPage() {
   const [savingFx, setSavingFx] = useState(false)
   const [mergeInfo, setMergeInfo] = useState<any>(null)
   const [merging, setMerging] = useState(false)
+  const [scanInfo, setScanInfo] = useState<any>(null)
+  const [scanning, setScanning] = useState(false)
+  const runScan = async () => {
+    setScanning(true)
+    try {
+      const r = await crmApi.runExpiryScan()
+      setScanInfo(r)
+      toast.success(`Expiry scan: ${r.total} alert(s) (${r.facilities} facilities, ${r.documents} documents)`)
+    } catch (e) { toast.error(parseApiError(e)) } finally { setScanning(false) }
+  }
+  const downloadBackup = async () => {
+    try { await downloadFile('/api/crm/backup/export.json', 'allin1-backup.json') }
+    catch (e) { toast.error(parseApiError(e)) }
+  }
 
   const isAdmin = authDisabled || !!user?.is_admin
 
@@ -188,6 +202,40 @@ export default function SettingsPage() {
             <button onClick={runMerge} disabled={merging} type="button"
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
               <RefreshCw size={16} className={merging ? 'animate-spin' : ''} /> {merging ? 'Merging…' : 'Run data merge now'}
+            </button>
+          </div>
+        )}
+
+        {/* Expiry alert scan (admin) */}
+        {isAdmin && (
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h3 className="font-medium flex items-center gap-2 mb-1"><RefreshCw size={16} /> Expiry alert scan</h3>
+            <p className="text-sm text-gray-500 mb-3">تسهیلات و مدارکی که ظرفِ «Expiry warning window» منقضی می‌شوند را به‌صورتِ تسکِ هشدار (اولویت High) در لیستِ کارهای همان مشتری ثبت می‌کند. خودکار در startup اجرا می‌شود؛ این دکمه برای اجرای دستی است.</p>
+            {scanInfo && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
+                {Object.entries(scanInfo).map(([k, v]) => (
+                  <div key={k} className="bg-gray-50 rounded p-2">
+                    <div className="text-gray-400 text-xs">{k.replace(/_/g, ' ')}</div>
+                    <div className="font-bold tabular-nums">{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={runScan} disabled={scanning} type="button"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">
+              <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} /> {scanning ? 'Scanning…' : 'Run expiry scan now'}
+            </button>
+          </div>
+        )}
+
+        {/* Backup export (admin) */}
+        {isAdmin && (
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Backup export</h3>
+            <p className="text-sm text-gray-500 mb-3">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON دانلود می‌کند تا نگه‌داری یا بازیابی شود.</p>
+            <button onClick={downloadBackup} type="button"
+              className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900">
+              <Database size={16} /> Download backup (JSON)
             </button>
           </div>
         )}

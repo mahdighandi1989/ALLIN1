@@ -28,4 +28,9 @@ EDITABLE_SETTINGS = {
     "default_currency": {"default": "AED", "label": "Default currency", "type": "text"},
     "expiry_warning_days": {"default": "30", "label": "Expiry warning window (days)", "type": "number"},
     "dashboard_recent_limit": {"default": "5", "label": "Recent items on dashboard", "type": "number"},
+    # Personal-notes email (the Excel SendUnsentNotesToEmail): where to send the
+    # digest, a permanent key stamped in the body, and a signature footer.
+    "personal_notes_email": {"default": "", "label": "Personal notes — email to", "type": "text"},
+    "personal_notes_key": {"default": "", "label": "Personal notes — email key", "type": "text"},
+    "personal_notes_signature": {"default": "", "label": "Personal notes — email signature", "type": "text"},
 }

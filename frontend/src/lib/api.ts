@@ -270,6 +270,14 @@ export const crmApi = {
     const { data } = await api.get('/api/crm/merge-status')
     return data
   },
+  async runExpiryScan(): Promise<{ warning_days: number; facilities: number; documents: number; total: number }> {
+    const { data } = await api.post('/api/crm/run-expiry-scan')
+    return data
+  },
+  async dailyLog(text: string, followup_date = ''): Promise<{ accounts_found: string[]; routed: any[]; unknown_accounts: string[] }> {
+    const { data } = await api.post('/api/crm/daily-log', { text, followup_date })
+    return data
+  },
   async addNote(accountNo: string, body: { title?: string; content: string; category?: string; reminder_date?: string }): Promise<any> {
     const { data } = await api.post(`/api/crm/notes/${encodeURIComponent(accountNo)}`, body)
     return data
@@ -337,6 +345,70 @@ export const crmApi = {
   },
   async deleteAttachment(id: string): Promise<void> {
     await api.delete(`/api/crm/attachments/${encodeURIComponent(id)}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// General (non-account) profiles + checklists (A7)
+// ---------------------------------------------------------------------------
+export const generalApi = {
+  async listProfiles(): Promise<{ items: any[]; total: number }> {
+    const { data } = await api.get('/api/general/profiles')
+    return data
+  },
+  async createProfile(body: { title: string; category?: string }): Promise<any> {
+    const { data } = await api.post('/api/general/profiles', body)
+    return data
+  },
+  async deleteProfile(id: string): Promise<void> {
+    await api.delete(`/api/general/profiles/${encodeURIComponent(id)}`)
+  },
+  async listChecklists(profileId: string): Promise<{ profile_id: string; checklists: any[] }> {
+    const { data } = await api.get(`/api/general/profiles/${encodeURIComponent(profileId)}/checklists`)
+    return data
+  },
+  async createChecklist(profileId: string, body: { title: string }): Promise<any> {
+    const { data } = await api.post(`/api/general/profiles/${encodeURIComponent(profileId)}/checklists`, body)
+    return data
+  },
+  async deleteChecklist(id: string): Promise<void> {
+    await api.delete(`/api/general/checklists/${encodeURIComponent(id)}`)
+  },
+  async addItem(checklistId: string, body: { text: string }): Promise<any> {
+    const { data } = await api.post(`/api/general/checklists/${encodeURIComponent(checklistId)}/items`, body)
+    return data
+  },
+  async updateItem(id: string, body: { is_done?: boolean; text?: string }): Promise<any> {
+    const { data } = await api.patch(`/api/general/items/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteItem(id: string): Promise<void> {
+    await api.delete(`/api/general/items/${encodeURIComponent(id)}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Personal (private, per-user) notes + email digest (A8/A11/A16)
+// ---------------------------------------------------------------------------
+export const personalApi = {
+  async list(): Promise<{ items: any[]; total: number }> {
+    const { data } = await api.get('/api/personal/notes')
+    return data
+  },
+  async add(body: { content: string; category?: string }): Promise<any> {
+    const { data } = await api.post('/api/personal/notes', body)
+    return data
+  },
+  async update(id: string, body: { is_done?: boolean; content?: string }): Promise<any> {
+    const { data } = await api.patch(`/api/personal/notes/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/api/personal/notes/${encodeURIComponent(id)}`)
+  },
+  async sendEmail(): Promise<{ ok: boolean; sent: number; to?: string; message?: string }> {
+    const { data } = await api.post('/api/personal/notes/send-email')
+    return data
   },
 }
 
