@@ -35,6 +35,9 @@ from app.models.security import Security  # noqa: F401  (register table for crea
 from app.models.crm import (  # noqa: F401
     CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
 )
+from app.models.profile_entities import (  # noqa: F401  (register tables for create_all)
+    MortgagedProperty, FixedDeposit, Partner,
+)
 
 logger = logging.getLogger(__name__)
 

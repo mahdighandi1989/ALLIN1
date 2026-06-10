@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
 from app.models.guarantor import Guarantor
+from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.routers.auth import require_editor, require_admin
@@ -524,3 +525,262 @@ async def add_note(
         "category": n.category, "priority": n.priority, "created_by": n.created_by,
         "created_date": n.created_date, "reminder_date": n.reminder_date,
     }
+
+
+# ===========================================================================
+# Profile child records — mortgaged properties, fixed deposits, partners.
+# Per-customer (account_no-keyed) STRUCTURED data the legacy PF_* profile held
+# and requirement A12 (sheet «پرامپت») asks to capture. Each supports
+# add / edit / soft-delete; they are listed by GET /api/customers/{id}/detail.
+# ===========================================================================
+from decimal import Decimal
+
+# Columns that hold money/amounts (assigned as-is; everything else is a string
+# truncated to its column width).
+_NUMERIC_CHILD_FIELDS = {"valuation", "mortgage_amount", "amount"}
+
+
+def _new_child_id(prefix: str, account_no: str) -> str:
+    return f"{prefix}-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
+
+
+def _child_dict(obj) -> dict:
+    """JSON-friendly view of a child row (Decimal -> float, drop created_at)."""
+    out = {}
+    for col in obj.__table__.columns:
+        if col.name == "created_at":
+            continue
+        v = getattr(obj, col.name)
+        out[col.name] = float(v) if isinstance(v, Decimal) else v
+    return out
+
+
+def _apply_child_fields(obj, data: dict, allowed: set) -> None:
+    """Assign provided (exclude_unset) fields: numerics as-is, strings truncated
+    to the column width so an over-long value can never overflow the column."""
+    cols = obj.__table__.columns
+    for k, v in data.items():
+        if k not in allowed or v is None:
+            continue
+        if k in _NUMERIC_CHILD_FIELDS:
+            setattr(obj, k, v)
+            continue
+        col = cols.get(k)
+        maxlen = getattr(getattr(col, "type", None), "length", None) if col is not None else None
+        s = str(v)
+        setattr(obj, k, s[:maxlen] if maxlen else s)
+
+
+async def _add_child(db, model, prefix, account_no, data, allowed, user):
+    obj = model(
+        id=_new_child_id(prefix, account_no),
+        account_no=account_no,
+        date_added=date.today().isoformat(),
+        created_by=getattr(user, "username", "") or "",
+    )
+    _apply_child_fields(obj, data, allowed)
+    db.add(obj)
+    await db.commit()
+    return _child_dict(obj)
+
+
+async def _update_child(db, model, item_id, data, allowed):
+    obj = (await db.execute(select(model).where(model.id == item_id))).scalar_one_or_none()
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    _apply_child_fields(obj, data, allowed)
+    await db.commit()
+    return _child_dict(obj)
+
+
+async def _delete_child(db, model, item_id):
+    obj = (await db.execute(select(model).where(model.id == item_id))).scalar_one_or_none()
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    obj.is_deleted = True
+    await db.commit()
+    return {"ok": True, "id": item_id, "deleted": True}
+
+
+# ---- Mortgaged properties (A12) ----
+_PROPERTY_FIELDS = {
+    "country", "plate_no", "mortgage_deed_no", "city", "address", "prop_type",
+    "building_age", "land_area", "cnbc", "valuation", "valuation_currency",
+    "insurance_expiry", "insurance_no", "last_valuation_date", "mortgage_date",
+    "mortgage_amount", "remarks",
+}
+
+
+class PropertyCreate(BaseModel):
+    country: str = ""
+    plate_no: str = ""
+    mortgage_deed_no: str = ""
+    city: str = ""
+    address: str = ""
+    prop_type: str = ""
+    building_age: str = ""
+    land_area: str = ""
+    cnbc: str = ""
+    valuation: Optional[float] = None
+    valuation_currency: str = "AED"
+    insurance_expiry: str = ""
+    insurance_no: str = ""
+    last_valuation_date: str = ""
+    mortgage_date: str = ""
+    mortgage_amount: Optional[float] = None
+    remarks: str = ""
+
+
+class PropertyUpdate(BaseModel):
+    country: Optional[str] = None
+    plate_no: Optional[str] = None
+    mortgage_deed_no: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    prop_type: Optional[str] = None
+    building_age: Optional[str] = None
+    land_area: Optional[str] = None
+    cnbc: Optional[str] = None
+    valuation: Optional[float] = None
+    valuation_currency: Optional[str] = None
+    insurance_expiry: Optional[str] = None
+    insurance_no: Optional[str] = None
+    last_valuation_date: Optional[str] = None
+    mortgage_date: Optional[str] = None
+    mortgage_amount: Optional[float] = None
+    remarks: Optional[str] = None
+
+
+@router.post("/properties/{account_no}")
+async def add_property(
+    account_no: str, payload: PropertyCreate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Add a mortgaged property to a customer's profile."""
+    return await _add_child(
+        db, MortgagedProperty, "PROP", account_no,
+        payload.model_dump(exclude_unset=True), _PROPERTY_FIELDS, user,
+    )
+
+
+@router.patch("/properties/{item_id}")
+async def update_property(
+    item_id: str, payload: PropertyUpdate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Edit a mortgaged property."""
+    return await _update_child(
+        db, MortgagedProperty, item_id, payload.model_dump(exclude_unset=True), _PROPERTY_FIELDS,
+    )
+
+
+@router.delete("/properties/{item_id}")
+async def delete_property(
+    item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Remove (soft-delete) a mortgaged property."""
+    return await _delete_child(db, MortgagedProperty, item_id)
+
+
+# ---- Fixed deposits (A12) ----
+_FD_FIELDS = {"fd_number", "amount", "currency", "open_date", "maturity_date", "rate", "remarks"}
+
+
+class FixedDepositCreate(BaseModel):
+    fd_number: str = ""
+    amount: Optional[float] = None
+    currency: str = "AED"
+    open_date: str = ""
+    maturity_date: str = ""
+    rate: str = ""
+    remarks: str = ""
+
+
+class FixedDepositUpdate(BaseModel):
+    fd_number: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    open_date: Optional[str] = None
+    maturity_date: Optional[str] = None
+    rate: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.post("/fixed-deposits/{account_no}")
+async def add_fixed_deposit(
+    account_no: str, payload: FixedDepositCreate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Add a fixed deposit to a customer's profile."""
+    return await _add_child(
+        db, FixedDeposit, "FD", account_no,
+        payload.model_dump(exclude_unset=True), _FD_FIELDS, user,
+    )
+
+
+@router.patch("/fixed-deposits/{item_id}")
+async def update_fixed_deposit(
+    item_id: str, payload: FixedDepositUpdate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Edit a fixed deposit."""
+    return await _update_child(
+        db, FixedDeposit, item_id, payload.model_dump(exclude_unset=True), _FD_FIELDS,
+    )
+
+
+@router.delete("/fixed-deposits/{item_id}")
+async def delete_fixed_deposit(
+    item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Remove (soft-delete) a fixed deposit."""
+    return await _delete_child(db, FixedDeposit, item_id)
+
+
+# ---- Partners / shareholders ----
+_PARTNER_FIELDS = {"name", "nationality", "share", "remarks"}
+
+
+class PartnerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    nationality: str = ""
+    share: str = ""
+    remarks: str = ""
+
+
+class PartnerUpdate(BaseModel):
+    name: Optional[str] = None
+    nationality: Optional[str] = None
+    share: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@router.post("/partners/{account_no}")
+async def add_partner(
+    account_no: str, payload: PartnerCreate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Add a partner / shareholder to a customer's profile."""
+    return await _add_child(
+        db, Partner, "PTNR", account_no,
+        payload.model_dump(exclude_unset=True), _PARTNER_FIELDS, user,
+    )
+
+
+@router.patch("/partners/{item_id}")
+async def update_partner(
+    item_id: str, payload: PartnerUpdate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Edit a partner / shareholder."""
+    return await _update_child(
+        db, Partner, item_id, payload.model_dump(exclude_unset=True), _PARTNER_FIELDS,
+    )
+
+
+@router.delete("/partners/{item_id}")
+async def delete_partner(
+    item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Remove (soft-delete) a partner / shareholder."""
+    return await _delete_child(db, Partner, item_id)
