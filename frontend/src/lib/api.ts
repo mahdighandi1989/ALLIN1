@@ -270,6 +270,10 @@ export const crmApi = {
     const { data } = await api.get('/api/crm/merge-status')
     return data
   },
+  async runExpiryScan(): Promise<{ warning_days: number; facilities: number; documents: number; total: number }> {
+    const { data } = await api.post('/api/crm/run-expiry-scan')
+    return data
+  },
   async addNote(accountNo: string, body: { title?: string; content: string; category?: string; reminder_date?: string }): Promise<any> {
     const { data } = await api.post(`/api/crm/notes/${encodeURIComponent(accountNo)}`, body)
     return data

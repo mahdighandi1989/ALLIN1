@@ -403,6 +403,19 @@ async def run_merge(user=Depends(require_admin)):
     return {"ok": True, "report": report}
 
 
+@router.api_route("/run-expiry-scan", methods=["GET", "POST"])
+async def run_expiry_scan_endpoint(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_admin),
+):
+    """Scan facilities + KYC documents and raise/refresh expiry alert tasks
+    (the Excel CheckAllExpiriesAndCreateAlerts). Consumes the
+    `expiry_warning_days` setting. Accepts GET so an admin can run it from the
+    browser address bar too."""
+    from app.services.expiry import run_expiry_scan
+    return await run_expiry_scan(db)
+
+
 @router.get("/merge-status")
 async def merge_status(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
     """Row counts of the merged CRM tables (to verify the merge landed)."""

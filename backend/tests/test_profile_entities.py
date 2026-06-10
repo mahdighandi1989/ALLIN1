@@ -188,6 +188,28 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestExpiryScan:
+    async def test_scan_raises_facility_alert_task(self, client: AsyncClient, auth_headers: dict, admin_headers: dict, test_customer: Customer, test_facility):
+        # test_facility expires 2024-12-31 (past) -> inside the alert window
+        r = await client.post("/api/crm/run-expiry-scan", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["facilities"] >= 1 and r.json()["total"] >= 1
+
+        d = await client.get(f"/api/customers/{test_customer.id}/detail", headers=auth_headers)
+        alerts = [t for t in d.json()["tasks"] if "expire" in (t["task_name"] or "").lower() and t["priority"] == "High"]
+        assert alerts, "expiry alert task not found on the customer"
+
+        # idempotent — a second scan refreshes, never duplicates
+        await client.post("/api/crm/run-expiry-scan", headers=admin_headers)
+        d2 = await client.get(f"/api/customers/{test_customer.id}/detail", headers=auth_headers)
+        alerts2 = [t for t in d2.json()["tasks"] if "expire" in (t["task_name"] or "").lower()]
+        assert len(alerts2) == len(alerts)
+
+    async def test_requires_admin(self, client: AsyncClient, auth_headers: dict):
+        r = await client.post("/api/crm/run-expiry-scan", headers=auth_headers)
+        assert r.status_code == 403
+
+
 class TestAttachments:
     async def test_upload_download_delete(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, tmp_path, monkeypatch):
         from app.services import attachments as store

@@ -912,6 +912,14 @@ async def init_database() -> None:
     # so they are kept and filled rather than removed. (cleanup_empty_facilities
     # remains available but is intentionally not called.)
     await refresh_expiry_notifications()
+    # Raise/refresh expiry alert TASKS on each customer (idempotent; consumes the
+    # expiry_warning_days setting). The web equivalent of the Excel expiry macro.
+    try:
+        from app.services.expiry import run_expiry_scan
+        async with AsyncSessionLocal() as session:
+            await run_expiry_scan(session)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Expiry alert scan skipped: %s", exc)
     # Currency exchange rates (default table on first run).
     try:
         from app.services.fx import seed_default_rates
