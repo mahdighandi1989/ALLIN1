@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, crmApi, parseApiError } from '@/lib/api'
+import { customersApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
@@ -50,6 +50,8 @@ function CustomerDetailInner() {
   const [npt, setNpt] = useState<any>({})
   const [chkFacility, setChkFacility] = useState('')  // '' = account-level checklist
   const [comp, setComp] = useState<any>(null)
+  const [upFile, setUpFile] = useState<File | null>(null)
+  const [upOpts, setUpOpts] = useState<any>({ facility_id: '', row_index: '', is_shared: false })
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -185,6 +187,28 @@ function CustomerDetailInner() {
       const c = await crmApi.completeness(acc)
       setComp(c)
       setData((d: any) => ({ ...d, profile: { ...(d.profile || { account_no: acc }), profile_completeness: `${c.percent}%` } }))
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const doUpload = async () => {
+    if (!upFile) { toast.error('Choose a file'); return }
+    try {
+      const a = await crmApi.uploadAttachment(acc, upFile, upOpts)
+      setData((d: any) => ({ ...d, attachments: [a, ...(d.attachments || [])] }))
+      setUpFile(null); setUpOpts({ facility_id: '', row_index: '', is_shared: false })
+      toast.success('Document uploaded')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const openAttachment = async (a: any) => {
+    try {
+      await downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name || a.file_name || 'document')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const removeAttachment = async (aid: string) => {
+    if (!confirm('Remove this document?')) return
+    try {
+      await crmApi.deleteAttachment(aid)
+      setData((d: any) => ({ ...d, attachments: (d.attachments || []).filter((a: any) => a.id !== aid) }))
+      toast.success('Document removed')
     } catch (e) { toast.error(parseApiError(e)) }
   }
   const addNote = async () => {
@@ -718,10 +742,43 @@ function CustomerDetailInner() {
 
       {tab === 'attachments' && (
         <Section title={`Documents (${attachments.length})`}>
-          <SimpleTable head={['Document', 'Uploaded', 'By', 'Size', 'Shared']}
-            rows={attachments.map((a: any) => [a.original_name || a.file_name, (a.upload_date || '').slice(0, 10), a.uploaded_by, a.file_size ? `${Math.round(Number(a.file_size) / 1024)} KB` : '—', done(a.is_shared) ? 'Yes' : 'No'])}
-            empty="No attachments" />
-          <p className="text-xs text-gray-400 mt-2">فایل‌ها روی شبکهٔ بانک (S:) ذخیره‌اند؛ اینجا فقط متادیتا نمایش داده می‌شود.</p>
+          <div className="flex flex-wrap items-center gap-2 mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+            <input type="file" onChange={(e) => setUpFile(e.target.files?.[0] || null)} className="text-sm" />
+            <select value={upOpts.facility_id} onChange={(e) => setUpOpts((s: any) => ({ ...s, facility_id: e.target.value }))}
+              className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm">
+              <option value="">No facility</option>
+              {facilities.map((f: any) => <option key={f.id} value={f.id}>{(f.name || (f.facility_type || '').toUpperCase() || 'Facility')} · {f.id}</option>)}
+            </select>
+            <input value={upOpts.row_index} onChange={(e) => setUpOpts((s: any) => ({ ...s, row_index: e.target.value }))}
+              placeholder="Row (e.g. 11)" className="w-28 border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+            <label className="flex items-center gap-1.5 text-sm text-gray-600">
+              <input type="checkbox" checked={upOpts.is_shared} onChange={(e) => setUpOpts((s: any) => ({ ...s, is_shared: e.target.checked }))} />
+              Shared across checklists
+            </label>
+            <button onClick={doUpload} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium">Upload</button>
+          </div>
+          {attachments.length === 0 ? <Empty>No attachments</Empty> : (
+            <div className="overflow-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Document', 'Facility', 'Row', 'Uploaded', 'By', 'Size', 'Shared', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}</tr></thead>
+                <tbody className="divide-y">
+                  {attachments.map((a: any) => (
+                    <tr key={a.id}>
+                      <td className="px-3 py-1.5"><button onClick={() => openAttachment(a)} type="button" className="text-blue-600 hover:underline">{a.original_name || a.file_name}</button></td>
+                      <td className="px-3 py-1.5">{val(a.facility_id)}</td>
+                      <td className="px-3 py-1.5">{val(a.row_index)}</td>
+                      <td className="px-3 py-1.5">{(a.upload_date || '').slice(0, 10)}</td>
+                      <td className="px-3 py-1.5">{val(a.uploaded_by)}</td>
+                      <td className="px-3 py-1.5">{a.file_size ? `${Math.round(Number(a.file_size) / 1024)} KB` : '—'}</td>
+                      <td className="px-3 py-1.5">{done(a.is_shared) ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-1.5"><button onClick={() => removeAttachment(a.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-xs text-gray-400 mt-2">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همهٔ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
         </Section>
       )}
 

@@ -12,13 +12,15 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
+from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote, Attachment
+from app.services import attachments as attachments_store
 from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
@@ -885,3 +887,82 @@ async def delete_partner(
 ):
     """Remove (soft-delete) a partner / shareholder."""
     return await _delete_child(db, Partner, item_id)
+
+
+# ===========================================================================
+# Document attachments — real per-row / per-checklist upload + download (A10/A15).
+# The file bytes are stored on disk (services.attachments); the row records the
+# metadata, scoped to a facility + checklist row (or shared across checklists).
+# ===========================================================================
+def _attachment_dict(a: Attachment) -> dict:
+    return {
+        "id": a.id, "account_no": a.account_no, "facility_id": a.facility_id,
+        "row_index": a.row_index, "file_name": a.file_name, "original_name": a.original_name,
+        "file_size": a.file_size, "upload_date": a.upload_date, "uploaded_by": a.uploaded_by,
+        "is_shared": a.is_shared, "notes": a.notes,
+    }
+
+
+@router.post("/attachments/{account_no}")
+async def upload_attachment(
+    account_no: str,
+    file: UploadFile = File(...),
+    facility_id: str = Form(""),
+    row_index: str = Form(""),
+    is_shared: bool = Form(False),
+    notes: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Upload a document, store it on disk under the customer/facility folder and
+    record its metadata (scoped to a facility + checklist row, or shared)."""
+    rel, size, stored = await attachments_store.save_upload(account_no, facility_id, file)
+    aid = f"A-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
+    a = Attachment(
+        id=aid, account_no=account_no, facility_id=(facility_id or "")[:60],
+        row_index=(row_index or "")[:10], file_name=stored[:255],
+        original_name=(file.filename or stored)[:255], file_path=rel,
+        file_size=str(size), upload_date=date.today().isoformat(),
+        uploaded_by=getattr(user, "username", "") or "",
+        is_shared="1" if is_shared else "0", notes=notes or "",
+    )
+    db.add(a)
+    await db.commit()
+    return _attachment_dict(a)
+
+
+@router.get("/attachments/{attachment_id}/download")
+async def download_attachment(
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Stream a stored document back so it actually opens again (fixes A15)."""
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = attachments_store.resolve(a.file_path or "")
+    if path is None:
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(str(path), filename=a.original_name or a.file_name or "document")
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_attachment(
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Remove an attachment record and its stored file."""
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = attachments_store.resolve(a.file_path or "")
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    await db.delete(a)
+    await db.commit()
+    return {"ok": True, "id": attachment_id, "deleted": True}

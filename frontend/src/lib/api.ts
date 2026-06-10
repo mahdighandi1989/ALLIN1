@@ -317,6 +317,27 @@ export const crmApi = {
   async deletePartner(id: string): Promise<void> {
     await api.delete(`/api/crm/partners/${encodeURIComponent(id)}`)
   },
+
+  // ---- Document attachments (real upload / download / delete) ----
+  async uploadAttachment(
+    accountNo: string,
+    file: File,
+    opts: { facility_id?: string; row_index?: string; is_shared?: boolean; notes?: string } = {},
+  ): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    if (opts.facility_id) form.append('facility_id', opts.facility_id)
+    if (opts.row_index) form.append('row_index', opts.row_index)
+    form.append('is_shared', opts.is_shared ? 'true' : 'false')
+    if (opts.notes) form.append('notes', opts.notes)
+    const { data } = await api.post(`/api/crm/attachments/${encodeURIComponent(accountNo)}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async deleteAttachment(id: string): Promise<void> {
+    await api.delete(`/api/crm/attachments/${encodeURIComponent(id)}`)
+  },
 }
 
 // ---------------------------------------------------------------------------

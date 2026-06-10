@@ -188,6 +188,46 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestAttachments:
+    async def test_upload_download_delete(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, tmp_path, monkeypatch):
+        from app.services import attachments as store
+        monkeypatch.setattr(store, "UPLOAD_DIR", tmp_path)
+        acc, cid = test_customer.account_no, test_customer.id
+
+        files = {"file": ("doc.txt", b"hello world", "text/plain")}
+        data = {"facility_id": "F-1", "row_index": "11", "is_shared": "false", "notes": "scan"}
+        r = await client.post(f"/api/crm/attachments/{acc}", headers=auth_headers, files=files, data=data)
+        assert r.status_code == 200, r.text
+        aid = r.json()["id"]
+        assert r.json()["original_name"] == "doc.txt"
+        assert r.json()["facility_id"] == "F-1"
+        assert r.json()["row_index"] == "11"
+
+        # appears in detail.attachments
+        d = await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)
+        assert any(a["id"] == aid for a in d.json()["attachments"])
+
+        # download streams the real bytes back (fixes the Excel A15 'nothing opens')
+        dl = await client.get(f"/api/crm/attachments/{aid}/download", headers=auth_headers)
+        assert dl.status_code == 200
+        assert dl.content == b"hello world"
+
+        # delete removes the record (and the file)
+        x = await client.delete(f"/api/crm/attachments/{aid}", headers=auth_headers)
+        assert x.status_code == 200
+        d2 = await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)
+        assert not any(a["id"] == aid for a in d2.json()["attachments"])
+
+    async def test_download_missing_returns_404(self, client: AsyncClient, auth_headers: dict):
+        r = await client.get("/api/crm/attachments/NOPE/download", headers=auth_headers)
+        assert r.status_code == 404
+
+    async def test_upload_requires_auth(self, client: AsyncClient, test_customer: Customer):
+        files = {"file": ("x.txt", b"x", "text/plain")}
+        r = await client.post(f"/api/crm/attachments/{test_customer.account_no}", files=files)
+        assert r.status_code == 401
+
+
 class TestFacilityCascade:
     async def test_delete_and_restore_cascade(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
         acc, cid = test_customer.account_no, test_customer.id
