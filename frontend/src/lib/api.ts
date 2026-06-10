@@ -28,6 +28,14 @@ import type {
   SettingsResponse,
   EditableSetting,
   FxRates,
+  AIOverview,
+  AIProvider,
+  AIModel,
+  AITaskRoute,
+  AIProviderUpdate,
+  AIModelCreate,
+  AIModelUpdate,
+  AITaskRouteUpdate,
 } from '@/types'
 
 export { api }
@@ -542,6 +550,36 @@ export const settingsApi = {
   },
   async update(values: Record<string, string>): Promise<{ editable: EditableSetting[] }> {
     const { data } = await api.put<{ editable: EditableSetting[] }>('/api/settings/', { values })
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// AI models & providers (the central AI control layer)
+// ---------------------------------------------------------------------------
+export const aiApi = {
+  async overview(): Promise<AIOverview> {
+    const { data } = await api.get<AIOverview>('/api/ai/overview')
+    return data
+  },
+  async updateProvider(key: string, payload: AIProviderUpdate): Promise<AIProvider> {
+    const { data } = await api.put<AIProvider>(`/api/ai/providers/${key}`, payload)
+    return data
+  },
+  async createModel(payload: AIModelCreate): Promise<AIModel> {
+    const { data } = await api.post<AIModel>('/api/ai/models', payload)
+    return data
+  },
+  async updateModel(id: number, payload: AIModelUpdate): Promise<AIModel> {
+    const { data } = await api.put<AIModel>(`/api/ai/models/${id}`, payload)
+    return data
+  },
+  async deleteModel(id: number): Promise<{ deleted: string }> {
+    const { data } = await api.delete<{ deleted: string }>(`/api/ai/models/${id}`)
+    return data
+  },
+  async updateRoute(task: string, payload: AITaskRouteUpdate): Promise<AITaskRoute> {
+    const { data } = await api.put<AITaskRoute>(`/api/ai/routes/${task}`, payload)
     return data
   },
 }

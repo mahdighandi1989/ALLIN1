@@ -469,3 +469,109 @@ export interface FacilityFilters {
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }
+// ---------------------------------------------------------------------------
+// AI models & providers (Settings → AI control layer)
+// ---------------------------------------------------------------------------
+export interface AIProvider {
+  key: string
+  display_name: string
+  enabled: boolean
+  has_api_key: boolean
+  api_key_masked: string | null
+  base_url: string | null
+  env_key: string | null
+  configured: boolean
+  notes: string | null
+  updated_at: string | null
+}
+
+export interface AIModel {
+  id: number
+  model_key: string
+  provider_key: string
+  display_name: string
+  enabled: boolean
+  capabilities: string[]
+  max_output_tokens: number | null
+  context_window: number | null
+  temperature: number | null
+  priority: number
+  input_cost_per_1m: number | null
+  output_cost_per_1m: number | null
+  is_custom: boolean
+  notes: string | null
+  updated_at: string | null
+}
+
+export interface AITaskRoute {
+  task: string
+  model_id: number | null
+  enabled: boolean
+  notes: string | null
+  updated_at: string | null
+}
+
+export interface AITaskType {
+  id: string
+  label: string
+  description: string
+  preferred: string
+}
+
+export interface AICapability {
+  id: string
+  label: string
+}
+
+export interface AIStatus {
+  configured_providers: string[]
+  usable_model_count: number
+  any_available: boolean
+}
+
+export interface AIOverview {
+  providers: AIProvider[]
+  models: AIModel[]
+  routes: AITaskRoute[]
+  tasks: AITaskType[]
+  capabilities: AICapability[]
+  status: AIStatus
+}
+
+export interface AIProviderUpdate {
+  enabled?: boolean
+  api_key?: string
+  base_url?: string
+  notes?: string
+}
+
+export interface AIModelCreate {
+  model_key: string
+  provider_key: string
+  display_name?: string
+  capabilities?: string[]
+  max_output_tokens?: number
+  context_window?: number
+  temperature?: number
+  priority?: number
+  input_cost_per_1m?: number
+  output_cost_per_1m?: number
+  notes?: string
+}
+
+export interface AIModelUpdate {
+  display_name?: string
+  enabled?: boolean
+  capabilities?: string[]
+  max_output_tokens?: number
+  context_window?: number
+  temperature?: number
+  priority?: number
+  notes?: string
+}
+
+export interface AITaskRouteUpdate {
+  model_id?: number | null
+  enabled?: boolean
+  notes?: string
+}

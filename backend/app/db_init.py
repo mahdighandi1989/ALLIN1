@@ -42,6 +42,9 @@ from app.models.general import (  # noqa: F401  (register tables for create_all)
     GeneralProfile, GeneralChecklist, GeneralChecklistItem,
 )
 from app.models.personal import PersonalNote  # noqa: F401  (register table for create_all)
+from app.models.ai_config import (  # noqa: F401  (register tables for create_all)
+    AIProvider, AIModel, AITaskRoute,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -996,3 +999,11 @@ async def init_database() -> None:
         await capture_current_snapshot()
     except Exception as exc:  # pragma: no cover
         logger.error("Snapshot init skipped: %s", exc)
+    # AI control layer: seed the provider/model/route catalog (idempotent). The
+    # panel ships with everything disabled until an admin adds an API key.
+    try:
+        from app.ai.manager import seed_ai_catalog
+        async with AsyncSessionLocal() as session:
+            await seed_ai_catalog(session)
+    except Exception as exc:  # pragma: no cover
+        logger.error("AI catalog seeding skipped: %s", exc)
