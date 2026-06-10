@@ -117,9 +117,164 @@ async def test_model(db: AsyncSession, model_id: int) -> Dict[str, Any]:
     if 200 <= resp.status_code < 300:
         return {"ok": True, "latency_ms": latency_ms,
                 "message": f"OK · {latency_ms} ms", "status_code": resp.status_code}
+
+    detail = _short_error(resp)
+    if resp.status_code == 429:
+        # Rate-limited: the credential is valid (it authenticated), the plan/model
+        # just throttled this request. Surface retry-after so it's not mistaken
+        # for a broken key.
+        retry = resp.headers.get("retry-after")
+        hint = f" — retry in {retry}s" if retry else ""
+        detail = f"rate limited (plan/model quota){hint}. {detail}".strip()
     return {
         "ok": False,
         "latency_ms": latency_ms,
         "status_code": resp.status_code,
-        "message": f"{resp.status_code}: {_short_error(resp)}",
+        "message": f"{resp.status_code}: {detail}",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Live model discovery — pull the provider's current model list and reconcile
+# it into the DB so new models appear and removed ones disappear, instead of
+# relying on the hardcoded catalog. Custom (admin-added) models are preserved.
+# ---------------------------------------------------------------------------
+def _capabilities_for(family: str, model_id: str) -> list:
+    """Heuristic default capabilities for a freshly-discovered model id."""
+    from app.ai.catalog import Capability as C
+    mid = model_id.lower()
+    if family == "anthropic":
+        if "haiku" in mid:
+            return [C.TEXT.value, C.VISION.value, C.FAST.value, C.STRUCTURED_OUTPUT.value]
+        return [C.TEXT.value, C.VISION.value, C.REASONING.value, C.LONG_CONTEXT.value,
+                C.CODE.value, C.STRUCTURED_OUTPUT.value, C.DOCUMENTS.value]
+    if family == "gemini":
+        caps = [C.TEXT.value, C.VISION.value, C.LONG_CONTEXT.value, C.DOCUMENTS.value]
+        if "flash" in mid:
+            caps.append(C.FAST.value)
+        return caps
+    # openai-compatible
+    caps = [C.TEXT.value, C.CODE.value, C.STRUCTURED_OUTPUT.value]
+    if any(x in mid for x in ("4o", "vision", "o1", "o3", "o4")):
+        caps.append(C.VISION.value)
+    if any(x in mid for x in ("mini", "nano", "flash", "haiku", "small")):
+        caps.append(C.FAST.value)
+    return caps
+
+
+async def _fetch_live_models(family: str, base_url: str, key: str, oauth: bool) -> list:
+    """Return ``[(model_id, display_name)]`` from the provider's models API."""
+    if family == "anthropic":
+        url = f"{base_url}/v1/models?limit=1000"
+        headers = {"anthropic-version": "2023-06-01"}
+        if oauth:
+            headers["authorization"] = f"Bearer {key}"
+            headers["anthropic-beta"] = "oauth-2025-04-20"
+        else:
+            headers["x-api-key"] = key
+    elif family == "gemini":
+        url = f"{base_url}/v1beta/models?key={key}&pageSize=1000"
+        headers = {}
+    else:
+        url = f"{base_url}/models"
+        headers = {"authorization": f"Bearer {key}"}
+
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(url, headers=headers)
+    if not (200 <= resp.status_code < 300):
+        raise RuntimeError(f"{resp.status_code}: {_short_error(resp)}")
+    data = resp.json()
+
+    out = []
+    if family == "gemini":
+        for m in data.get("models", []):
+            methods = m.get("supportedGenerationMethods") or []
+            if "generateContent" not in methods:
+                continue
+            mid = str(m.get("name", "")).split("/")[-1]
+            if mid:
+                out.append((mid, m.get("displayName") or mid))
+    else:  # anthropic + openai both use {"data": [...]}
+        for m in data.get("data", []):
+            mid = m.get("id")
+            if mid:
+                out.append((mid, m.get("display_name") or mid))
+    return out
+
+
+async def sync_provider_models(db: AsyncSession, provider_key: str) -> Dict[str, Any]:
+    """Refresh a provider's models from its live API. Reconciles the DB.
+
+    Adds newly-available models, updates display names, and removes
+    catalog/discovered models the provider no longer lists. Admin-added (custom)
+    models are never touched. Never raises — returns ``{ok, ...}``.
+    """
+    from sqlalchemy import select
+    from app.ai import catalog
+
+    provider: Optional[AIProvider] = await db.get(AIProvider, provider_key)
+    if provider is None:
+        return {"ok": False, "message": f"Unknown provider: {provider_key}"}
+    key = ai_manager.effective_api_key(provider)
+    if not key:
+        noun = "token" if provider.auth_scheme == "oauth_bearer" else "API key"
+        return {"ok": False, "message": f"No {noun} configured for {provider.display_name}"}
+
+    base_url = (provider.base_url
+                or catalog.PROVIDER_CATALOG.get(provider.key, {}).get("base_url")
+                or "").rstrip("/")
+    family = _family(provider.key, base_url)
+    oauth = provider.auth_scheme == "oauth_bearer"
+
+    try:
+        live = await _fetch_live_models(family, base_url, key, oauth)
+    except Exception as exc:
+        return {"ok": False, "message": f"Could not list models: {exc}"}
+    if not live:
+        return {"ok": False, "message": "Provider returned no models"}
+
+    existing = (
+        await db.execute(select(AIModel).where(AIModel.provider_key == provider_key))
+    ).scalars().all()
+    by_api_id = {m.api_id: m for m in existing}
+    live_ids = set()
+    added = updated = removed = 0
+
+    for mid, name in live:
+        live_ids.add(mid)
+        m = by_api_id.get(mid)
+        if m is None:
+            db.add(AIModel(
+                model_key=f"{provider_key}:{mid}",
+                api_model_id=mid,
+                provider_key=provider_key,
+                display_name=name,
+                enabled=True,
+                capabilities=_capabilities_for(family, mid),
+                priority=5,
+                source="discovered",
+                is_custom=False,
+            ))
+            added += 1
+        elif (m.source or "catalog") != "custom":
+            m.display_name = name or m.display_name
+            if not m.capabilities:
+                m.capabilities = _capabilities_for(family, mid)
+            if (m.source or "catalog") == "catalog":
+                m.source = "discovered"
+            updated += 1
+
+    for m in existing:
+        if (m.source or "catalog") != "custom" and m.api_id not in live_ids:
+            await db.delete(m)
+            removed += 1
+
+    await db.commit()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "removed": removed,
+        "total": len(live_ids),
+        "message": f"Synced {len(live_ids)} models · +{added} new, {removed} removed",
     }

@@ -238,6 +238,7 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
                     priority=mdef.get("priority", 5),
                     input_cost_per_1m=mdef.get("input_cost_per_1m"),
                     output_cost_per_1m=mdef.get("output_cost_per_1m"),
+                    source="catalog",
                     is_custom=False,
                 )
             )

@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 import { aiApi, parseApiError } from '@/lib/api'
 import { AIOverview, AIModel, AIProvider, AITestResult } from '@/types'
 import {
-  Bot, Save, Plus, Trash2, Check, X, Workflow, AlertTriangle, ChevronRight, Plug, Loader2,
+  Bot, Save, Plus, Trash2, Check, X, Workflow, AlertTriangle, ChevronRight, Plug, Loader2, RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -34,6 +34,7 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
   const [savingModel, setSavingModel] = useState(false)
   // Live connectivity-test state per model id.
   const [tests, setTests] = useState<Record<number, TestState>>({})
+  const [syncing, setSyncing] = useState<string | null>(null)
 
   const load = async () => {
     try {
@@ -91,6 +92,20 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
       setTests((t) => ({ ...t, [m.id]: { result } }))
     } catch (e) {
       setTests((t) => ({ ...t, [m.id]: { result: { ok: false, message: parseApiError(e) } } }))
+    }
+  }
+
+  const syncModels = async (key: string) => {
+    setSyncing(key)
+    try {
+      const r = await aiApi.syncModels(key)
+      if (r.ok) toast.success(r.message)
+      else toast.error(r.message)
+      await load()
+    } catch (e) {
+      toast.error(parseApiError(e))
+    } finally {
+      setSyncing(null)
     }
   }
 
@@ -173,6 +188,8 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
             onDeleteModel={deleteModel}
             tests={tests}
             onTest={testModel}
+            syncing={syncing === p.key}
+            onSync={() => syncModels(p.key)}
             adding={addingFor === p.key}
             draft={draft}
             setDraft={setDraft}
@@ -236,6 +253,8 @@ function ProviderCard(props: {
   onDeleteModel: (m: AIModel) => void
   tests: Record<number, TestState>
   onTest: (m: AIModel) => void
+  syncing: boolean
+  onSync: () => void
   adding: boolean
   draft: { model_key: string; display_name: string; capabilities: string[] }
   setDraft: (d: { model_key: string; display_name: string; capabilities: string[] }) => void
@@ -247,8 +266,8 @@ function ProviderCard(props: {
 }) {
   const {
     provider: p, models, isAdmin, saving, keyDraft, urlDraft, onKeyDraft, onUrlDraft, onSave,
-    capLabel, onToggleModel, onDeleteModel, tests, onTest, adding, draft, setDraft, savingModel,
-    onOpenAdd, onCancelAdd, onAddModel, capabilities,
+    capLabel, onToggleModel, onDeleteModel, tests, onTest, syncing, onSync, adding, draft, setDraft,
+    savingModel, onOpenAdd, onCancelAdd, onAddModel, capabilities,
   } = props
 
   // OAuth-token providers (e.g. a Claude subscription) present the secret as a
@@ -355,10 +374,24 @@ function ProviderCard(props: {
       <div className="p-5">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Models</span>
-          {isAdmin && !adding && (
-            <button type="button" onClick={onOpenAdd} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-              <Plus size={13} /> Add custom model
-            </button>
+          {isAdmin && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onSync}
+                disabled={syncing || !p.configured}
+                title={p.configured ? 'Fetch the live model list from the provider' : 'Add a key/token first'}
+                className="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:text-gray-300 disabled:no-underline"
+              >
+                {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                {syncing ? 'Syncing…' : 'Sync from provider'}
+              </button>
+              {!adding && (
+                <button type="button" onClick={onOpenAdd} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                  <Plus size={13} /> Add custom model
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -382,8 +415,9 @@ function ProviderCard(props: {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                   {m.display_name}
-                  <span className="text-[11px] font-mono text-gray-400">{m.model_key}</span>
-                  {m.is_custom && <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-500 rounded">custom</span>}
+                  <span className="text-[11px] font-mono text-gray-400">{m.api_model_id}</span>
+                  {m.source === 'custom' && <span className="text-[10px] px-1 py-0.5 bg-gray-100 text-gray-500 rounded">custom</span>}
+                  {m.source === 'discovered' && <span className="text-[10px] px-1 py-0.5 bg-green-50 text-green-600 rounded">live</span>}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {m.capabilities.map((c) => (

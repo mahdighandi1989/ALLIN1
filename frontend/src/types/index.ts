@@ -501,6 +501,7 @@ export interface AIModel {
   priority: number
   input_cost_per_1m: number | null
   output_cost_per_1m: number | null
+  source: 'catalog' | 'discovered' | 'custom'
   is_custom: boolean
   notes: string | null
   updated_at: string | null
@@ -584,4 +585,13 @@ export interface AITestResult {
   message: string
   latency_ms?: number
   status_code?: number
+}
+
+export interface AISyncResult {
+  ok: boolean
+  message: string
+  added?: number
+  updated?: number
+  removed?: number
+  total?: number
 }

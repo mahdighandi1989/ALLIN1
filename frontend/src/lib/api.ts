@@ -37,6 +37,7 @@ import type {
   AIModelUpdate,
   AITaskRouteUpdate,
   AITestResult,
+  AISyncResult,
 } from '@/types'
 
 export { api }
@@ -581,6 +582,10 @@ export const aiApi = {
   },
   async testModel(id: number): Promise<AITestResult> {
     const { data } = await api.post<AITestResult>(`/api/ai/models/${id}/test`)
+    return data
+  },
+  async syncModels(key: string): Promise<AISyncResult> {
+    const { data } = await api.post<AISyncResult>(`/api/ai/providers/${key}/sync-models`)
     return data
   },
   async updateRoute(task: string, payload: AITaskRouteUpdate): Promise<AITaskRoute> {
