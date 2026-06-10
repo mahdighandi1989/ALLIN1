@@ -31,6 +31,9 @@ class MortgagedProperty(Base):
     building_age = Column(String(40))        # عمر/سن ساختمان
     land_area = Column(String(40))           # مساحت زمین (م۲)
     cnbc = Column(String(80))                # بررسی زیرساخت (CNBC)
+    zone = Column(String(40))                # منطقه
+    infra_area = Column(String(40))          # مساحت زیربنا (م²)
+    owner = Column(String(200))              # مالک
     valuation = Column(Numeric(18, 2))       # ارزیابی / برآورد
     valuation_currency = Column(String(10), default="AED")
     insurance_expiry = Column(String(30))    # تاریخ انقضای بیمه‌نامه

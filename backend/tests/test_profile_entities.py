@@ -350,6 +350,49 @@ class TestAttachments:
         assert r.status_code == 401
 
 
+class TestPropertiesRegister:
+    async def test_list_totals_and_customer_link(self, client: AsyncClient, auth_headers: dict, db_session, test_customer: Customer):
+        from app.models.profile_entities import MortgagedProperty
+        db_session.add_all([
+            MortgagedProperty(id="PR-t1", account_no=test_customer.account_no, customer_name="Test Customer",
+                              city="Tehran", prop_type="FLAT", valuation=1000, valuation_currency="AED", is_deleted=False),
+            MortgagedProperty(id="PR-t2", account_no="XX999", customer_name="Other Co",
+                              city="Shiraz", prop_type="LAND", valuation=2000, valuation_currency="IRR", is_deleted=False),
+        ])
+        await db_session.commit()
+
+        body = (await client.get("/api/properties/", headers=auth_headers)).json()
+        assert body["total"] == 2
+        assert body["totals"]["aed"] == 1000 and body["totals"]["irr"] == 2000
+        assert body["totals"]["customers"] == 2
+        by_acc = {p["ac_no"]: p for p in body["items"]}
+        assert by_acc[test_customer.account_no]["customer_id"] == test_customer.id   # linked to its customer
+        assert by_acc["XX999"]["customer_id"] is None                                # no such customer
+
+    async def test_filter_and_facets(self, client: AsyncClient, auth_headers: dict, db_session):
+        from app.models.profile_entities import MortgagedProperty
+        db_session.add_all([
+            MortgagedProperty(id="PR-f1", account_no="A1", city="Tehran", prop_type="FLAT", valuation_currency="AED", is_deleted=False),
+            MortgagedProperty(id="PR-f2", account_no="A2", city="Shiraz", prop_type="LAND", valuation_currency="IRR", is_deleted=False),
+        ])
+        await db_session.commit()
+        r = await client.get("/api/properties/?city=Tehran", headers=auth_headers)
+        assert r.json()["total"] == 1 and r.json()["items"][0]["city"] == "Tehran"
+        f = (await client.get("/api/properties/facets", headers=auth_headers)).json()
+        assert "Tehran" in f["cities"] and "FLAT" in f["types"]
+
+    async def test_csv_export(self, client: AsyncClient, auth_headers: dict, db_session):
+        from app.models.profile_entities import MortgagedProperty
+        db_session.add(MortgagedProperty(id="PR-c1", account_no="C1", customer_name="CSV Co", city="Tehran", is_deleted=False))
+        await db_session.commit()
+        r = await client.get("/api/properties/export.csv", headers=auth_headers)
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+        assert "CSV Co" in r.content.decode("utf-8")
+
+    async def test_requires_auth(self, client: AsyncClient):
+        assert (await client.get("/api/properties/")).status_code == 401
+
+
 class TestFacilityCascade:
     async def test_delete_and_restore_cascade(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
         acc, cid = test_customer.account_no, test_customer.id

@@ -10,8 +10,6 @@ import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
   CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote, Mail,
 } from 'lucide-react'
-import { PROPERTIES } from '../properties/data'
-
 const CHECKLIST_STEPS = [
   'Offer Letter', 'Document Verification', 'Document Scanning', 'Add to Table',
   'Central Folder Upload', 'Regulatory Document (Contra)', 'K.Y.C', 'Summary', 'Archive',
@@ -69,7 +67,6 @@ function CustomerDetailInner() {
   const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [] } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
-  const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
   const completeness = profile?.profile_completeness || '—'
 
   // Live securities aggregation from the merged guarantor data — mirrors the
@@ -92,9 +89,7 @@ function CustomerDetailInner() {
     : blobPartners
   // Properties for the printable summary: structured backend rows if any, else
   // the imported mortgage register joined from the static dataset.
-  const propsForSummary: any[] = properties.length
-    ? properties.map((p: any) => ({ deed_no: p.mortgage_deed_no, city: p.city, type: p.prop_type, currency: p.valuation_currency, valuation: p.valuation }))
-    : myProps
+  const propsForSummary: any[] = properties.map((p: any) => ({ deed_no: p.mortgage_deed_no, city: p.city, type: p.prop_type, currency: p.valuation_currency, valuation: p.valuation }))
   // The checklist currently shown: a selected facility's own checklist, or the
   // account-level one when no facility is chosen.
   const activeChecklist = chkFacility
@@ -338,7 +333,7 @@ function CustomerDetailInner() {
         <Card icon={<Wallet size={15} />} label="Facilities" value={summary.total_facilities} sub={`${summary.active_facilities || 0} active`} />
         <Card icon={<Wallet size={15} />} label="Total Exposure" value={money(summary.total_exposure)} />
         <Card icon={<ShieldCheck size={15} />} label="Guarantors" value={summary.total_guarantors ?? guarantors.length} />
-        <Card icon={<Building2 size={15} />} label="Properties" value={(properties.length || myProps.length)} />
+        <Card icon={<Building2 size={15} />} label="Properties" value={properties.length} />
         <Card icon={<FileText size={15} />} label="Offer Letters" value={summary.total_offers} />
       </div>
 
@@ -607,14 +602,6 @@ function CustomerDetailInner() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-            {myProps.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs font-medium text-gray-500 mb-1.5">Mortgage register (imported, read-only) — {myProps.length}</p>
-                <SimpleTable head={['Deed No.', 'City', 'Type', 'Mortgage Date', 'Valuation', 'Insurance Expiry']}
-                  rows={myProps.map((p) => [p.deed_no, p.city, p.type, p.mortgage_date, p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '—', p.insurance_expiry])}
-                  empty="" />
               </div>
             )}
           </Section>

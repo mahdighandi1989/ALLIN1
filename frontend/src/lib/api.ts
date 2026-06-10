@@ -210,6 +210,34 @@ export const facilitiesApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Mortgaged-properties register (one backend source, linked to customers)
+// ---------------------------------------------------------------------------
+export interface PropertyRow {
+  id: string; ac_no: string; customer: string; customer_id: string | null
+  deed_no: string; city: string; zone: string; type: string; age: string
+  land_m2: string; infra_m2: string; mortgage_date: string; amount: number | null
+  currency: string; valuation_date: string; valuation: number | null
+  owner: string; insurance_expiry: string
+}
+export interface PropertyList {
+  items: PropertyRow[]; total: number; page: number; page_size: number
+  totals: { aed: number; irr: number; customers: number }
+}
+export const propertiesApi = {
+  async list(params: {
+    search?: string; city?: string; type?: string; currency?: string
+    sort_by?: string; sort_order?: 'asc' | 'desc'; page?: number; page_size?: number
+  } = {}): Promise<PropertyList> {
+    const { data } = await api.get<PropertyList>('/api/properties/', { params })
+    return data
+  },
+  async facets(): Promise<{ cities: string[]; types: string[] }> {
+    const { data } = await api.get<{ cities: string[]; types: string[] }>('/api/properties/facets')
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard stats
 // ---------------------------------------------------------------------------
 export const statsApi = {

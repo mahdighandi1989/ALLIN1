@@ -892,6 +892,62 @@ async def cleanup_empty_facilities() -> None:
         logger.warning("cleanup_empty_facilities skipped: %s", exc)
 
 
+async def seed_properties_register() -> None:
+    """Seed the mortgaged-properties register (~300 rows from the cleaned Head
+    Office workbook) into ``mortgaged_properties`` so the register page AND each
+    customer's Collateral tab read from ONE backend source (keyed by account_no).
+    Idempotent: each row has a stable id (md5 of its content), so re-running only
+    inserts genuinely-new rows.
+    """
+    try:
+        import json as _json
+        import hashlib
+        from pathlib import Path
+        from app.models.profile_entities import MortgagedProperty
+
+        path = Path(__file__).parent / "data" / "properties_register.json"
+        if not path.exists():
+            return
+        rows = _json.loads(path.read_text(encoding="utf-8"))
+        if not rows:
+            return
+
+        def _s(v):
+            return "" if v is None else str(v)
+
+        async with AsyncSessionLocal() as session:
+            existing = set(
+                (await session.execute(
+                    sa.select(MortgagedProperty.id).where(MortgagedProperty.id.like("PR-%"))
+                )).scalars().all()
+            )
+            added = 0
+            for r in rows:
+                sid = "PR-" + hashlib.md5(
+                    _json.dumps(r, sort_keys=True, ensure_ascii=False).encode("utf-8")
+                ).hexdigest()[:18]
+                if sid in existing:
+                    continue
+                session.add(MortgagedProperty(
+                    id=sid, account_no=_s(r.get("ac_no"))[:50], customer_name=_s(r.get("customer"))[:200],
+                    country="Iran", mortgage_deed_no=_s(r.get("deed_no"))[:80], city=_s(r.get("city"))[:80],
+                    zone=_s(r.get("zone"))[:40], prop_type=_s(r.get("type"))[:80],
+                    building_age=_s(r.get("age"))[:40], land_area=_s(r.get("land_m2"))[:40],
+                    infra_area=_s(r.get("infra_m2"))[:40], mortgage_date=_s(r.get("mortgage_date"))[:30],
+                    mortgage_amount=r.get("amount"), valuation_currency=(_s(r.get("currency")) or "AED")[:10],
+                    last_valuation_date=_s(r.get("valuation_date"))[:30], valuation=r.get("valuation"),
+                    owner=_s(r.get("owner"))[:200], insurance_expiry=_s(r.get("insurance_expiry"))[:30],
+                    created_by="register-import", date_added=date.today().isoformat(), is_deleted=False,
+                ))
+                existing.add(sid)
+                added += 1
+            if added:
+                await session.commit()
+                logger.info("Seeded %d mortgaged properties from register", added)
+    except Exception as exc:  # pragma: no cover - depends on live DB
+        logger.error("Properties register seeding skipped: %s", exc)
+
+
 async def init_database() -> None:
     """Run schema sync + demo seeding (called once at startup)."""
     await ensure_schema()
@@ -905,6 +961,9 @@ async def init_database() -> None:
     await sync_user_roles()
     # Fill missing customer names from the bundled account directory (idempotent).
     await backfill_customer_names()
+    # Seed the mortgaged-properties register into the backend (idempotent), so the
+    # register page and each customer's Collateral tab share one source.
+    await seed_properties_register()
     # Merge the legacy Excel CRM data (guarantors, real facility data, ...).
     try:
         from app.services.data_merge import run_data_merge
