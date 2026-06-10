@@ -1,14 +1,14 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
 import {
   LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2,
   ScrollText, FileSpreadsheet, Settings, LogOut, BookOpen, Building2,
-  LayoutGrid,
+  LayoutGrid, Clock,
 } from 'lucide-react'
 import { BANK_LOGO } from '@/app/voucher/logo'
 
@@ -77,9 +77,67 @@ function currentTitle(pathname: string | null): string {
   return ''
 }
 
+// Holding screen for a signed-in user whose account is still awaiting an admin's
+// approval (Google sign-ups start as 'pending'). Mirrors the language project's
+// gate, which blocks any non-approved account from the app body.
+function PendingApprovalScreen({ email, onLogout }: { email: string; onLogout: () => void }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-200 text-center">
+        <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+          <Clock className="w-8 h-8 text-amber-600" />
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Awaiting approval</h1>
+        <p className="text-gray-600 text-sm mb-1">
+          You are signed in as <span className="font-medium">{email}</span>.
+        </p>
+        <p className="text-gray-600 text-sm mb-6">
+          Your account needs an administrator to grant you an access level before
+          you can use the system. Please check back later.
+        </p>
+        <button
+          type="button"
+          onClick={() => onLogout()}
+          className="w-full py-2.5 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium text-gray-700"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, logout, authDisabled } = useAuth()
+  const { user, logout, authDisabled, loading } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
+
+  // Central auth gate (mirrors the language project's access gate). When login
+  // is enforced, send anonymous visitors to /login.
+  useEffect(() => {
+    if (authDisabled || loading) return
+    if (!user) router.replace('/login')
+  }, [authDisabled, loading, user, router])
+
+  const role = user?.role ?? (user?.is_admin ? 'admin' : 'pending')
+  const isPending = !authDisabled && !!user && !user.is_admin && role === 'pending'
+
+  // While auth is enforced, avoid flashing the app before the session is known
+  // (or while redirecting an anonymous visitor to the login screen).
+  if (!authDisabled && (loading || !user)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      </div>
+    )
+  }
+
+  // Signed in but not yet granted an access level — show a holding screen rather
+  // than a broken, permission-denied app shell.
+  if (isPending) {
+    return <PendingApprovalScreen email={user!.email} onLogout={logout} />
+  }
+
   const showAdmin = authDisabled || !!user?.is_admin
   const groups = NAV_GROUPS.filter((g) => showAdmin || !g.adminOnly)
 
@@ -129,6 +187,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <h1 className="text-base font-semibold text-gray-800">{currentTitle(pathname)}</h1>
           <div className="flex items-center gap-4">
             <NotificationBell />
+            {!authDisabled && (
+              <span
+                className="px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 capitalize"
+                title="Your access level"
+              >
+                {role}
+              </span>
+            )}
             <Link href="/profile" className="text-sm text-gray-600 hover:text-blue-600" title="My profile">
               {user?.full_name || user?.username || 'Profile'}
             </Link>

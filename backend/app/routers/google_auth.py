@@ -36,6 +36,32 @@ router = APIRouter(tags=["google-auth"])
 _STATE_COOKIE = "g_oauth_state"
 
 
+def _effective_redirect_uri(request: Request) -> str:
+    """The OAuth redirect URI to use for this flow.
+
+    Prefers the explicit ``GOOGLE_REDIRECT_URI`` setting; when it is blank the
+    URI is derived from the incoming request so Google Sign-In works out of the
+    box on Render with only the client id/secret set. ``X-Forwarded-Proto`` /
+    ``X-Forwarded-Host`` are honoured so the derived URI is the public https URL
+    (uvicorn sees plain http behind Render's TLS-terminating proxy).
+
+    The browser is redirected to ``/api/auth/google/callback`` on the same host
+    for both the consent URL and the token exchange, so the two values always
+    match (a hard Google requirement).
+    """
+    if settings.GOOGLE_REDIRECT_URI:
+        return settings.GOOGLE_REDIRECT_URI
+    proto = (
+        request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    ).split(",")[0].strip()
+    host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host")
+        or request.url.netloc
+    ).split(",")[0].strip()
+    return f"{proto}://{host}/api/auth/google/callback"
+
+
 def _frontend_redirect(
     path_with_query: str, status_code: int = status.HTTP_302_FOUND
 ) -> RedirectResponse:
@@ -110,7 +136,7 @@ async def upsert_google_user(db: AsyncSession, info: dict, tokens: dict) -> User
 
 
 @router.get("/login")
-async def google_login():
+async def google_login(request: Request):
     """Redirect the browser to Google's consent screen.
 
     Uses a 307 (Temporary Redirect) so the redirect is an explicit, method-
@@ -121,7 +147,11 @@ async def google_login():
             "/login?error=google_not_configured", status.HTTP_307_TEMPORARY_REDIRECT
         )
     state = secrets.token_urlsafe(24)
-    resp = _frontend_redirect(build_auth_url(state), status.HTTP_307_TEMPORARY_REDIRECT)
+    redirect_uri = _effective_redirect_uri(request)
+    resp = _frontend_redirect(
+        build_auth_url(state, redirect_uri=redirect_uri),
+        status.HTTP_307_TEMPORARY_REDIRECT,
+    )
     resp.set_cookie(
         _STATE_COOKIE, state, max_age=600, httponly=True,
         secure=settings.is_production(), samesite="lax", path="/",
@@ -148,7 +178,7 @@ async def google_callback(
         return _frontend_redirect("/login?error=state_mismatch")
 
     try:
-        tokens = await exchange_code(code)
+        tokens = await exchange_code(code, _effective_redirect_uri(request))
         info = await fetch_userinfo(tokens["access_token"])
     except (GoogleOAuthError, KeyError) as exc:
         logger.warning("google oauth callback failed: %s", exc)

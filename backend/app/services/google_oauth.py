@@ -27,12 +27,19 @@ class GoogleOAuthError(Exception):
     """Raised when a Google OAuth/token/userinfo call fails."""
 
 
-def build_auth_url(state: str, *, include_drive: bool = True) -> str:
-    """Build the Google consent-screen URL to redirect the browser to."""
+def build_auth_url(
+    state: str, *, redirect_uri: str | None = None, include_drive: bool = True
+) -> str:
+    """Build the Google consent-screen URL to redirect the browser to.
+
+    ``redirect_uri`` defaults to ``settings.GOOGLE_REDIRECT_URI`` but can be
+    passed explicitly (the caller derives it from the request when the setting is
+    blank) so the same value is used here and in :func:`exchange_code`.
+    """
     scopes = DEFAULT_SCOPES if include_drive else LOGIN_SCOPES
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri or settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": " ".join(scopes),
         "state": state,
@@ -43,13 +50,17 @@ def build_auth_url(state: str, *, include_drive: bool = True) -> str:
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 
-async def exchange_code(code: str) -> dict:
-    """Exchange an authorization code for tokens (access/refresh/id_token)."""
+async def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
+    """Exchange an authorization code for tokens (access/refresh/id_token).
+
+    ``redirect_uri`` MUST match the value used to build the consent URL, so the
+    caller passes the same derived/explicit value it gave :func:`build_auth_url`.
+    """
     data = {
         "code": code,
         "client_id": settings.GOOGLE_CLIENT_ID,
         "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri or settings.GOOGLE_REDIRECT_URI,
         "grant_type": "authorization_code",
     }
     async with httpx.AsyncClient(timeout=15) as client:

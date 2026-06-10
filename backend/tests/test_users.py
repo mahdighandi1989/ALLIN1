@@ -49,6 +49,44 @@ class TestUserManagement:
         assert d.status_code == 204
         assert (await client.get(f"/api/users/{uid}", headers=admin_headers)).json()["is_active"] is False
 
+    async def test_create_with_explicit_role(self, client: AsyncClient, admin_headers: dict):
+        # An admin can create a user at a chosen access level — not just the
+        # binary admin/non-admin — and is_admin stays in sync with the role.
+        r = await client.post(
+            "/api/users/",
+            json={
+                "username": "vera", "email": "vera@bank.ae",
+                "password": "secret123", "full_name": "Vera V", "role": "viewer",
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["role"] == "viewer"
+        assert r.json()["is_admin"] is False
+
+    async def test_create_admin_role_sets_is_admin(self, client: AsyncClient, admin_headers: dict):
+        r = await client.post(
+            "/api/users/",
+            json={
+                "username": "adina", "email": "adina@bank.ae",
+                "password": "secret123", "full_name": "Adina A", "role": "admin",
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["role"] == "admin" and r.json()["is_admin"] is True
+
+    async def test_create_invalid_role_422(self, client: AsyncClient, admin_headers: dict):
+        r = await client.post(
+            "/api/users/",
+            json={
+                "username": "badrole", "email": "badrole@bank.ae",
+                "password": "secret123", "full_name": "Bad Role", "role": "superuser",
+            },
+            headers=admin_headers,
+        )
+        assert r.status_code == 422
+
     async def test_duplicate_username_rejected(self, client: AsyncClient, admin_headers: dict, admin_user: User):
         r = await client.post(
             "/api/users/",

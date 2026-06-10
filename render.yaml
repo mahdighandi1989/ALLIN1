@@ -34,11 +34,27 @@ services:
         value: ""
       - key: ENVIRONMENT
         value: "production"
-      # ⚠️ TEMPORARY: login/auth is currently DISABLED on this deployment as
-      # requested ("remove login for now"). Every request runs as a shared demo
-      # user. Set this to "false" (and redeploy) to restore mandatory login.
+      # Login/auth is ENABLED: every request must carry a valid session. Google
+      # Sign-In + username/password are both available. Set this to "true" only
+      # to temporarily bypass login (every request becomes a shared demo admin).
       - key: AUTH_DISABLED
-        value: "true"
+        value: "false"
+      # ---- Google Sign-In (OAuth 2.0) ----
+      # Values are managed in the Render dashboard (sync:false keeps them).
+      #  • GOOGLE_REDIRECT_URI is OPTIONAL — when unset the backend derives
+      #    "<service-url>/api/auth/google/callback" from the request. Register
+      #    that exact URL as an Authorized redirect URI in the Google console.
+      #  • ADMIN_EMAILS (comma/space separated) are always granted the admin role
+      #    on Google sign-in; everyone else signs in as 'pending' until an admin
+      #    grants them a role.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
     healthCheckPath: /health
     autoDeploy: true
 

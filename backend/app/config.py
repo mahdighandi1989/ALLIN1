@@ -171,7 +171,10 @@ class Settings(BaseSettings):
         return {e.strip().lower() for e in raw.split() if e.strip()}
 
     def google_oauth_configured(self) -> bool:
-        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI)
+        # GOOGLE_REDIRECT_URI is optional: when unset it is derived from the
+        # incoming request (see app.routers.google_auth), so Google Sign-In works
+        # out of the box with only the client id + secret configured.
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
 
     class Config:
         env_file = ".env"

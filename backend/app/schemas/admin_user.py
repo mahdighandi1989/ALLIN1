@@ -14,6 +14,15 @@ def _validate_password(v: str) -> str:
     return v
 
 
+def _validate_role(v: Optional[str]) -> Optional[str]:
+    if v is None:
+        return v
+    v = v.strip().lower()
+    if v not in ("pending", "viewer", "editor", "admin"):
+        raise ValueError("role must be one of: pending, viewer, editor, admin")
+    return v
+
+
 class AdminUserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_-]+$")
     email: EmailStr = Field(..., max_length=100)
@@ -21,11 +30,20 @@ class AdminUserCreate(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=100)
     is_admin: bool = False
     is_active: bool = True
+    # Optional explicit access level. When omitted, an admin-created account
+    # defaults to 'admin' if is_admin else 'editor' (a working role, never the
+    # 'pending' approval state used for self-service Google sign-ups).
+    role: Optional[str] = Field(None, description="pending | viewer | editor | admin")
 
     @field_validator("password")
     @classmethod
     def _pw(cls, v: str) -> str:
         return _validate_password(v)
+
+    @field_validator("role")
+    @classmethod
+    def _role(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_role(v)
 
 
 class AdminUserUpdate(BaseModel):
@@ -39,12 +57,7 @@ class AdminUserUpdate(BaseModel):
     @field_validator("role")
     @classmethod
     def _role(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        v = v.strip().lower()
-        if v not in ("pending", "viewer", "editor", "admin"):
-            raise ValueError("role must be one of: pending, viewer, editor, admin")
-        return v
+        return _validate_role(v)
 
     @field_validator("password")
     @classmethod

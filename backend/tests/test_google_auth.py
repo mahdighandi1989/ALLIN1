@@ -15,6 +15,35 @@ class TestGoogleLogin:
         assert r.status_code in (302, 307)
         assert "accounts.google.com" in r.headers["location"]
 
+    async def test_login_derives_redirect_uri_when_unset(self, client: AsyncClient, monkeypatch):
+        # With only client id + secret (no explicit GOOGLE_REDIRECT_URI) Google
+        # Sign-In still works: the callback URI is derived from the request and
+        # encoded into the consent URL.
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "cid")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "")
+        r = await client.get("/api/auth/google/login", follow_redirects=False)
+        assert r.status_code in (302, 307)
+        loc = r.headers["location"]
+        assert "accounts.google.com" in loc
+        # The derived callback path is present (host-agnostic assertion).
+        assert "%2Fapi%2Fauth%2Fgoogle%2Fcallback" in loc
+
+    async def test_login_honors_forwarded_proto_for_redirect_uri(self, client: AsyncClient, monkeypatch):
+        # Behind Render's TLS proxy uvicorn sees http; X-Forwarded-Proto must be
+        # honoured so the derived redirect URI is the public https URL.
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "cid")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "")
+        r = await client.get(
+            "/api/auth/google/login",
+            headers={"x-forwarded-proto": "https", "x-forwarded-host": "bank.example.com"},
+            follow_redirects=False,
+        )
+        loc = r.headers["location"]
+        # https://bank.example.com/api/auth/google/callback (url-encoded)
+        assert "https%3A%2F%2Fbank.example.com%2Fapi%2Fauth%2Fgoogle%2Fcallback" in loc
+
     async def test_login_errors_when_not_configured(self, client: AsyncClient, monkeypatch):
         monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
         r = await client.get("/api/auth/google/login", follow_redirects=False)
