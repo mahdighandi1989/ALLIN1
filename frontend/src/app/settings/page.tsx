@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
+import AISettings from '@/components/AISettings'
 import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
@@ -183,6 +184,9 @@ export default function SettingsPage() {
             )}
           </form>
         )}
+
+        {/* AI models & providers — central AI control layer */}
+        <AISettings isAdmin={isAdmin} />
 
         {/* Legacy data merge (admin) */}
         {isAdmin && (

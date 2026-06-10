@@ -15,6 +15,7 @@ from app.models.notification import Notification
 from app.models.system_setting import SystemSetting
 from app.models.exposure_snapshot import ExposureSnapshot
 from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY
+from app.models.ai_config import AIProvider, AIModel, AITaskRoute
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "SystemSetting",
     "ExposureSnapshot",
     "ExchangeRate", "BASE_CURRENCY",
+    "AIProvider", "AIModel", "AITaskRoute",
 ]
