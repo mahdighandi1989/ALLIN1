@@ -166,6 +166,17 @@ async def update_model(
     return model.to_dict()
 
 
+@router.post("/models/{model_id}/test")
+async def test_model_connection(
+    model_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_admin),
+):
+    """Make a tiny live request to verify the model's credential actually works."""
+    from app.ai.tester import test_model
+    return await test_model(db, model_id)
+
+
 @router.delete("/models/{model_id}")
 async def delete_model(
     model_id: int,
