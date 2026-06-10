@@ -312,6 +312,14 @@ export const crmApi = {
     const { data } = await api.post('/api/crm/run-expiry-scan')
     return data
   },
+  async driveStatus(): Promise<any> {
+    const { data } = await api.get('/api/crm/backup/drive/status')
+    return data
+  },
+  async driveSyncNow(): Promise<any> {
+    const { data } = await api.post('/api/crm/backup/drive/sync')
+    return data
+  },
   async dailyLog(text: string, followup_date = ''): Promise<{ accounts_found: string[]; routed: any[]; unknown_accounts: string[] }> {
     const { data } = await api.post('/api/crm/daily-log', { text, followup_date })
     return data

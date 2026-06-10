@@ -7,7 +7,7 @@ import AISettings from '@/components/AISettings'
 import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
-import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot, Cloud, CloudOff, CheckCircle2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -38,10 +38,31 @@ export default function SettingsPage() {
     catch (e) { toast.error(parseApiError(e)) }
   }
 
+  const [driveStatus, setDriveStatus] = useState<any>(null)
+  const [driveLoading, setDriveLoading] = useState(false)
+  const [driveSyncing, setDriveSyncing] = useState(false)
+  const checkDrive = async () => {
+    setDriveLoading(true)
+    try { setDriveStatus(await crmApi.driveStatus()) }
+    catch (e) { toast.error(parseApiError(e)) } finally { setDriveLoading(false) }
+  }
+  const driveSyncNow = async () => {
+    setDriveSyncing(true)
+    try {
+      const r = await crmApi.driveSyncNow()
+      const n = r?.bytes ? `${Math.round(r.bytes / 1024)} KB` : ''
+      toast.success(`سینک با Google Drive انجام شد ${n ? `(${n})` : ''}`)
+      await checkDrive()
+    } catch (e) { toast.error(parseApiError(e)) } finally { setDriveSyncing(false) }
+  }
+
   const isAdmin = authDisabled || !!user?.is_admin
 
   useEffect(() => {
-    if (isAdmin) crmApi.mergeStatus().then(setMergeInfo).catch(() => {})
+    if (isAdmin) {
+      crmApi.mergeStatus().then(setMergeInfo).catch(() => {})
+      crmApi.driveStatus().then(setDriveStatus).catch(() => {})
+    }
   }, [isAdmin])
   const runMerge = async () => {
     setMerging(true)
@@ -267,11 +288,69 @@ export default function SettingsPage() {
         {isAdmin && (
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Backup export</h3>
-            <p className="text-sm text-gray-500 mb-3">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON دانلود می‌کند تا نگه‌داری یا بازیابی شود.</p>
+            <p className="text-sm text-gray-500 mb-3">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON روی دستگاهِ خودت دانلود می‌کند (دستی و محلی، بدونِ ارتباط با Google Drive).</p>
             <button onClick={downloadBackup} type="button"
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900">
               <Database size={16} /> Download backup (JSON)
             </button>
+          </div>
+        )}
+
+        {/* Google Drive sync (admin) */}
+        {isAdmin && (
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-medium flex items-center gap-2">
+                {driveStatus?.connected ? <Cloud size={16} className="text-green-600" /> : <CloudOff size={16} className="text-gray-400" />}
+                همگام‌سازی با Google Drive
+              </h3>
+              {driveStatus && (
+                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${driveStatus.connected ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  {driveStatus.connected ? <><CheckCircle2 size={13} /> متصل</> : <><XCircle size={13} /> غیرفعال / قطع</>}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              اسنپ‌شاتِ کاملِ دیتابیس و فایل‌های پیوست را به‌صورت خودکار در فولدرِ Drive شما آپلود و همگام نگه می‌دارد.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-4">
+              <div className="flex justify-between border-b py-1.5">
+                <span className="text-gray-500">فعال در تنظیمات</span>
+                <span className="font-medium">{driveStatus ? (driveStatus.enabled ? 'بله' : 'خیر') : '…'}</span>
+              </div>
+              <div className="flex justify-between border-b py-1.5">
+                <span className="text-gray-500">پیکربندی کامل</span>
+                <span className="font-medium">{driveStatus ? (driveStatus.configured ? 'بله' : 'خیر') : '…'}</span>
+              </div>
+              <div className="flex justify-between border-b py-1.5">
+                <span className="text-gray-500">حساب سرویس</span>
+                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.service_account || '—'}</span>
+              </div>
+              <div className="flex justify-between border-b py-1.5">
+                <span className="text-gray-500">فولدر مقصد (ID)</span>
+                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.root_folder_id || '—'}</span>
+              </div>
+            </div>
+
+            {driveStatus && !driveStatus.connected && driveStatus.error && (
+              <p className="text-sm text-red-600 mb-3 break-all">خطا: {driveStatus.error}</p>
+            )}
+            {driveStatus && !driveStatus.enabled && (
+              <p className="text-sm text-amber-600 mb-3">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> به‌همراهِ <code dir="ltr">GOOGLE_CREDENTIALS_JSON</code> و <code dir="ltr">GOOGLE_DRIVE_FOLDER_ID</code> را تنظیم کنید.</p>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <button onClick={checkDrive} disabled={driveLoading} type="button"
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+                <RefreshCw size={16} className={driveLoading ? 'animate-spin' : ''} /> {driveLoading ? 'در حال بررسی…' : 'بررسی اتصال'}
+              </button>
+              <button onClick={driveSyncNow} disabled={driveSyncing || !driveStatus?.connected} type="button"
+                title={!driveStatus?.connected ? 'ابتدا اتصال باید برقرار باشد' : ''}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                <Cloud size={16} className={driveSyncing ? 'animate-pulse' : ''} /> {driveSyncing ? 'در حال همگام‌سازی…' : 'همگام‌سازی فوری با Drive'}
+              </button>
+            </div>
           </div>
         )}
 
