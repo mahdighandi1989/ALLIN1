@@ -14,11 +14,13 @@
 
 import { useEffect, useState } from 'react'
 import { aiApi, parseApiError } from '@/lib/api'
-import { AIOverview, AIModel, AIProvider } from '@/types'
+import { AIOverview, AIModel, AIProvider, AITestResult } from '@/types'
 import {
-  Bot, Save, Plus, Trash2, Check, X, Workflow, AlertTriangle, ChevronRight,
+  Bot, Save, Plus, Trash2, Check, X, Workflow, AlertTriangle, ChevronRight, Plug, Loader2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+
+type TestState = { loading?: boolean; result?: AITestResult }
 
 export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
   const [data, setData] = useState<AIOverview | null>(null)
@@ -30,6 +32,8 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [draft, setDraft] = useState({ model_key: '', display_name: '', capabilities: [] as string[] })
   const [savingModel, setSavingModel] = useState(false)
+  // Live connectivity-test state per model id.
+  const [tests, setTests] = useState<Record<number, TestState>>({})
 
   const load = async () => {
     try {
@@ -78,6 +82,16 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
   const setRoute = async (task: string, modelId: number | null) => {
     try { await aiApi.updateRoute(task, { model_id: modelId }); await load() }
     catch (e) { toast.error(parseApiError(e)) }
+  }
+
+  const testModel = async (m: AIModel) => {
+    setTests((t) => ({ ...t, [m.id]: { loading: true } }))
+    try {
+      const result = await aiApi.testModel(m.id)
+      setTests((t) => ({ ...t, [m.id]: { result } }))
+    } catch (e) {
+      setTests((t) => ({ ...t, [m.id]: { result: { ok: false, message: parseApiError(e) } } }))
+    }
   }
 
   const openAdd = (providerKey: string) => {
@@ -157,6 +171,8 @@ export default function AISettings({ isAdmin }: { isAdmin: boolean }) {
             capLabel={capLabel}
             onToggleModel={toggleModel}
             onDeleteModel={deleteModel}
+            tests={tests}
+            onTest={testModel}
             adding={addingFor === p.key}
             draft={draft}
             setDraft={setDraft}
@@ -218,6 +234,8 @@ function ProviderCard(props: {
   capLabel: (id: string) => string
   onToggleModel: (m: AIModel, enabled: boolean) => void
   onDeleteModel: (m: AIModel) => void
+  tests: Record<number, TestState>
+  onTest: (m: AIModel) => void
   adding: boolean
   draft: { model_key: string; display_name: string; capabilities: string[] }
   setDraft: (d: { model_key: string; display_name: string; capabilities: string[] }) => void
@@ -229,7 +247,7 @@ function ProviderCard(props: {
 }) {
   const {
     provider: p, models, isAdmin, saving, keyDraft, urlDraft, onKeyDraft, onUrlDraft, onSave,
-    capLabel, onToggleModel, onDeleteModel, adding, draft, setDraft, savingModel,
+    capLabel, onToggleModel, onDeleteModel, tests, onTest, adding, draft, setDraft, savingModel,
     onOpenAdd, onCancelAdd, onAddModel, capabilities,
   } = props
 
@@ -372,11 +390,31 @@ function ProviderCard(props: {
                     <span key={c} className="text-[11px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">{capLabel(c)}</span>
                   ))}
                 </div>
+                {tests[m.id]?.result && (
+                  <div className={`text-[11px] mt-1 flex items-start gap-1 ${tests[m.id].result!.ok ? 'text-green-600' : 'text-red-600'}`}>
+                    {tests[m.id].result!.ok ? <Check size={13} className="mt-px shrink-0" /> : <X size={13} className="mt-px shrink-0" />}
+                    <span className="break-words">{tests[m.id].result!.message}</span>
+                  </div>
+                )}
               </div>
-              {isAdmin && m.is_custom && (
-                <button type="button" onClick={() => onDeleteModel(m)} className="text-red-500 hover:text-red-700 mt-1 shrink-0" title="Delete custom model">
-                  <Trash2 size={15} />
-                </button>
+              {isAdmin && (
+                <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => onTest(m)}
+                    disabled={tests[m.id]?.loading}
+                    className="text-xs px-2 py-1 border rounded-lg hover:bg-gray-50 flex items-center gap-1 disabled:opacity-50"
+                    title="Send a tiny live request to verify the credential works"
+                  >
+                    {tests[m.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Plug size={13} />}
+                    {tests[m.id]?.loading ? 'Testing…' : 'Test'}
+                  </button>
+                  {m.is_custom && (
+                    <button type="button" onClick={() => onDeleteModel(m)} className="text-red-500 hover:text-red-700" title="Delete custom model">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}

@@ -578,3 +578,10 @@ export interface AITaskRouteUpdate {
   enabled?: boolean
   notes?: string
 }
+
+export interface AITestResult {
+  ok: boolean
+  message: string
+  latency_ms?: number
+  status_code?: number
+}

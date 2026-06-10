@@ -36,6 +36,7 @@ import type {
   AIModelCreate,
   AIModelUpdate,
   AITaskRouteUpdate,
+  AITestResult,
 } from '@/types'
 
 export { api }
@@ -576,6 +577,10 @@ export const aiApi = {
   },
   async deleteModel(id: number): Promise<{ deleted: string }> {
     const { data } = await api.delete<{ deleted: string }>(`/api/ai/models/${id}`)
+    return data
+  },
+  async testModel(id: number): Promise<AITestResult> {
+    const { data } = await api.post<AITestResult>(`/api/ai/models/${id}/test`)
     return data
   },
   async updateRoute(task: string, payload: AITaskRouteUpdate): Promise<AITaskRoute> {
