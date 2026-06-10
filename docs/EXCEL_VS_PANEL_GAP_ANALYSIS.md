@@ -22,11 +22,19 @@
 - **Phase 3 — documents:** **real per-row / per-checklist upload + download**
   (`/api/crm/attachments/...`, files on disk under `UPLOAD_DIR`), so a scanned
   document actually opens again (A15).
+- **Phase 4 — the rest:** **expiry scan → alert tasks + notification** (A14,
+  `/api/crm/run-expiry-scan`, consumes `expiry_warning_days`, runs at startup);
+  **server-side credit-file Summary PDF** (A2, `/api/crm/summary/{acc}/export.pdf`);
+  **general (non-account) profiles & checklists** (A7, `/general`); **private
+  personal notes + one-click email digest** (A8/A11/A16/A20, `/personal`);
+  **daily-log smart routing** to account tasks (A22, `/daily-log`); **JSON
+  backup export** (A21, admin). Inherently desktop-bound pieces are approximated:
+  Outlook/Graph + scheduled auto-send (A16) use SMTP + manual/startup triggers;
+  Central-Folder gather (A23) becomes multi-file upload to the customer folder;
+  offline file-share resync (A21) becomes a downloadable DB export.
 
-Verified: backend 413 passed / 78.6% coverage; frontend type-check + build + 23
-jest tests pass; all routes registered; `/health` 200. **Phase 4** (real expiry
-scheduler, server-side Summary PDF, rich notes + Outlook email, general
-profiles/checklists, daily-log routing, backup) is **not** in this branch.
+Verified: backend **426 passed / 78.5% coverage**; frontend type-check + build +
+23 jest tests pass; all routes registered; `/health` 200.
 
 Source of truth analysed:
 - **VBA**: 6 modules, **23,256 lines** (Module1 = 20,592), **384 procedures**
@@ -183,5 +191,8 @@ Each phase is independently shippable and verified (backend tests + type-check).
   helper — add the array + a `summary` count there.
 - Tests: `backend/tests/` with `client` + `auth_headers` fixtures (in-memory SQLite).
 
-**Status of this roadmap**: Phases 1–3 are implemented and verified on this
-branch (see "Implemented in this branch" at the top). Phase 4 remains open.
+**Status of this roadmap**: Phases 1–4 are implemented and verified on this
+branch (see "Implemented in this branch" at the top). The remaining gaps are the
+inherently desktop-bound bits noted there (true Outlook/Graph email + scheduled
+auto-send, OS-folder gathering, offline file-share resync), which have
+web-appropriate equivalents in place.
