@@ -129,8 +129,13 @@ class AIModel(Base):
     input_cost_per_1m = Column(Float, nullable=True)
     output_cost_per_1m = Column(Float, nullable=True)
 
-    # True for admin-added models (kept across re-seeds; catalog entries are
-    # refreshed). Lets the UI offer "delete" only for custom rows.
+    # Provenance of this row:
+    #   "catalog"    — seeded from app.ai.catalog (curated fallback list).
+    #   "discovered" — pulled live from the provider's models API (sync).
+    #   "custom"     — added by an admin.
+    # Drives reconcile rules on sync and which rows the UI lets you delete.
+    source = Column(String(12), default="catalog", nullable=False)
+    # Back-compat flag mirroring ``source == 'custom'``.
     is_custom = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
 
@@ -157,6 +162,7 @@ class AIModel(Base):
             "priority": self.priority,
             "input_cost_per_1m": self.input_cost_per_1m,
             "output_cost_per_1m": self.output_cost_per_1m,
+            "source": self.source or "catalog",
             "is_custom": bool(self.is_custom),
             "notes": self.notes,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

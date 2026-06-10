@@ -123,6 +123,7 @@ async def create_model(
         priority=payload.priority,
         input_cost_per_1m=payload.input_cost_per_1m,
         output_cost_per_1m=payload.output_cost_per_1m,
+        source="custom",
         is_custom=True,
         notes=payload.notes,
     )
@@ -164,6 +165,26 @@ async def update_model(
         user=actor, request=request, db=db,
     )
     return model.to_dict()
+
+
+@router.post("/providers/{key}/sync-models")
+async def sync_provider_models_endpoint(
+    key: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor=Depends(require_admin),
+):
+    """Pull the provider's current model list and reconcile it into the DB."""
+    from app.ai.tester import sync_provider_models
+    result = await sync_provider_models(db, key)
+    if result.get("ok"):
+        await record_audit(
+            action="update", entity_type="ai_provider", entity_id=key,
+            detail=(f"Synced models for {key}: +{result.get('added')} "
+                    f"-{result.get('removed')} (total {result.get('total')})"),
+            user=actor, request=request, db=db,
+        )
+    return result
 
 
 @router.post("/models/{model_id}/test")
