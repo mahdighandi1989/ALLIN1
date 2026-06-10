@@ -120,17 +120,26 @@ async def test_model(db: AsyncSession, model_id: int) -> Dict[str, Any]:
 
     detail = _short_error(resp)
     if resp.status_code == 429:
-        # Rate-limited: the credential is valid (it authenticated), the plan/model
-        # just throttled this request. Surface retry-after so it's not mistaken
-        # for a broken key.
+        # Rate-limited: the credential is valid (it authenticated). For a
+        # subscription/OAuth token this quota is shared with your Claude Code &
+        # claude.ai usage and resets over time — so it's not a broken token.
         retry = resp.headers.get("retry-after")
-        hint = f" — retry in {retry}s" if retry else ""
-        detail = f"rate limited (plan/model quota){hint}. {detail}".strip()
+        if oauth:
+            msg = ("subscription quota for this model is busy/exhausted "
+                   "(shared with your Claude Code & claude.ai usage)")
+        else:
+            msg = "rate limited (account/plan quota)"
+        if retry:
+            msg += f" — retry in {retry}s"
+        return {"ok": False, "latency_ms": latency_ms, "status_code": 429,
+                "message": f"429: {msg}"}
+    # Other errors: include the provider's reason when it's meaningful.
+    suffix = f": {detail}" if detail and detail.lower() != "error" else ""
     return {
         "ok": False,
         "latency_ms": latency_ms,
         "status_code": resp.status_code,
-        "message": f"{resp.status_code}: {detail}",
+        "message": f"{resp.status_code}{suffix}",
     }
 
 
