@@ -274,6 +274,41 @@ export const crmApi = {
     const { data } = await api.get(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`)
     return data
   },
+
+  // ---- Profile child records: mortgaged properties / fixed deposits / partners ----
+  async addProperty(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/properties/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updateProperty(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/properties/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteProperty(id: string): Promise<void> {
+    await api.delete(`/api/crm/properties/${encodeURIComponent(id)}`)
+  },
+  async addFixedDeposit(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/fixed-deposits/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updateFixedDeposit(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/fixed-deposits/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteFixedDeposit(id: string): Promise<void> {
+    await api.delete(`/api/crm/fixed-deposits/${encodeURIComponent(id)}`)
+  },
+  async addPartner(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/partners/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updatePartner(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/partners/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deletePartner(id: string): Promise<void> {
+    await api.delete(`/api/crm/partners/${encodeURIComponent(id)}`)
+  },
 }
 
 // ---------------------------------------------------------------------------

@@ -43,6 +43,10 @@ function CustomerDetailInner() {
   const [kycEdit, setKycEdit] = useState(false)
   const [kycForm, setKycForm] = useState<any>({})
   const [newNote, setNewNote] = useState('')
+  const [showPropForm, setShowPropForm] = useState(false)
+  const [np, setNp] = useState<any>({ valuation_currency: 'AED', country: 'UAE' })
+  const [nfd, setNfd] = useState<any>({ currency: 'AED' })
+  const [npt, setNpt] = useState<any>({})
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -57,7 +61,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {} } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [] } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
@@ -73,9 +77,19 @@ function CustomerDetailInner() {
   const chequeRows = guarantors.filter((g: any) => g.cheque_no || g.cheque_amount)
   const chequeTotal = guarantors.reduce((s: number, g: any) => s + num(g.cheque_amount), 0)
   const fdRows = guarantors.filter((g: any) => fdShown(g.fd))
-  const partners = [1, 2, 3, 4, 5, 6, 7, 8]
+  const blobPartners = [1, 2, 3, 4, 5, 6, 7, 8]
     .map((i) => [pdata[`Partner${i}Name`], pdata[`Partner${i}Nationality`], pdata[`Partner${i}Share`]])
     .filter((r) => r[0])
+  // Prefer the structured (editable) partner records; fall back to the legacy
+  // data_json blob so older imported profiles still render.
+  const partnerList: any[][] = partnerRows.length
+    ? partnerRows.map((p: any) => [p.name, p.nationality, p.share])
+    : blobPartners
+  // Properties for the printable summary: structured backend rows if any, else
+  // the imported mortgage register joined from the static dataset.
+  const propsForSummary: any[] = properties.length
+    ? properties.map((p: any) => ({ deed_no: p.mortgage_deed_no, city: p.city, type: p.prop_type, currency: p.valuation_currency, valuation: p.valuation }))
+    : myProps
   const isCorporate = String(profile?.account_type || customer.account_type || '').toLowerCase().includes('corp')
 
   const toggleStep = async (step: number, isDone: boolean) => {
@@ -150,6 +164,61 @@ function CustomerDetailInner() {
       setNewNote(''); toast.success('Note added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  const addProperty = async () => {
+    try {
+      const body: any = { ...np }
+      if (body.valuation) body.valuation = Number(body.valuation)
+      if (body.mortgage_amount) body.mortgage_amount = Number(body.mortgage_amount)
+      const p = await crmApi.addProperty(acc, body)
+      setData((d: any) => ({ ...d, properties: [...(d.properties || []), p], summary: { ...d.summary, total_properties: (d.summary?.total_properties || 0) + 1, total_mortgage_amount: (d.summary?.total_mortgage_amount || 0) + Number(p.mortgage_amount || 0) } }))
+      setNp({ valuation_currency: 'AED', country: 'UAE' }); setShowPropForm(false)
+      toast.success('Property added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const removeProperty = async (pid: string) => {
+    if (!confirm('Remove this property?')) return
+    try {
+      await crmApi.deleteProperty(pid)
+      setData((d: any) => ({ ...d, properties: (d.properties || []).filter((x: any) => x.id !== pid), summary: { ...d.summary, total_properties: Math.max(0, (d.summary?.total_properties || 1) - 1) } }))
+      toast.success('Property removed')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const addFd = async () => {
+    if (!nfd.fd_number && !nfd.amount) { toast.error('FD number or amount required'); return }
+    try {
+      const body: any = { ...nfd }
+      if (body.amount) body.amount = Number(body.amount)
+      const f = await crmApi.addFixedDeposit(acc, body)
+      setData((d: any) => ({ ...d, fixed_deposits: [...(d.fixed_deposits || []), f], summary: { ...d.summary, total_fixed_deposits: (d.summary?.total_fixed_deposits || 0) + 1, total_fd_amount: (d.summary?.total_fd_amount || 0) + Number(f.amount || 0) } }))
+      setNfd({ currency: 'AED' })
+      toast.success('Fixed deposit added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const removeFd = async (fid: string) => {
+    if (!confirm('Remove this fixed deposit?')) return
+    try {
+      await crmApi.deleteFixedDeposit(fid)
+      setData((d: any) => ({ ...d, fixed_deposits: (d.fixed_deposits || []).filter((x: any) => x.id !== fid), summary: { ...d.summary, total_fixed_deposits: Math.max(0, (d.summary?.total_fixed_deposits || 1) - 1) } }))
+      toast.success('Fixed deposit removed')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const addPartnerRow = async () => {
+    if (!npt.name?.trim()) { toast.error('Partner name required'); return }
+    try {
+      const p = await crmApi.addPartner(acc, npt)
+      setData((d: any) => ({ ...d, partners: [...(d.partners || []), p], summary: { ...d.summary, total_partners: (d.summary?.total_partners || 0) + 1 } }))
+      setNpt({})
+      toast.success('Partner added')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const removePartner = async (pid: string) => {
+    if (!confirm('Remove this partner?')) return
+    try {
+      await crmApi.deletePartner(pid)
+      setData((d: any) => ({ ...d, partners: (d.partners || []).filter((x: any) => x.id !== pid), summary: { ...d.summary, total_partners: Math.max(0, (d.summary?.total_partners || 1) - 1) } }))
+      toast.success('Partner removed')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
   const printSummary = () => {
     document.body.classList.add('print-summary')
     setTimeout(() => { window.print(); document.body.classList.remove('print-summary') }, 60)
@@ -205,7 +274,7 @@ function CustomerDetailInner() {
         <Card icon={<Wallet size={15} />} label="Facilities" value={summary.total_facilities} sub={`${summary.active_facilities || 0} active`} />
         <Card icon={<Wallet size={15} />} label="Total Exposure" value={money(summary.total_exposure)} />
         <Card icon={<ShieldCheck size={15} />} label="Guarantors" value={summary.total_guarantors ?? guarantors.length} />
-        <Card icon={<Building2 size={15} />} label="Properties" value={myProps.length} />
+        <Card icon={<Building2 size={15} />} label="Properties" value={(properties.length || myProps.length)} />
         <Card icon={<FileText size={15} />} label="Offer Letters" value={summary.total_offers} />
       </div>
 
@@ -334,6 +403,39 @@ function CustomerDetailInner() {
             )}
           </Section>
 
+          <Section title={`Fixed Deposits (${fixedDeposits.length})`}>
+            <div className="grid grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
+              {[['fd_number', 'FD Number'], ['amount', 'Amount'], ['currency', 'Currency'], ['open_date', 'Open Date'], ['maturity_date', 'Maturity'], ['rate', 'Rate']].map(([k, ph]) => (
+                <input key={k} value={nfd[k] || ''} onChange={(e) => setNfd((s: any) => ({ ...s, [k]: e.target.value }))}
+                  placeholder={ph} inputMode={k === 'amount' ? 'numeric' : undefined}
+                  className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+              ))}
+              <button onClick={addFd} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add FD</button>
+            </div>
+            {fixedDeposits.length === 0 ? <Empty>No fixed deposits recorded</Empty> : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">
+                    {['FD Number', 'Amount', 'Currency', 'Open', 'Maturity', 'Rate', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}
+                  </tr></thead>
+                  <tbody className="divide-y">
+                    {fixedDeposits.map((f: any) => (
+                      <tr key={f.id}>
+                        <td className="px-3 py-1.5">{val(f.fd_number)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{f.amount != null ? Number(f.amount).toLocaleString() : '—'}</td>
+                        <td className="px-3 py-1.5">{val(f.currency)}</td>
+                        <td className="px-3 py-1.5">{val(f.open_date)}</td>
+                        <td className="px-3 py-1.5">{val(f.maturity_date)}</td>
+                        <td className="px-3 py-1.5">{val(f.rate)}</td>
+                        <td className="px-3 py-1.5"><button onClick={() => removeFd(f.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+
           {securities.length > 0 && (
             <Section title={`Securities Register — Securities List (${securities.length} entries · ${new Set(securities.map((s: any) => s.year)).size} years)`}>
               <p className="text-xs text-gray-500 mb-2">سابقهٔ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
@@ -368,22 +470,95 @@ function CustomerDetailInner() {
             </Section>
           )}
 
-          <Section title="Property / Mortgage">
-            <Grid items={[
-              ['Property No', pdata.Property_No], ['Address', pdata.Property_Address],
-              ['Mortgage Amount', pdata.Mortgage_Amount], ['Mortgage Bank', pdata.Mortgage_Bank],
-              ['Mortgage Date', pdata.Mortgage_Date],
-            ]} />
+          <Section title={`Mortgaged Properties (${properties.length})`}>
+            <div className="flex justify-end mb-2">
+              <button onClick={() => setShowPropForm((v) => !v)} type="button" className="text-sm text-blue-600 hover:underline">
+                {showPropForm ? 'Close' : '+ Add property'}
+              </button>
+            </div>
+            {showPropForm && (
+              <div className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {([
+                    ['plate_no', 'Plate / Reg No'], ['mortgage_deed_no', 'Mortgage Deed No'], ['city', 'City'], ['country', 'Country (UAE/Iran)'],
+                    ['address', 'Address'], ['prop_type', 'Type'], ['building_age', 'Building Age'], ['land_area', 'Land Area (m²)'],
+                    ['cnbc', 'CNBC'], ['valuation', 'Valuation'], ['valuation_currency', 'Val. Currency'], ['mortgage_amount', 'Mortgage Amount'],
+                    ['mortgage_date', 'Mortgage Date'], ['last_valuation_date', 'Last Valuation Date'], ['insurance_no', 'Insurance No'], ['insurance_expiry', 'Insurance Expiry'],
+                  ] as [string, string][]).map(([k, ph]) => (
+                    <input key={k} value={np[k] || ''} onChange={(e) => setNp((s: any) => ({ ...s, [k]: e.target.value }))}
+                      placeholder={ph} inputMode={(k === 'valuation' || k === 'mortgage_amount') ? 'numeric' : undefined}
+                      className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                  ))}
+                </div>
+                <input value={np.remarks || ''} onChange={(e) => setNp((s: any) => ({ ...s, remarks: e.target.value }))} placeholder="Remarks" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm mt-2" />
+                <div className="flex justify-end mt-2">
+                  <button onClick={addProperty} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium">Save property</button>
+                </div>
+              </div>
+            )}
+            {properties.length === 0 ? <Empty>No mortgaged properties recorded</Empty> : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">
+                    {['Plate', 'Deed No', 'City', 'Type', 'Valuation', 'Mortgage Amt', 'Insurance Expiry', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}
+                  </tr></thead>
+                  <tbody className="divide-y">
+                    {properties.map((p: any) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-1.5">{val(p.plate_no)}</td>
+                        <td className="px-3 py-1.5">{val(p.mortgage_deed_no)}</td>
+                        <td className="px-3 py-1.5">{val(p.city)}{p.country ? ` · ${p.country}` : ''}</td>
+                        <td className="px-3 py-1.5">{val(p.prop_type)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{p.valuation != null ? `${p.valuation_currency || 'AED'} ${Number(p.valuation).toLocaleString()}` : '—'}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{p.mortgage_amount != null ? Number(p.mortgage_amount).toLocaleString() : '—'}</td>
+                        <td className="px-3 py-1.5">{val(p.insurance_expiry)}</td>
+                        <td className="px-3 py-1.5"><button onClick={() => removeProperty(p.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             {myProps.length > 0 && (
-              <SimpleTable head={['Deed No.', 'City', 'Type', 'Mortgage Date', 'Valuation', 'Insurance Expiry']}
-                rows={myProps.map((p) => [p.deed_no, p.city, p.type, p.mortgage_date, p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '—', p.insurance_expiry])}
-                empty="" />
+              <div className="mt-4">
+                <p className="text-xs font-medium text-gray-500 mb-1.5">Mortgage register (imported, read-only) — {myProps.length}</p>
+                <SimpleTable head={['Deed No.', 'City', 'Type', 'Mortgage Date', 'Valuation', 'Insurance Expiry']}
+                  rows={myProps.map((p) => [p.deed_no, p.city, p.type, p.mortgage_date, p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '—', p.insurance_expiry])}
+                  empty="" />
+              </div>
             )}
           </Section>
-          <Section title="Partners">
-            <SimpleTable head={['Name', 'Nationality', 'Share %']}
-              rows={[1, 2, 3, 4, 5, 6, 7, 8].map((i) => [pdata[`Partner${i}Name`], pdata[`Partner${i}Nationality`], pdata[`Partner${i}Share`]]).filter((r) => r[0])}
-              empty="No partners" />
+
+          <Section title={`Partners / Shareholders (${partnerList.length})`}>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
+              {[['name', 'Partner name'], ['nationality', 'Nationality'], ['share', 'Share %']].map(([k, ph]) => (
+                <input key={k} value={npt[k] || ''} onChange={(e) => setNpt((s: any) => ({ ...s, [k]: e.target.value }))}
+                  placeholder={ph} className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
+              ))}
+              <button onClick={addPartnerRow} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
+            </div>
+            {partnerRows.length === 0 && blobPartners.length > 0 && (
+              <p className="text-xs text-amber-600 mb-2">نمایش از دادهٔ قدیمی (imported). برای ویرایش، به‌صورت ردیف‌های جدید اضافه کنید.</p>
+            )}
+            {partnerRows.length > 0 ? (
+              <div className="overflow-auto">
+                <table className="w-full text-sm whitespace-nowrap">
+                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Name', 'Nationality', 'Share %', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}</tr></thead>
+                  <tbody className="divide-y">
+                    {partnerRows.map((p: any) => (
+                      <tr key={p.id}>
+                        <td className="px-3 py-1.5">{val(p.name)}</td>
+                        <td className="px-3 py-1.5">{val(p.nationality)}</td>
+                        <td className="px-3 py-1.5">{val(p.share)}</td>
+                        <td className="px-3 py-1.5"><button onClick={() => removePartner(p.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <SimpleTable head={['Name', 'Nationality', 'Share %']} rows={blobPartners} empty="No partners" />
+            )}
           </Section>
         </div>
       )}
@@ -532,14 +707,14 @@ function CustomerDetailInner() {
 
         <h4>Securities & Collateral Summary</h4>
         <table className="kv"><tbody>
-          <tr><td><b>Cheques Total:</b> AED {chequeTotal.toLocaleString()}</td><td><b>Cheques:</b> {chequeRows.length}</td><td><b>Fixed Deposits:</b> {fdRows.length}</td></tr>
+          <tr><td><b>Cheques Total:</b> AED {chequeTotal.toLocaleString()}</td><td><b>Cheques:</b> {chequeRows.length}</td><td><b>Fixed Deposits:</b> {fixedDeposits.length || fdRows.length}</td></tr>
           <tr><td><b>Collateral (AED):</b> {val(pdata.Sec_Collateral_AED)}</td><td><b>Underlien (AED):</b> {val(pdata.Sec_Underlien_AED)}</td><td><b>Outstanding:</b> {money(summary.total_outstanding)}</td></tr>
         </tbody></table>
 
-        {isCorporate && partners.length > 0 && (<><h4>Partners / Shareholders</h4>
+        {isCorporate && partnerList.length > 0 && (<><h4>Partners / Shareholders</h4>
         <table><tbody>
           <tr><th>Name</th><th>Nationality</th><th>Share %</th></tr>
-          {partners.map((p: any, i: number) => <tr key={i}><td>{val(p[0])}</td><td>{val(p[1])}</td><td>{val(p[2])}</td></tr>)}
+          {partnerList.map((p: any, i: number) => <tr key={i}><td>{val(p[0])}</td><td>{val(p[1])}</td><td>{val(p[2])}</td></tr>)}
         </tbody></table></>)}
 
         {checklist && (<><h4>Credit-File Checklist</h4>
@@ -548,10 +723,10 @@ function CustomerDetailInner() {
           <td><b>Last action:</b> {val(checklist.last_action)}</td><td><b>By:</b> {val(checklist.last_user)}</td></tr>
         </tbody></table></>)}
 
-        {myProps.length > 0 && (<><h4>Mortgaged Properties ({myProps.length})</h4>
+        {propsForSummary.length > 0 && (<><h4>Mortgaged Properties ({propsForSummary.length})</h4>
         <table><tbody>
           <tr><th>Deed</th><th>City</th><th>Type</th><th>Valuation</th></tr>
-          {myProps.map((p, i) => <tr key={i}><td>{val(p.deed_no)}</td><td>{val(p.city)}</td><td>{val(p.type)}</td><td>{p.valuation != null ? `${p.currency} ${p.valuation.toLocaleString()}` : '—'}</td></tr>)}
+          {propsForSummary.map((p: any, i: number) => <tr key={i}><td>{val(p.deed_no)}</td><td>{val(p.city)}</td><td>{val(p.type)}</td><td>{p.valuation != null ? `${p.currency || 'AED'} ${Number(p.valuation).toLocaleString()}` : '—'}</td></tr>)}
         </tbody></table></>)}
 
         <div style={{ marginTop: '14mm', display: 'flex', justifyContent: 'space-between', fontSize: '9.5pt', fontWeight: 700 }}>
