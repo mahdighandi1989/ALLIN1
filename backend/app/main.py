@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
@@ -42,7 +43,27 @@ async def lifespan(app: FastAPI):
         await init_database()
     except Exception as exc:  # never let startup hard-crash on bootstrap issues
         logger.error("Database initialization failed: %s", exc)
+
+    # Start the periodic Google Drive snapshot sync when configured. It runs in the
+    # background and is cancelled cleanly on shutdown; failures never block startup.
+    drive_task = None
+    try:
+        from app.services import drive_sync
+
+        if drive_sync.is_enabled():
+            drive_task = asyncio.create_task(drive_sync.run_periodic_snapshot_sync())
+            logger.info("Google Drive sync enabled")
+    except Exception as exc:  # never let an optional feature break boot
+        logger.error("Could not start Google Drive sync: %s", exc)
+
     yield
+
+    if drive_task is not None:
+        drive_task.cancel()
+        try:
+            await drive_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown best-effort
+            pass
 
 
 app = FastAPI(

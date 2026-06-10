@@ -20,6 +20,12 @@ python-dotenv==1.0.1
 redis==5.0.1
 celery==5.3.6
 httpx==0.26.0
+# Google Drive sync (Service Account). google-api-python-client pulls in
+# google-auth/httplib2/uritemplate; google-auth is pinned explicitly so the
+# Service Account credential loader is available even if a future client bump
+# loosens its own pin. Used by app.services.google_drive / drive_sync.
+google-api-python-client==2.122.0
+google-auth==2.29.0
 openpyxl==3.1.2
 # xlrd reads the legacy binary .xls format (openpyxl only handles .xlsx/.xlsm).
 # Pinned to 2.0.1 — the last release; 2.x intentionally supports .xls only.
