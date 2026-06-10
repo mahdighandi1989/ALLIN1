@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
 import {
-  LayoutDashboard, Users, Building, FileText, BarChart3, ShieldCheck, Trash2,
+  LayoutDashboard, Users, Building, BarChart3, ShieldCheck, Trash2,
   ScrollText, FileSpreadsheet, Settings, LogOut, BookOpen, Building2,
   LayoutGrid, Clock,
 } from 'lucide-react'
@@ -30,7 +30,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/customers', label: 'Customers', icon: Users, match: ['/customer-detail'] },
       { href: '/facilities', label: 'Facilities', icon: Building, match: ['/facility-detail'] },
-      { href: '/offer-letters', label: 'Offer Letters', icon: FileText },
       { href: '/properties', label: 'Mortgaged Properties', icon: Building2 },
     ],
   },
