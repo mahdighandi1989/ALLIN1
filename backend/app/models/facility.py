@@ -12,6 +12,13 @@ class FacilityType(str, enum.Enum):
     OVERDRAFT = "overdraft"
     LC = "lc"
     LG = "lg"
+    # Fine-grained legacy types (the Excel PF_* facility sections) — kept distinct
+    # instead of collapsing into lc/lg/other so the credit file is faithful.
+    CHEQUE_DISCOUNTING = "cheque_discounting"
+    TRUST_RECEIPT = "trust_receipt"
+    LC_SIGHT = "lc_sight"
+    LC_USANCE = "lc_usance"
+    LOG = "log"  # Letter of Guarantee (LoG) — distinct from the LG section
     OTHER = "other"
 
 
@@ -69,6 +76,9 @@ class Facility(Base):
     status = _enum_col(FacilityStatus, default=FacilityStatus.ACTIVE)
     purpose = Column(String(500))
     tenor_months = Column(String(4))
+    # Loan sub-attributes (PF_Loan_* in the Excel profile).
+    loan_type = Column(String(30))      # Personal / Commercial / Staff
+    installments = Column(String(10))   # number of installments
     notes = Column(Text)
     interest_rate = Column(Numeric(5, 2))
     collateral_value = Column(Numeric(15, 2))

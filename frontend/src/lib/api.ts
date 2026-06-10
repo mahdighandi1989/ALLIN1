@@ -234,6 +234,10 @@ export const crmApi = {
     const { data } = await api.patch(`/api/crm/checklist/${encodeURIComponent(accountNo)}`, { step, done })
     return data
   },
+  async toggleFacilityChecklist(facilityId: string, step: number, done: boolean): Promise<any> {
+    const { data } = await api.patch(`/api/crm/facility-checklist/${encodeURIComponent(facilityId)}`, { step, done })
+    return data
+  },
   async createTask(accountNo: string, body: { task_name: string; followup_date?: string; priority?: string; notes?: string }): Promise<any> {
     const { data } = await api.post(`/api/crm/tasks/${encodeURIComponent(accountNo)}`, body)
     return data
@@ -252,6 +256,10 @@ export const crmApi = {
   },
   async updateProfile(accountNo: string, body: Record<string, string>): Promise<any> {
     const { data } = await api.patch(`/api/crm/profile/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async completeness(accountNo: string): Promise<{ percent: number; filled: number; total: number; missing: string[] }> {
+    const { data } = await api.get(`/api/crm/completeness/${encodeURIComponent(accountNo)}`)
     return data
   },
   async runMerge(): Promise<any> {
@@ -273,6 +281,62 @@ export const crmApi = {
   async offerLetterData(accountNo: string): Promise<any> {
     const { data } = await api.get(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`)
     return data
+  },
+
+  // ---- Profile child records: mortgaged properties / fixed deposits / partners ----
+  async addProperty(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/properties/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updateProperty(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/properties/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteProperty(id: string): Promise<void> {
+    await api.delete(`/api/crm/properties/${encodeURIComponent(id)}`)
+  },
+  async addFixedDeposit(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/fixed-deposits/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updateFixedDeposit(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/fixed-deposits/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deleteFixedDeposit(id: string): Promise<void> {
+    await api.delete(`/api/crm/fixed-deposits/${encodeURIComponent(id)}`)
+  },
+  async addPartner(accountNo: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.post(`/api/crm/partners/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async updatePartner(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.patch(`/api/crm/partners/${encodeURIComponent(id)}`, body)
+    return data
+  },
+  async deletePartner(id: string): Promise<void> {
+    await api.delete(`/api/crm/partners/${encodeURIComponent(id)}`)
+  },
+
+  // ---- Document attachments (real upload / download / delete) ----
+  async uploadAttachment(
+    accountNo: string,
+    file: File,
+    opts: { facility_id?: string; row_index?: string; is_shared?: boolean; notes?: string } = {},
+  ): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    if (opts.facility_id) form.append('facility_id', opts.facility_id)
+    if (opts.row_index) form.append('row_index', opts.row_index)
+    form.append('is_shared', opts.is_shared ? 'true' : 'false')
+    if (opts.notes) form.append('notes', opts.notes)
+    const { data } = await api.post(`/api/crm/attachments/${encodeURIComponent(accountNo)}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async deleteAttachment(id: string): Promise<void> {
+    await api.delete(`/api/crm/attachments/${encodeURIComponent(id)}`)
   },
 }
 

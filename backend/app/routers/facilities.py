@@ -17,6 +17,7 @@ from app.schemas.facility import (
 )
 from app.routers.auth import require_editor
 from app.services.audit import record_audit
+from app.services.checklist import seed_facility_checklist, cascade_delete_facility, cascade_restore_facility
 from app.services.exporters import rows_to_csv, build_xlsx, XLSX_MEDIA_TYPE
 from app.services.facility_authorization import require_facility_reader
 
@@ -322,6 +323,12 @@ async def create_facility(
     db.add(new_facility)
     await db.commit()
     await db.refresh(new_facility)
+    # A24: seed the new facility's own credit-file checklist with hourglasses.
+    acc = (
+        await db.execute(select(Customer.account_no).where(Customer.id == new_facility.customer_id))
+    ).scalar_one_or_none() or ""
+    await seed_facility_checklist(db, acc, new_facility.id, getattr(current_user, "username", "") or "")
+    await db.commit()
     await record_audit(
         action="create", entity_type="facility", entity_id=new_facility.id,
         detail=f"Created facility '{new_facility.name or new_facility.id}'",
@@ -368,9 +375,11 @@ async def delete_facility(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_editor),
 ):
-    """Soft delete a facility."""
+    """Soft delete a facility (and cascade to its checklist + tasks)."""
     facility = await _get_active_facility(facility_id, db)
     facility.is_deleted = True
+    # A5: cascade — soft-delete the facility's checklist, deactivate its tasks.
+    await cascade_delete_facility(db, facility.id)
     await db.commit()
     await record_audit(
         action="delete", entity_type="facility", entity_id=facility.id,
@@ -396,6 +405,8 @@ async def restore_facility(facility_id: str, db: AsyncSession = Depends(get_db))
 
     facility.is_deleted = False
     facility.status = FacilityStatus.ACTIVE
+    # Bring the facility's checklist back when the facility is restored.
+    await cascade_restore_facility(db, facility.id)
     await db.commit()
     await db.refresh(facility)
     return facility

@@ -5,7 +5,7 @@ These extend the customer into a full "credit file":
                           expiry + the full 200-field record kept in data_json).
   * ChecklistProgress   — the 9-step credit-file workflow status per customer.
 """
-from sqlalchemy import Column, String, Text, DateTime
+from sqlalchemy import Column, String, Text, DateTime, Boolean
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -32,6 +32,25 @@ class CustomerProfile(Base):
     visa_expiry = Column(String(30))
     tenancy_no = Column(String(80))
     tenancy_expiry = Column(String(30))
+    # Issue dates, sub-fields and per-document file paths (PF_* identity docs).
+    # Doc paths are populated by the upload feature; the rest are user-editable.
+    trade_license_issue = Column(String(30))
+    trade_license_remarks = Column(String(255))
+    trade_license_doc = Column(Text)
+    passport_issue = Column(String(30))
+    passport_nationality = Column(String(80))
+    passport_remarks = Column(String(255))
+    passport_doc = Column(Text)
+    emirates_id_issue = Column(String(30))
+    emirates_id_remarks = Column(String(255))
+    emirates_id_doc = Column(Text)
+    emirates_id_golden = Column(String(10))   # Yes / No
+    visa_issue = Column(String(30))
+    visa_type = Column(String(80))
+    visa_doc = Column(Text)
+    tenancy_issue = Column(String(30))
+    tenancy_address = Column(String(255))
+    tenancy_doc = Column(Text)
     profile_completeness = Column(String(20))
     updated_by = Column(String(80))
     last_updated = Column(String(30))
@@ -68,6 +87,31 @@ class ChecklistProgress(Base):
     item8 = Column(String(10))
     item9 = Column(String(10))
     last_user = Column(String(80))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class FacilityChecklist(Base):
+    """The 9-step credit-file checklist PER FACILITY (the Excel LoadFacilityChecklist
+    model: each facility id has its own checklist, distinct from the account-level
+    one). Seeded with an hourglass on every item when a facility is created."""
+    __tablename__ = "facility_checklists"
+
+    id = Column(String(80), primary_key=True)          # FC-{facility_id}
+    account_no = Column(String(50), index=True)
+    facility_id = Column(String(60), index=True)
+    item1 = Column(String(10))
+    item2 = Column(String(10))
+    item3 = Column(String(10))
+    item4 = Column(String(10))
+    item5 = Column(String(10))
+    item6 = Column(String(10))
+    item7 = Column(String(10))
+    item8 = Column(String(10))
+    item9 = Column(String(10))
+    total = Column(String(10))
+    last_action = Column(String(30))
+    last_user = Column(String(80))
+    is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

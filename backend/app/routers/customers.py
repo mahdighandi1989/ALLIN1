@@ -15,7 +15,7 @@ from app.models.offer_letter import OfferLetter
 from app.models.guarantor import Guarantor  # noqa: F401
 from app.models.security import Security  # noqa: F401
 from app.models.crm import (  # noqa: F401
-    CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
+    CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
 )
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner  # noqa: F401
 from app.schemas.customer import (
@@ -288,7 +288,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     from app.models.guarantor import Guarantor
     from app.models.security import Security
     from app.models.crm import (
-        CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
+        CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
     )
     from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 
@@ -316,6 +316,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     properties = await _by_acc(MortgagedProperty)
     fixed_deposits = await _by_acc(FixedDeposit)
     partners = await _by_acc(Partner)
+    facility_checklists = await _by_acc(FacilityChecklist)
     profile_row = (
         await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
     ).scalar_one_or_none()
@@ -352,6 +353,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "properties": [_to_dict(p) for p in properties],
         "fixed_deposits": [_to_dict(d) for d in fixed_deposits],
         "partners": [_to_dict(pt) for pt in partners],
+        "facility_checklists": [_to_dict(fc) for fc in facility_checklists],
         "profile": profile,
         "checklist": _to_dict(checklist_row) if checklist_row is not None else None,
         "summary": {

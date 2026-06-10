@@ -9,7 +9,7 @@ import { Facility, FacilityForm as FacilityFormData } from '@/types'
 import { ArrowLeft, Save, Pencil, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-const FACILITY_TYPES: FacilityFormData['facility_type'][] = ['loan', 'overdraft', 'lc', 'lg', 'other']
+const FACILITY_TYPES: FacilityFormData['facility_type'][] = ['loan', 'overdraft', 'cheque_discounting', 'trust_receipt', 'lc', 'lc_sight', 'lc_usance', 'lg', 'log', 'other']
 const STATUSES = ['active', 'pending', 'inactive', 'closed', 'defaulted', 'written_off']
 
 function money(n: number | null | undefined, cur = 'AED') {

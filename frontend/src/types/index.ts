@@ -419,9 +419,13 @@ export interface CustomerForm {
   notes?: string
 }
 
+export type FacilityTypeValue =
+  | 'loan' | 'overdraft' | 'cheque_discounting' | 'trust_receipt'
+  | 'lc' | 'lc_sight' | 'lc_usance' | 'lg' | 'log' | 'other'
+
 export interface FacilityForm {
   customer_id: string
-  facility_type: 'loan' | 'overdraft' | 'lc' | 'lg' | 'other'
+  facility_type: FacilityTypeValue
   name?: string
   amount: number
   currency: string
@@ -429,6 +433,8 @@ export interface FacilityForm {
   expiry_date?: string
   interest_rate?: number
   tenor_months?: string
+  loan_type?: string
+  installments?: string
   notes?: string
 }
 

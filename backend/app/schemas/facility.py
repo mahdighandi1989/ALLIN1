@@ -29,6 +29,8 @@ class FacilityBase(BaseModel):
     expiry_date: Optional[date] = Field(None, description="Expiry date")
     interest_rate: Optional[Decimal] = Field(None, ge=0, le=100, description="Interest rate")
     tenor_months: TenorMonths = Field(None, max_length=4, description="Tenor in months")
+    loan_type: OptionalSafeText = Field(None, max_length=30, description="Loan type (Personal/Commercial/Staff)")
+    installments: OptionalSafeText = Field(None, max_length=10, description="Number of installments")
     notes: OptionalSafeText = Field(None, max_length=1000, description="Notes")
 
 
@@ -51,6 +53,8 @@ class FacilityUpdate(BaseModel):
     expiry_date: Optional[date] = Field(None, description="Expiry date")
     interest_rate: Optional[Decimal] = Field(None, ge=0, le=100, description="Interest rate")
     tenor_months: TenorMonths = Field(None, max_length=4, description="Tenor in months")
+    loan_type: OptionalSafeText = Field(None, max_length=30, description="Loan type (Personal/Commercial/Staff)")
+    installments: OptionalSafeText = Field(None, max_length=10, description="Number of installments")
     notes: OptionalSafeText = Field(None, max_length=1000, description="Notes")
 
 
@@ -78,6 +82,8 @@ class FacilityResponse(BaseModel):
     expiry_date: Optional[date] = None
     interest_rate: Optional[Decimal] = None
     tenor_months: Optional[str] = None
+    loan_type: Optional[str] = None
+    installments: Optional[str] = None
     notes: Optional[str] = None
     is_deleted: bool = False
     created_at: Optional[datetime] = None

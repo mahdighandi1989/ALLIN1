@@ -55,3 +55,6 @@ htmlcov/
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Uploaded documents (stored on disk / a persistent volume, never committed)
+backend/uploads/

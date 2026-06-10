@@ -6,6 +6,28 @@
 > برآورد پوشش واقعی نسبت به کل سیستم اکسل: **~۲۰–۲۵٪**. پوسته‌ی عمومیِ CRUD و
 > زیرساخت آماده است؛ منطقِ عمیقِ بانکی و ۲۵ خواسته‌ی صفحه‌ی «پرامپت» عمدتاً نیست.
 
+## ✅ Implemented in this branch (Phases 1–3)
+
+- **Phase 1 — data infrastructure:** structured **Mortgaged Properties**, **Fixed
+  Deposits** and **Partners** (models + CRUD `/api/crm/{properties,fixed-deposits,
+  partners}` + editable UI in customer-detail); **KYC document sub-fields** (issue
+  date, remarks, passport nationality, Emirates-ID golden, visa type, tenancy
+  address); **fine-grained facility types** (cheque_discounting, trust_receipt,
+  lc_sight, lc_usance, log) + loan sub-fields.
+- **Phase 2 — workflow core:** **per-facility checklist** + **auto-hourglass** on
+  facility creation (`FacilityChecklist`, `/api/crm/facility-checklist/{id}`);
+  **profile completeness** recompute + missing-field list
+  (`/api/crm/completeness/{acc}`); **cascade delete** (facility → its checklist +
+  tasks, with restore).
+- **Phase 3 — documents:** **real per-row / per-checklist upload + download**
+  (`/api/crm/attachments/...`, files on disk under `UPLOAD_DIR`), so a scanned
+  document actually opens again (A15).
+
+Verified: backend 413 passed / 78.6% coverage; frontend type-check + build + 23
+jest tests pass; all routes registered; `/health` 200. **Phase 4** (real expiry
+scheduler, server-side Summary PDF, rich notes + Outlook email, general
+profiles/checklists, daily-log routing, backup) is **not** in this branch.
+
 Source of truth analysed:
 - **VBA**: 6 modules, **23,256 lines** (Module1 = 20,592), **384 procedures**
   (313 Sub + 71 Function), **480 constants**, a **~290-field** `PF_*` customer
@@ -161,5 +183,5 @@ Each phase is independently shippable and verified (backend tests + type-check).
   helper — add the array + a `summary` count there.
 - Tests: `backend/tests/` with `client` + `auth_headers` fixtures (in-memory SQLite).
 
-**Status of this roadmap**: Phase 1a/1b/1c (Properties, Fixed Deposits, Partners
-backend) is the first slice being implemented now.
+**Status of this roadmap**: Phases 1–3 are implemented and verified on this
+branch (see "Implemented in this branch" at the top). Phase 4 remains open.

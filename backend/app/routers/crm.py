@@ -12,17 +12,21 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
+from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote, Attachment
+from app.services import attachments as attachments_store
 from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
+from app.services.checklist import seed_facility_checklist, HOURGLASS
+from app.services.completeness import recompute_completeness
 from app.routers.auth import require_editor, require_admin
 
 router = APIRouter(tags=["crm"])
@@ -103,7 +107,7 @@ async def create_task(
     user=Depends(require_editor),
 ):
     """Add a follow-up task for a customer."""
-    tid = f"T-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    tid = f"T-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     t = CustomTask(
         id=tid, account_no=account_no, facility_id=(payload.facility_id or "")[:60],
         task_name=payload.task_name[:200], status="", followup_date=(payload.followup_date or "")[:30],
@@ -187,10 +191,20 @@ def _facility_type(raw: str) -> FacilityType:
     u = (raw or "").strip().lower()
     if "overdraft" in u or u == "od":
         return FacilityType.OVERDRAFT
+    if "cheque" in u and ("disc" in u or "discount" in u):
+        return FacilityType.CHEQUE_DISCOUNTING
+    if "trust" in u or u in ("tr", "t/r"):
+        return FacilityType.TRUST_RECEIPT
     if "loan" in u:
         return FacilityType.LOAN
+    if "usance" in u:
+        return FacilityType.LC_USANCE
+    if "sight" in u:
+        return FacilityType.LC_SIGHT
     if u == "lc" or "letter of credit" in u:
         return FacilityType.LC
+    if u == "log" or "letter of guarantee" in u:
+        return FacilityType.LOG
     if u == "lg" or "guarantee" in u:
         return FacilityType.LG
     return FacilityType.OTHER
@@ -201,6 +215,8 @@ class FacilityCreate(BaseModel):
     amount: float = Field(..., ge=0)
     currency: str = "AED"
     name: str = ""  # facility / offer-letter reference
+    loan_type: str = ""       # Personal / Commercial / Staff
+    installments: str = ""
 
 
 @router.post("/facilities/{account_no}")
@@ -216,31 +232,87 @@ async def add_facility(
     ).scalar_one_or_none()
     if not cid:
         raise HTTPException(status_code=404, detail="Customer not found for this account")
-    fid = f"F-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    fid = f"F-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     f = Facility(
         id=fid, customer_id=cid, name=(payload.name or "")[:200], amount=payload.amount,
         currency=(payload.currency or "AED")[:3], facility_type=_facility_type(payload.facility_type),
+        loan_type=(payload.loan_type or "")[:30] or None,
+        installments=(payload.installments or "")[:10] or None,
         risk_rating="medium", is_deleted=False,
     )
     db.add(f)
+    # A24: stamp an hourglass on every step of the new facility's own checklist.
+    await seed_facility_checklist(db, account_no, fid, getattr(user, "username", "") or "")
     await db.commit()
     return {
         "id": f.id, "name": f.name, "amount": float(f.amount or 0),
         "currency": f.currency, "facility_type": f.facility_type.value,
+        "loan_type": f.loan_type, "installments": f.installments,
         "status": "active", "outstanding": 0,
     }
+
+
+def _fc_dict(fc: FacilityChecklist) -> dict:
+    return {
+        "id": fc.id, "account_no": fc.account_no, "facility_id": fc.facility_id,
+        "total": fc.total, "last_action": fc.last_action, "last_user": fc.last_user,
+        **{f"item{i}": getattr(fc, f"item{i}", "") for i in range(1, 10)},
+    }
+
+
+@router.patch("/facility-checklist/{facility_id}")
+async def toggle_facility_checklist(
+    facility_id: str,
+    payload: StepToggle,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Mark a step done/pending on a FACILITY's own checklist (creates it, seeded
+    with hourglasses, if it doesn't exist yet)."""
+    fid = (facility_id or "").strip()
+    fc = (
+        await db.execute(select(FacilityChecklist).where(FacilityChecklist.facility_id == fid))
+    ).scalar_one_or_none()
+    if fc is None:
+        fac = (await db.execute(select(Facility).where(Facility.id == fid))).scalar_one_or_none()
+        account_no = ""
+        if fac is not None:
+            account_no = (
+                await db.execute(select(Customer.account_no).where(Customer.id == fac.customer_id))
+            ).scalar_one_or_none() or ""
+        fc = await seed_facility_checklist(db, account_no, fid, getattr(user, "username", "") or "")
+    setattr(fc, f"item{payload.step}", "✓" if payload.done else HOURGLASS)
+    fc.total = str(sum(1 for i in range(1, 10) if _is_done(getattr(fc, f"item{i}", ""))))
+    fc.last_action = date.today().isoformat()
+    fc.last_user = getattr(user, "username", "") or ""
+    db.add(JournalEntry(
+        id="J-" + uuid.uuid4().hex[:18],
+        account_no=fc.account_no,
+        item=f"{CHECKLIST_STEPS[payload.step - 1]} (facility {fid})",
+        status="✓" if payload.done else HOURGLASS,
+        action="Submit" if payload.done else "Unmark",
+        source="Facility Checklist",
+        date=date.today().isoformat(),
+        user=getattr(user, "username", "") or "",
+    ))
+    await db.commit()
+    return _fc_dict(fc)
 
 
 # ---------------------------------------------------------------------------
 # Customer profile / KYC editing
 # ---------------------------------------------------------------------------
+# Editable profile/KYC fields. Number + issue + expiry + remarks (+ sub-fields:
+# passport nationality, Emirates-ID golden flag, visa type, tenancy address) for
+# each of the 5 identity documents. Doc-path columns are set by the upload
+# feature (Phase 3), not here.
 _KYC_FIELDS = [
     "business_type", "rating", "customer_status",
-    "trade_license_no", "trade_license_expiry",
-    "passport_no", "passport_expiry",
-    "emirates_id_no", "emirates_id_expiry",
-    "visa_no", "visa_expiry",
-    "tenancy_no", "tenancy_expiry",
+    "trade_license_no", "trade_license_issue", "trade_license_expiry", "trade_license_remarks",
+    "passport_no", "passport_issue", "passport_expiry", "passport_nationality", "passport_remarks",
+    "emirates_id_no", "emirates_id_issue", "emirates_id_expiry", "emirates_id_remarks", "emirates_id_golden",
+    "visa_no", "visa_issue", "visa_expiry", "visa_type",
+    "tenancy_no", "tenancy_issue", "tenancy_expiry", "tenancy_address",
 ]
 
 
@@ -249,15 +321,27 @@ class ProfileUpdate(BaseModel):
     rating: Optional[str] = None
     customer_status: Optional[str] = None
     trade_license_no: Optional[str] = None
+    trade_license_issue: Optional[str] = None
     trade_license_expiry: Optional[str] = None
+    trade_license_remarks: Optional[str] = None
     passport_no: Optional[str] = None
+    passport_issue: Optional[str] = None
     passport_expiry: Optional[str] = None
+    passport_nationality: Optional[str] = None
+    passport_remarks: Optional[str] = None
     emirates_id_no: Optional[str] = None
+    emirates_id_issue: Optional[str] = None
     emirates_id_expiry: Optional[str] = None
+    emirates_id_remarks: Optional[str] = None
+    emirates_id_golden: Optional[str] = None
     visa_no: Optional[str] = None
+    visa_issue: Optional[str] = None
     visa_expiry: Optional[str] = None
+    visa_type: Optional[str] = None
     tenancy_no: Optional[str] = None
+    tenancy_issue: Optional[str] = None
     tenancy_expiry: Optional[str] = None
+    tenancy_address: Optional[str] = None
 
 
 @router.patch("/profile/{account_no}")
@@ -274,14 +358,33 @@ async def update_profile(
     if cp is None:
         cp = CustomerProfile(account_no=account_no)
         db.add(cp)
+    cols = CustomerProfile.__table__.columns
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         if v is not None and k in _KYC_FIELDS:
-            setattr(cp, k, str(v)[:80])
+            maxlen = getattr(getattr(cols.get(k), "type", None), "length", None)
+            s = str(v)
+            setattr(cp, k, s[:maxlen] if maxlen else s)
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
+    # Recompute completeness so the stored % reflects the edit (A25).
+    await recompute_completeness(db, account_no)
     await db.commit()
-    return {k: getattr(cp, k, None) for k in _KYC_FIELDS}
+    result = {k: getattr(cp, k, None) for k in _KYC_FIELDS}
+    result["profile_completeness"] = cp.profile_completeness
+    return result
+
+
+@router.get("/completeness/{account_no}")
+async def get_completeness(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Completeness % + the list of fields still missing (Excel ShowMissingFields)."""
+    result = await recompute_completeness(db, account_no)
+    await db.commit()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +614,7 @@ async def add_note(
     user=Depends(require_editor),
 ):
     """Add a note / reminder to a customer."""
-    nid = f"N-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    nid = f"N-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     n = CustomerNote(
         id=nid, account_no=account_no, title=(payload.title or "")[:200], content=payload.content,
         category=(payload.category or "General")[:40], priority=(payload.priority or "Medium")[:20],
@@ -784,3 +887,82 @@ async def delete_partner(
 ):
     """Remove (soft-delete) a partner / shareholder."""
     return await _delete_child(db, Partner, item_id)
+
+
+# ===========================================================================
+# Document attachments — real per-row / per-checklist upload + download (A10/A15).
+# The file bytes are stored on disk (services.attachments); the row records the
+# metadata, scoped to a facility + checklist row (or shared across checklists).
+# ===========================================================================
+def _attachment_dict(a: Attachment) -> dict:
+    return {
+        "id": a.id, "account_no": a.account_no, "facility_id": a.facility_id,
+        "row_index": a.row_index, "file_name": a.file_name, "original_name": a.original_name,
+        "file_size": a.file_size, "upload_date": a.upload_date, "uploaded_by": a.uploaded_by,
+        "is_shared": a.is_shared, "notes": a.notes,
+    }
+
+
+@router.post("/attachments/{account_no}")
+async def upload_attachment(
+    account_no: str,
+    file: UploadFile = File(...),
+    facility_id: str = Form(""),
+    row_index: str = Form(""),
+    is_shared: bool = Form(False),
+    notes: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Upload a document, store it on disk under the customer/facility folder and
+    record its metadata (scoped to a facility + checklist row, or shared)."""
+    rel, size, stored = await attachments_store.save_upload(account_no, facility_id, file)
+    aid = f"A-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
+    a = Attachment(
+        id=aid, account_no=account_no, facility_id=(facility_id or "")[:60],
+        row_index=(row_index or "")[:10], file_name=stored[:255],
+        original_name=(file.filename or stored)[:255], file_path=rel,
+        file_size=str(size), upload_date=date.today().isoformat(),
+        uploaded_by=getattr(user, "username", "") or "",
+        is_shared="1" if is_shared else "0", notes=notes or "",
+    )
+    db.add(a)
+    await db.commit()
+    return _attachment_dict(a)
+
+
+@router.get("/attachments/{attachment_id}/download")
+async def download_attachment(
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Stream a stored document back so it actually opens again (fixes A15)."""
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = attachments_store.resolve(a.file_path or "")
+    if path is None:
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(str(path), filename=a.original_name or a.file_name or "document")
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_attachment(
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Remove an attachment record and its stored file."""
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = attachments_store.resolve(a.file_path or "")
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    await db.delete(a)
+    await db.commit()
+    return {"ok": True, "id": attachment_id, "deleted": True}
