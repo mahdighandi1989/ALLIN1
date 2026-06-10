@@ -7,7 +7,7 @@ import AISettings from '@/components/AISettings'
 import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
-import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const { user, authDisabled, loading: authLoading } = useAuth()
   const [data, setData] = useState<SettingsResponse | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
+  const [tab, setTab] = useState<'general' | 'ai'>('general')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [fx, setFx] = useState<FxRates | null>(null)
@@ -127,7 +128,40 @@ export default function SettingsPage() {
         <h2 className="text-2xl font-bold">System Settings</h2>
       </div>
 
-      <div className="max-w-2xl space-y-6">
+      {/* Tabs */}
+      <div className="flex gap-1 border-b mb-6">
+        <button
+          type="button"
+          onClick={() => setTab('general')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            tab === 'general'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <SettingsIcon size={16} /> General
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('ai')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            tab === 'ai'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Bot size={16} /> AI Models &amp; Providers
+        </button>
+      </div>
+
+      {/* AI tab — central AI control layer, on its own wider canvas */}
+      {tab === 'ai' && (
+        <div className="max-w-4xl">
+          <AISettings isAdmin={isAdmin} />
+        </div>
+      )}
+
+      <div className={`max-w-2xl space-y-6 ${tab === 'general' ? '' : 'hidden'}`}>
         {/* Editable settings */}
         <form onSubmit={save} className="bg-white rounded-lg shadow-sm p-6 space-y-4" data-testid="settings-form">
           <h3 className="font-medium">Application settings</h3>
@@ -184,9 +218,6 @@ export default function SettingsPage() {
             )}
           </form>
         )}
-
-        {/* AI models & providers — central AI control layer */}
-        <AISettings isAdmin={isAdmin} />
 
         {/* Legacy data merge (admin) */}
         {isAdmin && (
