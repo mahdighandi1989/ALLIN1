@@ -12,7 +12,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -979,3 +979,114 @@ async def delete_attachment(
     await db.delete(a)
     await db.commit()
     return {"ok": True, "id": attachment_id, "deleted": True}
+
+
+# ===========================================================================
+# Credit-file Summary — server-generated PDF (the Excel GenerateSummaryReport).
+# Draws from the structured data (profile, facilities, guarantors, securities,
+# properties, FDs, partners) so it is the single source, and is downloadable
+# instead of browser-print-only.
+# ===========================================================================
+@router.get("/summary/{account_no}/export.pdf")
+async def export_summary_pdf(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Generate a credit-file summary PDF (Corporate/Retail) for one customer."""
+    from app.services.exporters import build_pdf
+    from app.models.security import Security
+
+    acc = (account_no or "").strip()
+    cust = (
+        await db.execute(select(Customer).where(Customer.account_no == acc, Customer.is_deleted == False))
+    ).scalar_one_or_none()
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    prof = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    facs = (
+        await db.execute(select(Facility).where(Facility.customer_id == cust.id, Facility.is_deleted == False))
+    ).scalars().all()
+
+    async def _by_acc(model, order=None):
+        q = select(model).where(model.account_no == acc)
+        if hasattr(model, "is_deleted"):
+            q = q.where(model.is_deleted == False)  # noqa: E712
+        if order is not None:
+            q = q.order_by(order)
+        return (await db.execute(q)).scalars().all()
+
+    guars = await _by_acc(Guarantor)
+    secs = await _by_acc(Security, order=Security.year.desc())
+    props = await _by_acc(MortgagedProperty)
+    fds = await _by_acc(FixedDeposit)
+    partners = await _by_acc(Partner)
+
+    def _money(v, cur="AED"):
+        try:
+            return f"{cur} {float(v or 0):,.0f}"
+        except (TypeError, ValueError):
+            return str(v or "")
+
+    def _ev(x):
+        return getattr(x, "value", x)
+
+    sections: list = [(
+        "Facilities", ["Ref / Name", "Type", "Amount", "Status", "Expiry"],
+        [[f.name or f.id, _ev(f.facility_type), _money(f.amount, f.currency or "AED"), _ev(f.status),
+          str(f.expiry_date or f.end_date or "") or "—"] for f in facs],
+    )]
+    if prof is not None:
+        kyc = [
+            ("Trade Licence", prof.trade_license_no, prof.trade_license_issue, prof.trade_license_expiry, prof.trade_license_remarks),
+            ("Passport", prof.passport_no, prof.passport_issue, prof.passport_expiry, prof.passport_remarks),
+            ("Emirates ID", prof.emirates_id_no, prof.emirates_id_issue, prof.emirates_id_expiry, prof.emirates_id_remarks),
+            ("Visa", prof.visa_no, prof.visa_issue, prof.visa_expiry, prof.visa_type),
+            ("Tenancy", prof.tenancy_no, prof.tenancy_issue, prof.tenancy_expiry, prof.tenancy_address),
+        ]
+        sections.append((
+            "KYC Documents", ["Document", "Number", "Issue", "Expiry", "Remarks / Sub-field"],
+            [[d[0], d[1] or "—", d[2] or "—", d[3] or "—", d[4] or "—"] for d in kyc],
+        ))
+    if guars:
+        sections.append((
+            "Guarantors & Security Cheques", ["Name", "Account", "Cheque No", "Amount", "Bank"],
+            [[g.guarantor_name, g.guarantor_account, g.cheque_no, _money(g.cheque_amount), g.issuing_bank] for g in guars],
+        ))
+    if props:
+        sections.append((
+            "Mortgaged Properties", ["Plate", "Deed No", "City", "Type", "Valuation", "Mortgage Amt", "Ins. Expiry"],
+            [[p.plate_no, p.mortgage_deed_no, p.city, p.prop_type, _money(p.valuation, p.valuation_currency or "AED"),
+              _money(p.mortgage_amount), p.insurance_expiry] for p in props],
+        ))
+    if fds:
+        sections.append((
+            "Fixed Deposits", ["Number", "Amount", "Currency", "Open", "Maturity", "Rate"],
+            [[d.fd_number, _money(d.amount, d.currency or "AED"), d.currency, d.open_date, d.maturity_date, d.rate] for d in fds],
+        ))
+    if partners:
+        sections.append((
+            "Partners / Shareholders", ["Name", "Nationality", "Share %"],
+            [[p.name, p.nationality, p.share] for p in partners],
+        ))
+    if secs:
+        sections.append((
+            f"Securities Register ({len(secs)})", ["Year", "Cheque No", "Amount", "Bank", "Remarks"],
+            [[s.year, s.cheque_no, _money(s.cheque_amount_num), s.issuing_bank, s.remarks] for s in secs[:40]],
+        ))
+
+    exposure = sum(float(f.amount or 0) for f in facs)
+    meta = {
+        "Account": acc, "Branch": cust.branch or "—", "Type": _ev(cust.account_type),
+        "Rating": (getattr(prof, "rating", "") if prof else "") or "—",
+        "Total exposure": _money(exposure),
+        "Completeness": (getattr(prof, "profile_completeness", "") if prof else "") or "—",
+    }
+    content, media = build_pdf(f"Credit File Summary — {cust.name or acc}", sections, meta)
+    ext = "pdf" if media == "application/pdf" else "html"
+    return Response(
+        content=content, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="credit-summary-{acc}.{ext}"'},
+    )

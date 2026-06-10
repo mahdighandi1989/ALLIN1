@@ -286,6 +286,11 @@ function CustomerDetailInner() {
       toast.success(r?.message || 'Summary emailed')
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  const downloadPdf = async () => {
+    try {
+      await downloadFile(`/api/crm/summary/${encodeURIComponent(acc)}/export.pdf`, `credit-summary-${acc}.pdf`)
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
 
   const TABS = [
     { id: 'overview', label: 'Overview', icon: Building },
@@ -314,6 +319,9 @@ function CustomerDetailInner() {
           <div className="mb-2 flex items-center gap-2 justify-end">
             <button onClick={emailSummary} type="button" className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm">
               <Mail size={14} /> Email
+            </button>
+            <button onClick={downloadPdf} type="button" className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-3 py-1.5 text-sm">
+              <FileText size={14} /> PDF
             </button>
             <button onClick={printSummary} type="button" className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm">
               <FileText size={14} /> Print Summary

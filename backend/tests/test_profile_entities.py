@@ -188,6 +188,20 @@ class TestCompleteness:
         assert "%" in (upd.json().get("profile_completeness") or "")
 
 
+class TestSummaryPdf:
+    async def test_export_pdf(self, client: AsyncClient, auth_headers: dict, test_customer: Customer, test_facility):
+        r = await client.get(f"/api/crm/summary/{test_customer.account_no}/export.pdf", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        ct = r.headers.get("content-type", "")
+        assert ct.startswith("application/pdf") or ct.startswith("text/html")
+        assert r.content[:4] == b"%PDF" or r.content[:9].lower() == b"<!doctype"
+        assert "credit-summary" in r.headers.get("content-disposition", "")
+
+    async def test_missing_customer_returns_404(self, client: AsyncClient, auth_headers: dict):
+        r = await client.get("/api/crm/summary/NOPE/export.pdf", headers=auth_headers)
+        assert r.status_code == 404
+
+
 class TestExpiryScan:
     async def test_scan_raises_facility_alert_task(self, client: AsyncClient, auth_headers: dict, admin_headers: dict, test_customer: Customer, test_facility):
         # test_facility expires 2024-12-31 (past) -> inside the alert window
