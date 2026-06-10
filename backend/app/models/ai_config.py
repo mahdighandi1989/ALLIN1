@@ -58,13 +58,22 @@ class AIProvider(Base):
     key = Column(String(40), primary_key=True)            # "anthropic", "openai", …
     display_name = Column(String(80), nullable=False)
     enabled = Column(Boolean, default=False, nullable=False)
-    # Secret. Stored as text, never returned raw (see to_dict). If blank, the
-    # manager falls back to the provider's env var (e.g. ANTHROPIC_API_KEY).
+    # How the stored secret authenticates the provider:
+    #   "api_key"      — a normal pay-per-use API key (x-api-key / Bearer key).
+    #   "oauth_bearer" — a subscription/OAuth token (e.g. Claude Code
+    #                    CLAUDE_CODE_OAUTH_TOKEN, sk-ant-oat01-…) sent as a
+    #                    Bearer token. Lets you use a Claude subscription instead
+    #                    of a separately-billed API key.
+    auth_scheme = Column(String(20), default="api_key", nullable=False)
+    # Secret (API key OR OAuth token). Stored as text, never returned raw (see
+    # to_dict). If blank, the manager falls back to the provider's env var.
     api_key = Column(Text, nullable=True)
     # Optional override for the provider's API base URL (proxies, gateways).
     base_url = Column(String(255), nullable=True)
     # Env var the manager reads when api_key is blank (informational for the UI).
     env_key = Column(String(64), nullable=True)
+    # Surfaced as a "Recommended" badge in the UI.
+    recommended = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -75,11 +84,13 @@ class AIProvider(Base):
             "key": self.key,
             "display_name": self.display_name,
             "enabled": bool(self.enabled),
+            "auth_scheme": self.auth_scheme or "api_key",
             "has_api_key": bool(self.api_key),
             "api_key_masked": _mask_secret(self.api_key),
             "base_url": self.base_url,
             "env_key": self.env_key,
-            # True when a key is set in the DB *or* available from the environment.
+            "recommended": bool(self.recommended),
+            # True when a secret is set in the DB *or* available from the environment.
             "configured": bool(self.api_key) or env_configured,
             "notes": self.notes,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
@@ -92,8 +103,14 @@ class AIModel(Base):
     __tablename__ = "ai_models"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    # The provider's model id, e.g. "claude-opus-4-8". Unique per install.
+    # Our unique row identifier for this model. Usually equals the provider's
+    # model id, but may differ when the same underlying model is offered under
+    # two providers (e.g. "claude-opus-4-8" via API key and
+    # "claude-opus-4-8-sub" via the subscription token) — keep it unique.
     model_key = Column(String(120), unique=True, index=True, nullable=False)
+    # The actual id sent to the provider in the API call. Defaults to model_key
+    # when null (see ``api_id``). This is what a consumer should pass as ``model``.
+    api_model_id = Column(String(120), nullable=True)
     provider_key = Column(String(40), ForeignKey("ai_providers.key"), nullable=False, index=True)
     display_name = Column(String(120), nullable=False)
     enabled = Column(Boolean, default=True, nullable=False)
@@ -120,10 +137,16 @@ class AIModel(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    @property
+    def api_id(self) -> str:
+        """The id to send to the provider (``api_model_id`` or, if unset, ``model_key``)."""
+        return self.api_model_id or self.model_key
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "model_key": self.model_key,
+            "api_model_id": self.api_id,
             "provider_key": self.provider_key,
             "display_name": self.display_name,
             "enabled": bool(self.enabled),

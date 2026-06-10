@@ -39,9 +39,15 @@ class ResolvedModel:
 
     task: str
     provider_key: str
+    # The id to send to the provider as ``model`` (e.g. "claude-opus-4-8").
     model_key: str
     display_name: str
+    # The secret to authenticate with — an API key or an OAuth/subscription token.
     api_key: Optional[str]
+    # How to present ``api_key``: "api_key" (normal key) or "oauth_bearer"
+    # (subscription token → Authorization: Bearer). A consumer uses this to pick
+    # the right auth header for the call.
+    auth_scheme: str
     base_url: Optional[str]
     capabilities: List[str] = field(default_factory=list)
     max_output_tokens: Optional[int] = None
@@ -131,9 +137,10 @@ class AIManager:
         return ResolvedModel(
             task=task,
             provider_key=provider.key,
-            model_key=model.model_key,
+            model_key=model.api_id,  # what to send to the provider as `model`
             display_name=model.display_name,
             api_key=api_key,
+            auth_scheme=provider.auth_scheme or "api_key",
             base_url=base_url,
             capabilities=list(model.capabilities or []),
             max_output_tokens=model.max_output_tokens,
@@ -194,9 +201,11 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
             provider = AIProvider(
                 key=key,
                 display_name=pdef["display_name"],
-                enabled=False,  # off until an admin adds a key
+                enabled=False,  # off until an admin adds a key/token
+                auth_scheme=pdef.get("auth_scheme", "api_key"),
                 base_url=pdef.get("base_url"),
                 env_key=pdef.get("env_key"),
+                recommended=pdef.get("recommended", False),
                 notes=pdef.get("notes"),
             )
             db.add(provider)
@@ -204,7 +213,9 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
         else:
             # Refresh non-destructive metadata (keep enabled flag, key, base_url override).
             provider.display_name = pdef["display_name"]
+            provider.auth_scheme = pdef.get("auth_scheme", "api_key")
             provider.env_key = pdef.get("env_key")
+            provider.recommended = pdef.get("recommended", False)
             if not provider.notes:
                 provider.notes = pdef.get("notes")
 
@@ -217,6 +228,7 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
             db.add(
                 AIModel(
                     model_key=mdef["model_key"],
+                    api_model_id=mdef.get("api_model_id"),
                     provider_key=provider_key,
                     display_name=mdef.get("display_name", mdef["model_key"]),
                     enabled=True,
@@ -233,6 +245,7 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
         elif not model.is_custom:
             # Keep catalog metadata current; preserve the admin's enabled flag.
             model.display_name = mdef.get("display_name", model.display_name)
+            model.api_model_id = mdef.get("api_model_id")
             model.provider_key = provider_key
             model.capabilities = list(mdef.get("capabilities", []))
             model.max_output_tokens = mdef.get("max_output_tokens")

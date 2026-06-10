@@ -476,10 +476,12 @@ export interface AIProvider {
   key: string
   display_name: string
   enabled: boolean
+  auth_scheme: 'api_key' | 'oauth_bearer'
   has_api_key: boolean
   api_key_masked: string | null
   base_url: string | null
   env_key: string | null
+  recommended: boolean
   configured: boolean
   notes: string | null
   updated_at: string | null
@@ -488,6 +490,7 @@ export interface AIProvider {
 export interface AIModel {
   id: number
   model_key: string
+  api_model_id: string
   provider_key: string
   display_name: string
   enabled: boolean

@@ -233,20 +233,30 @@ function ProviderCard(props: {
     onOpenAdd, onCancelAdd, onAddModel, capabilities,
   } = props
 
+  // OAuth-token providers (e.g. a Claude subscription) present the secret as a
+  // "token" rather than an "API key".
+  const isOauth = p.auth_scheme === 'oauth_bearer'
+  const secretNoun = isOauth ? 'token' : 'key'
+  const secretLabel = isOauth ? 'OAuth token' : 'API key'
+  const secretPlaceholder = isOauth ? 'Paste OAuth token (sk-ant-oat01-…)…' : 'Paste API key…'
+
   return (
     <div className="bg-white rounded-lg shadow-sm overflow-hidden">
       {/* Header + config */}
       <div className={`p-5 ${p.enabled ? 'bg-blue-50/40' : 'bg-gray-50'} border-b`}>
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold">{p.display_name}</span>
-            {p.notes?.startsWith('Recommended') && (
+            {p.recommended && (
               <span className="text-[11px] px-1.5 py-0.5 bg-blue-600 text-white rounded">Recommended</span>
             )}
+            {isOauth && (
+              <span className="text-[11px] px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded">subscription token</span>
+            )}
             {p.configured ? (
-              <span className="text-xs text-green-600 flex items-center gap-0.5"><Check size={13} /> key set</span>
+              <span className="text-xs text-green-600 flex items-center gap-0.5"><Check size={13} /> {secretNoun} set</span>
             ) : (
-              <span className="text-xs text-gray-400 flex items-center gap-0.5"><X size={13} /> no key</span>
+              <span className="text-xs text-gray-400 flex items-center gap-0.5"><X size={13} /> no {secretNoun}</span>
             )}
           </div>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -268,12 +278,12 @@ function ProviderCard(props: {
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">
-                API key {p.env_key && <span className="text-gray-400">· falls back to env {p.env_key}</span>}
+                {secretLabel} {p.env_key && <span className="text-gray-400">· falls back to env {p.env_key}</span>}
               </label>
               <div className="flex gap-2">
                 <input
                   type="password"
-                  placeholder={p.has_api_key ? (p.api_key_masked ?? '••••') : 'Paste API key…'}
+                  placeholder={p.has_api_key ? (p.api_key_masked ?? '••••') : secretPlaceholder}
                   value={keyDraft}
                   onChange={(e) => onKeyDraft(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded-lg text-sm bg-white"
