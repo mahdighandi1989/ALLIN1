@@ -8,6 +8,16 @@ from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility
 from app.models.offer_letter import OfferLetter
+# Register the account_no-keyed CRM / profile-child tables on Base.metadata at
+# import time (the detail aggregator below also imports them locally). Without an
+# import at module load, the FIRST request/test to hit get_customer_detail can
+# 500 with "no such table" because create_all ran before the model was imported.
+from app.models.guarantor import Guarantor  # noqa: F401
+from app.models.security import Security  # noqa: F401
+from app.models.crm import (  # noqa: F401
+    CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
+)
+from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner  # noqa: F401
 from app.schemas.customer import (
     CustomerCreate,
     CustomerUpdate,
@@ -280,6 +290,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     from app.models.crm import (
         CustomerProfile, ChecklistProgress, CustomTask, Attachment, JournalEntry, CustomerNote,
     )
+    from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 
     def _to_dict(obj):
         return {c.key: getattr(obj, c.key) for c in _sa_inspect(obj).mapper.column_attrs}
@@ -302,6 +313,9 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     attachments = await _by_acc(Attachment)
     journal = await _by_acc(JournalEntry, order=JournalEntry.date.desc(), limit=60)
     notes = await _by_acc(CustomerNote)
+    properties = await _by_acc(MortgagedProperty)
+    fixed_deposits = await _by_acc(FixedDeposit)
+    partners = await _by_acc(Partner)
     profile_row = (
         await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
     ).scalar_one_or_none()
@@ -335,6 +349,9 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "attachments": [_to_dict(a) for a in attachments],
         "journal": [_to_dict(j) for j in journal],
         "notes": [_to_dict(n) for n in notes],
+        "properties": [_to_dict(p) for p in properties],
+        "fixed_deposits": [_to_dict(d) for d in fixed_deposits],
+        "partners": [_to_dict(pt) for pt in partners],
         "profile": profile,
         "checklist": _to_dict(checklist_row) if checklist_row is not None else None,
         "summary": {
@@ -344,6 +361,11 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
             "total_guarantors": len(guarantors),
             "total_securities": len(securities),
             "securities_cheque_total": float(sum((s.cheque_amount_num or 0) for s in securities)),
+            "total_properties": len(properties),
+            "total_fixed_deposits": len(fixed_deposits),
+            "total_partners": len(partners),
+            "total_mortgage_amount": float(sum((p.mortgage_amount or 0) for p in properties)),
+            "total_fd_amount": float(sum((d.amount or 0) for d in fixed_deposits)),
             "total_exposure": total_exposure,
             "total_outstanding": total_outstanding,
             "currency": "AED",
