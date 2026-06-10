@@ -13,8 +13,13 @@ import toast from 'react-hot-toast'
 const FACILITY_TYPES: FacilityFormData['facility_type'][] = [
   'loan',
   'overdraft',
+  'cheque_discounting',
+  'trust_receipt',
   'lc',
+  'lc_sight',
+  'lc_usance',
   'lg',
+  'log',
   'other',
 ]
 

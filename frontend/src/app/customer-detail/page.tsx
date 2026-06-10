@@ -137,16 +137,20 @@ function CustomerDetailInner() {
       toast.success('Facility added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
-  const KYC_DOCS = [
-    ['Trade License', 'trade_license_no', 'trade_license_expiry'],
-    ['Passport', 'passport_no', 'passport_expiry'],
-    ['Emirates ID', 'emirates_id_no', 'emirates_id_expiry'],
-    ['Visa', 'visa_no', 'visa_expiry'],
-    ['Tenancy', 'tenancy_no', 'tenancy_expiry'],
+  // [title, numberKey, expiryKey, [ [extraKey, label], ... ]]
+  const KYC_DOCS: [string, string, string, [string, string][]][] = [
+    ['Trade License', 'trade_license_no', 'trade_license_expiry', [['trade_license_issue', 'Issue date'], ['trade_license_remarks', 'Remarks']]],
+    ['Passport', 'passport_no', 'passport_expiry', [['passport_issue', 'Issue date'], ['passport_nationality', 'Nationality'], ['passport_remarks', 'Remarks']]],
+    ['Emirates ID', 'emirates_id_no', 'emirates_id_expiry', [['emirates_id_issue', 'Issue date'], ['emirates_id_golden', 'Golden (Yes/No)'], ['emirates_id_remarks', 'Remarks']]],
+    ['Visa', 'visa_no', 'visa_expiry', [['visa_issue', 'Issue date'], ['visa_type', 'Type']]],
+    ['Tenancy', 'tenancy_no', 'tenancy_expiry', [['tenancy_issue', 'Issue date'], ['tenancy_address', 'Address']]],
   ]
   const startKycEdit = () => {
     const f: any = { business_type: profile?.business_type || '', rating: profile?.rating || '' }
-    KYC_DOCS.forEach(([, nk, ek]) => { f[nk] = profile?.[nk] || ''; f[ek] = profile?.[ek] || '' })
+    KYC_DOCS.forEach(([, nk, ek, extras]) => {
+      f[nk] = profile?.[nk] || ''; f[ek] = profile?.[ek] || ''
+      extras.forEach(([k]) => { f[k] = profile?.[k] || '' })
+    })
     setKycForm(f); setKycEdit(true)
   }
   const saveKyc = async () => {
@@ -318,7 +322,7 @@ function CustomerDetailInner() {
             )}
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {KYC_DOCS.map(([title, nk, ek]) => (
+            {KYC_DOCS.map(([title, nk, ek, extras]) => (
               <div key={nk} className="border border-gray-200 rounded-lg p-3">
                 <div className="text-xs text-gray-400">{title}</div>
                 {kycEdit ? (
@@ -327,11 +331,18 @@ function CustomerDetailInner() {
                       placeholder="Number" className="w-full border border-gray-300 rounded px-2 py-1 text-sm mt-1" />
                     <input value={kycForm[ek] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [ek]: e.target.value }))}
                       placeholder="Expiry (YYYY-MM-DD)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
+                    {extras.map(([k, ph]) => (
+                      <input key={k} value={kycForm[k] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [k]: e.target.value }))}
+                        placeholder={ph} className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
+                    ))}
                   </>
                 ) : (
                   <>
                     <div className="font-medium text-sm">{val(profile?.[nk])}</div>
                     <div className="text-xs text-gray-500 mt-1">Expiry: {val(profile?.[ek])}</div>
+                    {extras.filter(([k]) => profile?.[k]).map(([k, ph]) => (
+                      <div key={k} className="text-xs text-gray-500 mt-0.5">{ph}: {val(profile?.[k])}</div>
+                    ))}
                   </>
                 )}
               </div>
@@ -345,8 +356,16 @@ function CustomerDetailInner() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
             <select value={nf.facility_type} onChange={(e) => setNf((s: any) => ({ ...s, facility_type: e.target.value }))}
               className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm">
-              <option value="overdraft">Overdraft</option><option value="loan">Loan</option>
-              <option value="lc">LC</option><option value="lg">LG</option><option value="other">Other</option>
+              <option value="overdraft">Overdraft</option>
+              <option value="loan">Loan</option>
+              <option value="cheque_discounting">Cheque Discounting</option>
+              <option value="trust_receipt">Trust Receipt</option>
+              <option value="lc">LC</option>
+              <option value="lc_sight">LC Sight</option>
+              <option value="lc_usance">LC Usance</option>
+              <option value="lg">LG</option>
+              <option value="log">Letter of Guarantee (LoG)</option>
+              <option value="other">Other</option>
             </select>
             <input value={nf.amount} onChange={(e) => setNf((s: any) => ({ ...s, amount: e.target.value }))} placeholder="Amount" inputMode="numeric" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
             <input value={nf.currency} onChange={(e) => setNf((s: any) => ({ ...s, currency: e.target.value }))} placeholder="AED" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />

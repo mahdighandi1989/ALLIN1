@@ -90,3 +90,47 @@ class TestProfileEntities:
     async def test_update_missing_returns_404(self, client: AsyncClient, auth_headers: dict):
         r = await client.patch("/api/crm/properties/NOPE", headers=auth_headers, json={"city": "X"})
         assert r.status_code == 404
+
+
+class TestFacilityGranularity:
+    async def test_fine_grained_facility_types(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        acc = test_customer.account_no
+        for raw, expected in [
+            ("Cheque Discounting", "cheque_discounting"),
+            ("TR", "trust_receipt"),
+            ("LC Usance", "lc_usance"),
+            ("LC Sight", "lc_sight"),
+            ("LoG", "log"),
+            ("OD", "overdraft"),
+        ]:
+            r = await client.post(f"/api/crm/facilities/{acc}", headers=auth_headers,
+                                  json={"facility_type": raw, "amount": 1000})
+            assert r.status_code == 200, r.text
+            assert r.json()["facility_type"] == expected, f"{raw} -> {r.json()['facility_type']}"
+
+    async def test_loan_subfields_persist(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        r = await client.post(f"/api/crm/facilities/{test_customer.account_no}", headers=auth_headers,
+                              json={"facility_type": "loan", "amount": 5000, "loan_type": "Staff", "installments": "36"})
+        assert r.status_code == 200, r.text
+        assert r.json()["loan_type"] == "Staff"
+        assert r.json()["installments"] == "36"
+
+
+class TestKycDocFields:
+    async def test_extended_kyc_fields_persist_and_surface(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        acc, cid = test_customer.account_no, test_customer.id
+        body = {
+            "passport_issue": "2020-01-01", "passport_nationality": "Iran", "passport_remarks": "renewed",
+            "emirates_id_golden": "Yes", "visa_type": "Investor", "tenancy_address": "Dubai Marina",
+            "trade_license_remarks": "free zone licence",
+        }
+        r = await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json=body)
+        assert r.status_code == 200, r.text
+        for k, v in body.items():
+            assert r.json()[k] == v, k
+        # surfaced in detail.profile
+        prof = (await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)).json()["profile"]
+        assert prof["passport_nationality"] == "Iran"
+        assert prof["emirates_id_golden"] == "Yes"
+        assert prof["visa_type"] == "Investor"
+        assert prof["tenancy_address"] == "Dubai Marina"

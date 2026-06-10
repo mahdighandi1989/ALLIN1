@@ -103,7 +103,7 @@ async def create_task(
     user=Depends(require_editor),
 ):
     """Add a follow-up task for a customer."""
-    tid = f"T-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    tid = f"T-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     t = CustomTask(
         id=tid, account_no=account_no, facility_id=(payload.facility_id or "")[:60],
         task_name=payload.task_name[:200], status="", followup_date=(payload.followup_date or "")[:30],
@@ -187,10 +187,20 @@ def _facility_type(raw: str) -> FacilityType:
     u = (raw or "").strip().lower()
     if "overdraft" in u or u == "od":
         return FacilityType.OVERDRAFT
+    if "cheque" in u and ("disc" in u or "discount" in u):
+        return FacilityType.CHEQUE_DISCOUNTING
+    if "trust" in u or u in ("tr", "t/r"):
+        return FacilityType.TRUST_RECEIPT
     if "loan" in u:
         return FacilityType.LOAN
+    if "usance" in u:
+        return FacilityType.LC_USANCE
+    if "sight" in u:
+        return FacilityType.LC_SIGHT
     if u == "lc" or "letter of credit" in u:
         return FacilityType.LC
+    if u == "log" or "letter of guarantee" in u:
+        return FacilityType.LOG
     if u == "lg" or "guarantee" in u:
         return FacilityType.LG
     return FacilityType.OTHER
@@ -201,6 +211,8 @@ class FacilityCreate(BaseModel):
     amount: float = Field(..., ge=0)
     currency: str = "AED"
     name: str = ""  # facility / offer-letter reference
+    loan_type: str = ""       # Personal / Commercial / Staff
+    installments: str = ""
 
 
 @router.post("/facilities/{account_no}")
@@ -216,10 +228,12 @@ async def add_facility(
     ).scalar_one_or_none()
     if not cid:
         raise HTTPException(status_code=404, detail="Customer not found for this account")
-    fid = f"F-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    fid = f"F-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     f = Facility(
         id=fid, customer_id=cid, name=(payload.name or "")[:200], amount=payload.amount,
         currency=(payload.currency or "AED")[:3], facility_type=_facility_type(payload.facility_type),
+        loan_type=(payload.loan_type or "")[:30] or None,
+        installments=(payload.installments or "")[:10] or None,
         risk_rating="medium", is_deleted=False,
     )
     db.add(f)
@@ -227,6 +241,7 @@ async def add_facility(
     return {
         "id": f.id, "name": f.name, "amount": float(f.amount or 0),
         "currency": f.currency, "facility_type": f.facility_type.value,
+        "loan_type": f.loan_type, "installments": f.installments,
         "status": "active", "outstanding": 0,
     }
 
@@ -234,13 +249,17 @@ async def add_facility(
 # ---------------------------------------------------------------------------
 # Customer profile / KYC editing
 # ---------------------------------------------------------------------------
+# Editable profile/KYC fields. Number + issue + expiry + remarks (+ sub-fields:
+# passport nationality, Emirates-ID golden flag, visa type, tenancy address) for
+# each of the 5 identity documents. Doc-path columns are set by the upload
+# feature (Phase 3), not here.
 _KYC_FIELDS = [
     "business_type", "rating", "customer_status",
-    "trade_license_no", "trade_license_expiry",
-    "passport_no", "passport_expiry",
-    "emirates_id_no", "emirates_id_expiry",
-    "visa_no", "visa_expiry",
-    "tenancy_no", "tenancy_expiry",
+    "trade_license_no", "trade_license_issue", "trade_license_expiry", "trade_license_remarks",
+    "passport_no", "passport_issue", "passport_expiry", "passport_nationality", "passport_remarks",
+    "emirates_id_no", "emirates_id_issue", "emirates_id_expiry", "emirates_id_remarks", "emirates_id_golden",
+    "visa_no", "visa_issue", "visa_expiry", "visa_type",
+    "tenancy_no", "tenancy_issue", "tenancy_expiry", "tenancy_address",
 ]
 
 
@@ -249,15 +268,27 @@ class ProfileUpdate(BaseModel):
     rating: Optional[str] = None
     customer_status: Optional[str] = None
     trade_license_no: Optional[str] = None
+    trade_license_issue: Optional[str] = None
     trade_license_expiry: Optional[str] = None
+    trade_license_remarks: Optional[str] = None
     passport_no: Optional[str] = None
+    passport_issue: Optional[str] = None
     passport_expiry: Optional[str] = None
+    passport_nationality: Optional[str] = None
+    passport_remarks: Optional[str] = None
     emirates_id_no: Optional[str] = None
+    emirates_id_issue: Optional[str] = None
     emirates_id_expiry: Optional[str] = None
+    emirates_id_remarks: Optional[str] = None
+    emirates_id_golden: Optional[str] = None
     visa_no: Optional[str] = None
+    visa_issue: Optional[str] = None
     visa_expiry: Optional[str] = None
+    visa_type: Optional[str] = None
     tenancy_no: Optional[str] = None
+    tenancy_issue: Optional[str] = None
     tenancy_expiry: Optional[str] = None
+    tenancy_address: Optional[str] = None
 
 
 @router.patch("/profile/{account_no}")
@@ -274,10 +305,13 @@ async def update_profile(
     if cp is None:
         cp = CustomerProfile(account_no=account_no)
         db.add(cp)
+    cols = CustomerProfile.__table__.columns
     data = payload.model_dump(exclude_unset=True)
     for k, v in data.items():
         if v is not None and k in _KYC_FIELDS:
-            setattr(cp, k, str(v)[:80])
+            maxlen = getattr(getattr(cols.get(k), "type", None), "length", None)
+            s = str(v)
+            setattr(cp, k, s[:maxlen] if maxlen else s)
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
     await db.commit()
@@ -511,7 +545,7 @@ async def add_note(
     user=Depends(require_editor),
 ):
     """Add a note / reminder to a customer."""
-    nid = f"N-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    nid = f"N-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     n = CustomerNote(
         id=nid, account_no=account_no, title=(payload.title or "")[:200], content=payload.content,
         category=(payload.category or "General")[:40], priority=(payload.priority or "Medium")[:20],
