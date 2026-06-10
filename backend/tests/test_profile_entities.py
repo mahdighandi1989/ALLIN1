@@ -165,3 +165,46 @@ class TestKycDocFields:
         assert prof["emirates_id_golden"] == "Yes"
         assert prof["visa_type"] == "Investor"
         assert prof["tenancy_address"] == "Dubai Marina"
+
+
+class TestCompleteness:
+    async def test_recompute_and_missing(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        acc = test_customer.account_no
+        r0 = await client.get(f"/api/crm/completeness/{acc}", headers=auth_headers)
+        assert r0.status_code == 200, r0.text
+        assert r0.json()["percent"] < 100
+        assert "Trade licence no" in r0.json()["missing"]
+        base_missing = len(r0.json()["missing"])
+
+        # fill some fields -> percent rises, fewer missing
+        await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json={"trade_license_no": "TL1", "rating": "A"})
+        r1 = await client.get(f"/api/crm/completeness/{acc}", headers=auth_headers)
+        assert r1.json()["percent"] >= r0.json()["percent"]
+        assert len(r1.json()["missing"]) < base_missing
+        assert "Trade licence no" not in r1.json()["missing"]
+
+        # the profile PATCH itself returns the freshly stored completeness %
+        upd = await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json={"business_type": "Trading"})
+        assert "%" in (upd.json().get("profile_completeness") or "")
+
+
+class TestFacilityCascade:
+    async def test_delete_and_restore_cascade(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        acc, cid = test_customer.account_no, test_customer.id
+        f = await client.post(f"/api/crm/facilities/{acc}", headers=auth_headers, json={"facility_type": "loan", "amount": 1000})
+        fid = f.json()["id"]
+        await client.post(f"/api/crm/tasks/{acc}", headers=auth_headers, json={"task_name": "do it", "facility_id": fid})
+
+        d = await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)
+        assert any(fc["facility_id"] == fid for fc in d.json()["facility_checklists"])
+
+        dele = await client.delete(f"/api/facilities/{fid}", headers=auth_headers)
+        assert dele.status_code == 204
+        d2 = (await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)).json()
+        assert not any(fc["facility_id"] == fid for fc in d2["facility_checklists"])
+        tsk = [t for t in d2["tasks"] if t["facility_id"] == fid]
+        assert tsk and tsk[0]["is_active"] == "0"
+
+        await client.post(f"/api/facilities/{fid}/restore", headers=auth_headers)
+        d3 = (await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)).json()
+        assert any(fc["facility_id"] == fid for fc in d3["facility_checklists"])

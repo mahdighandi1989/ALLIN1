@@ -49,6 +49,7 @@ function CustomerDetailInner() {
   const [nfd, setNfd] = useState<any>({ currency: 'AED' })
   const [npt, setNpt] = useState<any>({})
   const [chkFacility, setChkFacility] = useState('')  // '' = account-level checklist
+  const [comp, setComp] = useState<any>(null)
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -176,6 +177,14 @@ function CustomerDetailInner() {
       const updated = await crmApi.updateProfile(acc, kycForm)
       setData((d: any) => ({ ...d, profile: { ...(d.profile || { account_no: acc }), ...updated } }))
       setKycEdit(false); toast.success('KYC updated')
+      loadCompleteness()
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const loadCompleteness = async () => {
+    try {
+      const c = await crmApi.completeness(acc)
+      setComp(c)
+      setData((d: any) => ({ ...d, profile: { ...(d.profile || { account_no: acc }), profile_completeness: `${c.percent}%` } }))
     } catch (e) { toast.error(parseApiError(e)) }
   }
   const addNote = async () => {
@@ -337,6 +346,17 @@ function CustomerDetailInner() {
                 <button onClick={() => setKycEdit(false)} type="button" className="text-sm text-gray-500">Cancel</button>
                 <button onClick={saveKyc} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm font-medium">Save</button>
               </div>
+            )}
+          </div>
+          <div className="mb-3 flex items-center gap-3 flex-wrap">
+            <button onClick={loadCompleteness} type="button" className="text-sm text-blue-600 hover:underline">Check completeness</button>
+            {comp && (
+              <span className="text-sm">
+                <b>{comp.percent}%</b> complete · {comp.filled}/{comp.total} fields
+                {comp.missing?.length
+                  ? <span className="text-amber-600"> · Missing: {comp.missing.join('، ')}</span>
+                  : <span className="text-green-600"> · همه‌چیز تکمیل است ✓</span>}
+              </span>
             )}
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">

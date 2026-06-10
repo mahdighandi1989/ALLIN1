@@ -24,6 +24,7 @@ from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.services.checklist import seed_facility_checklist, HOURGLASS
+from app.services.completeness import recompute_completeness
 from app.routers.auth import require_editor, require_admin
 
 router = APIRouter(tags=["crm"])
@@ -364,8 +365,24 @@ async def update_profile(
             setattr(cp, k, s[:maxlen] if maxlen else s)
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
+    # Recompute completeness so the stored % reflects the edit (A25).
+    await recompute_completeness(db, account_no)
     await db.commit()
-    return {k: getattr(cp, k, None) for k in _KYC_FIELDS}
+    result = {k: getattr(cp, k, None) for k in _KYC_FIELDS}
+    result["profile_completeness"] = cp.profile_completeness
+    return result
+
+
+@router.get("/completeness/{account_no}")
+async def get_completeness(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Completeness % + the list of fields still missing (Excel ShowMissingFields)."""
+    result = await recompute_completeness(db, account_no)
+    await db.commit()
+    return result
 
 
 # ---------------------------------------------------------------------------

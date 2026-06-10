@@ -5,7 +5,7 @@ These extend the customer into a full "credit file":
                           expiry + the full 200-field record kept in data_json).
   * ChecklistProgress   — the 9-step credit-file workflow status per customer.
 """
-from sqlalchemy import Column, String, Text, DateTime
+from sqlalchemy import Column, String, Text, DateTime, Boolean
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -111,6 +111,7 @@ class FacilityChecklist(Base):
     total = Column(String(10))
     last_action = Column(String(30))
     last_user = Column(String(80))
+    is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

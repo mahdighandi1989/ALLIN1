@@ -258,6 +258,10 @@ export const crmApi = {
     const { data } = await api.patch(`/api/crm/profile/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async completeness(accountNo: string): Promise<{ percent: number; filled: number; total: number; missing: string[] }> {
+    const { data } = await api.get(`/api/crm/completeness/${encodeURIComponent(accountNo)}`)
+    return data
+  },
   async runMerge(): Promise<any> {
     const { data } = await api.post('/api/crm/run-merge')
     return data

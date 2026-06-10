@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
-from app.models.crm import FacilityChecklist
+from app.models.crm import FacilityChecklist, CustomTask
 
 # Marker stamped on every step of a brand-new facility's checklist (vs "✓" = done).
 HOURGLASS = "⌛"
@@ -36,7 +36,32 @@ async def seed_facility_checklist(db, account_no: str, facility_id: str, usernam
         total="0",
         last_action=date.today().isoformat(),
         last_user=username or "",
+        is_deleted=False,
         **{f"item{i}": HOURGLASS for i in range(1, 10)},
     )
     db.add(fc)
     return fc
+
+
+async def cascade_delete_facility(db, facility_id: str) -> None:
+    """When a facility is removed, soft-delete its checklist and deactivate its
+    follow-up tasks so they drop out of the pending list (requirement A5)."""
+    fid = str(facility_id or "").strip()
+    if not fid:
+        return
+    await db.execute(
+        update(FacilityChecklist).where(FacilityChecklist.facility_id == fid).values(is_deleted=True)
+    )
+    await db.execute(
+        update(CustomTask).where(CustomTask.facility_id == fid).values(is_active="0")
+    )
+
+
+async def cascade_restore_facility(db, facility_id: str) -> None:
+    """Re-activate a facility's checklist when the facility itself is restored."""
+    fid = str(facility_id or "").strip()
+    if not fid:
+        return
+    await db.execute(
+        update(FacilityChecklist).where(FacilityChecklist.facility_id == fid).values(is_deleted=False)
+    )
