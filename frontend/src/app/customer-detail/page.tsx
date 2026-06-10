@@ -20,6 +20,7 @@ const CHECKLIST_STEPS = [
 function money(n: any, cur = 'AED') { return `${cur} ${Number(n || 0).toLocaleString()}` }
 function val(v: any) { return v === null || v === undefined || v === '' ? '—' : String(v) }
 function done(v: any) { return v === '✓' || v === true || String(v).toLowerCase() === 'true' || v === '1' }
+function isHourglass(v: any) { return String(v) === '⌛' }
 
 function statusBadge(s: any) {
   const v = (s || '').toString().toLowerCase()
@@ -47,6 +48,7 @@ function CustomerDetailInner() {
   const [np, setNp] = useState<any>({ valuation_currency: 'AED', country: 'UAE' })
   const [nfd, setNfd] = useState<any>({ currency: 'AED' })
   const [npt, setNpt] = useState<any>({})
+  const [chkFacility, setChkFacility] = useState('')  // '' = account-level checklist
 
   useEffect(() => {
     if (!id) { setError('No customer specified'); setLoading(false); return }
@@ -61,7 +63,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [] } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [] } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const myProps = acc ? PROPERTIES.filter((p) => String(p.ac_no).trim() === acc) : []
@@ -90,12 +92,28 @@ function CustomerDetailInner() {
   const propsForSummary: any[] = properties.length
     ? properties.map((p: any) => ({ deed_no: p.mortgage_deed_no, city: p.city, type: p.prop_type, currency: p.valuation_currency, valuation: p.valuation }))
     : myProps
+  // The checklist currently shown: a selected facility's own checklist, or the
+  // account-level one when no facility is chosen.
+  const activeChecklist = chkFacility
+    ? (facilityChecklists.find((fc: any) => fc.facility_id === chkFacility) || null)
+    : checklist
   const isCorporate = String(profile?.account_type || customer.account_type || '').toLowerCase().includes('corp')
 
   const toggleStep = async (step: number, isDone: boolean) => {
     try {
-      await crmApi.toggleChecklistStep(acc, step, !isDone)
-      setData((d: any) => ({ ...d, checklist: { ...(d.checklist || { account_no: acc }), [`item${step}`]: !isDone ? '✓' : '' } }))
+      if (chkFacility) {
+        const updated = await crmApi.toggleFacilityChecklist(chkFacility, step, !isDone)
+        setData((d: any) => {
+          const list = d.facility_checklists || []
+          const next = list.some((fc: any) => fc.facility_id === chkFacility)
+            ? list.map((fc: any) => (fc.facility_id === chkFacility ? updated : fc))
+            : [...list, updated]
+          return { ...d, facility_checklists: next }
+        })
+      } else {
+        await crmApi.toggleChecklistStep(acc, step, !isDone)
+        setData((d: any) => ({ ...d, checklist: { ...(d.checklist || { account_no: acc }), [`item${step}`]: !isDone ? '✓' : '' } }))
+      }
       toast.success(`${CHECKLIST_STEPS[step - 1]}: ${!isDone ? 'done' : 'pending'}`)
     } catch (e) {
       toast.error(parseApiError(e))
@@ -583,24 +601,38 @@ function CustomerDetailInner() {
       )}
 
       {tab === 'checklist' && (
-        <Section title="Credit-File Workflow (9 steps)">
-          <p className="text-xs text-gray-400 mb-3">روی هر مرحله بزنید تا انجام‌شده/در‌انتظار شود (در Journal ثبت می‌شود).</p>
+        <Section title="Credit-File Checklist (9 steps)">
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <label className="text-xs text-gray-500">Checklist for:</label>
+            <select value={chkFacility} onChange={(e) => setChkFacility(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm">
+              <option value="">Account-level</option>
+              {facilities.map((f: any) => (
+                <option key={f.id} value={f.id}>{(f.name || (f.facility_type || '').toUpperCase() || 'Facility')} · {f.id}</option>
+              ))}
+            </select>
+            {chkFacility
+              ? <span className="text-xs text-amber-600">⌛ = در انتظار (هنگام ساختِ تسهیلات خودکار درج شد)</span>
+              : <span className="text-xs text-gray-400">روی هر مرحله بزنید تا انجام‌شده/در‌انتظار شود (در Journal ثبت می‌شود).</span>}
+          </div>
           <div className="space-y-1.5">
             {CHECKLIST_STEPS.map((s, i) => {
-              const isDone = done(checklist?.[`item${i + 1}`])
+              const v = activeChecklist?.[`item${i + 1}`]
+              const isDone = done(v)
+              const hg = isHourglass(v)
               return (
                 <button key={i} type="button" onClick={() => toggleStep(i + 1, isDone)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${isDone ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isDone ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                    {isDone ? '✓' : i + 1}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${isDone ? 'bg-green-50 border-green-200' : hg ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isDone ? 'bg-green-600 text-white' : hg ? 'bg-amber-400 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                    {isDone ? '✓' : hg ? '⌛' : i + 1}
                   </span>
                   <span className={`flex-1 text-sm ${isDone ? 'text-green-800 font-medium' : 'text-gray-700'}`}>{s}</span>
-                  <span className="text-xs text-gray-400">{isDone ? 'Done' : 'Pending'}</span>
+                  <span className="text-xs text-gray-400">{isDone ? 'Done' : hg ? 'Pending' : '—'}</span>
                 </button>
               )
             })}
           </div>
-          {checklist && <p className="text-xs text-gray-400 mt-3">Total {checklist.total} · last action {val(checklist.last_action)} by {val(checklist.last_user)}</p>}
+          {activeChecklist && <p className="text-xs text-gray-400 mt-3">Total {activeChecklist.total} · last action {val(activeChecklist.last_action)} by {val(activeChecklist.last_user)}</p>}
         </Section>
       )}
 

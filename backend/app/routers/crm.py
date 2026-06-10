@@ -18,11 +18,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.crm import ChecklistProgress, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
+from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote
 from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
+from app.services.checklist import seed_facility_checklist, HOURGLASS
 from app.routers.auth import require_editor, require_admin
 
 router = APIRouter(tags=["crm"])
@@ -237,6 +238,8 @@ async def add_facility(
         risk_rating="medium", is_deleted=False,
     )
     db.add(f)
+    # A24: stamp an hourglass on every step of the new facility's own checklist.
+    await seed_facility_checklist(db, account_no, fid, getattr(user, "username", "") or "")
     await db.commit()
     return {
         "id": f.id, "name": f.name, "amount": float(f.amount or 0),
@@ -244,6 +247,53 @@ async def add_facility(
         "loan_type": f.loan_type, "installments": f.installments,
         "status": "active", "outstanding": 0,
     }
+
+
+def _fc_dict(fc: FacilityChecklist) -> dict:
+    return {
+        "id": fc.id, "account_no": fc.account_no, "facility_id": fc.facility_id,
+        "total": fc.total, "last_action": fc.last_action, "last_user": fc.last_user,
+        **{f"item{i}": getattr(fc, f"item{i}", "") for i in range(1, 10)},
+    }
+
+
+@router.patch("/facility-checklist/{facility_id}")
+async def toggle_facility_checklist(
+    facility_id: str,
+    payload: StepToggle,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Mark a step done/pending on a FACILITY's own checklist (creates it, seeded
+    with hourglasses, if it doesn't exist yet)."""
+    fid = (facility_id or "").strip()
+    fc = (
+        await db.execute(select(FacilityChecklist).where(FacilityChecklist.facility_id == fid))
+    ).scalar_one_or_none()
+    if fc is None:
+        fac = (await db.execute(select(Facility).where(Facility.id == fid))).scalar_one_or_none()
+        account_no = ""
+        if fac is not None:
+            account_no = (
+                await db.execute(select(Customer.account_no).where(Customer.id == fac.customer_id))
+            ).scalar_one_or_none() or ""
+        fc = await seed_facility_checklist(db, account_no, fid, getattr(user, "username", "") or "")
+    setattr(fc, f"item{payload.step}", "✓" if payload.done else HOURGLASS)
+    fc.total = str(sum(1 for i in range(1, 10) if _is_done(getattr(fc, f"item{i}", ""))))
+    fc.last_action = date.today().isoformat()
+    fc.last_user = getattr(user, "username", "") or ""
+    db.add(JournalEntry(
+        id="J-" + uuid.uuid4().hex[:18],
+        account_no=fc.account_no,
+        item=f"{CHECKLIST_STEPS[payload.step - 1]} (facility {fid})",
+        status="✓" if payload.done else HOURGLASS,
+        action="Submit" if payload.done else "Unmark",
+        source="Facility Checklist",
+        date=date.today().isoformat(),
+        user=getattr(user, "username", "") or "",
+    ))
+    await db.commit()
+    return _fc_dict(fc)
 
 
 # ---------------------------------------------------------------------------

@@ -116,6 +116,37 @@ class TestFacilityGranularity:
         assert r.json()["installments"] == "36"
 
 
+class TestFacilityChecklist:
+    async def test_seeded_with_hourglasses_and_toggle(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        acc, cid = test_customer.account_no, test_customer.id
+        r = await client.post(f"/api/crm/facilities/{acc}", headers=auth_headers,
+                              json={"facility_type": "loan", "amount": 1000})
+        fid = r.json()["id"]
+        # auto-seeded with an hourglass on every step (A24)
+        d = await client.get(f"/api/customers/{cid}/detail", headers=auth_headers)
+        mine = [fc for fc in d.json()["facility_checklists"] if fc["facility_id"] == fid]
+        assert len(mine) == 1
+        assert mine[0]["item1"] == "⌛" and mine[0]["item9"] == "⌛"
+        assert mine[0]["total"] == "0"
+        # toggle step 1 done -> ✓, total 1
+        t = await client.patch(f"/api/crm/facility-checklist/{fid}", headers=auth_headers, json={"step": 1, "done": True})
+        assert t.status_code == 200, t.text
+        assert t.json()["item1"] == "✓"
+        assert t.json()["total"] == "1"
+        # un-toggle -> back to hourglass, total 0
+        t2 = await client.patch(f"/api/crm/facility-checklist/{fid}", headers=auth_headers, json={"step": 1, "done": False})
+        assert t2.json()["item1"] == "⌛"
+        assert t2.json()["total"] == "0"
+
+    async def test_main_facility_create_seeds_checklist(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
+        r = await client.post("/api/facilities/", headers=auth_headers,
+                              json={"customer_id": test_customer.id, "facility_type": "lc", "amount": 2000, "currency": "AED"})
+        assert r.status_code == 201, r.text
+        fid = r.json()["id"]
+        d = await client.get(f"/api/customers/{test_customer.id}/detail", headers=auth_headers)
+        assert any(fc["facility_id"] == fid and fc["item1"] == "⌛" for fc in d.json()["facility_checklists"])
+
+
 class TestKycDocFields:
     async def test_extended_kyc_fields_persist_and_surface(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
         acc, cid = test_customer.account_no, test_customer.id

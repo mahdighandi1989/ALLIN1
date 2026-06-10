@@ -90,6 +90,30 @@ class ChecklistProgress(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class FacilityChecklist(Base):
+    """The 9-step credit-file checklist PER FACILITY (the Excel LoadFacilityChecklist
+    model: each facility id has its own checklist, distinct from the account-level
+    one). Seeded with an hourglass on every item when a facility is created."""
+    __tablename__ = "facility_checklists"
+
+    id = Column(String(80), primary_key=True)          # FC-{facility_id}
+    account_no = Column(String(50), index=True)
+    facility_id = Column(String(60), index=True)
+    item1 = Column(String(10))
+    item2 = Column(String(10))
+    item3 = Column(String(10))
+    item4 = Column(String(10))
+    item5 = Column(String(10))
+    item6 = Column(String(10))
+    item7 = Column(String(10))
+    item8 = Column(String(10))
+    item9 = Column(String(10))
+    total = Column(String(10))
+    last_action = Column(String(30))
+    last_user = Column(String(80))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class CustomTask(Base):
     """Follow-up tasks per customer/facility."""
     __tablename__ = "custom_tasks"
