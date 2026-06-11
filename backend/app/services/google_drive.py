@@ -272,6 +272,48 @@ def upload_file(
     }
 
 
+def download_file(file_id: str) -> bytes:
+    """Fetch the full byte content of a Drive file by id.
+
+    Used to stream an attachment back to the client when Drive is the primary
+    store. Raises ``DriveError`` on any failure so the caller can fall back or
+    surface a clean error.
+    """
+    if not file_id:
+        raise DriveError("download_file called with empty file id")
+    import io
+    from googleapiclient.http import MediaIoBaseDownload  # deferred import
+
+    service = _get_service()
+    try:
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(buffer, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        return buffer.getvalue()
+    except Exception as exc:
+        raise _drive_error(f"download '{file_id}'", exc) from exc
+
+
+def delete_file(file_id: str) -> None:
+    """Permanently delete a Drive file by id (best-effort, raises on hard failure).
+
+    A missing file (already gone) is treated as success so deletes are idempotent.
+    """
+    if not file_id:
+        return
+    service = _get_service()
+    try:
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+    except Exception as exc:
+        # 404 == already deleted; don't treat that as an error.
+        if "404" in str(exc) or "notFound" in str(exc):
+            return
+        raise _drive_error(f"delete '{file_id}'", exc) from exc
+
+
 def about() -> dict:
     """Return a tiny liveness/identity probe for the configured Service Account.
 
