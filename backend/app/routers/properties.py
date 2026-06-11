@@ -7,7 +7,13 @@ property straight to its customer.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,11 +21,87 @@ from app.database import get_db
 from app.models.profile_entities import MortgagedProperty
 from app.models.customer import Customer
 from app.utils.security import get_current_user
+from app.routers.auth import require_editor
+from app.services.customer_link import ensure_customer
 from app.services.exporters import rows_to_csv
 
 router = APIRouter(tags=["properties"], dependencies=[Depends(get_current_user)])
 
 P = MortgagedProperty
+
+# Fields a client may write directly (account_no/customer_name handled explicitly).
+_WRITABLE = {
+    "facility_id", "country", "plate_no", "mortgage_deed_no", "city", "address",
+    "prop_type", "building_age", "land_area", "cnbc", "zone", "infra_area", "owner",
+    "valuation", "valuation_currency", "insurance_expiry", "insurance_no",
+    "last_valuation_date", "mortgage_date", "mortgage_amount", "remarks",
+}
+_NUMERIC = {"valuation", "mortgage_amount"}
+
+
+def _apply(obj: P, data: dict) -> None:
+    cols = obj.__table__.columns
+    for k, v in data.items():
+        if k not in _WRITABLE or v is None:
+            continue
+        if k in _NUMERIC:
+            setattr(obj, k, v)
+            continue
+        col = cols.get(k)
+        maxlen = getattr(getattr(col, "type", None), "length", None) if col is not None else None
+        s = str(v)
+        setattr(obj, k, s[:maxlen] if maxlen else s)
+
+
+class PropertyWrite(BaseModel):
+    account_no: str
+    customer_name: str = ""
+    facility_id: str = ""
+    country: str = ""
+    plate_no: str = ""
+    mortgage_deed_no: str = ""
+    city: str = ""
+    address: str = ""
+    prop_type: str = ""
+    building_age: str = ""
+    land_area: str = ""
+    cnbc: str = ""
+    zone: str = ""
+    infra_area: str = ""
+    owner: str = ""
+    valuation: Optional[float] = None
+    valuation_currency: str = "AED"
+    insurance_expiry: str = ""
+    insurance_no: str = ""
+    last_valuation_date: str = ""
+    mortgage_date: str = ""
+    mortgage_amount: Optional[float] = None
+    remarks: str = ""
+
+
+class PropertyPatch(BaseModel):
+    customer_name: Optional[str] = None
+    facility_id: Optional[str] = None
+    country: Optional[str] = None
+    plate_no: Optional[str] = None
+    mortgage_deed_no: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    prop_type: Optional[str] = None
+    building_age: Optional[str] = None
+    land_area: Optional[str] = None
+    cnbc: Optional[str] = None
+    zone: Optional[str] = None
+    infra_area: Optional[str] = None
+    owner: Optional[str] = None
+    valuation: Optional[float] = None
+    valuation_currency: Optional[str] = None
+    insurance_expiry: Optional[str] = None
+    insurance_no: Optional[str] = None
+    last_valuation_date: Optional[str] = None
+    mortgage_date: Optional[str] = None
+    mortgage_amount: Optional[float] = None
+    remarks: Optional[str] = None
 
 
 def _conds(search: str, city: str, ptype: str, currency: str):
@@ -42,7 +124,8 @@ def _conds(search: str, city: str, ptype: str, currency: str):
 def _row(p: P, customer_id) -> dict:
     return {
         "id": p.id, "ac_no": p.account_no, "customer": p.customer_name, "customer_id": customer_id,
-        "deed_no": p.mortgage_deed_no, "city": p.city, "zone": p.zone, "type": p.prop_type,
+        "facility_id": p.facility_id, "deed_no": p.mortgage_deed_no, "city": p.city,
+        "zone": p.zone, "type": p.prop_type,
         "age": p.building_age, "land_m2": p.land_area, "infra_m2": p.infra_area,
         "mortgage_date": p.mortgage_date,
         "amount": float(p.mortgage_amount) if p.mortgage_amount is not None else None,
@@ -134,3 +217,78 @@ async def export_properties_csv(
         content=rows_to_csv(headers, data), media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="mortgaged-properties.csv"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Create / edit / delete directly from the register (not only from a customer's
+# profile). Creating ensures the owning customer exists — an orphan account_no
+# gets a stub profile so the property is always reachable from a customer.
+# ---------------------------------------------------------------------------
+def _detail(p: P) -> dict:
+    """Full row (every column) for the edit form / after a write."""
+    out = {}
+    for col in p.__table__.columns:
+        if col.name == "created_at":
+            continue
+        v = getattr(p, col.name)
+        out[col.name] = float(v) if isinstance(v, Decimal) else v
+    return out
+
+
+@router.post("/", status_code=201)
+async def create_property(
+    payload: PropertyWrite,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a property to the register, linking (and if needed creating) its customer."""
+    account_no = (payload.account_no or "").strip()
+    if not account_no:
+        raise HTTPException(status_code=422, detail="account_no is required")
+    customer = await ensure_customer(db, account_no, payload.customer_name)
+    data = payload.model_dump(exclude_unset=True)
+    obj = P(
+        id=f"PROP-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}",
+        account_no=account_no,
+        customer_name=(payload.customer_name or (customer.name if customer else "") or "")[:200],
+        date_added=date.today().isoformat(),
+        created_by=getattr(user, "username", "") or "",
+    )
+    _apply(obj, data)
+    db.add(obj)
+    await db.commit()
+    return _detail(obj)
+
+
+@router.put("/{item_id}")
+async def update_property(
+    item_id: str,
+    payload: PropertyPatch,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Edit a property in the register."""
+    obj = (await db.execute(select(P).where(P.id == item_id))).scalar_one_or_none()
+    if obj is None or obj.is_deleted:
+        raise HTTPException(status_code=404, detail="Property not found")
+    data = payload.model_dump(exclude_unset=True)
+    if "customer_name" in data and data["customer_name"] is not None:
+        obj.customer_name = str(data["customer_name"])[:200]
+    _apply(obj, data)
+    await db.commit()
+    return _detail(obj)
+
+
+@router.delete("/{item_id}")
+async def delete_property(
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Soft-delete a property from the register."""
+    obj = (await db.execute(select(P).where(P.id == item_id))).scalar_one_or_none()
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+    obj.is_deleted = True
+    await db.commit()
+    return {"ok": True, "id": item_id, "deleted": True}

@@ -361,6 +361,26 @@ function CustomerDetailInner() {
             ]} />
           </Section>
           <FacilitiesTable facilities={facilities} />
+
+          {/* Collateral snapshot — so mortgaged properties are visible right on the
+              profile overview, not hidden behind the Collateral tab. */}
+          <Section title={`Collateral — Mortgaged Properties (${properties.length})`}>
+            {properties.length === 0 ? (
+              <Empty>هیچ ملکِ رهنی ثبت نشده — از تبِ «Collateral & Property» اضافه کنید.</Empty>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-sm">
+                  <div className="bg-gray-50 rounded p-2"><div className="text-gray-400 text-xs">تعداد</div><div className="font-bold tabular-nums">{properties.length}</div></div>
+                  <div className="bg-gray-50 rounded p-2"><div className="text-gray-400 text-xs">مجموع ارزیابی (AED)</div><div className="font-bold tabular-nums">{Math.round(properties.filter((p:any)=>(p.valuation_currency||'AED')==='AED').reduce((s:number,p:any)=>s+num(p.valuation),0)).toLocaleString('en-US')}</div></div>
+                  <div className="bg-gray-50 rounded p-2"><div className="text-gray-400 text-xs">مجموع ترهین</div><div className="font-bold tabular-nums">{Math.round(properties.reduce((s:number,p:any)=>s+num(p.mortgage_amount),0)).toLocaleString('en-US')}</div></div>
+                  <div className="bg-gray-50 rounded p-2"><div className="text-gray-400 text-xs">متصل به تسهیلات</div><div className="font-bold tabular-nums">{properties.filter((p:any)=>p.facility_id).length}</div></div>
+                </div>
+                <button onClick={() => setTab('collateral')} type="button" className="text-sm text-blue-600 hover:underline">
+                  مشاهده و مدیریتِ کاملِ وثایق ←
+                </button>
+              </>
+            )}
+          </Section>
         </div>
       )}
 
@@ -576,6 +596,17 @@ function CustomerDetailInner() {
                   ))}
                 </div>
                 <input value={np.remarks || ''} onChange={(e) => setNp((s: any) => ({ ...s, remarks: e.target.value }))} placeholder="Remarks" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm mt-2" />
+                {/* Link the property to a specific facility (optional) so it shows under that facility too. */}
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-500 mb-1">تسهیلاتِ مرتبط (اختیاری)</label>
+                  <select value={np.facility_id || ''} onChange={(e) => setNp((s: any) => ({ ...s, facility_id: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    <option value="">— کل مشتری (بدون تسهیلاتِ مشخص) —</option>
+                    {facilities.map((f: any) => (
+                      <option key={f.id} value={f.id}>{(f.facility_type || f.name || f.id)}{f.amount ? ` — ${num(f.amount).toLocaleString('en-US')} ${f.currency || ''}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex justify-end mt-2">
                   <button onClick={addProperty} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium">Save property</button>
                 </div>

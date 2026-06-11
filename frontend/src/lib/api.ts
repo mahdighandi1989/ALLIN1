@@ -245,6 +245,18 @@ export const propertiesApi = {
     const { data } = await api.get<{ cities: string[]; types: string[] }>('/api/properties/facets')
     return data
   },
+  /** Create a property from the register (auto-links/creates its customer). */
+  async create(body: Record<string, any>): Promise<any> {
+    const { data } = await api.post('/api/properties/', body)
+    return data
+  },
+  async update(id: string, body: Record<string, any>): Promise<any> {
+    const { data } = await api.put(`/api/properties/${id}`, body)
+    return data
+  },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/api/properties/${id}`)
+  },
 }
 
 // ---------------------------------------------------------------------------
