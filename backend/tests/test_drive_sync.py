@@ -53,6 +53,91 @@ class TestDisabledNoOp:
         assert st["connected"] is False
 
 
+class TestDrivePrimaryStorage:
+    """End-to-end attachment flow with Drive as the primary store (mocked Drive).
+
+    Verifies the routing logic without any real network: an upload lands in Drive
+    (not on disk), download streams the Drive bytes back, and delete removes it
+    from Drive.
+    """
+
+    async def test_upload_download_delete_via_drive(
+        self, client, auth_headers, test_customer, tmp_path, monkeypatch
+    ):
+        from app.services import drive_sync
+        from app.services import attachments as store
+
+        # Point disk store at a temp dir so we can assert nothing is written there.
+        monkeypatch.setattr(store, "UPLOAD_DIR", tmp_path)
+
+        # In-memory fake Drive.
+        fake_drive: dict[str, bytes] = {}
+
+        async def fake_sync_attachment(*, account_no, facility_id, original_name, data, mimetype="application/octet-stream"):
+            fid = f"drive-{len(fake_drive) + 1}"
+            fake_drive[fid] = data
+            return {"ok": True, "result": {"id": fid, "name": f"allin1__attachment__{fid}.bin"}}
+
+        async def fake_download(file_id):
+            return fake_drive[file_id]
+
+        async def fake_delete(file_id):
+            fake_drive.pop(file_id, None)
+            return {"ok": True}
+
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: True)
+        monkeypatch.setattr(drive_sync, "sync_attachment", fake_sync_attachment)
+        monkeypatch.setattr(drive_sync, "download_attachment", fake_download)
+        monkeypatch.setattr(drive_sync, "delete_attachment", fake_delete)
+
+        acc = test_customer.account_no
+        files = {"file": ("report.pdf", b"%PDF-1.4 binary", "application/pdf")}
+        r = await client.post(f"/api/crm/attachments/{acc}", headers=auth_headers, files=files)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        aid = body["id"]
+        assert body["storage"] == "drive"  # stored in Drive, not on disk
+
+        # Nothing was written to the local disk store.
+        assert not any(tmp_path.rglob("*.pdf"))
+        # The byte content really lives in (fake) Drive.
+        assert b"%PDF-1.4 binary" in fake_drive.values()
+
+        # Download pulls the bytes back from Drive.
+        dl = await client.get(f"/api/crm/attachments/{aid}/download", headers=auth_headers)
+        assert dl.status_code == 200
+        assert dl.content == b"%PDF-1.4 binary"
+
+        # Delete removes it from Drive and from the listing.
+        x = await client.delete(f"/api/crm/attachments/{aid}", headers=auth_headers)
+        assert x.status_code == 200
+        assert fake_drive == {}
+
+    async def test_upload_falls_back_to_disk_when_drive_fails(
+        self, client, auth_headers, test_customer, tmp_path, monkeypatch
+    ):
+        from app.services import drive_sync
+        from app.services import attachments as store
+
+        monkeypatch.setattr(store, "UPLOAD_DIR", tmp_path)
+
+        async def failing_sync(*args, **kwargs):
+            return {"ok": False, "error": "boom"}
+
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: True)
+        monkeypatch.setattr(drive_sync, "sync_attachment", failing_sync)
+
+        acc = test_customer.account_no
+        files = {"file": ("fallback.txt", b"keep me", "text/plain")}
+        r = await client.post(f"/api/crm/attachments/{acc}", headers=auth_headers, files=files)
+        assert r.status_code == 200, r.text
+        assert r.json()["storage"] == "disk"  # fell back to disk, upload not lost
+
+        dl = await client.get(f"/api/crm/attachments/{r.json()['id']}/download", headers=auth_headers)
+        assert dl.status_code == 200
+        assert dl.content == b"keep me"
+
+
 class TestConfigGating:
     def test_configured_requires_all_three(self, monkeypatch):
         monkeypatch.setattr(settings, "GOOGLE_DRIVE_ENABLED", True)

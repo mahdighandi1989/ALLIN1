@@ -915,6 +915,8 @@ def _attachment_dict(a: Attachment) -> dict:
         "row_index": a.row_index, "file_name": a.file_name, "original_name": a.original_name,
         "file_size": a.file_size, "upload_date": a.upload_date, "uploaded_by": a.uploaded_by,
         "is_shared": a.is_shared, "notes": a.notes,
+        # Where the bytes actually live, so the UI can show it and ops can audit it.
+        "storage": "drive" if (a.drive_file_id or "") else "disk",
     }
 
 
@@ -929,44 +931,60 @@ async def upload_attachment(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Upload a document, store it on disk under the customer/facility folder and
-    record its metadata (scoped to a facility + checklist row, or shared).
+    """Upload a document and record its metadata (scoped to a facility + checklist
+    row, or shared).
 
-    When Google Drive sync is enabled the bytes are also mirrored to Drive, filed
-    under attachments/cust-<acc>/fac-<fac> with a traceable name. The Drive push is
-    best-effort and never blocks/fails the local upload.
+    Storage strategy — keep large binaries OUT of the database/ephemeral disk:
+      * When Google Drive sync is enabled, the file is stored IN Drive (filed
+        under attachments/cust-<acc>/fac-<fac> with a traceable name) and only the
+        Drive file id is kept in the DB — nothing is written to local disk.
+      * When Drive is disabled, OR the Drive upload fails, it falls back to the
+        on-disk store so an upload is never lost.
     """
     data = await file.read()
-    rel, size, stored = await attachments_store.save_bytes(
-        account_no, facility_id, file.filename, data
-    )
+    original_name = file.filename or "file"
+    mimetype = file.content_type or "application/octet-stream"
+
+    drive_file_id = ""
+    stored = ""
+    rel = ""
+    size = len(data)
+
+    from app.services import drive_sync
+
+    if drive_sync.is_enabled():
+        try:
+            res = await drive_sync.sync_attachment(
+                account_no=account_no,
+                facility_id=facility_id or "",
+                original_name=original_name,
+                data=data,
+                mimetype=mimetype,
+            )
+            if res.get("ok"):
+                drive_file_id = res["result"]["id"]
+                stored = res["result"]["name"]  # traceable Drive name
+        except Exception:  # noqa: BLE001 - fall back to disk on any Drive error
+            drive_file_id = ""
+
+    if not drive_file_id:
+        # Drive disabled or upload failed -> persist on disk so nothing is lost.
+        rel, size, stored = await attachments_store.save_bytes(
+            account_no, facility_id, original_name, data
+        )
+
     aid = f"A-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:3]}"
     a = Attachment(
         id=aid, account_no=account_no, facility_id=(facility_id or "")[:60],
         row_index=(row_index or "")[:10], file_name=stored[:255],
-        original_name=(file.filename or stored)[:255], file_path=rel,
+        original_name=original_name[:255], file_path=rel,
+        drive_file_id=drive_file_id or None,
         file_size=str(size), upload_date=date.today().isoformat(),
         uploaded_by=getattr(user, "username", "") or "",
         is_shared="1" if is_shared else "0", notes=notes or "",
     )
     db.add(a)
     await db.commit()
-
-    # Mirror to Google Drive (best-effort; a Drive failure must not fail the upload).
-    try:
-        from app.services import drive_sync
-
-        if drive_sync.is_enabled():
-            await drive_sync.sync_attachment(
-                account_no=account_no,
-                facility_id=facility_id or "",
-                original_name=file.filename or stored,
-                data=data,
-                mimetype=file.content_type or "application/octet-stream",
-            )
-    except Exception:  # noqa: BLE001 - Drive sync is strictly best-effort
-        pass
-
     return _attachment_dict(a)
 
 
@@ -976,14 +994,37 @@ async def download_attachment(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Stream a stored document back so it actually opens again (fixes A15)."""
+    """Stream a stored document back so it actually opens again (fixes A15).
+
+    Serves from Google Drive when the file lives there, otherwise from disk.
+    """
+    import mimetypes
+
     a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
     if a is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    download_name = a.original_name or a.file_name or "document"
+
+    # Drive-stored file: pull the bytes from Drive and stream them back.
+    if a.drive_file_id:
+        from app.services import drive_sync, google_drive
+
+        try:
+            data = await drive_sync.download_attachment(a.drive_file_id)
+        except google_drive.DriveError as exc:
+            raise HTTPException(status_code=502, detail=f"Drive download failed: {exc}")
+        mime = mimetypes.guess_type(download_name)[0] or "application/octet-stream"
+        return Response(
+            content=data, media_type=mime,
+            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        )
+
+    # Legacy / disk-stored file.
     path = attachments_store.resolve(a.file_path or "")
     if path is None:
         raise HTTPException(status_code=404, detail="File not found on disk")
-    return FileResponse(str(path), filename=a.original_name or a.file_name or "document")
+    return FileResponse(str(path), filename=download_name)
 
 
 @router.delete("/attachments/{attachment_id}")
@@ -992,16 +1033,27 @@ async def delete_attachment(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Remove an attachment record and its stored file."""
+    """Remove an attachment record and its stored file (from Drive and/or disk)."""
     a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
     if a is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    # Delete the bytes wherever they live. Both are best-effort: a failed remote
+    # delete must not block removing the DB record (it would leave an orphan row).
+    if a.drive_file_id:
+        try:
+            from app.services import drive_sync
+
+            await drive_sync.delete_attachment(a.drive_file_id)
+        except Exception:  # noqa: BLE001 - best-effort cleanup
+            pass
     path = attachments_store.resolve(a.file_path or "")
     if path is not None:
         try:
             path.unlink()
         except OSError:
             pass
+
     await db.delete(a)
     await db.commit()
     return {"ok": True, "id": attachment_id, "deleted": True}

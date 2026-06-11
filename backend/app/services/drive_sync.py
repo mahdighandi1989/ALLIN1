@@ -205,6 +205,25 @@ async def sync_attachment(
     return {"ok": True, "result": result}
 
 
+async def download_attachment(file_id: str) -> bytes:
+    """Fetch an attachment's bytes from Drive (blocking call off the event loop)."""
+    return await asyncio.to_thread(google_drive.download_file, file_id)
+
+
+async def delete_attachment(file_id: str) -> dict:
+    """Delete an attachment from Drive. Best-effort: never raises to the caller."""
+    if not file_id:
+        return {"ok": False, "skipped": True, "reason": "no_file_id"}
+    if not is_enabled():
+        return {"ok": False, "skipped": True, "reason": "drive_sync_disabled"}
+    try:
+        await asyncio.to_thread(google_drive.delete_file, file_id)
+        return {"ok": True}
+    except google_drive.DriveError as exc:
+        logger.error("Drive attachment delete failed (%s): %s", file_id, exc)
+        return {"ok": False, "error": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # Status + background scheduler
 # ---------------------------------------------------------------------------

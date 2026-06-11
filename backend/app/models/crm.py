@@ -146,6 +146,11 @@ class Attachment(Base):
     file_name = Column(String(255))
     original_name = Column(String(255))
     file_path = Column(Text)
+    # When the file is stored in Google Drive (the preferred store, so large
+    # binaries never bloat the DB/ephemeral disk) this holds the Drive file id and
+    # ``file_path`` is left empty. Legacy/disk-stored files have it empty and use
+    # ``file_path`` instead. Download/delete branch on which one is set.
+    drive_file_id = Column(String(128))
     file_size = Column(String(20))
     upload_date = Column(String(30))
     uploaded_by = Column(String(80))
