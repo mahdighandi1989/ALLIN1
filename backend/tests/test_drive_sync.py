@@ -148,3 +148,35 @@ class TestConfigGating:
         monkeypatch.setattr(settings, "GOOGLE_CREDENTIALS_JSON", '{"x": 1}')
         monkeypatch.setattr(settings, "GOOGLE_DRIVE_FOLDER_ID", "folder123")
         assert settings.google_drive_configured() is True
+
+
+class TestHttpErrorDescription:
+    """The 403 cause + fix hint must lead the message, surviving truncation."""
+
+    class _FakeResp:
+        def __init__(self, status):
+            self.status = status
+
+    class _FakeHttpError(Exception):
+        def __init__(self, status, content):
+            self.resp = TestHttpErrorDescription._FakeResp(status)
+            self.content = content
+
+    def test_storage_quota_exceeded_surfaces_reason_and_fix(self):
+        from app.services import google_drive as gd
+
+        content = (
+            b'{"error": {"code": 403, "message": "Service Accounts do not have '
+            b'storage quota.", "errors": [{"reason": "storageQuotaExceeded"}]}}'
+        )
+        exc = self._FakeHttpError(403, content)
+        err = gd._drive_error("upload 'x.json'", exc)
+        msg = str(err)
+        assert "403 storageQuotaExceeded" in msg
+        assert "Fix:" in msg  # actionable hint included
+
+    def test_non_http_error_falls_back_to_generic(self):
+        from app.services import google_drive as gd
+
+        err = gd._drive_error("upload 'x.json'", ValueError("boom"))
+        assert "ValueError" in str(err)
