@@ -112,7 +112,14 @@ class Settings(BaseSettings):
     # Telegram notifications (for critical-event alerts such as scan_failed).
     # When unset, notifications are logged instead of sent (graceful no-op).
     TELEGRAM_BOT_TOKEN: Optional[str] = Field(default=None)
+    # Comma-separated list of chat ids allowed to receive notifications AND drive
+    # the bot. The first id is the default notification target. More ids can be
+    # added at runtime from the Settings → Telegram tab.
     TELEGRAM_CHAT_ID: Optional[str] = Field(default=None)
+    # Optional shared secret echoed by Telegram in the
+    # ``X-Telegram-Bot-Api-Secret-Token`` header; when set, webhook calls that
+    # don't carry it are rejected. Strongly recommended in production.
+    TELEGRAM_WEBHOOK_SECRET: Optional[str] = Field(default=None)
     NOTIFY_RATE_LIMIT_SECONDS: int = Field(default=60, ge=0, le=3600)
 
     # Redis settings (for caching and sessions)

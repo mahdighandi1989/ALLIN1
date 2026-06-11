@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.middleware import MetricsMiddleware
 # Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
@@ -43,6 +43,19 @@ async def lifespan(app: FastAPI):
         await init_database()
     except Exception as exc:  # never let startup hard-crash on bootstrap issues
         logger.error("Database initialization failed: %s", exc)
+
+    # Load Telegram notification preferences into the in-memory cache and, when a
+    # bot is configured + a public URL is known, point Telegram's webhook at us so
+    # two-way commands work without a manual setup step. Best-effort; never blocks.
+    try:
+        from app.services import telegram as telegram_service
+
+        await telegram_service.load_prefs()
+        info = await telegram_service.telegram_service.ensure_webhook()
+        if info.get("ok") and not info.get("unchanged"):
+            logger.info("Telegram webhook configured: %s", info.get("url") or info)
+    except Exception as exc:  # never let an optional feature break boot
+        logger.error("Could not initialise Telegram integration: %s", exc)
 
     # Start the periodic Google Drive snapshot sync when configured. It runs in the
     # background and is cancelled cleanly on shutdown; failures never block startup.
@@ -221,6 +234,7 @@ app.include_router(imports.router, prefix="/api/imports", tags=["imports"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 app.include_router(fx.router, prefix="/api/fx", tags=["fx"])
 app.include_router(ai_router.router, prefix="/api/ai", tags=["ai"])
+app.include_router(telegram_router.router, prefix="/api/telegram", tags=["telegram"])
 
 
 @app.get("/health")
