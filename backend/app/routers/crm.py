@@ -158,6 +158,7 @@ class GuarantorCreate(BaseModel):
     cheque_amount: Optional[float] = None
     issuing_bank: str = "BSI"
     pim_ref: str = ""
+    facility_id: str = ""
 
 
 @router.post("/guarantors/{account_no}")
@@ -167,13 +168,22 @@ async def add_guarantor(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Add a guarantor + security cheque to a customer."""
+    """Add a guarantor + security cheque to a customer.
+
+    Ensures the owning customer exists (auto-stub for an orphan account_no) and
+    can be pinned to a specific facility, like the other collateral entities.
+    """
+    from app.services.customer_link import ensure_customer
+
+    customer = await ensure_customer(db, account_no, None)
     gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
     g = Guarantor(
         id=gid, account_no=account_no, guarantor_name=payload.guarantor_name[:200],
         guarantor_account=(payload.guarantor_account or "")[:50], cheque_no=(payload.cheque_no or "")[:50],
         cheque_amount=payload.cheque_amount, issuing_bank=(payload.issuing_bank or "BSI")[:50],
-        pim_ref=(payload.pim_ref or "")[:80], date_added=date.today().isoformat(),
+        pim_ref=(payload.pim_ref or "")[:80], facility_id=(payload.facility_id or "")[:60] or None,
+        customer_name=(customer.name if customer else "") or None,
+        date_added=date.today().isoformat(),
         created_by=getattr(user, "username", "") or "",
     )
     db.add(g)
@@ -182,7 +192,7 @@ async def add_guarantor(
         "id": g.id, "account_no": g.account_no, "guarantor_name": g.guarantor_name,
         "guarantor_account": g.guarantor_account, "cheque_no": g.cheque_no,
         "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
-        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref,
+        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref, "facility_id": g.facility_id,
     }
 
 
@@ -690,12 +700,26 @@ def _apply_child_fields(obj, data: dict, allowed: set) -> None:
 
 
 async def _add_child(db, model, prefix, account_no, data, allowed, user):
+    """Create a per-customer child row, guaranteeing it is linked to a customer.
+
+    This is the single choke point for adding any account_no-keyed child
+    (properties, fixed deposits, partners, …): it ensures the owning customer
+    exists (auto-creating a stub profile for an orphan account_no) and stamps the
+    denormalised ``customer_name`` when the model has one — so every child record,
+    including future ones added through this helper, is reachable from a profile
+    rather than stranded in its own list.
+    """
+    from app.services.customer_link import ensure_customer
+
+    customer = await ensure_customer(db, account_no, data.get("customer_name"))
     obj = model(
         id=_new_child_id(prefix, account_no),
         account_no=account_no,
         date_added=date.today().isoformat(),
         created_by=getattr(user, "username", "") or "",
     )
+    if "customer_name" in model.__table__.columns and not data.get("customer_name") and customer is not None:
+        obj.customer_name = (customer.name or "")[:200]
     _apply_child_fields(obj, data, allowed)
     db.add(obj)
     await db.commit()
@@ -778,18 +802,12 @@ async def add_property(
 ):
     """Add a mortgaged property to a customer's profile.
 
-    Ensures the owning customer exists (auto-creating a stub profile for an
-    orphan account_no) and stamps the property with the customer's name so it is
-    always reachable from a profile, not just the standalone list.
+    Linking (and stub-customer creation for an orphan account_no) is handled
+    centrally by ``_add_child``.
     """
-    from app.services.customer_link import ensure_customer
-
-    data = payload.model_dump(exclude_unset=True)
-    customer = await ensure_customer(db, account_no, data.get("customer_name"))
-    if customer is not None and not data.get("customer_name"):
-        data["customer_name"] = customer.name
     return await _add_child(
-        db, MortgagedProperty, "PROP", account_no, data, _PROPERTY_FIELDS, user,
+        db, MortgagedProperty, "PROP", account_no,
+        payload.model_dump(exclude_unset=True), _PROPERTY_FIELDS, user,
     )
 
 
@@ -813,10 +831,12 @@ async def delete_property(
 
 
 # ---- Fixed deposits (A12) ----
-_FD_FIELDS = {"fd_number", "amount", "currency", "open_date", "maturity_date", "rate", "remarks"}
+_FD_FIELDS = {"facility_id", "customer_name", "fd_number", "amount", "currency",
+              "open_date", "maturity_date", "rate", "remarks"}
 
 
 class FixedDepositCreate(BaseModel):
+    facility_id: str = ""
     fd_number: str = ""
     amount: Optional[float] = None
     currency: str = "AED"
@@ -827,6 +847,7 @@ class FixedDepositCreate(BaseModel):
 
 
 class FixedDepositUpdate(BaseModel):
+    facility_id: Optional[str] = None
     fd_number: Optional[str] = None
     amount: Optional[float] = None
     currency: Optional[str] = None
@@ -868,10 +889,11 @@ async def delete_fixed_deposit(
 
 
 # ---- Partners / shareholders ----
-_PARTNER_FIELDS = {"name", "nationality", "share", "remarks"}
+_PARTNER_FIELDS = {"facility_id", "customer_name", "name", "nationality", "share", "remarks"}
 
 
 class PartnerCreate(BaseModel):
+    facility_id: str = ""
     name: str = Field(..., min_length=1, max_length=200)
     nationality: str = ""
     share: str = ""
@@ -879,6 +901,7 @@ class PartnerCreate(BaseModel):
 
 
 class PartnerUpdate(BaseModel):
+    facility_id: Optional[str] = None
     name: Optional[str] = None
     nationality: Optional[str] = None
     share: Optional[str] = None

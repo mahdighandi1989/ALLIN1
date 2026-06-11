@@ -64,24 +64,22 @@ async def ensure_customer(
 async def reconcile_orphan_collateral(db: AsyncSession | None = None) -> int:
     """Create stub profiles for every collateral account_no that lacks a customer.
 
-    Scans mortgaged properties, fixed deposits, guarantors and partners (all
-    account_no-keyed) so nothing is stranded outside a customer profile. Best
-    effort and idempotent; returns the number of stubs created. Opens its own
-    session when one isn't supplied (so it can run from startup).
+    Scans every account_no-keyed entity in the collateral registry (properties,
+    guarantors, fixed deposits, partners, and anything added there later) so
+    nothing is stranded outside a customer profile. Best effort and idempotent;
+    returns the number of stubs created. Opens its own session when one isn't
+    supplied (so it can run from startup).
     """
     from app.database import AsyncSessionLocal
-    from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
-    from app.models.guarantor import Guarantor
+    from app.services.collateral import account_keyed_models
 
     own_session = db is None
     session = db or AsyncSessionLocal()
     created = 0
     try:
-        # Gather (account_no -> a name hint) across all child tables.
+        # Gather (account_no -> a name hint) across all registered child tables.
         hints: dict[str, str] = {}
-        for model in (MortgagedProperty, FixedDeposit, Guarantor, Partner):
-            if not hasattr(model, "account_no"):
-                continue
+        for model in account_keyed_models():
             name_col = getattr(model, "customer_name", None)
             cols = [model.account_no] + ([name_col] if name_col is not None else [])
             rows = (await session.execute(sa.select(*cols))).all()
@@ -89,9 +87,8 @@ async def reconcile_orphan_collateral(db: AsyncSession | None = None) -> int:
                 acc = _clean_account(row[0])
                 if not acc:
                     continue
-                hint = (row[1] if len(row) > 1 and row[1] else "") or hints.get(acc, "")
-                hints.setdefault(acc, hint)
-                if hint and not hints[acc]:
+                hint = (row[1] if len(row) > 1 and row[1] else "")
+                if acc not in hints or (hint and not hints[acc]):
                     hints[acc] = hint
 
         if not hints:

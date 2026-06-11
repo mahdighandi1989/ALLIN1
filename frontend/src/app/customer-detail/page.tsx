@@ -472,6 +472,11 @@ function CustomerDetailInner() {
                 placeholder={ph} inputMode={k === 'cheque_amount' ? 'numeric' : undefined}
                 className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             ))}
+            <select value={ng.facility_id || ''} onChange={(e) => setNg((s: any) => ({ ...s, facility_id: e.target.value }))}
+              title="تسهیلاتِ مرتبط (اختیاری)" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm bg-white">
+              <option value="">— تسهیلات؟ —</option>
+              {facilities.map((f: any) => <option key={f.id} value={f.id}>{f.facility_type || f.name || f.id}</option>)}
+            </select>
             <button onClick={addGuarantor} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
           </div>
           <SimpleTable head={['Guarantor', 'Account', 'Cheque No', 'Amount', 'Bank', 'Ref']}
@@ -515,6 +520,11 @@ function CustomerDetailInner() {
                   placeholder={ph} inputMode={k === 'amount' ? 'numeric' : undefined}
                   className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
               ))}
+              <select value={nfd.facility_id || ''} onChange={(e) => setNfd((s: any) => ({ ...s, facility_id: e.target.value }))}
+                title="تسهیلاتِ مرتبط (اختیاری)" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm bg-white">
+                <option value="">— تسهیلات؟ —</option>
+                {facilities.map((f: any) => <option key={f.id} value={f.id}>{f.facility_type || f.name || f.id}</option>)}
+              </select>
               <button onClick={addFd} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add FD</button>
             </div>
             {fixedDeposits.length === 0 ? <Empty>No fixed deposits recorded</Empty> : (
@@ -643,6 +653,11 @@ function CustomerDetailInner() {
                 <input key={k} value={npt[k] || ''} onChange={(e) => setNpt((s: any) => ({ ...s, [k]: e.target.value }))}
                   placeholder={ph} className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
               ))}
+              <select value={npt.facility_id || ''} onChange={(e) => setNpt((s: any) => ({ ...s, facility_id: e.target.value }))}
+                title="تسهیلاتِ مرتبط (اختیاری)" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm bg-white">
+                <option value="">— تسهیلات؟ —</option>
+                {facilities.map((f: any) => <option key={f.id} value={f.id}>{f.facility_type || f.name || f.id}</option>)}
+              </select>
               <button onClick={addPartnerRow} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
             </div>
             {partnerRows.length === 0 && blobPartners.length > 0 && (

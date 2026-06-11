@@ -16,6 +16,8 @@ class Guarantor(Base):
     # e.g. G-452861-20251211131154-75 (from the source system)
     id = Column(String(60), primary_key=True)
     account_no = Column(String(50), index=True, nullable=False)
+    # Optional link to the specific facility this guarantor/cheque secures.
+    facility_id = Column(String(60), index=True)
     branch = Column(String(20))
     customer_name = Column(String(200))
     guarantor_name = Column(String(200))
