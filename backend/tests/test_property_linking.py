@@ -57,11 +57,11 @@ class TestFacilityLinkedProperty:
         assert r.status_code == 200, r.text
         assert r.json()["facility_id"] == test_facility.id
 
-        # It now surfaces under the facility's detail.
+        # It now surfaces under the facility's detail (generic registry shape).
         fd = await client.get(f"/api/facilities/{test_facility.id}/detail", headers=auth_headers)
         assert fd.status_code == 200
-        fprops = fd.json().get("properties", [])
-        assert any(p["type"] == "Office" for p in fprops)
+        fprops = fd.json()["collateral"]["properties"]
+        assert any(p["prop_type"] == "Office" for p in fprops)
 
     async def test_edit_and_delete_from_register(
         self, client: AsyncClient, auth_headers: dict
@@ -82,3 +82,46 @@ class TestFacilityLinkedProperty:
         # Gone from the register.
         lst = await client.get(f"/api/properties/?search={acc}", headers=auth_headers)
         assert not any(it["id"] == pid for it in lst.json()["items"])
+
+
+class TestGenericCollateralLinking:
+    """The same linking applies to every collateral entity, not just properties."""
+
+    async def test_guarantor_for_orphan_creates_stub_customer(
+        self, client: AsyncClient, auth_headers: dict
+    ):
+        acc = "ORPHAN-G-1"
+        r = await client.post(
+            f"/api/crm/guarantors/{acc}", headers=auth_headers,
+            json={"guarantor_name": "Mr X", "cheque_amount": 5000},
+        )
+        assert r.status_code == 200, r.text
+        # A stub customer now exists for the orphan account and lists the guarantor.
+        custs = await client.get(f"/api/customers/?search={acc}", headers=auth_headers)
+        items = custs.json().get("items", custs.json()) if custs.status_code == 200 else []
+        match = [c for c in items if c.get("account_no") == acc]
+        assert match, "guarantor should have auto-created its customer"
+        detail = await client.get(f"/api/customers/{match[0]['id']}/detail", headers=auth_headers)
+        assert any(g["guarantor_name"] == "Mr X" for g in detail.json()["guarantors"])
+
+    async def test_fd_and_partner_pinned_to_facility_show_under_it(
+        self, client: AsyncClient, auth_headers: dict, test_customer, test_facility
+    ):
+        acc = test_customer.account_no
+        fid = test_facility.id
+        fd = await client.post(
+            f"/api/crm/fixed-deposits/{acc}", headers=auth_headers,
+            json={"facility_id": fid, "fd_number": "FD-777", "amount": 250000, "currency": "AED"},
+        )
+        assert fd.status_code == 200, fd.text
+        prt = await client.post(
+            f"/api/crm/partners/{acc}", headers=auth_headers,
+            json={"facility_id": fid, "name": "Partner One", "share": "30%"},
+        )
+        assert prt.status_code == 200, prt.text
+
+        detail = await client.get(f"/api/facilities/{fid}/detail", headers=auth_headers)
+        assert detail.status_code == 200
+        collateral = detail.json()["collateral"]
+        assert any(f["fd_number"] == "FD-777" for f in collateral["fixed_deposits"])
+        assert any(p["name"] == "Partner One" for p in collateral["partners"])

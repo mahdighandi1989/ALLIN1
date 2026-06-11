@@ -28,6 +28,7 @@ function FacilityDetailInner() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<Record<string, any>>({})
+  const [collateral, setCollateral] = useState<Record<string, any[]>>({})
 
   const load = async () => {
     if (!id) {
@@ -40,6 +41,7 @@ function FacilityDetailInner() {
       const d = await facilitiesApi.detail(id)
       setFacility(d.facility)
       setCustomerName(d.customer_name)
+      setCollateral((d as any).collateral || {})
       setForm({
         name: d.facility.name ?? '',
         facility_type: d.facility.facility_type,
@@ -177,6 +179,60 @@ function FacilityDetailInner() {
         {field('Currency', 'currency')}
         {field('Expiry Date', 'expiry_date', 'date')}
         {field('Notes', 'notes')}
+      </div>
+
+      <CollateralPanel collateral={collateral} currency={facility.currency} />
+    </div>
+  )
+}
+
+// Collateral pinned to this facility (properties / guarantors / FDs / partners),
+// grouped exactly as the backend registry returns it — so a future collateral
+// type appears here automatically once it carries a facility_id.
+const COLLATERAL_VIEW: { key: string; title: string; cols: [string, string][] }[] = [
+  { key: 'properties', title: 'املاک رهنی', cols: [['mortgage_deed_no', 'سند'], ['city', 'شهر'], ['prop_type', 'نوع'], ['valuation', 'ارزیابی'], ['valuation_currency', 'ارز'], ['insurance_expiry', 'انقضای بیمه']] },
+  { key: 'guarantors', title: 'ضامن‌ها / چک‌های تضمین', cols: [['guarantor_name', 'ضامن'], ['cheque_no', 'شماره چک'], ['cheque_amount', 'مبلغ چک'], ['issuing_bank', 'بانک']] },
+  { key: 'fixed_deposits', title: 'سپرده‌های ثابت', cols: [['fd_number', 'شماره سپرده'], ['amount', 'مبلغ'], ['currency', 'ارز'], ['maturity_date', 'سررسید']] },
+  { key: 'partners', title: 'شرکا / سهامداران', cols: [['name', 'نام'], ['nationality', 'تابعیت'], ['share', 'سهم']] },
+]
+
+function CollateralPanel({ collateral, currency }: { collateral: Record<string, any[]>; currency?: string }) {
+  const total = COLLATERAL_VIEW.reduce((s, g) => s + (collateral[g.key]?.length || 0), 0)
+  return (
+    <div dir="rtl" className="bg-white rounded-lg shadow-sm p-6 mt-5">
+      <h3 className="font-bold text-gray-900 mb-1">وثایقِ متصل به این تسهیلات</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        {total === 0
+          ? 'هنوز هیچ وثیقه‌ای مستقیماً به این تسهیلات متصل نشده. از پروفایلِ مشتری، هنگام افزودنِ ملک/ضامن/سپرده، این تسهیلات را انتخاب کنید.'
+          : `${total} مورد به این تسهیلات گره خورده‌اند.`}
+      </p>
+      <div className="space-y-5">
+        {COLLATERAL_VIEW.map((g) => {
+          const rows = collateral[g.key] || []
+          if (rows.length === 0) return null
+          return (
+            <div key={g.key}>
+              <div className="text-sm font-semibold text-gray-700 mb-2">{g.title} ({rows.length})</div>
+              <div className="overflow-auto border border-gray-200 rounded-lg">
+                <table className="w-full text-xs whitespace-nowrap">
+                  <thead className="bg-gray-100"><tr>{g.cols.map(([, l]) => <th key={l} className="px-2.5 py-2 text-right font-semibold text-gray-700 border-b">{l}</th>)}</tr></thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={r.id || i} className="odd:bg-white even:bg-gray-50">
+                        {g.cols.map(([k]) => (
+                          <td key={k} className="px-2.5 py-1.5 border-b border-gray-100 text-right">
+                            {r[k] === null || r[k] === undefined || r[k] === '' ? '—'
+                              : (typeof r[k] === 'number' ? r[k].toLocaleString('en-US') : String(r[k]))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -63,6 +63,8 @@ class FixedDeposit(Base):
 
     id = Column(String(60), primary_key=True)
     account_no = Column(String(50), index=True, nullable=False)
+    # Optional link to the specific facility this deposit secures.
+    facility_id = Column(String(60), index=True)
     customer_name = Column(String(200))
     fd_number = Column(String(80))
     amount = Column(Numeric(18, 2))
@@ -88,6 +90,8 @@ class Partner(Base):
 
     id = Column(String(60), primary_key=True)
     account_no = Column(String(50), index=True, nullable=False)
+    # Optional link to the specific facility this partner/shareholder relates to.
+    facility_id = Column(String(60), index=True)
     customer_name = Column(String(200))
     name = Column(String(200))
     nationality = Column(String(80))
