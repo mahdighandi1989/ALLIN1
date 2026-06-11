@@ -52,6 +52,26 @@ class TestDisabledNoOp:
         assert st["configured"] is False
         assert st["connected"] is False
 
+    async def test_status_oauth_not_connected(self, monkeypatch):
+        # OAuth mode + client creds set, but no refresh token stored yet.
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ENABLED", True)
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_AUTH_MODE", "oauth")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "cid")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+
+        from app.services import drive_settings
+
+        async def _none():
+            return None
+
+        monkeypatch.setattr(drive_settings, "resolve_refresh_token", _none)
+        monkeypatch.setattr(drive_settings, "connected_account", _none)
+
+        st = await drive_sync.status()
+        assert st["mode"] == "oauth"
+        assert st["connected"] is False
+        assert st["error"] == "not_connected"
+
 
 class TestDrivePrimaryStorage:
     """End-to-end attachment flow with Drive as the primary store (mocked Drive).
@@ -139,8 +159,22 @@ class TestDrivePrimaryStorage:
 
 
 class TestConfigGating:
-    def test_configured_requires_all_three(self, monkeypatch):
+    def test_oauth_mode_requires_client_credentials(self, monkeypatch):
         monkeypatch.setattr(settings, "GOOGLE_DRIVE_ENABLED", True)
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_AUTH_MODE", "oauth")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+        assert settings.google_drive_configured() is False
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "cid")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+        # OAuth mode is "configured" with just the client creds (the refresh token
+        # lives in the DB and is checked at sync time, not here).
+        assert settings.google_drive_configured() is True
+
+    def test_service_account_mode_requires_creds_and_folder(self, monkeypatch):
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ENABLED", True)
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_AUTH_MODE", "service_account")
         monkeypatch.setattr(settings, "GOOGLE_CREDENTIALS_JSON", "")
         monkeypatch.setattr(settings, "GOOGLE_DRIVE_FOLDER_ID", "")
         assert settings.google_drive_configured() is False
@@ -148,6 +182,10 @@ class TestConfigGating:
         monkeypatch.setattr(settings, "GOOGLE_CREDENTIALS_JSON", '{"x": 1}')
         monkeypatch.setattr(settings, "GOOGLE_DRIVE_FOLDER_ID", "folder123")
         assert settings.google_drive_configured() is True
+
+    def test_disabled_is_never_configured(self, monkeypatch):
+        monkeypatch.setattr(settings, "GOOGLE_DRIVE_ENABLED", False)
+        assert settings.google_drive_configured() is False
 
 
 class TestHttpErrorDescription:

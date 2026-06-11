@@ -320,6 +320,10 @@ export const crmApi = {
     const { data } = await api.post('/api/crm/backup/drive/sync')
     return data
   },
+  async driveDisconnect(): Promise<any> {
+    const { data } = await api.post('/api/auth/google/drive/disconnect')
+    return data
+  },
   async dailyLog(text: string, followup_date = ''): Promise<{ accounts_found: string[]; routed: any[]; unknown_accounts: string[] }> {
     const { data } = await api.post('/api/crm/daily-log', { text, followup_date })
     return data

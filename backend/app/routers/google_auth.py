@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User, ROLE_ADMIN, ROLE_PENDING
-from app.utils.security import create_access_token, hash_password
+from app.utils.security import create_access_token, hash_password, verify_access_token
+from app.routers.auth import require_admin
 from app.services.google_oauth import (
     GoogleOAuthError,
     build_auth_url,
@@ -34,6 +35,11 @@ logger = logging.getLogger("app.google_auth")
 router = APIRouter(tags=["google-auth"])
 
 _STATE_COOKIE = "g_oauth_state"
+# A state value prefixed with this marks the OAuth round-trip as a "connect Drive"
+# flow rather than a login, so the shared callback stores the refresh token for
+# Drive sync instead of issuing an app session. Reusing the login callback means
+# no extra Authorized redirect URI has to be registered in the Google console.
+_DRIVE_STATE_PREFIX = "drive:"
 
 
 def _effective_redirect_uri(request: Request) -> str:
@@ -184,6 +190,24 @@ async def google_callback(
         logger.warning("google oauth callback failed: %s", exc)
         return _frontend_redirect("/login?error=google_auth_failed")
 
+    # "Connect Google Drive" flow: store the refresh token for Drive sync and go
+    # back to Settings — no app session is issued here (the admin is already
+    # logged in). Detected by the state prefix set in /drive/connect.
+    if state.startswith(_DRIVE_STATE_PREFIX):
+        from app.services import drive_settings
+
+        refresh_token = tokens.get("refresh_token")
+        if not refresh_token:
+            # Without a refresh token we can't sync later; ask Google to re-consent.
+            resp = _frontend_redirect("/settings?drive=error_no_refresh_token")
+            resp.delete_cookie(_STATE_COOKIE, path="/")
+            return resp
+        await drive_settings.store_connection(refresh_token, info.get("email"))
+        logger.info("Google Drive connected for sync: %s", info.get("email"))
+        resp = _frontend_redirect("/settings?drive=connected")
+        resp.delete_cookie(_STATE_COOKIE, path="/")
+        return resp
+
     user = await upsert_google_user(db, info, tokens)
 
     try:
@@ -203,3 +227,58 @@ async def google_callback(
     resp = _frontend_redirect(f"{settings.POST_LOGIN_REDIRECT_PATH}?{query}")
     resp.delete_cookie(_STATE_COOKIE, path="/")
     return resp
+
+
+async def _require_admin_from_query_token(token: str, db: AsyncSession) -> User | None:
+    """Validate an admin JWT passed as a query param (top-level navigations can't
+    send an Authorization header). Returns the admin user or None."""
+    if not token:
+        return None
+    try:
+        payload = verify_access_token(token)
+    except Exception:
+        return None
+    user = (
+        await db.execute(select(User).where(User.id == payload.get("user_id")))
+    ).scalar_one_or_none()
+    if user and (user.is_admin or user.role == ROLE_ADMIN):
+        return user
+    return None
+
+
+@router.get("/drive/connect")
+async def drive_connect(request: Request, token: str = "", db: AsyncSession = Depends(get_db)):
+    """Start the one-time 'Connect Google Drive' consent (admin only).
+
+    The admin JWT is passed as ``?token=`` because this is a top-level browser
+    navigation (no Authorization header). On success the browser is sent to
+    Google's consent screen with ``access_type=offline`` so we receive a refresh
+    token, which the shared callback stores for Drive sync.
+    """
+    if not settings.google_oauth_configured():
+        return _frontend_redirect("/settings?drive=google_not_configured")
+    admin = await _require_admin_from_query_token(token, db)
+    if admin is None:
+        return _frontend_redirect("/settings?drive=forbidden")
+
+    state = _DRIVE_STATE_PREFIX + secrets.token_urlsafe(24)
+    redirect_uri = _effective_redirect_uri(request)
+    resp = _frontend_redirect(
+        build_auth_url(state, redirect_uri=redirect_uri, include_drive=True),
+        status.HTTP_307_TEMPORARY_REDIRECT,
+    )
+    resp.set_cookie(
+        _STATE_COOKIE, state, max_age=600, httponly=True,
+        secure=settings.is_production(), samesite="lax", path="/",
+    )
+    return resp
+
+
+@router.post("/drive/disconnect")
+async def drive_disconnect(user=Depends(require_admin)):
+    """Forget the stored Drive refresh token (admin only)."""
+    from app.services import drive_settings
+
+    await drive_settings.clear_setting(drive_settings.REFRESH_TOKEN_KEY)
+    await drive_settings.clear_setting(drive_settings.ACCOUNT_KEY)
+    return {"ok": True, "disconnected": True}

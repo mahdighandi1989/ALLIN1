@@ -58,6 +58,20 @@ def is_enabled() -> bool:
     return google_drive.is_configured()
 
 
+async def _prepare() -> None:
+    """Authenticate the Drive client for the active mode before an operation.
+
+    In OAuth mode this resolves the refresh token (from the DB / an admin's
+    Google sign-in) and hands it to the blocking client. A no-op for Service
+    Account mode.
+    """
+    if settings.drive_auth_mode() == "oauth":
+        from app.services import drive_settings
+
+        token = await drive_settings.resolve_refresh_token()
+        google_drive.configure_oauth_token(token)
+
+
 def _utc_stamp() -> str:
     """Compact, sortable UTC timestamp: 20260610-202530Z."""
     return datetime.utcnow().strftime("%Y%m%d-%H%M%SZ")
@@ -113,6 +127,7 @@ async def sync_database_snapshot(db: AsyncSession, *, reason: str = "manual") ->
     """
     if not is_enabled():
         return {"ok": False, "skipped": True, "reason": "drive_sync_disabled"}
+    await _prepare()
 
     try:
         payload = await build_backup_payload(db)
@@ -179,6 +194,7 @@ async def sync_attachment(
     """
     if not is_enabled():
         return {"ok": False, "skipped": True, "reason": "drive_sync_disabled"}
+    await _prepare()
 
     acc = _field(account_no, "unknown")
     fac = _field(facility_id, "general") if (facility_id or "").strip() else "general"
@@ -207,6 +223,7 @@ async def sync_attachment(
 
 async def download_attachment(file_id: str) -> bytes:
     """Fetch an attachment's bytes from Drive (blocking call off the event loop)."""
+    await _prepare()
     return await asyncio.to_thread(google_drive.download_file, file_id)
 
 
@@ -216,6 +233,7 @@ async def delete_attachment(file_id: str) -> dict:
         return {"ok": False, "skipped": True, "reason": "no_file_id"}
     if not is_enabled():
         return {"ok": False, "skipped": True, "reason": "drive_sync_disabled"}
+    await _prepare()
     try:
         await asyncio.to_thread(google_drive.delete_file, file_id)
         return {"ok": True}
@@ -229,22 +247,43 @@ async def delete_attachment(file_id: str) -> dict:
 # ---------------------------------------------------------------------------
 async def status() -> dict:
     """Report current sync configuration and verify the credentials authenticate."""
+    mode = settings.drive_auth_mode()
     base = {
         "enabled": settings.GOOGLE_DRIVE_ENABLED,
         "configured": is_enabled(),
+        "mode": mode,
         "root_folder_id": settings.GOOGLE_DRIVE_FOLDER_ID or None,
+        "folder_name": settings.DRIVE_BACKUP_FOLDER if mode == "oauth" else None,
         "interval_hours": settings.DRIVE_SYNC_INTERVAL_HOURS,
     }
     if not is_enabled():
         base["connected"] = False
         return base
+
+    # In OAuth mode, "connected" means we actually have a refresh token to act as.
+    if mode == "oauth":
+        from app.services import drive_settings
+
+        token = await drive_settings.resolve_refresh_token()
+        base["account"] = await drive_settings.connected_account()
+        if not token:
+            base["connected"] = False
+            base["error"] = "not_connected"  # use the Connect Google Drive button
+            return base
+
+    await _prepare()
     try:
-        info = await asyncio.to_thread(google_drive.about)
+        # Resolving (creating if needed) the root folder proves both that the
+        # credentials authenticate AND that we can write where we intend to —
+        # a more meaningful probe than about() (which drive.file may restrict).
+        folder_id = await asyncio.to_thread(google_drive.ensure_folder_path, [])
         base["connected"] = True
-        base["service_account"] = (info.get("user") or {}).get("emailAddress")
+        base["root_folder_id"] = folder_id
     except google_drive.DriveError as exc:
         base["connected"] = False
         base["error"] = str(exc)
+    if mode == "service_account":
+        base["service_account"] = google_drive.service_account_email()
     return base
 
 
