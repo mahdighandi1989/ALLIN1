@@ -110,8 +110,61 @@ def _get_service():
         return _service
 
 
+# Human-friendly hints for the Google error reasons we're most likely to hit, so
+# a truncated alert (e.g. in Telegram) still tells the operator what to actually fix.
+_REASON_HINTS = {
+    "storageQuotaExceeded": (
+        "the Service Account has no Drive storage of its own. Either use a Shared "
+        "Drive as the target folder, or switch Drive sync to OAuth (a real user's "
+        "account provides the quota)."
+    ),
+    "accessNotConfigured": "enable the Google Drive API for this Cloud project.",
+    "insufficientPermissions": "share the target folder with the Service Account's client_email as Editor.",
+    "insufficientFilePermissions": "share the target folder with the Service Account's client_email as Editor.",
+    "notFound": "the folder id is wrong or not shared with the Service Account.",
+    "rateLimitExceeded": "Drive API rate limit hit; retry shortly.",
+}
+
+
+def _describe_http_error(exc: Exception) -> str | None:
+    """Extract 'status reason — message [hint]' from a googleapiclient HttpError.
+
+    Returns None when ``exc`` isn't a recognisable HttpError, so the caller falls
+    back to the generic representation. The reason is placed FIRST so the cause
+    survives any downstream truncation of the message.
+    """
+    content = getattr(exc, "content", None)
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if content is None:
+        return None
+    try:
+        if isinstance(content, (bytes, bytearray)):
+            content = content.decode("utf-8", "replace")
+        err = json.loads(content).get("error", {})
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    code = err.get("code", status)
+    message = err.get("message", "")
+    errors = err.get("errors") or []
+    reason = errors[0].get("reason") if errors and isinstance(errors[0], dict) else err.get("status")
+    parts = [str(code) if code is not None else "", reason or ""]
+    head = " ".join(p for p in parts if p).strip()
+    hint = _REASON_HINTS.get(reason or "")
+    out = f"{head} — {message}" if message else head
+    if hint:
+        out = f"{out} → Fix: {hint}"
+    return out or None
+
+
 def _drive_error(action: str, exc: Exception) -> DriveError:
-    """Wrap a Google ``HttpError`` (or any error) in a clean ``DriveError``."""
+    """Wrap a Google ``HttpError`` (or any error) in a clean ``DriveError``.
+
+    For HTTP errors the Google reason/message/fix-hint go first so even a
+    truncated alert is actionable; the long request URL is dropped.
+    """
+    described = _describe_http_error(exc)
+    if described:
+        return DriveError(f"Drive {action} failed: {described}")
     return DriveError(f"Drive {action} failed: {type(exc).__name__}: {str(exc)[:300]}")
 
 
