@@ -186,17 +186,40 @@ class Settings(BaseSettings):
         default="",
         description="Drive folder id (shared with the Service Account) that is the sync root",
     )
+    # Auth mode for Drive sync:
+    #   • "oauth" (default) — sync runs as a real Google user via an OAuth refresh
+    #     token (reuses GOOGLE_CLIENT_ID/SECRET). Files are owned by that user and
+    #     count against their personal 15 GB quota, so this WORKS WITH A NORMAL
+    #     GMAIL ACCOUNT. The app creates/uses its own folder (DRIVE_BACKUP_FOLDER)
+    #     under the user's My Drive — GOOGLE_DRIVE_FOLDER_ID is not needed.
+    #   • "service_account" — server-to-server via GOOGLE_CREDENTIALS_JSON. Only
+    #     works with a Google Workspace *Shared Drive* (a Service Account has no
+    #     personal storage quota, so uploads to My Drive fail with
+    #     storageQuotaExceeded).
+    GOOGLE_DRIVE_AUTH_MODE: str = Field(default="oauth")
     # How often the background snapshot sync runs (reuses BACKUP_INTERVAL_HOURS).
     # The on-disk attachment uploads happen immediately, not on this cadence.
     DRIVE_SYNC_INTERVAL_HOURS: int = Field(default=24, ge=1, le=168)
 
     def google_drive_configured(self) -> bool:
-        """True when Drive sync is switched on AND has the creds + folder it needs."""
-        return bool(
-            self.GOOGLE_DRIVE_ENABLED
-            and self.GOOGLE_CREDENTIALS_JSON.strip()
-            and self.GOOGLE_DRIVE_FOLDER_ID.strip()
-        )
+        """True when Drive sync is switched on AND has the config its mode needs.
+
+        Note: in OAuth mode the refresh token lives in the DB (set via the connect
+        flow), so its presence is verified at sync time, not here.
+        """
+        if not self.GOOGLE_DRIVE_ENABLED:
+            return False
+        if str(self.GOOGLE_DRIVE_AUTH_MODE).strip().lower() == "service_account":
+            return bool(
+                self.GOOGLE_CREDENTIALS_JSON.strip() and self.GOOGLE_DRIVE_FOLDER_ID.strip()
+            )
+        # oauth (default): needs the OAuth client credentials.
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+
+    def drive_auth_mode(self) -> str:
+        """Normalised Drive auth mode ('oauth' or 'service_account')."""
+        mode = str(self.GOOGLE_DRIVE_AUTH_MODE or "oauth").strip().lower()
+        return "service_account" if mode == "service_account" else "oauth"
 
     def get_admin_emails(self) -> set[str]:
         """Lowercased set of always-admin emails parsed from ADMIN_EMAILS."""

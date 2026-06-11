@@ -55,6 +55,22 @@ export default function SettingsPage() {
       await checkDrive()
     } catch (e) { toast.error(parseApiError(e)) } finally { setDriveSyncing(false) }
   }
+  // Connect is a top-level browser navigation (OAuth consent), so the admin JWT
+  // is passed as a query param — the backend validates it before redirecting to
+  // Google. The API base matches the axios config (same origin in production).
+  const connectDrive = () => {
+    const base = process.env.NEXT_PUBLIC_API_URL ?? ''
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : ''
+    window.location.href = `${base}/api/auth/google/drive/connect?token=${encodeURIComponent(token || '')}`
+  }
+  const disconnectDrive = async () => {
+    if (!confirm('اتصال Google Drive قطع شود؟ سینک تا اتصال مجدد متوقف می‌شود.')) return
+    try {
+      await crmApi.driveDisconnect()
+      toast.success('اتصال Google Drive قطع شد')
+      await checkDrive()
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
 
   const isAdmin = authDisabled || !!user?.is_admin
 
@@ -64,6 +80,20 @@ export default function SettingsPage() {
       crmApi.driveStatus().then(setDriveStatus).catch(() => {})
     }
   }, [isAdmin])
+
+  // Feedback after returning from the Google "Connect Drive" consent screen.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const drive = new URLSearchParams(window.location.search).get('drive')
+    if (!drive) return
+    if (drive === 'connected') toast.success('Google Drive با موفقیت متصل شد ✅')
+    else if (drive === 'error_no_refresh_token') toast.error('توکن دریافت نشد؛ دوباره تلاش کن و در صفحهٔ گوگل اجازه بده.')
+    else if (drive === 'forbidden') toast.error('فقط ادمین می‌تواند Drive را متصل کند.')
+    else if (drive === 'google_not_configured') toast.error('GOOGLE_CLIENT_ID/SECRET تنظیم نشده است.')
+    // Clean the query param and refresh the live status.
+    window.history.replaceState({}, '', window.location.pathname)
+    crmApi.driveStatus().then(setDriveStatus).catch(() => {})
+  }, [])
   const runMerge = async () => {
     setMerging(true)
     try {
@@ -320,27 +350,43 @@ export default function SettingsPage() {
                 <span className="font-medium">{driveStatus ? (driveStatus.enabled ? 'بله' : 'خیر') : '…'}</span>
               </div>
               <div className="flex justify-between border-b py-1.5">
-                <span className="text-gray-500">پیکربندی کامل</span>
-                <span className="font-medium">{driveStatus ? (driveStatus.configured ? 'بله' : 'خیر') : '…'}</span>
+                <span className="text-gray-500">روش اتصال</span>
+                <span className="font-medium" dir="ltr">{driveStatus?.mode === 'service_account' ? 'Service Account' : 'OAuth (حساب شخصی)'}</span>
               </div>
               <div className="flex justify-between border-b py-1.5">
-                <span className="text-gray-500">حساب سرویس</span>
-                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.service_account || '—'}</span>
+                <span className="text-gray-500">{driveStatus?.mode === 'service_account' ? 'حساب سرویس' : 'حساب متصل'}</span>
+                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.account || driveStatus?.service_account || '—'}</span>
               </div>
               <div className="flex justify-between border-b py-1.5">
-                <span className="text-gray-500">فولدر مقصد (ID)</span>
-                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.root_folder_id || '—'}</span>
+                <span className="text-gray-500">فولدر مقصد</span>
+                <span className="font-medium truncate ltr text-left" dir="ltr">{driveStatus?.folder_name || driveStatus?.root_folder_id || '—'}</span>
               </div>
             </div>
 
-            {driveStatus && !driveStatus.connected && driveStatus.error && (
+            {driveStatus && !driveStatus.connected && driveStatus.error && driveStatus.error !== 'not_connected' && (
               <p className="text-sm text-red-600 mb-3 break-all">خطا: {driveStatus.error}</p>
             )}
             {driveStatus && !driveStatus.enabled && (
-              <p className="text-sm text-amber-600 mb-3">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> به‌همراهِ <code dir="ltr">GOOGLE_CREDENTIALS_JSON</code> و <code dir="ltr">GOOGLE_DRIVE_FOLDER_ID</code> را تنظیم کنید.</p>
+              <p className="text-sm text-amber-600 mb-3">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> را تنظیم کنید (روش پیش‌فرض OAuth است و فقط به <code dir="ltr">GOOGLE_CLIENT_ID/SECRET</code> نیاز دارد).</p>
+            )}
+            {driveStatus && driveStatus.enabled && driveStatus.mode === 'oauth' && !driveStatus.connected && (
+              <p className="text-sm text-blue-700 mb-3">برای اتصال، دکمهٔ «اتصال Google Drive» را بزن و با حساب گوگلِ خودت اجازه بده. فایل‌ها در فضای ۱۵ گیگابایتیِ خودت ذخیره می‌شوند.</p>
             )}
 
             <div className="flex flex-wrap gap-2">
+              {/* OAuth connect/disconnect */}
+              {driveStatus?.mode === 'oauth' && !driveStatus?.connected && (
+                <button onClick={connectDrive} type="button"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                  <Cloud size={16} /> اتصال Google Drive
+                </button>
+              )}
+              {driveStatus?.mode === 'oauth' && driveStatus?.connected && (
+                <button onClick={disconnectDrive} type="button"
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-red-700 rounded-lg hover:bg-gray-200">
+                  <CloudOff size={16} /> قطع اتصال
+                </button>
+              )}
               <button onClick={checkDrive} disabled={driveLoading} type="button"
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 disabled:opacity-50">
                 <RefreshCw size={16} className={driveLoading ? 'animate-spin' : ''} /> {driveLoading ? 'در حال بررسی…' : 'بررسی اتصال'}

@@ -33,17 +33,23 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Full drive scope: the sync root folder is created by a human and *shared* with
-# the Service Account, so the narrower ``drive.file`` scope (app-created files
-# only) cannot see it. Full scope lets us create sub-folders and files inside it.
-_SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Scopes per auth mode:
+#   • OAuth uses drive.file (least privilege — the app can only touch files it
+#     creates, which is exactly the backup tree it owns).
+#   • Service Account uses full drive, because its target root folder was created
+#     by a human and merely *shared* with it (drive.file couldn't see that).
+_OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+_SA_SCOPES = ["https://www.googleapis.com/auth/drive"]
 _FOLDER_MIME = "application/vnd.google-apps.folder"
+_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 # Cached singletons. The Drive service is expensive to build; folder ids are
 # cached so a repeated upload to the same category doesn't re-query/re-create the
 # folder tree every time. Guarded by a lock because uploads may run concurrently
 # (background sync + a request-triggered attachment upload).
 _service = None
+_service_key = None  # what the cached service was built for (mode + token marker)
+_oauth_token: str | None = None  # set by configure_oauth_token() before each op
 _folder_cache: dict[tuple[str, str], str] = {}
 _lock = threading.Lock()
 
@@ -53,19 +59,36 @@ class DriveError(Exception):
 
 
 def is_configured() -> bool:
-    """True when Drive sync is enabled and has its creds + root folder."""
+    """True when Drive sync is enabled and has the config its mode needs."""
     return settings.google_drive_configured()
+
+
+def configure_oauth_token(refresh_token: str | None) -> None:
+    """Set the OAuth refresh token to authenticate as (OAuth mode only).
+
+    Called by the async layer (which can read it from the DB) right before a
+    Drive operation. Changing the token invalidates the cached service so the
+    next call re-authenticates as the new account.
+    """
+    global _oauth_token, _service, _service_key
+    if refresh_token != _oauth_token:
+        with _lock:
+            _oauth_token = refresh_token
+            _service = None
+            _service_key = None
+            _folder_cache.clear()
 
 
 def reset_cache() -> None:
     """Drop the cached service + folder ids (used by tests and after re-config)."""
-    global _service
+    global _service, _service_key
     with _lock:
         _service = None
+        _service_key = None
         _folder_cache.clear()
 
 
-def _load_credentials():
+def _service_account_credentials():
     """Build Service Account credentials from ``GOOGLE_CREDENTIALS_JSON``.
 
     Accepts either raw JSON or base64-encoded JSON, so the value survives being
@@ -86,16 +109,43 @@ def _load_credentials():
             raise DriveError(
                 "GOOGLE_CREDENTIALS_JSON is not valid JSON or base64-encoded JSON"
             ) from exc
-    return service_account.Credentials.from_service_account_info(info, scopes=_SCOPES)
+    return service_account.Credentials.from_service_account_info(info, scopes=_SA_SCOPES)
+
+
+def _oauth_credentials():
+    """Build user OAuth credentials from the configured refresh token.
+
+    google-auth refreshes the short-lived access token automatically using the
+    refresh token + the app's client id/secret.
+    """
+    from google.oauth2.credentials import Credentials  # deferred import
+
+    if not _oauth_token:
+        raise DriveError(
+            "Google Drive is not connected — no OAuth refresh token. Use the "
+            "'Connect Google Drive' button in Settings."
+        )
+    if not (settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET):
+        raise DriveError("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set")
+    return Credentials(
+        token=None,
+        refresh_token=_oauth_token,
+        token_uri=_TOKEN_URI,
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        scopes=_OAUTH_SCOPES,
+    )
 
 
 def _get_service():
-    """Return a cached, authenticated Drive v3 service handle."""
-    global _service
-    if _service is not None:
+    """Return a cached, authenticated Drive v3 service handle for the active mode."""
+    global _service, _service_key
+    mode = settings.drive_auth_mode()
+    key = "sa" if mode == "service_account" else f"oauth:{_oauth_token}"
+    if _service is not None and _service_key == key:
         return _service
     with _lock:
-        if _service is not None:
+        if _service is not None and _service_key == key:
             return _service
         try:
             from googleapiclient.discovery import build  # deferred import
@@ -103,11 +153,29 @@ def _get_service():
             raise DriveError(
                 "google-api-python-client is not installed; add it to requirements"
             ) from exc
-        creds = _load_credentials()
+        creds = _service_account_credentials() if mode == "service_account" else _oauth_credentials()
         # cache_discovery=False avoids a noisy warning + a file-cache write that
         # isn't wanted on an ephemeral container.
         _service = build("drive", "v3", credentials=creds, cache_discovery=False)
+        _service_key = key
         return _service
+
+
+def _root_parent(service) -> str:
+    """Resolve the folder id that the sync tree is rooted at, per auth mode.
+
+    Service Account: the human-created, shared folder id from config.
+    OAuth: an app-created folder (named DRIVE_BACKUP_FOLDER) at the root of the
+    connected user's My Drive — created once and reused (drive.file can manage the
+    files it creates, so it cannot use an arbitrary pre-existing folder).
+    """
+    if settings.drive_auth_mode() == "service_account":
+        folder = settings.GOOGLE_DRIVE_FOLDER_ID.strip()
+        if not folder:
+            raise DriveError("GOOGLE_DRIVE_FOLDER_ID is not set")
+        return folder
+    root_name = (settings.DRIVE_BACKUP_FOLDER or "ALLIN1-Drive").strip() or "ALLIN1-Drive"
+    return _ensure_one_folder(service, root_name, "root")
 
 
 # Human-friendly hints for the Google error reasons we're most likely to hit, so
@@ -232,7 +300,7 @@ def ensure_folder_path(path_parts: list[str]) -> str:
     if not is_configured():
         raise DriveError("Google Drive sync is not configured")
     service = _get_service()
-    parent = settings.GOOGLE_DRIVE_FOLDER_ID.strip()
+    parent = _root_parent(service)
     for part in path_parts:
         part = (part or "").strip()
         if not part:
@@ -365,6 +433,21 @@ def delete_file(file_id: str) -> None:
         if "404" in str(exc) or "notFound" in str(exc):
             return
         raise _drive_error(f"delete '{file_id}'", exc) from exc
+
+
+def service_account_email() -> str | None:
+    """Best-effort: the client_email from the Service Account JSON (for display)."""
+    raw = settings.GOOGLE_CREDENTIALS_JSON.strip()
+    if not raw:
+        return None
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            info = json.loads(base64.b64decode(raw).decode("utf-8"))
+        except (json.JSONDecodeError, binascii.Error, UnicodeDecodeError):
+            return None
+    return info.get("client_email")
 
 
 def about() -> dict:
