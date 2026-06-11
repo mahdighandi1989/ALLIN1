@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import AISettings from '@/components/AISettings'
+import TelegramSettings from '@/components/TelegramSettings'
 import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { SettingsResponse, FxRates } from '@/types'
-import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot, Cloud, CloudOff, CheckCircle2, XCircle } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot, Cloud, CloudOff, CheckCircle2, XCircle, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -15,7 +16,7 @@ export default function SettingsPage() {
   const { user, authDisabled, loading: authLoading } = useAuth()
   const [data, setData] = useState<SettingsResponse | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
-  const [tab, setTab] = useState<'general' | 'ai'>('general')
+  const [tab, setTab] = useState<'general' | 'ai' | 'telegram'>('general')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [fx, setFx] = useState<FxRates | null>(null)
@@ -203,12 +204,30 @@ export default function SettingsPage() {
         >
           <Bot size={16} /> AI Models &amp; Providers
         </button>
+        <button
+          type="button"
+          onClick={() => setTab('telegram')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            tab === 'telegram'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Send size={16} /> Telegram
+        </button>
       </div>
 
       {/* AI tab — central AI control layer, on its own wider canvas */}
       {tab === 'ai' && (
         <div className="max-w-4xl">
           <AISettings isAdmin={isAdmin} />
+        </div>
+      )}
+
+      {/* Telegram tab — two-way notifications + bot control */}
+      {tab === 'telegram' && (
+        <div className="max-w-4xl">
+          <TelegramSettings isAdmin={isAdmin} />
         </div>
       )}
 

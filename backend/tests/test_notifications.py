@@ -22,7 +22,7 @@ def captured(monkeypatch):
     """Capture dispatched notifications instead of hitting Telegram."""
     sent = []
 
-    def fake_send(text):
+    def fake_send(text, **kwargs):
         sent.append(text)
         return True
 
@@ -47,7 +47,7 @@ def test_notify_event_defaults_for_critical(monkeypatch):
     """Critical events default to silent=False + priority=high (so they send)."""
     seen = {}
 
-    def fake_send(text):
+    def fake_send(text, **kwargs):
         seen["sent"] = text
         return True
 

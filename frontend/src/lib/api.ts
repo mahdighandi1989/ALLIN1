@@ -569,6 +569,54 @@ export const settingsApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Telegram integration (two-way notifications + bot control)
+// ---------------------------------------------------------------------------
+export interface TelegramPrefs {
+  events: Record<string, boolean>
+  sound: Record<string, boolean>
+  channels: Record<string, { enabled: boolean }>
+  min_priority: 'low' | 'medium' | 'high' | 'critical'
+  include_buttons: boolean
+  app_base_url: string
+  allowed_chat_ids: string[]
+}
+
+export interface TelegramStatus {
+  prefs: TelegramPrefs
+  allowed_chat_ids: string[]
+  channels: Record<string, { configured_via_env: boolean; enabled_pref: boolean; ready: boolean }>
+  events_registry: Record<string, { label: string; help: string; icon: string; group: string }>
+  event_groups: Array<{ id: string; title: string; icon: string }>
+}
+
+export const telegramApi = {
+  async status(): Promise<TelegramStatus> {
+    const { data } = await api.get<TelegramStatus>('/api/telegram/status')
+    return data
+  },
+  async updatePrefs(partial: Partial<TelegramPrefs>): Promise<{ ok: boolean; prefs: TelegramPrefs }> {
+    const { data } = await api.put('/api/telegram/prefs', partial)
+    return data
+  },
+  async test(): Promise<{ ok: boolean; results: Array<Record<string, unknown>> }> {
+    const { data } = await api.post('/api/telegram/test')
+    return data
+  },
+  async webhookInfo(): Promise<Record<string, unknown>> {
+    const { data } = await api.get('/api/telegram/webhook-info')
+    return data
+  },
+  async setWebhook(webhook_url: string): Promise<Record<string, unknown>> {
+    const { data } = await api.post('/api/telegram/set-webhook', { webhook_url })
+    return data
+  },
+  async deleteWebhook(): Promise<Record<string, unknown>> {
+    const { data } = await api.post('/api/telegram/delete-webhook')
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // AI models & providers (the central AI control layer)
 // ---------------------------------------------------------------------------
 export const aiApi = {

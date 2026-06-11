@@ -23,6 +23,11 @@
   (scope `drive.file`)
 - **In-app Notifications** - اعلان‌های درون‌برنامه‌ای (زنگولهٔ UI)
 - **Facility Expiry Alerts** - هشدار درون‌برنامه‌ای برای تسهیلاتِ نزدیک به انقضا
+- **Telegram Integration (two-way)** - اعلان‌های رویدادی به تلگرام با کنترل
+  per-event در پنل (ارسال شود/نشود، با صدا/بی‌صدا)، منوی ثابت، و دستورهای دوطرفه
+  (`/status`، `/stats`، `/expiring`، `/fx`، `/scan`، `/backup`، و پل به مدل‌های
+  هوش مصنوعی با `/ai`). دسترسی با allow-list از `chat_id`ها و وب‌هوک محافظت‌شده با
+  secret token. تنظیمات در `Settings → Telegram`.
 - **Audit Log** - ثبت رویدادها و گزارش حسابرسی
 - **Trash / Soft Delete** - حذف نرم و سطل بازیافت
 - **Multi-user Support** - پشتیبانی چند کاربره با احراز هویت JWT و سطوح دسترسی
