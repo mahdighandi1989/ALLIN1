@@ -153,6 +153,19 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
                 message=f"Items expiring within {wd} days are flagged in the customers' task lists.",
                 link="/dashboard", category="expiry-scan", is_read=False,
             ))
+            # Mirror the alert to Telegram (best-effort; respects panel prefs).
+            try:
+                from app.services.telegram import telegram_service
+
+                await telegram_service.notify_event(
+                    "expiry_scan_summary",
+                    f"🔁 اسکن انقضا: *{total}* آلرت "
+                    f"({fac_alerts} تسهیلات، {doc_alerts} مدرک) در پنجرهٔ {wd} روز.",
+                    priority="high" if fac_alerts else "medium",
+                )
+            except Exception as exc:  # never break the scan on a notify failure
+                import logging
+                logging.getLogger(__name__).warning("expiry telegram notify failed: %s", exc)
 
     await db.commit()
     return {

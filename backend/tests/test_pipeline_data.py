@@ -16,7 +16,7 @@ from app.services.data_pipeline import SheetSchema, run_pipeline
 
 @pytest.fixture(autouse=True)
 def _silence_notifications(monkeypatch):
-    monkeypatch.setattr(notifications, "_send_telegram", lambda text: True)
+    monkeypatch.setattr(notifications, "_send_telegram", lambda text, **kwargs: True)
     notifications._last_sent.clear()
     yield
     notifications._last_sent.clear()

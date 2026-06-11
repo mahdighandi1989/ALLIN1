@@ -189,6 +189,17 @@ async def create_offer(
         message=f"Offer {offer.id} for {offer.currency} {float(offer.principal_amount):,.0f}",
         level="success", link="/offer-letters", category="offer_letter", db=db,
     )
+    try:
+        from app.services.telegram import telegram_service
+
+        await telegram_service.notify_event(
+            "offer_letter_created",
+            f"📝 نامهٔ پیشنهاد جدید *{offer.id}* — "
+            f"{offer.currency} {float(offer.principal_amount):,.0f}",
+            priority="medium",
+        )
+    except Exception:  # best-effort; never block the request on a notify failure
+        pass
     return offer
 
 

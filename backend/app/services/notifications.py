@@ -53,10 +53,17 @@ def _rate_limited(event: str) -> bool:
     return False
 
 
-def _send_telegram(text: str) -> bool:
+def _first_chat_id() -> Optional[str]:
+    """The default notification target — first id in the comma-separated env."""
+    raw = (getattr(settings, "TELEGRAM_CHAT_ID", None) or "").replace(",", " ")
+    ids = [c.strip() for c in raw.split() if c.strip()]
+    return ids[0] if ids else None
+
+
+def _send_telegram(text: str, *, silent: bool = False) -> bool:
     """Best-effort Telegram delivery. Returns True if sent, False otherwise."""
     token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
-    chat_id = getattr(settings, "TELEGRAM_CHAT_ID", None)
+    chat_id = _first_chat_id()
     if not token or not chat_id:
         return False
     try:  # pragma: no cover - only exercised when Telegram is configured
@@ -64,13 +71,31 @@ def _send_telegram(text: str) -> bool:
 
         resp = httpx.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "disable_notification": False},
+            json={"chat_id": chat_id, "text": text, "disable_notification": bool(silent)},
             timeout=10.0,
         )
         return resp.status_code == 200
     except Exception as exc:  # pragma: no cover
         logger.warning("Telegram notification delivery failed: %s", exc)
         return False
+
+
+def _event_prefs(event: str) -> tuple[bool, bool]:
+    """Return ``(enabled, with_sound)`` for ``event`` from the panel prefs cache.
+
+    Falls back to the event-registry defaults so behaviour is sensible before
+    prefs are loaded (and for events not present in the registry).
+    """
+    try:
+        from app.services.telegram import EVENT_REGISTRY, get_prefs
+
+        meta = EVENT_REGISTRY.get(event, {})
+        prefs = get_prefs()
+        enabled = prefs.get("events", {}).get(event, meta.get("default_enabled", True))
+        with_sound = prefs.get("sound", {}).get(event, meta.get("default_sound", False))
+        return bool(enabled), bool(with_sound)
+    except Exception:  # telegram module optional / not yet importable
+        return True, event in CRITICAL_EVENTS
 
 
 def notify_event(
@@ -89,8 +114,10 @@ def notify_event(
     suppressed by the rate limiter.
     """
     is_critical = event in CRITICAL_EVENTS
+    enabled, with_sound = _event_prefs(event)
     if silent is None:
-        silent = False if is_critical else True
+        # Sound preference wins for known events; critical events still ring.
+        silent = not (with_sound or is_critical)
     if priority is None:
         priority = "high" if is_critical else "normal"
 
@@ -105,6 +132,8 @@ def notify_event(
     log = logger.error if is_critical else logger.info
     log("notify_event event=%s priority=%s silent=%s | %s", event, priority, silent, message)
 
-    if not silent:
-        _send_telegram(message)
+    # Respect the panel's per-event toggle. Critical events are always delivered
+    # so a disabled toggle can never hide a system failure.
+    if enabled or is_critical:
+        _send_telegram(message, silent=silent)
     return True
