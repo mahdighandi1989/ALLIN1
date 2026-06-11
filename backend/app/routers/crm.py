@@ -722,14 +722,15 @@ async def _delete_child(db, model, item_id):
 
 # ---- Mortgaged properties (A12) ----
 _PROPERTY_FIELDS = {
-    "country", "plate_no", "mortgage_deed_no", "city", "address", "prop_type",
-    "building_age", "land_area", "cnbc", "valuation", "valuation_currency",
-    "insurance_expiry", "insurance_no", "last_valuation_date", "mortgage_date",
-    "mortgage_amount", "remarks",
+    "facility_id", "customer_name", "country", "plate_no", "mortgage_deed_no",
+    "city", "address", "prop_type", "building_age", "land_area", "cnbc",
+    "valuation", "valuation_currency", "insurance_expiry", "insurance_no",
+    "last_valuation_date", "mortgage_date", "mortgage_amount", "remarks",
 }
 
 
 class PropertyCreate(BaseModel):
+    facility_id: str = ""
     country: str = ""
     plate_no: str = ""
     mortgage_deed_no: str = ""
@@ -750,6 +751,7 @@ class PropertyCreate(BaseModel):
 
 
 class PropertyUpdate(BaseModel):
+    facility_id: Optional[str] = None
     country: Optional[str] = None
     plate_no: Optional[str] = None
     mortgage_deed_no: Optional[str] = None
@@ -774,10 +776,20 @@ async def add_property(
     account_no: str, payload: PropertyCreate,
     db: AsyncSession = Depends(get_db), user=Depends(require_editor),
 ):
-    """Add a mortgaged property to a customer's profile."""
+    """Add a mortgaged property to a customer's profile.
+
+    Ensures the owning customer exists (auto-creating a stub profile for an
+    orphan account_no) and stamps the property with the customer's name so it is
+    always reachable from a profile, not just the standalone list.
+    """
+    from app.services.customer_link import ensure_customer
+
+    data = payload.model_dump(exclude_unset=True)
+    customer = await ensure_customer(db, account_no, data.get("customer_name"))
+    if customer is not None and not data.get("customer_name"):
+        data["customer_name"] = customer.name
     return await _add_child(
-        db, MortgagedProperty, "PROP", account_no,
-        payload.model_dump(exclude_unset=True), _PROPERTY_FIELDS, user,
+        db, MortgagedProperty, "PROP", account_no, data, _PROPERTY_FIELDS, user,
     )
 
 

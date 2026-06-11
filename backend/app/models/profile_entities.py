@@ -21,6 +21,10 @@ class MortgagedProperty(Base):
 
     id = Column(String(60), primary_key=True)
     account_no = Column(String(50), index=True, nullable=False)
+    # Optional link to the specific facility this property collateralises. Empty
+    # means it secures the customer generally (the legacy behaviour); when set it
+    # lets the property surface under that facility, not just under the customer.
+    facility_id = Column(String(60), index=True)
     customer_name = Column(String(200))
     country = Column(String(20))             # UAE / Iran
     plate_no = Column(String(80))            # شماره پلاک ثبتی

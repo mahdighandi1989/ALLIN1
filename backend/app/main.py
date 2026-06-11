@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # never let startup hard-crash on bootstrap issues
         logger.error("Database initialization failed: %s", exc)
 
+    # Materialise a stub customer profile for any collateral (properties/FDs/…)
+    # whose account_no has no customer yet, so nothing is stranded as an "island".
+    try:
+        from app.services.customer_link import reconcile_orphan_collateral
+
+        await reconcile_orphan_collateral()
+    except Exception as exc:  # best-effort backfill; never blocks boot
+        logger.error("Orphan collateral reconcile failed: %s", exc)
+
     # Load Telegram notification preferences into the in-memory cache and, when a
     # bot is configured + a public URL is known, point Telegram's webhook at us so
     # two-way commands work without a manual setup step. Best-effort; never blocks.

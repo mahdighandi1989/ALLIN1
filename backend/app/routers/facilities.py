@@ -287,7 +287,10 @@ async def advanced_search_facilities(
 
 @router.get("/{facility_id}/detail")
 async def get_facility_detail(facility_id: str, db: AsyncSession = Depends(get_db)):
-    """Full facility profile: the facility plus its customer's name/account."""
+    """Full facility profile: the facility, its customer, and its collateral."""
+    from app.models.profile_entities import MortgagedProperty
+    from decimal import Decimal
+
     facility = await _get_active_facility(facility_id, db)
     cust = (
         await db.execute(
@@ -296,10 +299,33 @@ async def get_facility_detail(facility_id: str, db: AsyncSession = Depends(get_d
             )
         )
     ).first()
+
+    # Mortgaged properties pledged specifically against this facility, so the
+    # collateral shows under the facility it secures (not only under the customer).
+    prop_rows = (
+        await db.execute(
+            select(MortgagedProperty).where(
+                MortgagedProperty.facility_id == facility_id,
+                MortgagedProperty.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+
+    def _prop(p) -> dict:
+        return {
+            "id": p.id, "deed_no": p.mortgage_deed_no, "city": p.city,
+            "type": p.prop_type, "owner": p.owner,
+            "currency": p.valuation_currency,
+            "valuation": float(p.valuation) if isinstance(p.valuation, Decimal) else p.valuation,
+            "mortgage_amount": float(p.mortgage_amount) if isinstance(p.mortgage_amount, Decimal) else p.mortgage_amount,
+            "insurance_expiry": p.insurance_expiry,
+        }
+
     return {
         "facility": FacilityResponse.model_validate(facility),
         "customer_name": cust[0] if cust else None,
         "customer_account_no": cust[1] if cust else None,
+        "properties": [_prop(p) for p in prop_rows],
     }
 
 
