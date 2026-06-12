@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
+import { customersApi, crmApi, facilitiesApi, parseApiError, downloadFile } from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
@@ -31,10 +31,15 @@ function CustomerDetailInner() {
   const params = useSearchParams()
   const router = useRouter()
   const id = params.get('id')
+  const facilityParam = params.get('facility')  // open a facility's detail inline
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState('overview')
+  // Inline facility detail (opened under the profile instead of a separate page).
+  const [selFac, setSelFac] = useState<string>('')
+  const [facDetail, setFacDetail] = useState<any>(null)
+  const [facLoading, setFacLoading] = useState(false)
   const [newTask, setNewTask] = useState('')
   const [newTaskDate, setNewTaskDate] = useState('')
   const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
@@ -55,6 +60,20 @@ function CustomerDetailInner() {
     if (!id) { setError('No customer specified'); setLoading(false); return }
     customersApi.detail(id).then(setData).catch((e) => setError(parseApiError(e))).finally(() => setLoading(false))
   }, [id])
+
+  // Deep-link: ?facility=<id> opens that facility's detail inline under the profile.
+  useEffect(() => {
+    if (facilityParam) { setSelFac(facilityParam); setTab('facilities') }
+  }, [facilityParam])
+
+  // Fetch the selected facility's full detail (fields + linked collateral).
+  useEffect(() => {
+    if (!selFac) { setFacDetail(null); return }
+    setFacLoading(true)
+    facilitiesApi.detail(selFac).then(setFacDetail).catch(() => setFacDetail(null)).finally(() => setFacLoading(false))
+  }, [selFac])
+
+  const openFacility = (fid: string) => { setSelFac(fid); setTab('facilities') }
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
   if (error || !data) return (
@@ -360,7 +379,9 @@ function CustomerDetailInner() {
               ['Rating', profile?.rating], ['Updated By', profile?.updated_by],
             ]} />
           </Section>
-          <FacilitiesTable facilities={facilities} />
+          <Section title={`Facilities (${facilities.length})`}>
+            <ClickableFacilities facilities={facilities} onOpen={openFacility} />
+          </Section>
 
           {/* Collateral snapshot — so mortgaged properties are visible right on the
               profile overview, not hidden behind the Collateral tab. */}
@@ -438,6 +459,11 @@ function CustomerDetailInner() {
       )}
 
       {tab === 'facilities' && (
+        selFac ? (
+          <FacilityInline detail={facDetail} loading={facLoading}
+            onBack={() => { setSelFac(''); router.replace(`/customer-detail?id=${id}`) }}
+            onSaved={() => facilitiesApi.detail(selFac).then(setFacDetail).catch(() => {})} />
+        ) : (
         <Section title={`Facilities (${facilities.length})`}>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-4">
             <select value={nf.facility_type} onChange={(e) => setNf((s: any) => ({ ...s, facility_type: e.target.value }))}
@@ -458,10 +484,9 @@ function CustomerDetailInner() {
             <input value={nf.name} onChange={(e) => setNf((s: any) => ({ ...s, name: e.target.value }))} placeholder="Ref / Offer Letter No" className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
             <button onClick={addFacility} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add Facility</button>
           </div>
-          <SimpleTable head={['Name / Ref', 'Type', 'Amount', 'Outstanding', 'Status']}
-            rows={facilities.map((f: any) => [f.name, (f.facility_type || '').toUpperCase(), money(f.amount, f.currency), money(f.outstanding, f.currency), f.status])}
-            empty="No facilities" />
+          <ClickableFacilities facilities={facilities} onOpen={openFacility} />
         </Section>
+        )
       )}
 
       {tab === 'guarantors' && (
@@ -940,13 +965,130 @@ function SimpleTable({ head, rows, empty }: { head: string[]; rows: any[][]; emp
     </div>
   )
 }
-function FacilitiesTable({ facilities, standalone }: any) {
-  const inner = (
-    <SimpleTable head={['Name / Ref', 'Type', 'Amount', 'Outstanding', 'Status']}
-      rows={facilities.map((f: any) => [f.name, (f.facility_type || '').toUpperCase(), money(f.amount, f.currency), money(f.outstanding, f.currency), f.status])}
-      empty="No facilities" />
+// Facilities list with clickable rows that open the facility's detail inline
+// (under the customer profile) instead of navigating to a separate island page.
+function ClickableFacilities({ facilities, onOpen }: { facilities: any[]; onOpen: (id: string) => void }) {
+  if (!facilities.length) return <Empty>No facilities</Empty>
+  return (
+    <div className="overflow-auto border border-gray-200 rounded-lg">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50"><tr>
+          {['Name / Ref', 'Type', 'Amount', 'Outstanding', 'Status', ''].map((h) => (
+            <th key={h} className="px-3 py-2 text-left font-semibold text-gray-600 border-b">{h}</th>
+          ))}
+        </tr></thead>
+        <tbody>
+          {facilities.map((f: any) => (
+            <tr key={f.id} onClick={() => onOpen(f.id)}
+              className="cursor-pointer hover:bg-blue-50 border-b border-gray-100">
+              <td className="px-3 py-2 text-blue-600 font-medium">{f.name || f.id}</td>
+              <td className="px-3 py-2">{(f.facility_type || '').toUpperCase()}</td>
+              <td className="px-3 py-2 tabular-nums">{money(f.amount, f.currency)}</td>
+              <td className="px-3 py-2 tabular-nums">{money(f.outstanding, f.currency)}</td>
+              <td className="px-3 py-2">{f.status}</td>
+              <td className="px-3 py-2 text-gray-400 text-xs">مشاهده ←</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
-  return standalone ? <Section title={`Facilities (${facilities.length})`}>{inner}</Section> : <Section title="Facilities">{inner}</Section>
+}
+
+// Facility detail rendered INSIDE the customer profile: editable core fields plus
+// the collateral pinned to this facility (same data as the standalone page).
+const FAC_COLLATERAL: { key: string; title: string; cols: [string, string][] }[] = [
+  { key: 'properties', title: 'املاک رهنی', cols: [['mortgage_deed_no', 'سند'], ['city', 'شهر'], ['prop_type', 'نوع'], ['valuation', 'ارزیابی'], ['valuation_currency', 'ارز']] },
+  { key: 'guarantors', title: 'ضامن‌ها', cols: [['guarantor_name', 'ضامن'], ['cheque_no', 'شماره چک'], ['cheque_amount', 'مبلغ'], ['issuing_bank', 'بانک']] },
+  { key: 'fixed_deposits', title: 'سپرده‌ها', cols: [['fd_number', 'شماره'], ['amount', 'مبلغ'], ['currency', 'ارز'], ['maturity_date', 'سررسید']] },
+  { key: 'partners', title: 'شرکا', cols: [['name', 'نام'], ['nationality', 'تابعیت'], ['share', 'سهم']] },
+]
+
+function FacilityInline({ detail, loading, onBack, onSaved }: { detail: any; loading: boolean; onBack: () => void; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState<any>({})
+  const [saving, setSaving] = useState(false)
+  const f = detail?.facility
+  const collateral = detail?.collateral || {}
+
+  const startEdit = () => {
+    setForm({
+      name: f.name ?? '', amount: f.amount ?? '', outstanding: f.outstanding ?? '',
+      currency: f.currency ?? 'AED', interest_rate: f.interest_rate ?? '',
+      status: f.status ?? 'active', expiry_date: f.expiry_date ?? '', notes: f.notes ?? '',
+    })
+    setEditing(true)
+  }
+  const save = async () => {
+    setSaving(true)
+    try {
+      const payload: Record<string, any> = {
+        name: form.name || undefined, amount: parseFloat(form.amount) || 0,
+        outstanding: form.outstanding === '' ? undefined : parseFloat(form.outstanding),
+        currency: form.currency, interest_rate: form.interest_rate === '' ? undefined : parseFloat(form.interest_rate),
+        status: form.status, expiry_date: form.expiry_date || undefined, notes: form.notes || undefined,
+      }
+      await facilitiesApi.update(f.id, payload)
+      toast.success('Facility updated'); setEditing(false); onSaved()
+    } catch (e) { toast.error(parseApiError(e)) } finally { setSaving(false) }
+  }
+
+  if (loading) return <div className="py-10 text-center text-gray-400">در حال بارگذاری جزئیاتِ تسهیلات…</div>
+  if (!f) return (
+    <div className="py-6"><button onClick={onBack} className="text-sm text-blue-600 hover:underline">← بازگشت به لیستِ تسهیلات</button>
+      <p className="text-gray-400 mt-3">جزئیاتِ تسهیلات در دسترس نیست.</p></div>
+  )
+
+  const totalCollateral = FAC_COLLATERAL.reduce((s, g) => s + (collateral[g.key]?.length || 0), 0)
+  const fld = (label: string, key: string, type = 'text') => (
+    <div>
+      <p className="text-gray-500 text-xs">{label}</p>
+      {editing
+        ? <input type={type} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="w-full px-2 py-1 border rounded mt-1 text-sm" />
+        : <p className="font-medium text-sm">{key === 'amount' || key === 'outstanding' ? money(f[key], f.currency) : (key === 'interest_rate' ? (f[key] != null ? `${f[key]}%` : '—') : (f[key] || '—'))}</p>}
+    </div>
+  )
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={onBack} className="text-sm text-blue-600 hover:underline">← بازگشت به لیستِ تسهیلات</button>
+        {editing ? (
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-sm border rounded-lg">انصراف</button>
+            <button onClick={save} disabled={saving} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{saving ? 'ذخیره…' : 'ذخیره'}</button>
+          </div>
+        ) : (
+          <button onClick={startEdit} className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50">ویرایش</button>
+        )}
+      </div>
+      <Section title={`${f.name || (f.facility_type || '').toUpperCase()} — ${f.status || ''}`}>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {fld('Name / Ref', 'name')}{fld('Amount', 'amount', 'number')}{fld('Outstanding', 'outstanding', 'number')}
+          {fld('Interest %', 'interest_rate', 'number')}{fld('Currency', 'currency')}{fld('Expiry', 'expiry_date', 'date')}
+          {editing && fld('Status', 'status')}{fld('Notes', 'notes')}
+        </div>
+      </Section>
+      <Section title={`وثایقِ متصل به این تسهیلات (${totalCollateral})`}>
+        {totalCollateral === 0 ? <Empty>هیچ وثیقه‌ای مستقیماً به این تسهیلات متصل نشده. از تب‌های Collateral / Guarantors هنگام افزودن، این تسهیلات را انتخاب کنید.</Empty> : (
+          <div className="space-y-4" dir="rtl">
+            {FAC_COLLATERAL.map((g) => {
+              const rows = collateral[g.key] || []
+              if (!rows.length) return null
+              return (
+                <div key={g.key}>
+                  <div className="text-sm font-semibold text-gray-700 mb-1">{g.title} ({rows.length})</div>
+                  <SimpleTable head={g.cols.map(([, l]) => l)}
+                    rows={rows.map((r: any) => g.cols.map(([k]) => (r[k] === null || r[k] === undefined || r[k] === '' ? '—' : (typeof r[k] === 'number' ? r[k].toLocaleString('en-US') : String(r[k])))))}
+                    empty="—" />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Section>
+    </div>
+  )
 }
 
 export default function CustomerDetailPage() {

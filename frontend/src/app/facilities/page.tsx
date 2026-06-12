@@ -251,7 +251,11 @@ export default function FacilitiesPage() {
                       <button
                         type="button"
                         data-testid={`view-facility-${facility.id}`}
-                        onClick={() => router.push(`/facility-detail?id=${facility.id}`)}
+                        onClick={() => router.push(
+                          facility.customer_id
+                            ? `/customer-detail?id=${facility.customer_id}&facility=${facility.id}`
+                            : `/facility-detail?id=${facility.id}`
+                        )}
                         className="text-blue-600 hover:underline"
                       >
                         {facility.name || facility.facility_type.toUpperCase()}
