@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 from datetime import date, datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import and_, func, or_, select
 
 from app.models.customer import Customer
 from app.models.facility import Facility
@@ -115,10 +115,28 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
         created += int(is_new)
         updated += int(not is_new)
 
-    profs = (await db.execute(select(CustomerProfile))).scalars().all()
-    for p in profs:
-        for label, attr in _KYC_DOCS:
-            exp = _parse_date(getattr(p, attr, None))
+    # Only profiles that actually carry a KYC expiry date matter here. Select just
+    # those few date columns (never the full row + its data_json) and let the DB
+    # filter out the vast majority that have none — otherwise loading all ~44k
+    # profiles as ORM objects OOMs the 512MB instance.
+    expiry_cols = (
+        CustomerProfile.trade_license_expiry,
+        CustomerProfile.passport_expiry,
+        CustomerProfile.emirates_id_expiry,
+        CustomerProfile.visa_expiry,
+        CustomerProfile.tenancy_expiry,
+    )  # same order as _KYC_DOCS, so row[1:] zips cleanly with it
+    rows = (
+        await db.execute(
+            select(CustomerProfile.account_no, *expiry_cols).where(
+                or_(*[and_(c.isnot(None), c != "") for c in expiry_cols])
+            )
+        )
+    ).all()
+    for row in rows:
+        acc = row[0]
+        for (label, attr), value in zip(_KYC_DOCS, row[1:]):
+            exp = _parse_date(value)
             if not exp:
                 continue
             days_left = (exp - today).days
@@ -127,7 +145,7 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
             doc_alerts += 1
             state = "expired" if days_left < 0 else f"expires in {days_left}d"
             is_new = await _upsert_alert(
-                db, key=f"doc|{p.account_no}|{attr}", account_no=p.account_no or "", facility_id="",
+                db, key=f"doc|{acc}|{attr}", account_no=acc or "", facility_id="",
                 task_name=f"⚠ {label} {state} ({exp.isoformat()})",
                 followup=exp.isoformat(),
                 notes=f"Auto expiry alert · {days_left} days · {label}",
