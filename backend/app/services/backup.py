@@ -15,6 +15,10 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Page size for reading each table when building a backup — keeps memory bounded
+# on large tables (see build_backup_payload).
+_BACKUP_CHUNK = 2000
+
 
 def _serialize(obj) -> dict:
     """Flatten an ORM row into a JSON-safe dict (Decimal/enum/datetime aware)."""
@@ -75,12 +79,33 @@ def _targets() -> dict:
 
 
 async def build_backup_payload(db: AsyncSession) -> dict:
-    """Return the full backup as a JSON-serializable dict with a counts summary."""
+    """Return the full backup as a JSON-serializable dict with a counts summary.
+
+    Each table is read in bounded pages (never ``select(model)).all()`` on the
+    whole table) so a large table — e.g. ~44k customer_profiles after the customer
+    listing import — can't materialise tens of thousands of ORM rows at once and
+    OOM the 512MB instance. Only one page of ORM objects is held at a time; the
+    serialized dicts accumulate into the result.
+    """
     data: dict = {}
     for name, model in _targets().items():
         try:
-            objs = (await db.execute(select(model))).scalars().all()
-            data[name] = [_serialize(o) for o in objs]
+            rows: list = []
+            pk = model.__mapper__.primary_key[0]
+            offset = 0
+            while True:
+                chunk = (
+                    await db.execute(
+                        select(model).order_by(pk).offset(offset).limit(_BACKUP_CHUNK)
+                    )
+                ).scalars().all()
+                if not chunk:
+                    break
+                rows.extend(_serialize(o) for o in chunk)
+                offset += len(chunk)
+                if len(chunk) < _BACKUP_CHUNK:
+                    break  # last (partial) page
+            data[name] = rows
         except Exception as exc:  # pragma: no cover - defensive per-table guard
             data[name] = {"error": str(exc)[:120]}
 

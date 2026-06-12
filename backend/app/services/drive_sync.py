@@ -299,6 +299,16 @@ async def run_periodic_snapshot_sync() -> None:
     from app.database import AsyncSessionLocal
 
     while True:
+        # Sleep BEFORE the first snapshot: a full-DB backup must never run during
+        # the startup window. On a large DB (e.g. ~44k customers/profiles after the
+        # listing import) it would compound startup memory and OOM the 512MB
+        # instance moments after boot. The first snapshot fires one interval after
+        # startup, once the app is steady.
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            logger.info("Drive periodic snapshot sync stopped")
+            raise
         try:
             async with AsyncSessionLocal() as session:
                 await sync_database_snapshot(session, reason="scheduled")
@@ -307,8 +317,3 @@ async def run_periodic_snapshot_sync() -> None:
             raise
         except Exception as exc:  # pragma: no cover - defensive, keep the loop alive
             logger.error("Drive periodic snapshot sync iteration failed: %s", exc)
-        try:
-            await asyncio.sleep(interval)
-        except asyncio.CancelledError:
-            logger.info("Drive periodic snapshot sync stopped")
-            raise
