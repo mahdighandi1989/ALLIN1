@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, and_, cast as sa_cast, Float, String
+from sqlalchemy import select, func, and_, or_, cast as sa_cast, Float, String
 from sqlalchemy.orm import load_only
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -478,23 +478,38 @@ async def expiring_documents(
     ]
     today = _date.today()
     alerts = []
+    # Select ONLY the doc number/expiry columns (never the full row + its
+    # data_json) and let the DB drop profiles that carry no expiry date at all.
+    # Loading every profile here OOM'd the 512MB instance once the customer
+    # listing pushed the table to ~44k rows — and this endpoint is polled often.
+    expiry_cols = [CustomerProfile.__table__.c[exp] for _, _, exp in fields]
+    cols = [CustomerProfile.account_no, CustomerProfile.customer_name]
+    for _, no_attr, exp_attr in fields:
+        cols.append(CustomerProfile.__table__.c[no_attr])
+        cols.append(CustomerProfile.__table__.c[exp_attr])
     try:
-        rows = (await db.execute(select(CustomerProfile))).scalars().all()
+        rows = (
+            await db.execute(
+                select(*cols).where(
+                    or_(*[and_(c.isnot(None), c != "") for c in expiry_cols])
+                )
+            )
+        ).all()
     except Exception as e:  # pragma: no cover
         logger.error("expiring-documents: %s", e)
         rows = []
-    for p in rows:
+    for r in rows:
         for label, no_attr, exp_attr in fields:
-            exp = _parse_kyc_date(getattr(p, exp_attr, None))
+            exp = _parse_kyc_date(getattr(r, exp_attr, None))
             if not exp:
                 continue
             days_left = (exp - today).days
             if days_left <= days:
                 alerts.append({
-                    "account_no": p.account_no,
-                    "customer_name": p.customer_name,
+                    "account_no": r.account_no,
+                    "customer_name": r.customer_name,
                     "document": label,
-                    "number": getattr(p, no_attr, None),
+                    "number": getattr(r, no_attr, None),
                     "expiry_date": exp.isoformat(),
                     "days_left": days_left,
                     "expired": days_left < 0,
