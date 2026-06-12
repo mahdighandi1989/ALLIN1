@@ -176,6 +176,11 @@ async def add_guarantor(
     from app.services.customer_link import ensure_customer
 
     customer = await ensure_customer(db, account_no, None)
+    # The guarantor is itself an account/party: ensure it has its own profile too
+    # (auto-stub if new) so it is linkable from everywhere its name appears and
+    # its profile can list the accounts it guarantees.
+    if (payload.guarantor_account or "").strip():
+        await ensure_customer(db, payload.guarantor_account, payload.guarantor_name)
     gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
     g = Guarantor(
         id=gid, account_no=account_no, guarantor_name=payload.guarantor_name[:200],

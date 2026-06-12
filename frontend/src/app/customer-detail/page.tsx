@@ -83,7 +83,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [] } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [], relationships = { given: [], received: [] } } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const completeness = profile?.profile_completeness || '—'
@@ -383,6 +383,8 @@ function CustomerDetailInner() {
             <ClickableFacilities facilities={facilities} onOpen={openFacility} />
           </Section>
 
+          <RelationshipsPanel relationships={relationships} onOpen={(cid: string) => router.push(`/customer-detail?id=${cid}`)} />
+
           {/* Collateral snapshot — so mortgaged properties are visible right on the
               profile overview, not hidden behind the Collateral tab. */}
           <Section title={`Collateral — Mortgaged Properties (${properties.length})`}>
@@ -504,9 +506,30 @@ function CustomerDetailInner() {
             </select>
             <button onClick={addGuarantor} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
           </div>
-          <SimpleTable head={['Guarantor', 'Account', 'Cheque No', 'Amount', 'Bank', 'Ref']}
-            rows={guarantors.map((g: any) => [g.guarantor_name, g.guarantor_account, g.cheque_no, g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—', g.issuing_bank, g.pim_ref])}
-            empty="No guarantors" />
+          {guarantors.length === 0 ? <Empty>No guarantors</Empty> : (
+            <div className="overflow-auto">
+              <table className="w-full text-sm whitespace-nowrap">
+                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Guarantor', 'Account', 'Cheque No', 'Amount', 'Bank', 'Ref'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
+                <tbody className="divide-y">
+                  {guarantors.map((g: any) => (
+                    <tr key={g.id}>
+                      <td className="px-3 py-1.5">
+                        {g.guarantor_customer_id ? (
+                          <button type="button" onClick={() => router.push(`/customer-detail?id=${g.guarantor_customer_id}`)} className="text-blue-600 hover:underline">{val(g.guarantor_name)}</button>
+                        ) : val(g.guarantor_name)}
+                      </td>
+                      <td className="px-3 py-1.5">{val(g.guarantor_account)}</td>
+                      <td className="px-3 py-1.5">{val(g.cheque_no)}</td>
+                      <td className="px-3 py-1.5">{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td>
+                      <td className="px-3 py-1.5">{val(g.issuing_bank)}</td>
+                      <td className="px-3 py-1.5">{val(g.pim_ref)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <RelationshipsPanel relationships={relationships} onOpen={(cid: string) => router.push(`/customer-detail?id=${cid}`)} />
         </Section>
       )}
 
@@ -965,6 +988,44 @@ function SimpleTable({ head, rows, empty }: { head: string[]; rows: any[][]; emp
     </div>
   )
 }
+// Cross-account relationships recorded on the profile: which accounts this
+// customer guarantees / is tied to (given) and which guarantee it (received).
+// Each counterparty links straight to its own profile.
+function RelationshipsPanel({ relationships, onOpen }: { relationships: any; onOpen: (cid: string) => void }) {
+  const given = relationships?.given || []
+  const received = relationships?.received || []
+  if (given.length === 0 && received.length === 0) return null
+  const Row = ({ r }: { r: any }) => (
+    <li className="flex items-center justify-between border-b border-gray-100 py-1.5 text-sm">
+      <span>
+        {r.counterparty_customer_id ? (
+          <button type="button" onClick={() => onOpen(r.counterparty_customer_id)} className="text-blue-600 hover:underline">{r.counterparty_name || r.counterparty_account || '—'}</button>
+        ) : (r.counterparty_name || r.counterparty_account || '—')}
+        {r.counterparty_account ? <span className="text-gray-400"> · {r.counterparty_account}</span> : null}
+      </span>
+      <span className="text-xs text-gray-500">
+        {r.relation === 'guarantor' ? 'ضمانت' : r.relation}
+        {r.detail?.cheque_amount ? ` · ${Number(r.detail.cheque_amount).toLocaleString('en-US')}` : ''}
+      </span>
+    </li>
+  )
+  return (
+    <div dir="rtl" className="mt-5 bg-white border border-gray-200 rounded-lg p-4">
+      <h4 className="font-bold text-gray-900 mb-2">روابطِ بین‌حسابی</h4>
+      <div className="grid md:grid-cols-2 gap-5">
+        <div>
+          <div className="text-sm font-semibold text-gray-700 mb-1">این مشتری ضامنِ این حساب‌هاست ({given.length})</div>
+          {given.length === 0 ? <p className="text-xs text-gray-400">موردی نیست.</p> : <ul>{given.map((r: any, i: number) => <Row key={r.id || i} r={r} />)}</ul>}
+        </div>
+        <div>
+          <div className="text-sm font-semibold text-gray-700 mb-1">این حساب‌ها ضامنِ این مشتری‌اند ({received.length})</div>
+          {received.length === 0 ? <p className="text-xs text-gray-400">موردی نیست.</p> : <ul>{received.map((r: any, i: number) => <Row key={r.id || i} r={r} />)}</ul>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Facilities list with clickable rows that open the facility's detail inline
 // (under the customer profile) instead of navigating to a separate island page.
 function ClickableFacilities({ facilities, onOpen }: { facilities: any[]; onOpen: (id: string) => void }) {

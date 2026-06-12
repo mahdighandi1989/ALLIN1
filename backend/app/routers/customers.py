@@ -308,6 +308,27 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         return (await db.execute(q)).scalars().all()
 
     guarantors = await _by_acc(Guarantor)
+
+    # Cross-account relationships (who this customer guarantees / is guaranteed by),
+    # plus a resolver so each guarantor name can link to its own profile.
+    from app.services.relationships import relationships_for_account
+    relationships = await relationships_for_account(db, acc)
+    _guar_accts = {(g.guarantor_account or "").strip() for g in guarantors if (g.guarantor_account or "").strip()}
+    _guar_cust = {}
+    if _guar_accts:
+        for ga, gid_, _gname in (
+            await db.execute(
+                select(Customer.account_no, Customer.id, Customer.name).where(
+                    Customer.account_no.in_(list(_guar_accts)), Customer.is_deleted == False
+                )
+            )
+        ).all():
+            _guar_cust[ga] = gid_
+
+    def _guarantor_dict(g):
+        d = _to_dict(g)
+        d["guarantor_customer_id"] = _guar_cust.get((g.guarantor_account or "").strip())
+        return d
     securities = await _by_acc(Security, order=Security.year.desc())
     tasks = await _by_acc(CustomTask)
     attachments = await _by_acc(Attachment)
@@ -344,7 +365,8 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "customer": CustomerResponse.model_validate(customer),
         "facilities": [FacilityResponse.model_validate(f) for f in facilities],
         "offer_letters": [OfferLetterResponse.model_validate(o) for o in offers],
-        "guarantors": [_to_dict(g) for g in guarantors],
+        "guarantors": [_guarantor_dict(g) for g in guarantors],
+        "relationships": relationships,
         "securities": [_to_dict(s) for s in securities],
         "tasks": [_to_dict(t) for t in tasks],
         "attachments": [_to_dict(a) for a in attachments],
