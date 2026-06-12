@@ -71,7 +71,7 @@ async def reconcile_orphan_collateral(db: AsyncSession | None = None) -> int:
     supplied (so it can run from startup).
     """
     from app.database import AsyncSessionLocal
-    from app.services.collateral import account_keyed_models
+    from app.services.collateral import account_keyed_models, relationship_entries
 
     own_session = db is None
     session = db or AsyncSessionLocal()
@@ -79,17 +79,29 @@ async def reconcile_orphan_collateral(db: AsyncSession | None = None) -> int:
     try:
         # Gather (account_no -> a name hint) across all registered child tables.
         hints: dict[str, str] = {}
+
+        def _note(acc_raw, name_raw):
+            acc = _clean_account(acc_raw)
+            if not acc:
+                return
+            hint = name_raw if name_raw else ""
+            if acc not in hints or (hint and not hints[acc]):
+                hints[acc] = hint
+
         for model in account_keyed_models():
             name_col = getattr(model, "customer_name", None)
             cols = [model.account_no] + ([name_col] if name_col is not None else [])
-            rows = (await session.execute(sa.select(*cols))).all()
-            for row in rows:
-                acc = _clean_account(row[0])
-                if not acc:
-                    continue
-                hint = (row[1] if len(row) > 1 and row[1] else "")
-                if acc not in hints or (hint and not hints[acc]):
-                    hints[acc] = hint
+            for row in (await session.execute(sa.select(*cols))).all():
+                _note(row[0], row[1] if len(row) > 1 else "")
+
+        # Also stub the *related* party of cross-account links (e.g. the guarantor's
+        # own account), so a guarantor that has no profile yet still gets one.
+        for entry in relationship_entries():
+            rel_col = getattr(entry.model, entry.relation_account_attr)
+            name_col = getattr(entry.model, entry.relation_name_attr) if entry.relation_name_attr else None
+            cols = [rel_col] + ([name_col] if name_col is not None else [])
+            for row in (await session.execute(sa.select(*cols))).all():
+                _note(row[0], row[1] if len(row) > 1 else "")
 
         if not hints:
             return 0

@@ -125,3 +125,40 @@ class TestGenericCollateralLinking:
         collateral = detail.json()["collateral"]
         assert any(f["fd_number"] == "FD-777" for f in collateral["fixed_deposits"])
         assert any(p["name"] == "Partner One" for p in collateral["partners"])
+
+
+class TestGuarantorRelationships:
+    """A guarantor is itself an account: it gets a profile and the relationship is
+    recorded on both sides."""
+
+    async def test_guarantor_account_gets_profile_and_relationship(
+        self, client: AsyncClient, auth_headers: dict, test_customer
+    ):
+        borrower_acc = test_customer.account_no
+        borrower_id = test_customer.id
+        guar_acc = "GUAR-555"
+
+        r = await client.post(
+            f"/api/crm/guarantors/{borrower_acc}", headers=auth_headers,
+            json={"guarantor_name": "Strong Guarantor LLC", "guarantor_account": guar_acc,
+                  "cheque_no": "CH-1", "cheque_amount": 75000},
+        )
+        assert r.status_code == 200, r.text
+
+        # 1) The guarantor now has its OWN profile.
+        custs = await client.get(f"/api/customers/?search={guar_acc}", headers=auth_headers)
+        items = custs.json().get("items", custs.json())
+        gmatch = [c for c in items if c.get("account_no") == guar_acc]
+        assert gmatch, "guarantor account should have an auto-created profile"
+        guar_id = gmatch[0]["id"]
+
+        # 2) The borrower's profile links the guarantor to its profile + lists the relation received.
+        bdetail = (await client.get(f"/api/customers/{borrower_id}/detail", headers=auth_headers)).json()
+        g = [x for x in bdetail["guarantors"] if x["guarantor_account"] == guar_acc]
+        assert g and g[0]["guarantor_customer_id"] == guar_id
+        assert any(rel["counterparty_account"] == guar_acc for rel in bdetail["relationships"]["received"])
+
+        # 3) The guarantor's OWN profile records that it guarantees the borrower (given).
+        gdetail = (await client.get(f"/api/customers/{guar_id}/detail", headers=auth_headers)).json()
+        given = gdetail["relationships"]["given"]
+        assert any(rel["counterparty_account"] == borrower_acc and rel["relation"] == "guarantor" for rel in given)

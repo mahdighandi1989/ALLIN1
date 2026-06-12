@@ -33,12 +33,25 @@ class CollateralEntry:
     key: str        # stable key used in API payloads (e.g. "properties")
     model: type     # the ORM model
     label: str      # human label (UI/back-office)
+    # When a record also references ANOTHER account (e.g. a guarantor row points
+    # from the borrower's account_no to the guarantor's own account), these name
+    # the columns holding that related account + its name. This powers
+    # cross-account relationship tracking (and stub profiles for the related
+    # party). Leave None for entities that don't link two accounts.
+    relation_account_attr: str | None = None
+    relation_name_attr: str | None = None
+    relation_label: str | None = None  # e.g. "guarantor"
 
 
 # The registry. Append a line here to enrol a future child entity.
 REGISTRY: list[CollateralEntry] = [
     CollateralEntry("properties", MortgagedProperty, "Mortgaged properties"),
-    CollateralEntry("guarantors", Guarantor, "Guarantors"),
+    CollateralEntry(
+        "guarantors", Guarantor, "Guarantors",
+        relation_account_attr="guarantor_account",
+        relation_name_attr="guarantor_name",
+        relation_label="guarantor",
+    ),
     CollateralEntry("fixed_deposits", FixedDeposit, "Fixed deposits"),
     CollateralEntry("partners", Partner, "Partners / shareholders"),
 ]
@@ -56,6 +69,14 @@ def account_keyed_models() -> list[type]:
 def facility_linked_entries() -> list[CollateralEntry]:
     """Registry entries whose model can be pinned to a specific facility."""
     return [e for e in REGISTRY if _has_col(e.model, "facility_id")]
+
+
+def relationship_entries() -> list[CollateralEntry]:
+    """Registry entries that link a record to a SECOND account (e.g. guarantor)."""
+    return [
+        e for e in REGISTRY
+        if e.relation_account_attr and _has_col(e.model, e.relation_account_attr)
+    ]
 
 
 def serialize(obj) -> dict:
