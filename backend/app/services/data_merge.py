@@ -3,19 +3,32 @@
 Runs at startup after the schema exists. Each step is guarded and safe to re-run:
 rows are matched by their stable IDs / account numbers and only inserted or
 filled — never blindly duplicated. Source data lives in app/data/merge/*.json
-(exported verbatim from the user's Backend_Database workbook).
+(exported verbatim from the user's Backend_Database workbook) plus the gzipped
+``customer_listing.json.gz`` (the bank's full core-banking customer export).
 
 Phase 1 wave A: guarantors + facility enrichment. Later waves (customer
 profiles / KYC, checklist progress, tasks, attachments, journal) extend this.
+
+The customer-listing waves (``_merge_customer_listing`` /
+``_merge_customer_listing_profiles``) import every 6-digit account from the core
+banking export — creating a Customer so the panel lists it and a CustomerProfile
+as its credit-file "infrastructure" — merging non-destructively into any account
+that already exists. See scripts/generate_customer_listing.py for the source map.
 """
+import gzip
 import json
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import insert, or_, select
 
 from app.database import AsyncSessionLocal
-from app.models.customer import Customer
+from app.models.customer import (
+    AccountType,
+    Customer,
+    CustomerStatus,
+    generate_customer_id,
+)
 from app.models.facility import Facility, FacilityType
 from app.models.guarantor import Guarantor
 from app.models.security import Security
@@ -274,10 +287,206 @@ async def _merge_securities(session) -> int:
             taken_out_date=str(r.get("taken_out_date") or "")[:30]))
 
 
+# ---------------------------------------------------------------------------
+# Full customer listing — the bank's core-banking export of every account.
+# Distilled by scripts/generate_customer_listing.py into customer_listing.json.gz
+# (6-digit CUSTOMER NUMBER only; 4-digit branch codes mapped to readable labels).
+# Merged in two waves so ordering stays correct against the other steps:
+#   * customers — runs FIRST, so a Customer exists before facilities link to it.
+#   * profiles  — runs AFTER the legacy ``profiles`` step, so the richer legacy
+#                 KYC is created first and the listing only fills the gaps.
+# Both are non-destructive upserts keyed by account_no: new rows are bulk-inserted
+# and existing rows only get their EMPTY columns filled (real data never clobbered).
+# ---------------------------------------------------------------------------
+_LISTING_GZ = "customer_listing.json.gz"
+_VALID_ATYPE = {t.value for t in AccountType}
+_INSERT_CHUNK = 2000
+
+
+def _load_listing() -> list:
+    """Read ``customer_listing.json(.gz)`` → list of record dicts ([] if absent)."""
+    gz = _DIR / _LISTING_GZ
+    plain = _DIR / "customer_listing.json"
+    try:
+        if gz.exists():
+            blob = json.loads(gzip.decompress(gz.read_bytes()).decode("utf-8"))
+        elif plain.exists():
+            blob = json.loads(plain.read_text(encoding="utf-8"))
+        else:
+            return []
+    except Exception as exc:  # pragma: no cover - corrupt/oversized file
+        logger.warning("merge: could not read customer listing: %s", exc)
+        return []
+    return blob.get("records", []) if isinstance(blob, dict) else (blob or [])
+
+
+def _atype(rec: dict) -> str:
+    a = str(rec.get("account_type") or "retail").lower()
+    return a if a in _VALID_ATYPE else "retail"
+
+
+def _customer_branch(rec: dict):
+    return rec.get("branch_label") or rec.get("branch_code") or None
+
+
+def _fill_empty(obj, values: dict) -> bool:
+    """Set attrs from ``values`` only where the current attribute is empty.
+
+    Implements the agreed non-destructive merge: data already on the row is never
+    overwritten — the listing fills blanks only. Returns True if anything changed.
+    """
+    changed = False
+    for key, val in values.items():
+        if isinstance(val, str):
+            val = val.strip()
+        if not val:
+            continue
+        cur = getattr(obj, key, None)
+        if cur is None or (isinstance(cur, str) and cur.strip() == ""):
+            setattr(obj, key, val)
+            changed = True
+    return changed
+
+
+def _profile_fill_values(rec: dict) -> dict:
+    """The CustomerProfile columns the listing can populate (None when blank)."""
+
+    def g(key, limit):
+        v = (rec.get(key) or "").strip()
+        return v[:limit] if v else None
+
+    return {
+        "customer_name": g("name", 200),
+        "account_type": g("entity_type", 30),
+        "branch": g("branch_code", 20),
+        "customer_status": g("status_desc", 50),
+        "passport_no": g("passport_no", 80),
+        "emirates_id_no": g("national_id", 80),
+        "trade_license_no": g("trade_license_no", 80),
+        "passport_nationality": g("nationality", 80),
+    }
+
+
+def _profile_data_json(rec: dict) -> str:
+    """Keep the listing's extra attributes (nationality, PEP, BRM, …) verbatim."""
+    keep = {
+        k: rec.get(k)
+        for k in (
+            "nationality", "pep_status", "rr_pep", "entity_type", "customer_type",
+            "brm_code", "date_added", "status_desc", "branch_code", "branch_label",
+            "email", "mobile",
+        )
+        if rec.get(k)
+    }
+    keep["source"] = "customer_listing"
+    return json.dumps(keep, ensure_ascii=False)
+
+
+async def _merge_customer_listing(session) -> int:
+    """Wave 1 — make every 6-digit listed account a Customer so the panel lists it.
+
+    New accounts are bulk-inserted in chunks; accounts that already exist only get
+    their *empty* columns filled. Idempotent — a re-run inserts nothing new.
+    """
+    records = _load_listing()
+    if not records:
+        return 0
+    existing = set((await session.execute(select(Customer.account_no))).scalars().all())
+    new_rows = []
+    for rec in records:
+        acc = rec.get("account_no")
+        if not acc or acc in existing:
+            continue
+        existing.add(acc)  # guard against any in-file duplicate
+        new_rows.append({
+            "id": generate_customer_id(),
+            "account_no": acc,
+            "name": (rec.get("name") or f"Account {acc}")[:200],
+            "name_ar": rec.get("name_ar") or None,
+            "account_type": AccountType(_atype(rec)),
+            "status": CustomerStatus.ACTIVE,
+            "email": rec.get("email") or None,
+            "phone": rec.get("mobile") or None,
+            "mobile": rec.get("mobile") or None,
+            "branch": _customer_branch(rec),
+            "is_deleted": False,
+        })
+    for i in range(0, len(new_rows), _INSERT_CHUNK):
+        await session.execute(insert(Customer), new_rows[i : i + _INSERT_CHUNK])
+        await session.commit()  # commit per chunk: bound the txn + persist progress
+    created = len(new_rows)
+
+    # Non-destructive fill for accounts that pre-existed (seed/stub/legacy rows).
+    # Only branch-less rows are loaded, so once every listed account has a branch
+    # this selects ~nothing on later startups (no churn).
+    by_acc = {r["account_no"]: r for r in records}
+    incomplete = (await session.execute(
+        select(Customer).where(or_(Customer.branch.is_(None), Customer.branch == ""))
+    )).scalars().all()
+    filled = 0
+    for cust in incomplete:
+        rec = by_acc.get(cust.account_no)
+        if rec and _fill_empty(cust, {
+            "name": rec.get("name"),
+            "name_ar": rec.get("name_ar"),
+            "branch": _customer_branch(rec),
+            "email": rec.get("email"),
+            "mobile": rec.get("mobile"),
+            "phone": rec.get("mobile"),
+        }):
+            filled += 1
+    return created + filled
+
+
+async def _merge_customer_listing_profiles(session) -> int:
+    """Wave 2 — ensure every listed account has credit-file 'infrastructure'
+    (a CustomerProfile). Creates the missing ones and fills the empty fields the
+    listing knows (nationality, KYC numbers, branch, PEP); never overwrites the
+    richer legacy profile that the earlier ``profiles`` step may have created.
+    """
+    records = _load_listing()
+    if not records:
+        return 0
+    existing = set(
+        (await session.execute(select(CustomerProfile.account_no))).scalars().all()
+    )
+    new_rows = []
+    for rec in records:
+        acc = rec.get("account_no")
+        if not acc or acc in existing:
+            continue
+        existing.add(acc)
+        row = _profile_fill_values(rec)
+        row["account_no"] = acc
+        row["data_json"] = _profile_data_json(rec)
+        new_rows.append(row)
+    for i in range(0, len(new_rows), _INSERT_CHUNK):
+        await session.execute(insert(CustomerProfile), new_rows[i : i + _INSERT_CHUNK])
+        await session.commit()  # commit per chunk: bound the txn + persist progress
+    created = len(new_rows)
+
+    # Fill empties on pre-existing profiles missing a branch (legacy rows). Listing
+    # profiles always carry one, so they are not reselected on later startups.
+    by_acc = {r["account_no"]: r for r in records}
+    incomplete = (await session.execute(
+        select(CustomerProfile).where(
+            or_(CustomerProfile.branch.is_(None), CustomerProfile.branch == "")
+        )
+    )).scalars().all()
+    filled = 0
+    for prof in incomplete:
+        rec = by_acc.get(prof.account_no)
+        if rec and _fill_empty(prof, _profile_fill_values(rec)):
+            filled += 1
+    return created + filled
+
+
 _STEPS = [
+    ("customer_listing", _merge_customer_listing),
     ("guarantors", _merge_guarantors),
     ("facilities", _merge_facilities),
     ("profiles", _merge_profiles),
+    ("customer_listing_profiles", _merge_customer_listing_profiles),
     ("checklists", _merge_checklist),
     ("tasks", _merge_tasks),
     ("attachments", _merge_attachments),
