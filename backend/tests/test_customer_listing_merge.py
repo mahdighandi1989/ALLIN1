@@ -51,7 +51,9 @@ _SMALL = [
 
 @pytest.fixture
 def small_listing(monkeypatch):
-    monkeypatch.setattr(data_merge, "_load_listing", lambda: list(_SMALL))
+    # _iter_listing is a generator; return a FRESH iterator on each call so both
+    # merge waves (and idempotency re-runs) can iterate it independently.
+    monkeypatch.setattr(data_merge, "_iter_listing", lambda: iter(_SMALL))
 
 
 async def _count(session, model):
@@ -181,9 +183,9 @@ async def test_customer_listing_profiles_creates_and_fills(db_session, small_lis
 
 
 async def test_real_listing_file_end_to_end(db_session):
-    """The committed customer_listing.json.gz loads, imports every 6-digit account
-    exactly once, and is idempotent on a second pass."""
-    records = data_merge._load_listing()
+    """The committed customer_listing.jsonl.gz streams, imports every 6-digit
+    account exactly once, and is idempotent on a second pass."""
+    records = list(data_merge._iter_listing())
     assert len(records) == 44512, "expected the distilled 6-digit account set"
     # Every account number is exactly 6 digits (the agreed rule).
     assert all(len(r["account_no"]) == 6 and r["account_no"].isdigit() for r in records)

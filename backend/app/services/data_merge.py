@@ -4,7 +4,7 @@ Runs at startup after the schema exists. Each step is guarded and safe to re-run
 rows are matched by their stable IDs / account numbers and only inserted or
 filled — never blindly duplicated. Source data lives in app/data/merge/*.json
 (exported verbatim from the user's Backend_Database workbook) plus the gzipped
-``customer_listing.json.gz`` (the bank's full core-banking customer export).
+``customer_listing.jsonl.gz`` (the bank's full core-banking customer export).
 
 Phase 1 wave A: guarantors + facility enrichment. Later waves (customer
 profiles / KYC, checklist progress, tasks, attachments, journal) extend this.
@@ -289,35 +289,41 @@ async def _merge_securities(session) -> int:
 
 # ---------------------------------------------------------------------------
 # Full customer listing — the bank's core-banking export of every account.
-# Distilled by scripts/generate_customer_listing.py into customer_listing.json.gz
+# Distilled by scripts/generate_customer_listing.py into customer_listing.jsonl.gz
 # (6-digit CUSTOMER NUMBER only; 4-digit branch codes mapped to readable labels).
 # Merged in two waves so ordering stays correct against the other steps:
 #   * customers — runs FIRST, so a Customer exists before facilities link to it.
 #   * profiles  — runs AFTER the legacy ``profiles`` step, so the richer legacy
 #                 KYC is created first and the listing only fills the gaps.
-# Both are non-destructive upserts keyed by account_no: new rows are bulk-inserted
-# and existing rows only get their EMPTY columns filled (real data never clobbered).
+# Both stream the file record-by-record (memory-safe on the 512MB instance) and
+# upsert non-destructively by account_no: new rows are inserted in chunks and
+# existing rows only get their EMPTY columns filled (real data never clobbered).
 # ---------------------------------------------------------------------------
-_LISTING_GZ = "customer_listing.json.gz"
+_LISTING_JSONL_GZ = "customer_listing.jsonl.gz"
 _VALID_ATYPE = {t.value for t in AccountType}
 _INSERT_CHUNK = 2000
 
 
-def _load_listing() -> list:
-    """Read ``customer_listing.json(.gz)`` → list of record dicts ([] if absent)."""
-    gz = _DIR / _LISTING_GZ
-    plain = _DIR / "customer_listing.json"
+def _iter_listing():
+    """Yield the listing's records one at a time from the gzipped JSONL file.
+
+    Streaming (rather than loading all ~44k dicts at once) keeps the merge well
+    within the 512MB production instance: only one record — plus the current
+    insert batch — is ever held in memory. Yields nothing if the file is absent
+    or unreadable.
+    """
+    path = _DIR / _LISTING_JSONL_GZ
+    if not path.exists():
+        return
     try:
-        if gz.exists():
-            blob = json.loads(gzip.decompress(gz.read_bytes()).decode("utf-8"))
-        elif plain.exists():
-            blob = json.loads(plain.read_text(encoding="utf-8"))
-        else:
-            return []
-    except Exception as exc:  # pragma: no cover - corrupt/oversized file
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    yield json.loads(line)
+    except Exception as exc:  # pragma: no cover - corrupt/truncated file
         logger.warning("merge: could not read customer listing: %s", exc)
-        return []
-    return blob.get("records", []) if isinstance(blob, dict) else (blob or [])
+        return
 
 
 def _atype(rec: dict) -> str:
@@ -382,23 +388,51 @@ def _profile_data_json(rec: dict) -> str:
     return json.dumps(keep, ensure_ascii=False)
 
 
+async def _branchless_accounts(session, model) -> set:
+    """account_nos of rows still missing a branch — the only ones the fill pass
+    must touch. Tiny in steady state (listing rows all carry a branch), so we can
+    stash just these records while streaming instead of holding all ~44k."""
+    return set((await session.execute(
+        select(model.account_no).where(
+            or_(model.branch.is_(None), model.branch == "")
+        )
+    )).scalars().all())
+
+
+async def _load_in_chunks(session, model, account_nos):
+    """Yield ``model`` rows for a (small) set of account_nos, 500 at a time, so a
+    large fill set can never build one giant IN-clause or result set."""
+    accs = list(account_nos)
+    for i in range(0, len(accs), 500):
+        rows = (await session.execute(
+            select(model).where(model.account_no.in_(accs[i : i + 500]))
+        )).scalars().all()
+        for row in rows:
+            yield row
+
+
 async def _merge_customer_listing(session) -> int:
     """Wave 1 — make every 6-digit listed account a Customer so the panel lists it.
 
-    New accounts are bulk-inserted in chunks; accounts that already exist only get
-    their *empty* columns filled. Idempotent — a re-run inserts nothing new.
+    Streams the listing record-by-record (memory-safe on a 512MB instance): brand
+    new accounts are inserted in chunks; accounts that already exist only get their
+    *empty* columns filled. Idempotent — a re-run inserts nothing new.
     """
-    records = _load_listing()
-    if not records:
-        return 0
     existing = set((await session.execute(select(Customer.account_no))).scalars().all())
-    new_rows = []
-    for rec in records:
+    need_fill = await _branchless_accounts(session, Customer)
+    batch: list = []
+    fills: dict = {}
+    created = 0
+    for rec in _iter_listing():
         acc = rec.get("account_no")
-        if not acc or acc in existing:
+        if not acc:
+            continue
+        if acc in existing:
+            if acc in need_fill:
+                fills[acc] = rec  # pre-existing + incomplete → fill it later
             continue
         existing.add(acc)  # guard against any in-file duplicate
-        new_rows.append({
+        batch.append({
             "id": generate_customer_id(),
             "account_no": acc,
             "name": (rec.get("name") or f"Account {acc}")[:200],
@@ -411,21 +445,20 @@ async def _merge_customer_listing(session) -> int:
             "branch": _customer_branch(rec),
             "is_deleted": False,
         })
-    for i in range(0, len(new_rows), _INSERT_CHUNK):
-        await session.execute(insert(Customer), new_rows[i : i + _INSERT_CHUNK])
-        await session.commit()  # commit per chunk: bound the txn + persist progress
-    created = len(new_rows)
+        if len(batch) >= _INSERT_CHUNK:
+            await session.execute(insert(Customer), batch)
+            await session.commit()  # commit per chunk: bound the txn + persist progress
+            created += len(batch)
+            batch = []
+    if batch:
+        await session.execute(insert(Customer), batch)
+        await session.commit()
+        created += len(batch)
 
-    # Non-destructive fill for accounts that pre-existed (seed/stub/legacy rows).
-    # Only branch-less rows are loaded, so once every listed account has a branch
-    # this selects ~nothing on later startups (no churn).
-    by_acc = {r["account_no"]: r for r in records}
-    incomplete = (await session.execute(
-        select(Customer).where(or_(Customer.branch.is_(None), Customer.branch == ""))
-    )).scalars().all()
+    # Non-destructive fill for the few pre-existing, branch-less accounts.
     filled = 0
-    for cust in incomplete:
-        rec = by_acc.get(cust.account_no)
+    async for cust in _load_in_chunks(session, Customer, fills.keys()):
+        rec = fills.get(cust.account_no)
         if rec and _fill_empty(cust, {
             "name": rec.get("name"),
             "name_ar": rec.get("name_ar"),
@@ -435,49 +468,56 @@ async def _merge_customer_listing(session) -> int:
             "phone": rec.get("mobile"),
         }):
             filled += 1
+    if filled:
+        await session.commit()
     return created + filled
 
 
 async def _merge_customer_listing_profiles(session) -> int:
     """Wave 2 — ensure every listed account has credit-file 'infrastructure'
-    (a CustomerProfile). Creates the missing ones and fills the empty fields the
-    listing knows (nationality, KYC numbers, branch, PEP); never overwrites the
-    richer legacy profile that the earlier ``profiles`` step may have created.
+    (a CustomerProfile). Streams the listing (memory-safe): creates the missing
+    profiles and fills the empty fields the listing knows (nationality, KYC numbers,
+    branch, PEP); never overwrites the richer legacy profile the earlier
+    ``profiles`` step may have created.
     """
-    records = _load_listing()
-    if not records:
-        return 0
     existing = set(
         (await session.execute(select(CustomerProfile.account_no))).scalars().all()
     )
-    new_rows = []
-    for rec in records:
+    need_fill = await _branchless_accounts(session, CustomerProfile)
+    batch: list = []
+    fills: dict = {}
+    created = 0
+    for rec in _iter_listing():
         acc = rec.get("account_no")
-        if not acc or acc in existing:
+        if not acc:
+            continue
+        if acc in existing:
+            if acc in need_fill:
+                fills[acc] = rec
             continue
         existing.add(acc)
         row = _profile_fill_values(rec)
         row["account_no"] = acc
         row["data_json"] = _profile_data_json(rec)
-        new_rows.append(row)
-    for i in range(0, len(new_rows), _INSERT_CHUNK):
-        await session.execute(insert(CustomerProfile), new_rows[i : i + _INSERT_CHUNK])
-        await session.commit()  # commit per chunk: bound the txn + persist progress
-    created = len(new_rows)
+        batch.append(row)
+        if len(batch) >= _INSERT_CHUNK:
+            await session.execute(insert(CustomerProfile), batch)
+            await session.commit()  # commit per chunk: bound the txn + persist progress
+            created += len(batch)
+            batch = []
+    if batch:
+        await session.execute(insert(CustomerProfile), batch)
+        await session.commit()
+        created += len(batch)
 
-    # Fill empties on pre-existing profiles missing a branch (legacy rows). Listing
-    # profiles always carry one, so they are not reselected on later startups.
-    by_acc = {r["account_no"]: r for r in records}
-    incomplete = (await session.execute(
-        select(CustomerProfile).where(
-            or_(CustomerProfile.branch.is_(None), CustomerProfile.branch == "")
-        )
-    )).scalars().all()
+    # Fill empties on the few pre-existing, branch-less profiles (legacy rows).
     filled = 0
-    for prof in incomplete:
-        rec = by_acc.get(prof.account_no)
+    async for prof in _load_in_chunks(session, CustomerProfile, fills.keys()):
+        rec = fills.get(prof.account_no)
         if rec and _fill_empty(prof, _profile_fill_values(rec)):
             filled += 1
+    if filled:
+        await session.commit()
     return created + filled
 
 

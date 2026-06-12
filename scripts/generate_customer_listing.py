@@ -6,7 +6,8 @@ The bank periodically exports its full customer base as an Excel workbook
 a header on row 6). This script distils that export into the compact, gzipped
 JSON the panel merges at startup
 (:mod:`app.services.data_merge` → ``_merge_customer_listing_*``), writing
-``backend/app/data/merge/customer_listing.json.gz``.
+``backend/app/data/merge/customer_listing.jsonl.gz`` (newline-delimited JSON,
+gzipped, so the merge can stream it record-by-record within the 512MB instance).
 
 Business rules (confirmed with the data owner):
 
@@ -101,7 +102,7 @@ OUT = (
     / "app"
     / "data"
     / "merge"
-    / "customer_listing.json.gz"
+    / "customer_listing.jsonl.gz"
 )
 
 
@@ -208,17 +209,16 @@ def main() -> int:
         return 2
 
     records, branches, stats = build_records(xlsx_path)
-    blob = {
-        "source": xlsx_path.name,
-        "generated": datetime.date.today().isoformat(),
-        "account_no_rule": "6-digit CUSTOMER NUMBER only",
-        "branch_names": BRANCH_NAMES,
-        "count": len(records),
-        "records": records,
-    }
-    raw = json.dumps(blob, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    # Write newline-delimited JSON (one record per line), gzipped. This lets the
+    # merge step stream the file record-by-record instead of loading all ~44k
+    # dicts at once — essential to stay within the 512MB production instance.
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_bytes(gzip.compress(raw, 9))
+    raw_len = 0
+    with gzip.open(OUT, "wt", encoding="utf-8", compresslevel=9) as fh:
+        for rec in records:
+            line = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
+            raw_len += len(line.encode("utf-8")) + 1
+            fh.write(line + "\n")
 
     print(f"source rows         : {stats['total']}")
     print(f"kept (6-digit accts): {stats['kept']}")
@@ -226,8 +226,9 @@ def main() -> int:
     print(f"dropped (duplicate)  : {stats['dropped_dup']}")
     print(f"branches             : {dict(branches.most_common())}")
     gz_mb = OUT.stat().st_size / 1024 / 1024
-    raw_mb = len(raw) / 1024 / 1024
-    print(f"wrote {OUT}  ({gz_mb:.2f} MB gz, {raw_mb:.1f} MB raw)")
+    raw_mb = raw_len / 1024 / 1024
+    print(f"wrote {OUT}")
+    print(f"  {gz_mb:.2f} MB gz, {raw_mb:.1f} MB raw, {len(records)} lines")
     return 0
 
 
