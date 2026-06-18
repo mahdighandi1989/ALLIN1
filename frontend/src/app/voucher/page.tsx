@@ -239,7 +239,7 @@ export default function VoucherPage() {
   const creditGL = branch ? `${branch}-869900-784-590` : ''
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
   const description = `CHQ NO ${chqNo}_${nameType}: ${nameOnCheque}`
-  const field = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const field = 'w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
     <Layout>
@@ -303,19 +303,19 @@ export default function VoucherPage() {
       `}</style>
 
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-3 mb-1 no-print">
-          <div className="bg-blue-600 text-white rounded-xl p-2.5"><Printer size={22} /></div>
+        <div className="flex items-center gap-2 mb-1 no-print">
+          <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
-            <p className="text-gray-500 text-sm">با وارد کردن شماره حساب، نام از دیتابیس ({(accountCount ?? ACCOUNT_COUNT).toLocaleString()} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
+            <h1 className="text-lg font-bold text-gray-900">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
+            <p className="text-gray-500 text-xs">با وارد کردن شماره حساب، نام از دیتابیس ({(accountCount ?? ACCOUNT_COUNT).toLocaleString()} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
           </div>
         </div>
 
-        <div className="voucher-grid grid grid-cols-1 gap-6 items-start mt-4">
+        <div className="voucher-grid grid grid-cols-1 gap-3 items-start mt-2">
           {/* ---- inputs (not printed) ---- */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5 no-print" dir="rtl">
-            <h2 className="font-bold text-gray-800 mb-4">ورودی‌ها</h2>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 no-print" dir="rtl">
+            <h2 className="font-bold text-gray-800 mb-2">ورودی‌ها</h2>
+            <div className="grid grid-cols-2 gap-2">
               <label className="col-span-2 text-sm">
                 <span className="text-gray-600">شماره حساب (A/C NO)</span>
                 <div className="relative">
@@ -383,13 +383,13 @@ export default function VoucherPage() {
                 </div>
               </label>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <button onClick={saveGuarantor} disabled={saving} type="button"
-                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2.5">
+                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
                 {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
               </button>
               <button onClick={() => window.print()} type="button"
-                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2.5">
+                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2">
                 <Printer size={18} /> چاپ (Print)
               </button>
             </div>
