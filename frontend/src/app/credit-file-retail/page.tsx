@@ -209,6 +209,10 @@ export default function CreditFileRetailPage() {
         table.cf td.desc { font-weight: 600; white-space: nowrap; }
         table.cf input { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: transparent; }
         table.cf input:focus { outline: 1px solid #2563eb; background: #fff; }
+        /* Fillable cells get a soft tint on screen so they're visually distinct
+           from the non-editable label/header cells. Cleared for printing. */
+        #cf-sheet input { background: #eaf3ff; }
+        #cf-sheet input::placeholder { color: #94a3b8; }
         .cf-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; }
         .cf-sign { width: 240px; }
         .cf-sign .line { border-top: 1px solid #000; margin-top: 26px; padding-top: 3px; font-weight: 600; }
@@ -225,10 +229,16 @@ export default function CreditFileRetailPage() {
         @media print {
           @page { size: A4 portrait; margin: 8mm; }
           html, body { margin: 0 !important; padding: 0 !important; }
-          .no-print { display: none !important; }
-          .cf-pick { display: none !important; }
-          #cf-sheet { max-width: 100%; }
+          * { box-sizing: border-box; }
+          .no-print, .cf-pick { display: none !important; }
+          /* Fit the sheet to the printable width so the right-hand border/column
+             is never clipped: full width + let every cell wrap instead of forcing
+             the table wider than the page. */
+          #cf-sheet { max-width: 100%; width: 100%; }
           .cf-sheet { font-size: 9px; }
+          table.cf { width: 100%; }
+          table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
+          #cf-sheet input { background: transparent !important; }
           table.cf, .cf-row-top, .cf-title, .cf-branch { page-break-inside: avoid; }
         }
       `}</style>
