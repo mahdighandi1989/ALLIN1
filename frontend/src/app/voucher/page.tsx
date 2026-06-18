@@ -5,7 +5,8 @@ import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
-import { customersApi } from '@/lib/api'
+import { customersApi, crmApi, parseApiError } from '@/lib/api'
+import toast from 'react-hot-toast'
 
 // Faithful re-implementation of the macro workbook
 // "Securities (Contra-PerContra) (FOR CHQS)" — laid out to match the original
@@ -88,6 +89,10 @@ export default function VoucherPage() {
   const [date, setDate] = useState(todayDMY())
   const [notFound, setNotFound] = useState(false)
   const [accountCount, setAccountCount] = useState<number | null>(null)
+  const [guarantors, setGuarantors] = useState<any[]>([])  // existing security cheques for this account
+  const [facilities, setFacilities] = useState<any[]>([])
+  const [selectedGid, setSelectedGid] = useState('')        // the picked existing cheque (for update)
+  const [saving, setSaving] = useState(false)
   const previewRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -136,13 +141,65 @@ export default function VoucherPage() {
           if (c.name) setAcName(c.name)
           const code = d.profile?.data?.branch_code || String(c.branch || '').match(/\d{4}/)?.[0] || ''
           if (code) setBranch(code)
+          setGuarantors(Array.isArray(d.guarantors) ? d.guarantors : [])
+          setFacilities(Array.isArray(d.facilities) ? d.facilities : [])
           setNotFound(false)
         } catch { /* keep the local result / not-found state */ }
       }, 400)
     }
   }
 
+  const refreshGuarantors = async (acct: string) => {
+    try { setGuarantors(await crmApi.listGuarantors(acct)) } catch { /* ignore */ }
+  }
+
+  // Pick an already-recorded security cheque for this account → fill every field.
+  const pickGuarantor = (id: string) => {
+    setSelectedGid(id)
+    const g = guarantors.find((x) => x.id === id)
+    if (!g) return
+    if (g.cheque_no != null) setChqNo(String(g.cheque_no))
+    if (g.cheque_amount != null) setChqAmount(String(g.cheque_amount))
+    if (g.facility_id) setFacilityId(String(g.facility_id))
+    if (g.branch) setBranch(String(g.branch))
+    if (g.guarantor_name) { setNameType('Guarantor Name'); setGuarantorName(String(g.guarantor_name)) }
+  }
+
+  // Save (upsert) the cheque under the account/facility — same Guarantor record
+  // the customer page shows, so it's two-way synced (no duplicate islands).
+  const saveGuarantor = async () => {
+    const acct = acNo.trim()
+    const name = (nameType === 'Borrower Name' ? acName : guarantorName).trim()
+    if (!acct) { toast.error('شماره حساب را وارد کنید'); return }
+    if (!name) { toast.error('نام (روی چک) لازم است'); return }
+    setSaving(true)
+    try {
+      const res = await crmApi.addGuarantor(acct, {
+        id: selectedGid || undefined,
+        guarantor_name: name,
+        cheque_no: chqNo.trim() || undefined,
+        cheque_amount: Number(String(chqAmount).replace(/,/g, '')) || undefined,
+        issuing_bank: 'BSI',
+        facility_id: facilityId.trim() || undefined,
+        branch: branch.trim() || undefined,
+      })
+      setSelectedGid(res?.id || '')
+      await refreshGuarantors(acct)
+      toast.success(res?.created ? 'چک ضمانتی ذیلِ تسهیلات ثبت شد' : 'چک ضمانتی به‌روزرسانی شد')
+    } catch (e) {
+      toast.error(parseApiError(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
+  const chqNos = Array.from(new Set(guarantors.map((g) => g.cheque_no).filter(Boolean)))
+  const guarantorNames = Array.from(new Set(guarantors.map((g) => g.guarantor_name).filter(Boolean)))
+  const facilityIds = Array.from(new Set([
+    ...facilities.map((f) => f.id).filter(Boolean),
+    ...guarantors.map((g) => g.facility_id).filter(Boolean),
+  ]))
   const debitGL = branch ? `${branch}-860185-784-090` : ''
   const creditGL = branch ? `${branch}-869900-784-590` : ''
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
@@ -232,6 +289,19 @@ export default function VoucherPage() {
                 </div>
                 {notFound && <span className="text-amber-600 text-xs">در دیتابیس یافت نشد؛ نام را دستی وارد کنید.</span>}
               </label>
+              {guarantors.length > 0 && (
+                <label className="col-span-2 text-sm">
+                  <span className="text-gray-600">چک‌های ثبت‌شدهٔ این حساب (برای پر کردن انتخاب کن)</span>
+                  <select className={field} value={selectedGid} onChange={(e) => pickGuarantor(e.target.value)}>
+                    <option value="">— چک جدید —</option>
+                    {guarantors.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {[g.cheque_no, g.guarantor_name, g.cheque_amount, g.facility_id].filter(Boolean).join(' · ')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="col-span-2 text-sm">
                 <span className="text-gray-600">نام حساب (A/C NAME)</span>
                 <input className={field} value={acName} onChange={(e) => setAcName(e.target.value)} placeholder="از روی شماره حساب پر می‌شود" />
@@ -251,12 +321,14 @@ export default function VoucherPage() {
               {nameType === 'Guarantor Name' && (
                 <label className="col-span-2 text-sm">
                   <span className="text-gray-600">نام ضامن (Guarantor)</span>
-                  <input className={field} value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} />
+                  <input className={field} value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} list="vch-gnames" />
+                  <datalist id="vch-gnames">{guarantorNames.map((n) => <option key={n} value={n} />)}</datalist>
                 </label>
               )}
               <label className="text-sm">
                 <span className="text-gray-600">شماره چک (CHQ NO)</span>
-                <input className={field} value={chqNo} onChange={(e) => setChqNo(e.target.value)} inputMode="numeric" />
+                <input className={field} value={chqNo} onChange={(e) => setChqNo(e.target.value)} inputMode="numeric" list="vch-chqnos" />
+                <datalist id="vch-chqnos">{chqNos.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">مبلغ چک (CHQ AMOUNT)</span>
@@ -264,7 +336,8 @@ export default function VoucherPage() {
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">شناسه تسهیلات (FACILITY ID)</span>
-                <input className={field} value={facilityId} onChange={(e) => setFacilityId(e.target.value)} placeholder="STF1260603000001" />
+                <input className={field} value={facilityId} onChange={(e) => setFacilityId(e.target.value)} placeholder="STF1260603000001" list="vch-facids" />
+                <datalist id="vch-facids">{facilityIds.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">ارز / تاریخ</span>
@@ -274,10 +347,16 @@ export default function VoucherPage() {
                 </div>
               </label>
             </div>
-            <button onClick={() => window.print()} type="button"
-              className="mt-5 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2.5">
-              <Printer size={18} /> چاپ (Print)
-            </button>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button onClick={saveGuarantor} disabled={saving} type="button"
+                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2.5">
+                {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
+              </button>
+              <button onClick={() => window.print()} type="button"
+                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2.5">
+                <Printer size={18} /> چاپ (Print)
+              </button>
+            </div>
             <p className="text-xs text-gray-400 mt-2 text-center">در پنجرهٔ چاپ، Scale را روی «Default / 100%» و Margins را «Default» بگذارید تا دقیق فیت شود.</p>
           </div>
 
