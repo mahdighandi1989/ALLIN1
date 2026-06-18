@@ -1,58 +1,51 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Search, Save } from 'lucide-react'
+import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
-type FacRow = { facilityId: string; amount: string; rate: string; expiry: string; notices: string }
-const EMPTY_ROW: FacRow = { facilityId: '', amount: '', rate: '', expiry: '', notices: '' }
-type Partner = { name: string; nationality: string; share: string; remarks: string }
+const uid = () => Math.random().toString(36).slice(2, 9)
 
-// Corporate facility rows mapped to real Facility types.
-const ROWS = [
-  { key: 'overdraft', label: 'Overdraft', match: (f: Facility) => f.facility_type === 'overdraft' },
-  { key: 'corpLoan', label: 'Corporate Loan', match: (f: Facility) => f.facility_type === 'loan' },
-  { key: 'chequeDisc', label: 'Cheque Discounting', match: (f: Facility) => f.facility_type === 'cheque_discounting' },
-  { key: 'trustReceipt', label: 'Trust Receipt', match: (f: Facility) => f.facility_type === 'trust_receipt' },
-  { key: 'lcSight', label: 'LC (Sight)', match: (f: Facility) => f.facility_type === 'lc_sight' || f.facility_type === 'lc' },
-  { key: 'lcUsance', label: 'LC (Usance)', match: (f: Facility) => f.facility_type === 'lc_usance' },
-  { key: 'log', label: 'Letter of Guarantee', match: (f: Facility) => f.facility_type === 'log' || f.facility_type === 'lg' },
-] as const
-type RowKey = (typeof ROWS)[number]['key']
-const emptyRows = (): Record<RowKey, FacRow> =>
-  Object.fromEntries(ROWS.map((r) => [r.key, { ...EMPTY_ROW }])) as Record<RowKey, FacRow>
+const MATCH: Record<string, (f: Facility) => boolean> = {
+  overdraft: (f) => f.facility_type === 'overdraft',
+  corpLoan: (f) => f.facility_type === 'loan',
+  chequeDisc: (f) => f.facility_type === 'cheque_discounting',
+  trustReceipt: (f) => f.facility_type === 'trust_receipt',
+  lcSight: (f) => f.facility_type === 'lc_sight' || f.facility_type === 'lc',
+  lcUsance: (f) => f.facility_type === 'lc_usance',
+  log: (f) => f.facility_type === 'log' || f.facility_type === 'lg',
+}
 
-type FormData = {
-  date: string; branchName: string; branchCode: string
-  customerName: string; accountNumber: string; businessType: string
+type FacRow = { uid: string; label: string; custom: boolean; matchKey?: string; facilityId: string; amount: string; rate: string; expiry: string; notices: string }
+type SecRow = { uid: string; label: string; custom: boolean; facilityTag: string; aed: string; usd: string; irr: string; other: string }
+type Partner = { uid: string; name: string; nationality: string; share: string; remarks: string }
+
+const facBase = (): FacRow[] => ([
+  ['Overdraft', 'overdraft'], ['Corporate Loan', 'corpLoan'], ['Cheque Discounting', 'chequeDisc'],
+  ['Trust Receipt', 'trustReceipt'], ['LC (Sight)', 'lcSight'], ['LC (Usance)', 'lcUsance'], ['Letter of Guarantee', 'log'],
+] as [string, string][]).map(([label, matchKey]) => ({ uid: uid(), label, custom: false, matchKey, facilityId: '', amount: '', rate: '', expiry: '', notices: '' }))
+const secBase = (): SecRow[] => ['Underlien Deposits', 'Cheques', 'Collaterals'].map((label) => ({ uid: uid(), label, custom: false, facilityTag: '', aed: '', usd: '', irr: '', other: '' }))
+const partnersBase = (): Partner[] => Array.from({ length: 3 }, () => ({ uid: uid(), name: '', nationality: '', share: '', remarks: '' }))
+
+type Acct = {
+  date: string; branchCode: string; branchName: string; customerName: string; accountNumber: string; businessType: string
   rating: string; callReport: string; previousFiles: string
   tradeLicenseNum: string; tradeLicenseIssue: string; tradeLicenseExpiry: string; tradeLicenseRemarks: string
   passportNum: string; passportIssue: string; passportExpiry: string; passportRemarks: string
   managerIdNum: string; managerIdIssue: string; managerIdExpiry: string; managerIdRemarks: string
-  underlienAED: string; underlienUSD: string; underlienIRR: string; underlienOther: string
-  chequesAED: string; chequesUSD: string; chequesIRR: string; chequesOther: string
-  collateralsAED: string; collateralsUSD: string; collateralsIRR: string; collateralsOther: string
-  undertakingGuarantor: boolean; undertakingPartner: boolean
-  grade: string; customerStatus: string
+  undertakingGuarantor: boolean; undertakingPartner: boolean; grade: string; customerStatus: string
 }
-
-const today = () => new Date().toLocaleDateString('en-GB')
-const INITIAL: FormData = {
-  date: today(), branchName: '', branchCode: '', customerName: '', accountNumber: '', businessType: '',
+const ACCT0: Acct = {
+  date: new Date().toLocaleDateString('en-GB'), branchCode: '', branchName: '', customerName: '', accountNumber: '', businessType: '',
   rating: '', callReport: '', previousFiles: '',
   tradeLicenseNum: '', tradeLicenseIssue: '', tradeLicenseExpiry: '', tradeLicenseRemarks: '',
   passportNum: '', passportIssue: '', passportExpiry: '', passportRemarks: '',
   managerIdNum: '', managerIdIssue: '', managerIdExpiry: '', managerIdRemarks: '',
-  underlienAED: '', underlienUSD: '', underlienIRR: '', underlienOther: '',
-  chequesAED: '', chequesUSD: '', chequesIRR: '', chequesOther: '',
-  collateralsAED: '', collateralsUSD: '', collateralsIRR: '', collateralsOther: '',
-  undertakingGuarantor: true, undertakingPartner: false,
-  grade: '', customerStatus: 'ACTIVE CUSTOMER',
+  undertakingGuarantor: true, undertakingPartner: false, grade: '', customerStatus: 'ACTIVE CUSTOMER',
 }
-const blankPartners = (): Partner[] => Array.from({ length: 6 }, () => ({ name: '', nationality: '', share: '', remarks: '' }))
 
 const fmtDate = (s: string | null | undefined) => {
   if (!s) return ''
@@ -65,49 +58,51 @@ const onlyNum = (s: string): number | undefined => {
 }
 
 export default function CreditFileCorporatePage() {
-  const [data, setData] = useState<FormData>(INITIAL)
-  const [rows, setRows] = useState<Record<RowKey, FacRow>>(emptyRows())
-  const [partners, setPartners] = useState<Partner[]>(blankPartners())
+  const [a, setA] = useState<Acct>(ACCT0)
+  const [facRows, setFacRows] = useState<FacRow[]>(facBase())
+  const [secRows, setSecRows] = useState<SecRow[]>(secBase())
+  const [partners, setPartners] = useState<Partner[]>(partnersBase())
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
 
-  const set = (key: keyof FormData) => (e: any) =>
-    setData((s) => ({ ...s, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
-  const setRow = (rk: RowKey, key: keyof FacRow) => (e: any) =>
-    setRows((s) => ({ ...s, [rk]: { ...s[rk], [key]: e.target.value } }))
-  const setPartner = (i: number, key: keyof Partner) => (e: any) =>
-    setPartners((s) => s.map((p, idx) => (idx === i ? { ...p, [key]: e.target.value } : p)))
+  const set = (k: keyof Acct) => (e: any) => setA((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+  const setFac = (id: string, k: keyof FacRow) => (e: any) => setFacRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
+  const setSec = (id: string, k: keyof SecRow) => (e: any) => setSecRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
+  const setPartner = (id: string, k: keyof Partner) => (e: any) => setPartners((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
 
-  const fillRowFromFacility = (rk: RowKey, f?: Facility) =>
-    setRows((s) => ({
-      ...s,
-      [rk]: f
-        ? { facilityId: f.id, amount: f.amount != null ? String(f.amount) : '', rate: f.interest_rate != null ? String(f.interest_rate) : '', expiry: fmtDate(f.expiry_date), notices: f.notes || '' }
-        : { ...EMPTY_ROW },
-    }))
-  const bindRow = (rk: RowKey) => (e: any) =>
-    fillRowFromFacility(rk, facilities.find((f) => f.id === e.target.value))
+  const facFromRecord = (f?: Facility) => ({
+    facilityId: f?.id || '', amount: f && f.amount != null ? String(f.amount) : '',
+    rate: f && f.interest_rate != null ? String(f.interest_rate) : '', expiry: fmtDate(f?.expiry_date), notices: f?.notes || '',
+  })
+  const bindFac = (id: string) => (e: any) => {
+    const f = facilities.find((x) => x.id === e.target.value)
+    setFacRows((rows) => rows.map((r) => (r.uid === id ? { ...r, ...facFromRecord(f) } : r)))
+  }
+
+  const addFacRow = () => setFacRows((r) => [...r, { uid: uid(), label: '', custom: true, facilityId: '', amount: '', rate: '', expiry: '', notices: '' }])
+  const addSecRow = () => setSecRows((r) => [...r, { uid: uid(), label: '', custom: true, facilityTag: '', aed: '', usd: '', irr: '', other: '' }])
+  const addPartner = () => setPartners((r) => [...r, { uid: uid(), name: '', nationality: '', share: '', remarks: '' }])
+  const delFacRow = (id: string) => setFacRows((r) => r.filter((x) => x.uid !== id))
+  const delSecRow = (id: string) => setSecRows((r) => r.filter((x) => x.uid !== id))
+  const delPartner = (id: string) => setPartners((r) => r.filter((x) => x.uid !== id))
 
   const loadAccount = async () => {
-    const a = acc.trim()
-    if (!a) { toast.error('شماره حساب را وارد کنید'); return }
+    const q = acc.trim()
+    if (!q) { toast.error('شماره حساب را وارد کنید'); return }
     setLoading(true)
     try {
-      const d: any = await customersApi.detail(a)
+      const d: any = await customersApi.detail(q)
       const { customer, profile = {}, facilities: facs = [], partners: parts = [] } = d
       const pdata = (profile && profile.data) || {}
-      const acct = customer?.account_no || a
+      const acct = customer?.account_no || q
       setFacilities(facs)
-      setData((s) => ({
-        ...s,
-        accountNumber: acct,
-        customerName: customer?.name || '',
-        branchCode: customer?.branch_code || customer?.branch || '',
-        branchName: customer?.branch || '',
-        businessType: profile?.business_type || pdata.business_type || '',
-        rating: profile?.rating || '',
+      setA((s) => ({
+        ...s, accountNumber: acct, customerName: customer?.name || '',
+        branchCode: customer?.branch_code || customer?.branch || '', branchName: customer?.branch || '',
+        businessType: profile?.business_type || pdata.business_type || '', rating: profile?.rating || '',
         customerStatus: profile?.customer_status || s.customerStatus,
         tradeLicenseNum: profile?.trade_license_no || '', tradeLicenseIssue: profile?.trade_license_issue || '',
         tradeLicenseExpiry: profile?.trade_license_expiry || '', tradeLicenseRemarks: profile?.trade_license_remarks || '',
@@ -117,83 +112,90 @@ export default function CreditFileCorporatePage() {
         managerIdExpiry: profile?.emirates_id_expiry || '', managerIdRemarks: profile?.emirates_id_remarks || '',
       }))
       if (parts.length) {
-        setPartners(blankPartners().map((p, i) => parts[i]
-          ? { name: parts[i].partner_name || parts[i].name || '', nationality: parts[i].nationality || '', share: String(parts[i].share || parts[i].share_pct || ''), remarks: parts[i].remarks || '' }
-          : p))
+        setPartners(parts.map((p: any) => ({ uid: uid(), name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' })))
       }
-      ROWS.forEach((r) => fillRowFromFacility(r.key, facs.find((f: Facility) => r.match(f))))
+      setFacRows((rows) => rows.map((r) => {
+        if (!r.matchKey) return r
+        const f = facs.find((x: Facility) => MATCH[r.matchKey!]?.(x))
+        return f ? { ...r, ...facFromRecord(f) } : r
+      }))
       toast.success(`بارگیری «${customer?.name || acct}» — ${facs.length} تسهیلات`)
     } catch (e) {
       toast.error(parseApiError(e))
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   const save = async () => {
-    const a = data.accountNumber.trim()
-    if (!a) { toast.error('ابتدا یک حساب بارگیری کنید'); return }
+    const acct = a.accountNumber.trim()
+    if (!acct) { toast.error('ابتدا یک حساب بارگیری کنید'); return }
     setSaving(true)
     try {
       const prof: Record<string, string> = {}
       const put = (k: string, v: string) => { if (v && v.trim()) prof[k] = v.trim() }
-      put('business_type', data.businessType); put('rating', data.rating); put('customer_status', data.customerStatus)
-      put('trade_license_no', data.tradeLicenseNum); put('trade_license_issue', data.tradeLicenseIssue)
-      put('trade_license_expiry', data.tradeLicenseExpiry); put('trade_license_remarks', data.tradeLicenseRemarks)
-      put('passport_no', data.passportNum); put('passport_issue', data.passportIssue)
-      put('passport_expiry', data.passportExpiry); put('passport_remarks', data.passportRemarks)
-      put('emirates_id_no', data.managerIdNum); put('emirates_id_issue', data.managerIdIssue)
-      put('emirates_id_expiry', data.managerIdExpiry); put('emirates_id_remarks', data.managerIdRemarks)
-      if (Object.keys(prof).length) await crmApi.updateProfile(a, prof)
+      put('business_type', a.businessType); put('rating', a.rating); put('customer_status', a.customerStatus)
+      put('trade_license_no', a.tradeLicenseNum); put('trade_license_issue', a.tradeLicenseIssue); put('trade_license_expiry', a.tradeLicenseExpiry); put('trade_license_remarks', a.tradeLicenseRemarks)
+      put('passport_no', a.passportNum); put('passport_issue', a.passportIssue); put('passport_expiry', a.passportExpiry); put('passport_remarks', a.passportRemarks)
+      put('emirates_id_no', a.managerIdNum); put('emirates_id_issue', a.managerIdIssue); put('emirates_id_expiry', a.managerIdExpiry); put('emirates_id_remarks', a.managerIdRemarks)
+      if (Object.keys(prof).length) await crmApi.updateProfile(acct, prof)
 
-      let facUpdates = 0
-      for (const r of ROWS) {
-        const row = rows[r.key]
-        if (!row.facilityId) continue
+      let n = 0
+      for (const r of facRows) {
+        if (!r.facilityId) continue
         const payload: Partial<FacilityForm> = {}
-        const amt = onlyNum(row.amount); if (amt != null) payload.amount = amt
-        const rate = onlyNum(row.rate); if (rate != null) payload.interest_rate = rate
-        if (row.notices.trim()) payload.notes = row.notices.trim()
-        if (Object.keys(payload).length) { await facilitiesApi.update(row.facilityId, payload); facUpdates++ }
+        const amt = onlyNum(r.amount); if (amt != null) payload.amount = amt
+        const rate = onlyNum(r.rate); if (rate != null) payload.interest_rate = rate
+        if (r.notices.trim()) payload.notes = r.notices.trim()
+        if (Object.keys(payload).length) { await facilitiesApi.update(r.facilityId, payload); n++ }
       }
-      toast.success(`ذخیره شد — پروفایل${facUpdates ? ` و ${facUpdates} تسهیلات` : ''}`)
+      toast.success(`ذخیره شد — پروفایل${n ? ` و ${n} تسهیلات` : ''}`)
     } catch (e) {
       toast.error(parseApiError(e))
-    } finally {
-      setSaving(false)
+    } finally { setSaving(false) }
+  }
+
+  const printSheet = () => {
+    const el = sheetRef.current
+    if (el) {
+      const w = el.offsetWidth || 1
+      const printHmm = (190 * el.scrollHeight) / w
+      const z = printHmm > 277 ? Math.max(0.5, 277 / printHmm) : 1
+      el.style.setProperty('--pz', String(z))
     }
+    setTimeout(() => window.print(), 40)
   }
 
   const facOptions = useMemo(
     () => facilities.map((f) => ({ id: f.id, label: `${f.facility_type}${f.name ? ' · ' + f.name : ''} · ${f.amount?.toLocaleString?.() ?? f.amount} ${f.currency || ''}` })),
     [facilities],
   )
+  const tagLabel = (t: string) => facRows.find((r) => r.uid === t)?.label || ''
 
   return (
     <Layout>
       <style>{`
-        #cf-sheet { max-width: 800px; margin: 0 auto; color: #000; }
+        #cf-sheet { max-width: 820px; margin: 0 auto; color: #000; }
         .cf-sheet { font-family: Arial, Helvetica, sans-serif; font-size: 10px; line-height: 1.2; }
         .cf-row-top { display: flex; align-items: stretch; border: 1px solid #000; margin-bottom: 6px; }
         .cf-logo { flex: 1; padding: 6px 8px; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid #000; }
-        .cf-logo b { font-size: 13px; letter-spacing: .3px; } .cf-logo span { font-size: 9px; color: #333; }
+        .cf-logo b { font-size: 13px; } .cf-logo span { font-size: 9px; color: #333; }
         .cf-date { width: 200px; display: flex; }
         .cf-date .l { width: 56px; background: #e5e7eb; font-weight: 700; display: flex; align-items: center; justify-content: center; border-right: 1px solid #000; }
         .cf-date input { flex: 1; border: 0; padding: 4px 6px; font-size: 11px; text-align: center; }
-        .cf-title { border: 1px solid #000; text-align: center; font-weight: 700; font-size: 13px; padding: 5px; margin-bottom: 6px; letter-spacing: .5px; }
+        .cf-title { border: 1px solid #000; text-align: center; font-weight: 700; font-size: 13px; padding: 5px; margin-bottom: 6px; }
         .cf-branch { border: 1px solid #000; padding: 4px 8px; font-weight: 700; margin-bottom: 6px; }
         .cf-branch input { border: 0; font-weight: 700; font-size: 11px; }
         table.cf { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
         table.cf td, table.cf th { border: 1px solid #000; padding: 2px 5px; font-size: 10px; vertical-align: middle; }
         table.cf .band { background: #d1d5db; font-weight: 700; font-size: 11px; text-align: left; padding: 3px 6px; }
         table.cf .hdr td { background: #eef0f3; font-weight: 700; text-align: center; }
-        table.cf td.sn { text-align: center; width: 34px; } table.cf td.desc { font-weight: 600; white-space: nowrap; }
-        table.cf input { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: transparent; }
-        table.cf input:focus { outline: 1px solid #2563eb; background: #fff; }
-        /* Fillable cells get a soft tint on screen so they're visually distinct
-           from the non-editable label/header cells. Cleared for printing. */
-        #cf-sheet input { background: #eaf3ff; }
-        #cf-sheet input::placeholder { color: #94a3b8; }
+        table.cf td.sn { text-align: center; width: 30px; } table.cf td.desc { font-weight: 600; }
+        table.cf input { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: #eaf3ff; }
+        table.cf input:focus { outline: 1px solid #2563eb; }
+        .tools { width: 1%; white-space: nowrap; background: #f8fafc; }
+        .tools select { font-size: 10px; max-width: 150px; border: 1px dashed #94a3b8; border-radius: 4px; }
+        .tools button { border: 0; background: transparent; color: #dc2626; cursor: pointer; padding: 0 4px; }
+        .addbtn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #2563eb; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 6px; padding: 3px 8px; cursor: pointer; margin: 0 0 8px; }
+        .print-only { display: none; }
         .cf-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 12px; }
         .cf-sign { width: 240px; } .cf-sign .line { border-top: 1px solid #000; margin-top: 24px; padding-top: 3px; font-weight: 600; }
         .chk { display: inline-flex; align-items: center; gap: 3px; margin-right: 10px; }
@@ -203,19 +205,17 @@ export default function CreditFileCorporatePage() {
         .cf-btn { padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; border: 0; display: inline-flex; align-items: center; gap: 6px; color: #fff; }
         .cf-btn.blue { background: #2563eb; } .cf-btn.green { background: #16a34a; } .cf-btn.gray { background: #475569; }
         .cf-btn:disabled { opacity: .6; cursor: not-allowed; }
-        .cf-pick { width: 100%; border: 1px dashed #94a3b8; border-radius: 4px; font-size: 10px; padding: 1px; color: #475569; background: #f8fafc; }
+
         @media print {
           @page { size: A4 portrait; margin: 7mm; }
           html, body { margin: 0 !important; padding: 0 !important; }
           * { box-sizing: border-box; }
-          .no-print, .cf-pick { display: none !important; }
-          /* Fit the sheet to the printable width so the right-hand border/column
-             is never clipped: full width + let every cell wrap. */
-          #cf-sheet { max-width: 100%; width: 100%; }
+          .no-print, .tools, .screen-only, .addbtn { display: none !important; }
+          .print-only { display: inline !important; }
+          #cf-sheet { width: 192mm; max-width: 192mm; margin: 0 auto; zoom: var(--pz, 1); }
           .cf-sheet { font-size: 8.5px; }
-          table.cf { width: 100%; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
-          #cf-sheet input { background: transparent !important; }
+          table.cf input { background: transparent !important; }
           table.cf, .cf-row-top, .cf-title, .cf-branch { page-break-inside: avoid; }
         }
       `}</style>
@@ -227,40 +227,34 @@ export default function CreditFileCorporatePage() {
             <input value={acc} onChange={(e) => setAcc(e.target.value)} placeholder="مثال: 002106" onKeyDown={(e) => e.key === 'Enter' && loadAccount()} />
           </div>
           <button onClick={loadAccount} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
-          <button onClick={save} disabled={saving || !data.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
-          <button onClick={() => window.print()} className="cf-btn gray"><Printer size={15} /> پرینت</button>
+          <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
+          <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
           <div style={{ flexBasis: '100%', fontSize: 11, color: '#64748b' }}>
-            هویت/شرکا/وضعیت در پروفایل حساب ذخیره می‌شود؛ مبلغ/نرخ/توضیحاتِ هر ردیف ذیل همان تسهیلاتِ انتخاب‌شده. خانهٔ خالی، مقدار قبلی را پاک نمی‌کند.
+            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب تسهیلاتِ مشتری. در «Security» می‌توانید مشخص کنید هر سند برای کدام تسهیلات است. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است.
           </div>
         </div>
 
-        <div id="cf-sheet">
+        <div id="cf-sheet" ref={sheetRef}>
           <div className="cf-row-top">
             <div className="cf-logo"><b>بانک صادرات ایران — BANK SADERAT IRAN</b><span>U.A.E. · Credit Facility Dept.</span></div>
-            <div className="cf-date"><div className="l">Date</div><input value={data.date} onChange={set('date')} /></div>
+            <div className="cf-date"><div className="l">Date</div><input value={a.date} onChange={set('date')} /></div>
           </div>
           <div className="cf-title">CREDIT FILE SUMMARY (Corporate)</div>
           <div className="cf-branch">Branch Code and Name:&nbsp;
-            <input value={data.branchCode} onChange={set('branchCode')} placeholder="2900" style={{ width: 70 }} /> -
-            <input value={data.branchName} onChange={set('branchName')} placeholder="Ajman" style={{ width: '60%' }} />
+            <input value={a.branchCode} onChange={set('branchCode')} placeholder="2900" style={{ width: 70 }} /> -
+            <input value={a.branchName} onChange={set('branchName')} placeholder="Ajman" style={{ width: '55%' }} />
           </div>
 
           {/* Account Details */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={6}>Account Details</td></tr>
             <tr className="hdr"><td>S/No.</td><td>Description</td><td>Details</td><td>S/No.</td><td>Description</td><td>Details</td></tr>
-            <tr>
-              <td className="sn">1</td><td className="desc">Customer&rsquo;s Name</td><td><input value={data.customerName} onChange={set('customerName')} /></td>
-              <td className="sn">4</td><td className="desc">Rating</td><td><input value={data.rating} onChange={set('rating')} /></td>
-            </tr>
-            <tr>
-              <td className="sn">2</td><td className="desc">Account Number</td><td><input value={data.accountNumber} onChange={set('accountNumber')} /></td>
-              <td className="sn">5</td><td className="desc">Call Report</td><td><input value={data.callReport} onChange={set('callReport')} /></td>
-            </tr>
-            <tr>
-              <td className="sn">3</td><td className="desc">Business Type</td><td><input value={data.businessType} onChange={set('businessType')} /></td>
-              <td className="sn">6</td><td className="desc">No. of Previous Files</td><td><input value={data.previousFiles} onChange={set('previousFiles')} /></td>
-            </tr>
+            <tr><td className="sn">1</td><td className="desc">Customer&rsquo;s Name</td><td><input value={a.customerName} onChange={set('customerName')} /></td>
+              <td className="sn">4</td><td className="desc">Rating</td><td><input value={a.rating} onChange={set('rating')} /></td></tr>
+            <tr><td className="sn">2</td><td className="desc">Account Number</td><td><input value={a.accountNumber} onChange={set('accountNumber')} /></td>
+              <td className="sn">5</td><td className="desc">Call Report</td><td><input value={a.callReport} onChange={set('callReport')} /></td></tr>
+            <tr><td className="sn">3</td><td className="desc">Business Type</td><td><input value={a.businessType} onChange={set('businessType')} /></td>
+              <td className="sn">6</td><td className="desc">No. of Previous Files</td><td><input value={a.previousFiles} onChange={set('previousFiles')} /></td></tr>
           </tbody></table>
 
           {/* KYC Details */}
@@ -268,98 +262,95 @@ export default function CreditFileCorporatePage() {
             <tr><td className="band" colSpan={6}>KYC Details</td></tr>
             <tr className="hdr"><td>S/No.</td><td>Description</td><td>Number</td><td>Issue Date</td><td>Expiry</td><td>Remarks</td></tr>
             <tr><td className="sn">1</td><td className="desc">Trade License</td>
-              <td><input value={data.tradeLicenseNum} onChange={set('tradeLicenseNum')} /></td>
-              <td><input value={data.tradeLicenseIssue} onChange={set('tradeLicenseIssue')} /></td>
-              <td><input value={data.tradeLicenseExpiry} onChange={set('tradeLicenseExpiry')} /></td>
-              <td><input value={data.tradeLicenseRemarks} onChange={set('tradeLicenseRemarks')} /></td></tr>
+              <td><input value={a.tradeLicenseNum} onChange={set('tradeLicenseNum')} /></td><td><input value={a.tradeLicenseIssue} onChange={set('tradeLicenseIssue')} /></td>
+              <td><input value={a.tradeLicenseExpiry} onChange={set('tradeLicenseExpiry')} /></td><td><input value={a.tradeLicenseRemarks} onChange={set('tradeLicenseRemarks')} /></td></tr>
             <tr><td className="sn">2</td><td className="desc">Passport</td>
-              <td><input value={data.passportNum} onChange={set('passportNum')} /></td>
-              <td><input value={data.passportIssue} onChange={set('passportIssue')} /></td>
-              <td><input value={data.passportExpiry} onChange={set('passportExpiry')} /></td>
-              <td><input value={data.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
+              <td><input value={a.passportNum} onChange={set('passportNum')} /></td><td><input value={a.passportIssue} onChange={set('passportIssue')} /></td>
+              <td><input value={a.passportExpiry} onChange={set('passportExpiry')} /></td><td><input value={a.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
             <tr><td className="sn">3</td><td className="desc">Manager Emirates ID</td>
-              <td><input value={data.managerIdNum} onChange={set('managerIdNum')} /></td>
-              <td><input value={data.managerIdIssue} onChange={set('managerIdIssue')} /></td>
-              <td><input value={data.managerIdExpiry} onChange={set('managerIdExpiry')} /></td>
-              <td><input value={data.managerIdRemarks} onChange={set('managerIdRemarks')} /></td></tr>
+              <td><input value={a.managerIdNum} onChange={set('managerIdNum')} /></td><td><input value={a.managerIdIssue} onChange={set('managerIdIssue')} /></td>
+              <td><input value={a.managerIdExpiry} onChange={set('managerIdExpiry')} /></td><td><input value={a.managerIdRemarks} onChange={set('managerIdRemarks')} /></td></tr>
           </tbody></table>
 
-          {/* Partners Details */}
+          {/* Partners */}
           <table className="cf"><tbody>
-            <tr><td className="band" colSpan={5}>Partners Details</td></tr>
-            <tr className="hdr"><td>S/No.</td><td>Partner&rsquo;s Name</td><td>Nationality</td><td>Share</td><td>Remarks</td></tr>
+            <tr><td className="band" colSpan={6}>Partners Details</td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Partner&rsquo;s Name</td><td>Nationality</td><td>Share</td><td>Remarks</td><td className="tools">حذف</td></tr>
             {partners.map((p, i) => (
-              <tr key={i}>
+              <tr key={p.uid}>
                 <td className="sn">{i + 1}</td>
-                <td><input value={p.name} onChange={setPartner(i, 'name')} /></td>
-                <td><input value={p.nationality} onChange={setPartner(i, 'nationality')} /></td>
-                <td><input value={p.share} onChange={setPartner(i, 'share')} /></td>
-                <td><input value={p.remarks} onChange={setPartner(i, 'remarks')} /></td>
+                <td><input value={p.name} onChange={setPartner(p.uid, 'name')} /></td>
+                <td><input value={p.nationality} onChange={setPartner(p.uid, 'nationality')} /></td>
+                <td><input value={p.share} onChange={setPartner(p.uid, 'share')} /></td>
+                <td><input value={p.remarks} onChange={setPartner(p.uid, 'remarks')} /></td>
+                <td className="tools"><button title="حذف" onClick={() => delPartner(p.uid)}><Trash2 size={13} /></button></td>
               </tr>
             ))}
           </tbody></table>
+          <button className="addbtn" onClick={addPartner}><Plus size={13} /> افزودن شریک</button>
 
           {/* Facility Details */}
           <table className="cf"><tbody>
-            <tr><td className="band" colSpan={6}>Facility Details</td></tr>
-            <tr className="hdr"><td>S/No.</td><td>Description</td><td>Amount (AED)</td><td>Rate Of Int. / Margin</td><td>Expiry Date</td><td>Notices</td></tr>
-            {ROWS.map((r, i) => {
-              const row = rows[r.key]
-              return (
-                <tr key={r.key}>
-                  <td className="sn">{i + 1}</td>
-                  <td className="desc">{r.label}
-                    {facOptions.length > 0 && (
-                      <select className="cf-pick" value={row.facilityId} onChange={bindRow(r.key)}>
-                        <option value="">— انتخاب تسهیلات —</option>
-                        {facOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                      </select>
-                    )}
-                  </td>
-                  <td><input value={row.amount} onChange={setRow(r.key, 'amount')} /></td>
-                  <td><input value={row.rate} onChange={setRow(r.key, 'rate')} /></td>
-                  <td><input value={row.expiry} onChange={setRow(r.key, 'expiry')} /></td>
-                  <td><input value={row.notices} onChange={setRow(r.key, 'notices')} /></td>
-                </tr>
-              )
-            })}
+            <tr><td className="band" colSpan={7}>Facility Details</td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Description</td><td>Amount (AED)</td><td>Rate Of Int. / Margin</td><td>Expiry Date</td><td>Notices</td><td className="tools">تسهیلات / حذف</td></tr>
+            {facRows.map((r, i) => (
+              <tr key={r.uid}>
+                <td className="sn">{i + 1}</td>
+                <td className="desc">{r.custom ? <input value={r.label} onChange={setFac(r.uid, 'label')} placeholder="نوع تسهیلات" /> : r.label}</td>
+                <td><input value={r.amount} onChange={setFac(r.uid, 'amount')} /></td>
+                <td><input value={r.rate} onChange={setFac(r.uid, 'rate')} /></td>
+                <td><input value={r.expiry} onChange={setFac(r.uid, 'expiry')} /></td>
+                <td><input value={r.notices} onChange={setFac(r.uid, 'notices')} /></td>
+                <td className="tools">
+                  <select value={r.facilityId} onChange={bindFac(r.uid)}>
+                    <option value="">— تسهیلات —</option>
+                    {facOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                  {r.custom && <button title="حذف ردیف" onClick={() => delFacRow(r.uid)}><Trash2 size={13} /></button>}
+                </td>
+              </tr>
+            ))}
           </tbody></table>
+          <button className="addbtn" onClick={addFacRow}><Plus size={13} /> افزودن ردیف تسهیلات</button>
 
           {/* Security Details */}
           <table className="cf"><tbody>
-            <tr><td className="band" colSpan={6}>Security Details</td></tr>
-            <tr className="hdr"><td>S/No.</td><td>Description</td><td>AED</td><td>USD</td><td>IRR &rsquo;000&rsquo;</td><td>OTHERS</td></tr>
-            <tr><td className="sn">1</td><td className="desc">Underlien Deposits</td>
-              <td><input value={data.underlienAED} onChange={set('underlienAED')} /></td>
-              <td><input value={data.underlienUSD} onChange={set('underlienUSD')} /></td>
-              <td><input value={data.underlienIRR} onChange={set('underlienIRR')} /></td>
-              <td><input value={data.underlienOther} onChange={set('underlienOther')} /></td></tr>
-            <tr><td className="sn">2</td><td className="desc">Cheques</td>
-              <td><input value={data.chequesAED} onChange={set('chequesAED')} /></td>
-              <td><input value={data.chequesUSD} onChange={set('chequesUSD')} /></td>
-              <td><input value={data.chequesIRR} onChange={set('chequesIRR')} /></td>
-              <td><input value={data.chequesOther} onChange={set('chequesOther')} /></td></tr>
-            <tr><td className="sn">3</td><td className="desc">Collaterals</td>
-              <td><input value={data.collateralsAED} onChange={set('collateralsAED')} /></td>
-              <td><input value={data.collateralsUSD} onChange={set('collateralsUSD')} /></td>
-              <td><input value={data.collateralsIRR} onChange={set('collateralsIRR')} /></td>
-              <td><input value={data.collateralsOther} onChange={set('collateralsOther')} /></td></tr>
-            <tr><td className="sn">4</td><td className="desc">Undertaking Forms From</td>
-              <td colSpan={4}>
-                <label className="chk"><input type="checkbox" checked={data.undertakingGuarantor} onChange={set('undertakingGuarantor')} /> GUARANTOR/S</label>
-                <label className="chk"><input type="checkbox" checked={data.undertakingPartner} onChange={set('undertakingPartner')} /> PARTNER/S</label>
-              </td></tr>
+            <tr><td className="band" colSpan={8}>Security Details</td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Description</td><td>For Facility</td><td>AED</td><td>USD</td><td>IRR &rsquo;000&rsquo;</td><td>OTHERS</td><td className="tools">حذف</td></tr>
+            {secRows.map((r, i) => (
+              <tr key={r.uid}>
+                <td className="sn">{i + 1}</td>
+                <td className="desc">{r.custom ? <input value={r.label} onChange={setSec(r.uid, 'label')} placeholder="نوع سند/وثیقه" /> : r.label}</td>
+                <td>
+                  <select className="screen-only" value={r.facilityTag} onChange={setSec(r.uid, 'facilityTag')} style={{ width: '100%', fontSize: 10 }}>
+                    <option value="">— همه / نامشخص —</option>
+                    {facRows.map((fr) => <option key={fr.uid} value={fr.uid}>{fr.label || '(بدون نام)'}</option>)}
+                  </select>
+                  <span className="print-only">{tagLabel(r.facilityTag)}</span>
+                </td>
+                <td><input value={r.aed} onChange={setSec(r.uid, 'aed')} /></td>
+                <td><input value={r.usd} onChange={setSec(r.uid, 'usd')} /></td>
+                <td><input value={r.irr} onChange={setSec(r.uid, 'irr')} /></td>
+                <td><input value={r.other} onChange={setSec(r.uid, 'other')} /></td>
+                <td className="tools">{r.custom && <button title="حذف ردیف" onClick={() => delSecRow(r.uid)}><Trash2 size={13} /></button>}</td>
+              </tr>
+            ))}
+            <tr><td className="sn">{secRows.length + 1}</td><td className="desc">Undertaking Forms From</td><td colSpan={5}>
+              <label className="chk"><input type="checkbox" checked={a.undertakingGuarantor} onChange={set('undertakingGuarantor')} style={{ width: 'auto' }} /> GUARANTOR/S</label>
+              <label className="chk"><input type="checkbox" checked={a.undertakingPartner} onChange={set('undertakingPartner')} style={{ width: 'auto' }} /> PARTNER/S</label>
+            </td><td className="tools" /></tr>
           </tbody></table>
+          <button className="addbtn" onClick={addSecRow}><Plus size={13} /> افزودن ردیف مدرک/وثیقه</button>
 
           {/* Status */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={2}>Customer&rsquo;s History and Current Status</td></tr>
             <tr><td className="desc" style={{ width: 90 }}>Grade</td><td>
               {['VERY GOOD', 'GOOD', 'AVERAGE', 'POOR'].map((g) => (
-                <label className="chk" key={g}><input type="checkbox" checked={data.grade === g} onChange={() => setData((s) => ({ ...s, grade: s.grade === g ? '' : g }))} /> {g}</label>
+                <label className="chk" key={g}><input type="checkbox" checked={a.grade === g} onChange={() => setA((s) => ({ ...s, grade: s.grade === g ? '' : g }))} style={{ width: 'auto' }} /> {g}</label>
               ))}
             </td></tr>
-            <tr><td className="desc">STATUS</td><td><input value={data.customerStatus} onChange={set('customerStatus')} /></td></tr>
+            <tr><td className="desc">STATUS</td><td><input value={a.customerStatus} onChange={set('customerStatus')} /></td></tr>
           </tbody></table>
 
           <div className="cf-foot">
