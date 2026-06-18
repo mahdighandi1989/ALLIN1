@@ -264,12 +264,26 @@ async def get_customer_facilities(customer_id: str, db: AsyncSession = Depends(g
 @router.get("/{customer_id}/detail")
 async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_db)):
     """Full customer profile: facilities, offer letters and a financial summary."""
-    customer = await _get_active_customer(customer_id, db)
+    # Resolve by internal id OR account number: the credit-file summary forms and
+    # many CRM views look a customer up by their (6-digit) account number, not the
+    # internal "C…" primary key. Accept either so a valid account never 404s.
+    customer = (
+        await db.execute(
+            select(Customer).where(
+                or_(Customer.id == customer_id, Customer.account_no == customer_id),
+                Customer.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().first()
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_CUSTOMER_NOT_FOUND
+        )
 
     facilities = (
         await db.execute(
             select(Facility).where(
-                Facility.customer_id == customer_id, Facility.is_deleted == False
+                Facility.customer_id == customer.id, Facility.is_deleted == False
             )
         )
     ).scalars().all()
@@ -277,7 +291,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     offers = (
         await db.execute(
             select(OfferLetter).where(
-                OfferLetter.customer_id == customer_id, OfferLetter.is_deleted == False
+                OfferLetter.customer_id == customer.id, OfferLetter.is_deleted == False
             )
         )
     ).scalars().all()
