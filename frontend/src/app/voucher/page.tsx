@@ -97,21 +97,26 @@ export default function VoucherPage() {
     customersApi.list({ page: 1, page_size: 1 }).then((r) => setAccountCount(r.total)).catch(() => {})
   }, [])
 
-  // Scale the on-screen preview to fit its column → no horizontal scroll. Print
-  // is unaffected (zoom is reset to 1 in @media print, sizes stay exact).
+  // Scale the on-screen preview to fit its column → no horizontal scroll. Uses
+  // transform:scale (reliable + affects nothing in print, where it's reset). The
+  // wrapper height is collapsed to the scaled height so there's no empty gap.
   useEffect(() => {
     const el = previewRef.current
     const wrap = wrapRef.current
     if (!el || !wrap) return
     const fit = () => {
-      el.style.setProperty('--screen-zoom', '1')
-      const natural = el.offsetWidth || 1
-      el.style.setProperty('--screen-zoom', String(Math.min(1, wrap.clientWidth / natural)))
+      el.style.transform = 'none'
+      const natW = el.offsetWidth || 1
+      const natH = el.offsetHeight
+      const s = Math.min(1, wrap.clientWidth / natW)
+      el.style.transform = `scale(${s})`
+      wrap.style.height = s < 1 ? `${Math.ceil(natH * s)}px` : 'auto'
     }
     fit()
     const ro = new ResizeObserver(fit)
-    ro.observe(wrap)
-    return () => ro.disconnect()
+    ro.observe(wrap.parentElement || wrap)
+    window.addEventListener('resize', fit)
+    return () => { ro.disconnect(); window.removeEventListener('resize', fit) }
   }, [])
 
   const onAcctLookup = (value: string) => {
@@ -175,10 +180,10 @@ export default function VoucherPage() {
         .vch-foot { display: flex; justify-content: space-between; font-size: 10pt; font-weight: 700; }
         .vch-sigline { display: block; width: 52mm; border-top: 1pt solid #000; margin-top: 8mm; }
 
-        /* on-screen preview width. zoom (screen only) shrinks the fixed-mm sheet
-           to fit its column so there is no horizontal scroll; print resets it. */
+        /* on-screen preview: the fixed-mm sheet is scaled (transform, via JS) to
+           fit its column so there is no horizontal scroll; print resets it. */
         .vch-wrap { min-width: 0; overflow: hidden; }
-        #voucher-print { width: 190mm; margin: 0 auto; background: #fff; zoom: var(--screen-zoom, 1); }
+        #voucher-print { width: 190mm; margin: 0 auto; background: #fff; transform-origin: top left; }
 
         @media print {
           /* Own the whole sheet: no @page margin (so nothing spills to a 2nd
@@ -198,9 +203,9 @@ export default function VoucherPage() {
              so left/right borders never reach the printer's non-printable edge.
              Two 135mm vouchers = 270mm; +8mm top = 278mm of a 297mm page →
              ~19mm bottom safety → always one page with full borders visible. */
-          .vch-wrap { overflow: visible !important; }
+          .vch-wrap { overflow: visible !important; height: auto !important; }
           #voucher-print { width: 188mm !important; margin: 8mm 11mm 0 11mm !important;
-                           zoom: 1 !important; page-break-inside: avoid; break-inside: avoid; }
+                           transform: none !important; page-break-inside: avoid; break-inside: avoid; }
           .vch { page-break-inside: avoid; break-inside: avoid; }
         }
       `}</style>
