@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
@@ -90,8 +90,8 @@ export default function CreditFileRetailPage() {
   const delFacRow = (id: string) => setFacRows((r) => r.filter((x) => x.uid !== id))
   const delSecRow = (id: string) => setSecRows((r) => r.filter((x) => x.uid !== id))
 
-  const loadAccount = async () => {
-    const q = acc.trim()
+  const loadAccount = async (override?: string) => {
+    const q = (override ?? acc).trim()
     if (!q) { toast.error('شماره حساب را وارد کنید'); return }
     setLoading(true)
     try {
@@ -162,6 +162,13 @@ export default function CreditFileRetailPage() {
     setTimeout(() => window.print(), 40)
   }
 
+  // Auto-load when arriving from the unified /credit-file router (?acc=…).
+  useEffect(() => {
+    const qp = new URLSearchParams(window.location.search).get('acc')
+    if (qp) { setAcc(qp); loadAccount(qp) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const facOptions = useMemo(
     () => facilities.map((f) => ({ id: f.id, label: `${f.facility_type}${f.name ? ' · ' + f.name : ''} · ${f.amount?.toLocaleString?.() ?? f.amount} ${f.currency || ''}` })),
     [facilities],
@@ -227,7 +234,7 @@ export default function CreditFileRetailPage() {
             <label>Account Number</label>
             <input value={acc} onChange={(e) => setAcc(e.target.value)} placeholder="مثال: 110151" onKeyDown={(e) => e.key === 'Enter' && loadAccount()} />
           </div>
-          <button onClick={loadAccount} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
+          <button onClick={() => loadAccount()} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
           <div style={{ flexBasis: '100%', fontSize: 11, color: '#64748b' }}>
