@@ -153,20 +153,49 @@ export default function VoucherPage() {
     try { setGuarantors(await crmApi.listGuarantors(acct)) } catch { /* ignore */ }
   }
 
-  // Pick an already-recorded security cheque for this account → fill every field.
-  const pickGuarantor = (id: string) => {
-    setSelectedGid(id)
-    const g = guarantors.find((x) => x.id === id)
+  // Fill the form from a stored cheque record. The name slot follows whether the
+  // recorded name is the account holder (Borrower) or someone else (Guarantor).
+  const applyChequeRecord = (g: any) => {
     if (!g) return
     if (g.cheque_no != null) setChqNo(String(g.cheque_no))
     if (g.cheque_amount != null) setChqAmount(String(g.cheque_amount))
     if (g.facility_id) setFacilityId(String(g.facility_id))
     if (g.branch) setBranch(String(g.branch))
-    if (g.guarantor_name) { setNameType('Guarantor Name'); setGuarantorName(String(g.guarantor_name)) }
+    const nm = g.guarantor_name ? String(g.guarantor_name) : ''
+    if (nm) {
+      if (acName && nm === acName) setNameType('Borrower Name')
+      else { setNameType('Guarantor Name'); setGuarantorName(nm) }
+    }
+    setSelectedGid(g.id || '')
   }
 
-  // Save (upsert) the cheque under the account/facility — same Guarantor record
-  // the customer page shows, so it's two-way synced (no duplicate islands).
+  const pickGuarantor = (id: string) => {
+    setSelectedGid(id)
+    applyChequeRecord(guarantors.find((x) => x.id === id))
+  }
+
+  // Selecting/typing a facility reference → if exactly one cheque is recorded for
+  // it, auto-fill; otherwise the CHQ NO / AMOUNT lists narrow to that facility.
+  const onFacilityChange = (value: string) => {
+    setFacilityId(value)
+    setSelectedGid('')
+    const v = value.trim()
+    const m = v ? guarantors.filter((g) => String(g.facility_id || '') === v) : []
+    if (m.length === 1) applyChequeRecord(m[0])
+  }
+
+  // Picking a cheque number fills its amount + name (scoped to the chosen facility).
+  const onChqNoChange = (value: string) => {
+    setChqNo(value)
+    const v = value.trim()
+    const fac = facilityId.trim()
+    const g = guarantors.find((x) => String(x.cheque_no || '') === v && (!fac || String(x.facility_id || '') === fac))
+    if (g) applyChequeRecord(g)
+  }
+
+  // Save (upsert) under the account/facility — same Guarantor record the customer
+  // page shows (two-way, no islands). No explicit id: the backend matches by
+  // (account, cheque_no), so a SAME cheque updates and a NEW cheque number ADDS.
   const saveGuarantor = async () => {
     const acct = acNo.trim()
     const name = (nameType === 'Borrower Name' ? acName : guarantorName).trim()
@@ -175,7 +204,6 @@ export default function VoucherPage() {
     setSaving(true)
     try {
       const res = await crmApi.addGuarantor(acct, {
-        id: selectedGid || undefined,
         guarantor_name: name,
         cheque_no: chqNo.trim() || undefined,
         cheque_amount: Number(String(chqAmount).replace(/,/g, '')) || undefined,
@@ -183,9 +211,8 @@ export default function VoucherPage() {
         facility_id: facilityId.trim() || undefined,
         branch: branch.trim() || undefined,
       })
-      setSelectedGid(res?.id || '')
       await refreshGuarantors(acct)
-      toast.success(res?.created ? 'چک ضمانتی ذیلِ تسهیلات ثبت شد' : 'چک ضمانتی به‌روزرسانی شد')
+      toast.success(res?.created ? 'چکِ جدید ذیلِ تسهیلات ثبت شد' : 'چک ضمانتی به‌روزرسانی شد')
     } catch (e) {
       toast.error(parseApiError(e))
     } finally {
@@ -194,7 +221,13 @@ export default function VoucherPage() {
   }
 
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
-  const chqNos = Array.from(new Set(guarantors.map((g) => g.cheque_no).filter(Boolean)))
+  // Cheques under the selected facility (if any) drive the CHQ NO / AMOUNT lists;
+  // otherwise all of the account's cheques do.
+  const facSel = facilityId.trim()
+  const facCheques = facSel ? guarantors.filter((g) => String(g.facility_id || '') === facSel) : []
+  const sourceCheques = facCheques.length ? facCheques : guarantors
+  const chqNos = Array.from(new Set(sourceCheques.map((g) => g.cheque_no).filter(Boolean)))
+  const chqAmounts = Array.from(new Set(sourceCheques.map((g) => g.cheque_amount).filter((v) => v != null).map(String)))
   const guarantorNames = Array.from(new Set(guarantors.map((g) => g.guarantor_name).filter(Boolean)))
   // The bank's real facility REFERENCE lives in Facility.name (e.g. "182/4/1099/2025",
   // "STF 1251218000001", "PIM …"), NOT the internal F-… id. Suggest those.
@@ -308,6 +341,11 @@ export default function VoucherPage() {
                 <span className="text-gray-600">نام حساب (A/C NAME)</span>
                 <input className={field} value={acName} onChange={(e) => setAcName(e.target.value)} placeholder="از روی شماره حساب پر می‌شود" />
               </label>
+              <label className="col-span-2 text-sm">
+                <span className="text-gray-600">شناسه تسهیلات (FACILITY ID)</span>
+                <input className={field} value={facilityId} onChange={(e) => onFacilityChange(e.target.value)} placeholder="STF1260603000001" list="vch-facids" />
+                <datalist id="vch-facids">{facilityIds.map((n) => <option key={n} value={n} />)}</datalist>
+              </label>
               <label className="text-sm">
                 <span className="text-gray-600">شعبه (BRANCH)</span>
                 <input className={field} value={branch} onChange={(e) => setBranch(e.target.value)} list="branches" placeholder="مثلاً 2776" />
@@ -329,19 +367,15 @@ export default function VoucherPage() {
               )}
               <label className="text-sm">
                 <span className="text-gray-600">شماره چک (CHQ NO)</span>
-                <input className={field} value={chqNo} onChange={(e) => setChqNo(e.target.value)} inputMode="numeric" list="vch-chqnos" />
+                <input className={field} value={chqNo} onChange={(e) => onChqNoChange(e.target.value)} inputMode="numeric" list="vch-chqnos" />
                 <datalist id="vch-chqnos">{chqNos.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
               <label className="text-sm">
                 <span className="text-gray-600">مبلغ چک (CHQ AMOUNT)</span>
-                <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="144000" />
+                <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="144000" list="vch-amts" />
+                <datalist id="vch-amts">{chqAmounts.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
-              <label className="text-sm">
-                <span className="text-gray-600">شناسه تسهیلات (FACILITY ID)</span>
-                <input className={field} value={facilityId} onChange={(e) => setFacilityId(e.target.value)} placeholder="STF1260603000001" list="vch-facids" />
-                <datalist id="vch-facids">{facilityIds.map((n) => <option key={n} value={n} />)}</datalist>
-              </label>
-              <label className="text-sm">
+              <label className="col-span-2 text-sm">
                 <span className="text-gray-600">ارز / تاریخ</span>
                 <div className="flex gap-2">
                   <input className={field} value={currency} onChange={(e) => setCurrency(e.target.value)} />
