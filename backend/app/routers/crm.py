@@ -29,7 +29,7 @@ from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.services.checklist import seed_facility_checklist, HOURGLASS
 from app.services.completeness import recompute_completeness
-from app.routers.auth import require_editor, require_admin
+from app.routers.auth import require_editor, require_admin, get_current_active_user
 
 router = APIRouter(tags=["crm"])
 
@@ -159,6 +159,39 @@ class GuarantorCreate(BaseModel):
     issuing_bank: str = "BSI"
     pim_ref: str = ""
     facility_id: str = ""
+    branch: str = ""
+    id: str = ""  # when set, update that record (else match by account+cheque_no)
+
+
+def _guarantor_out(g) -> dict:
+    """One JSON shape for a guarantor / security cheque, reused by list + upsert."""
+    return {
+        "id": g.id, "account_no": g.account_no, "customer_name": g.customer_name,
+        "guarantor_name": g.guarantor_name, "guarantor_account": g.guarantor_account,
+        "cheque_no": g.cheque_no,
+        "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
+        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref,
+        "facility_id": g.facility_id, "branch": g.branch, "date_added": g.date_added,
+    }
+
+
+@router.get("/guarantors/{account_no}")
+async def list_guarantors(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Every security cheque / guarantor recorded for an account — the single
+    source of truth shared by the customer-detail page and the Per-Contra voucher
+    form (so both read/write the same records, no scattered duplicates)."""
+    rows = (
+        await db.execute(
+            select(Guarantor)
+            .where(Guarantor.account_no == account_no, Guarantor.is_deleted == False)  # noqa: E712
+            .order_by(Guarantor.date_added.desc())
+        )
+    ).scalars().all()
+    return [_guarantor_out(g) for g in rows]
 
 
 @router.post("/guarantors/{account_no}")
@@ -168,37 +201,60 @@ async def add_guarantor(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Add a guarantor + security cheque to a customer.
+    """Create OR update a guarantor / security cheque (idempotent upsert).
 
-    Ensures the owning customer exists (auto-stub for an orphan account_no) and
-    can be pinned to a specific facility, like the other collateral entities.
+    Matches an existing record by explicit ``id`` or by (account_no, cheque_no),
+    so the same cheque saved from the voucher form and from the customer page
+    stays ONE record instead of scattering duplicate islands. Pins to a facility
+    and auto-stubs the owning + guarantor accounts.
     """
     from app.services.customer_link import ensure_customer
 
     customer = await ensure_customer(db, account_no, None)
-    # The guarantor is itself an account/party: ensure it has its own profile too
-    # (auto-stub if new) so it is linkable from everywhere its name appears and
-    # its profile can list the accounts it guarantees.
     if (payload.guarantor_account or "").strip():
         await ensure_customer(db, payload.guarantor_account, payload.guarantor_name)
-    gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
-    g = Guarantor(
-        id=gid, account_no=account_no, guarantor_name=payload.guarantor_name[:200],
-        guarantor_account=(payload.guarantor_account or "")[:50], cheque_no=(payload.cheque_no or "")[:50],
-        cheque_amount=payload.cheque_amount, issuing_bank=(payload.issuing_bank or "BSI")[:50],
-        pim_ref=(payload.pim_ref or "")[:80], facility_id=(payload.facility_id or "")[:60] or None,
-        customer_name=(customer.name if customer else "") or None,
-        date_added=date.today().isoformat(),
-        created_by=getattr(user, "username", "") or "",
-    )
-    db.add(g)
+
+    g = None
+    if (payload.id or "").strip():
+        g = (await db.execute(select(Guarantor).where(Guarantor.id == payload.id.strip()))).scalar_one_or_none()
+    if g is None and (payload.cheque_no or "").strip():
+        g = (
+            await db.execute(
+                select(Guarantor).where(
+                    Guarantor.account_no == account_no,
+                    Guarantor.cheque_no == payload.cheque_no.strip(),
+                    Guarantor.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+    created = g is None
+    if g is None:
+        gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
+        g = Guarantor(
+            id=gid, account_no=account_no, date_added=date.today().isoformat(),
+            created_by=getattr(user, "username", "") or "",
+        )
+        db.add(g)
+
+    # Apply the submitted values (blank optional fields keep the existing value).
+    g.guarantor_name = payload.guarantor_name[:200]
+    g.cheque_no = (payload.cheque_no or "")[:50]
+    if payload.cheque_amount is not None:
+        g.cheque_amount = payload.cheque_amount
+    g.issuing_bank = (payload.issuing_bank or "BSI")[:50]
+    if (payload.guarantor_account or "").strip():
+        g.guarantor_account = payload.guarantor_account[:50]
+    if (payload.pim_ref or "").strip():
+        g.pim_ref = payload.pim_ref[:80]
+    if (payload.facility_id or "").strip():
+        g.facility_id = payload.facility_id[:60]
+    if (payload.branch or "").strip():
+        g.branch = payload.branch[:20]
+    if customer and getattr(customer, "name", None) and not g.customer_name:
+        g.customer_name = customer.name
+
     await db.commit()
-    return {
-        "id": g.id, "account_no": g.account_no, "guarantor_name": g.guarantor_name,
-        "guarantor_account": g.guarantor_account, "cheque_no": g.cheque_no,
-        "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
-        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref, "facility_id": g.facility_id,
-    }
+    return {**_guarantor_out(g), "created": created}
 
 
 # ---------------------------------------------------------------------------
