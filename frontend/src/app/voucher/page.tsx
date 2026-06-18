@@ -196,10 +196,12 @@ export default function VoucherPage() {
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
   const chqNos = Array.from(new Set(guarantors.map((g) => g.cheque_no).filter(Boolean)))
   const guarantorNames = Array.from(new Set(guarantors.map((g) => g.guarantor_name).filter(Boolean)))
+  // The bank's real facility REFERENCE lives in Facility.name (e.g. "182/4/1099/2025",
+  // "STF 1251218000001", "PIM …"), NOT the internal F-… id. Suggest those.
   const facilityIds = Array.from(new Set([
-    ...facilities.map((f) => f.id).filter(Boolean),
-    ...guarantors.map((g) => g.facility_id).filter(Boolean),
-  ]))
+    ...facilities.map((f) => f.name),
+    ...guarantors.map((g) => g.facility_id),
+  ].filter((x) => x && String(x).trim() && x !== '???')))
   const debitGL = branch ? `${branch}-860185-784-090` : ''
   const creditGL = branch ? `${branch}-869900-784-590` : ''
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
