@@ -141,6 +141,11 @@ export default function VoucherPage() {
              live on the voucher block itself. */
           @page { size: A4 portrait; margin: 0; }
           html, body { margin: 0 !important; padding: 0 !important; }
+          /* The app shell uses min-h-screen (100vh ≈ one page); with the block's
+             8mm top margin that totals ~305mm and spilled a blank 2nd page. Drop
+             every forced full-height so the document is exactly as tall as the
+             two vouchers (≈278mm) → one page. */
+          html, body, .min-h-screen { min-height: 0 !important; height: auto !important; }
           header, .no-print { display: none !important; }
           main { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
           .voucher-grid { display: block !important; margin: 0 !important; }
