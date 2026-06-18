@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
+import { customersApi } from '@/lib/api'
 
 // Faithful re-implementation of the macro workbook
 // "Securities (Contra-PerContra) (FOR CHQS)" — laid out to match the original
@@ -86,12 +87,54 @@ export default function VoucherPage() {
   const [currency, setCurrency] = useState('AED')
   const [date, setDate] = useState(todayDMY())
   const [notFound, setNotFound] = useState(false)
+  const [accountCount, setAccountCount] = useState<number | null>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Live customer count for the helper text (instead of the bundled 556).
+  useEffect(() => {
+    customersApi.list({ page: 1, page_size: 1 }).then((r) => setAccountCount(r.total)).catch(() => {})
+  }, [])
+
+  // Scale the on-screen preview to fit its column → no horizontal scroll. Print
+  // is unaffected (zoom is reset to 1 in @media print, sizes stay exact).
+  useEffect(() => {
+    const el = previewRef.current
+    const wrap = wrapRef.current
+    if (!el || !wrap) return
+    const fit = () => {
+      el.style.setProperty('--screen-zoom', '1')
+      const natural = el.offsetWidth || 1
+      el.style.setProperty('--screen-zoom', String(Math.min(1, wrap.clientWidth / natural)))
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [])
 
   const onAcctLookup = (value: string) => {
     setAcNo(value)
+    // Instant local hit from the bundled register…
     const hit = lookupAccount(value)
     if (hit) { setAcName(hit.name); setBranch(hit.branch); setNotFound(false) }
     else setNotFound(value.trim().length > 0)
+    // …then a debounced live lookup against the full customer base in the DB.
+    if (lookupTimer.current) clearTimeout(lookupTimer.current)
+    const q = value.trim()
+    if (q.length >= 5) {
+      lookupTimer.current = setTimeout(async () => {
+        try {
+          const d: any = await customersApi.detail(q)
+          const c = d.customer || {}
+          if (c.name) setAcName(c.name)
+          const code = d.profile?.data?.branch_code || String(c.branch || '').match(/\d{4}/)?.[0] || ''
+          if (code) setBranch(code)
+          setNotFound(false)
+        } catch { /* keep the local result / not-found state */ }
+      }, 400)
+    }
   }
 
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
@@ -132,8 +175,10 @@ export default function VoucherPage() {
         .vch-foot { display: flex; justify-content: space-between; font-size: 10pt; font-weight: 700; }
         .vch-sigline { display: block; width: 52mm; border-top: 1pt solid #000; margin-top: 8mm; }
 
-        /* on-screen preview width */
-        #voucher-print { width: 190mm; margin: 0 auto; background: #fff; }
+        /* on-screen preview width. zoom (screen only) shrinks the fixed-mm sheet
+           to fit its column so there is no horizontal scroll; print resets it. */
+        .vch-wrap { min-width: 0; overflow: hidden; }
+        #voucher-print { width: 190mm; margin: 0 auto; background: #fff; zoom: var(--screen-zoom, 1); }
 
         @media print {
           /* Own the whole sheet: no @page margin (so nothing spills to a 2nd
@@ -153,8 +198,9 @@ export default function VoucherPage() {
              so left/right borders never reach the printer's non-printable edge.
              Two 135mm vouchers = 270mm; +8mm top = 278mm of a 297mm page →
              ~19mm bottom safety → always one page with full borders visible. */
+          .vch-wrap { overflow: visible !important; }
           #voucher-print { width: 188mm !important; margin: 8mm 11mm 0 11mm !important;
-                           page-break-inside: avoid; break-inside: avoid; }
+                           zoom: 1 !important; page-break-inside: avoid; break-inside: avoid; }
           .vch { page-break-inside: avoid; break-inside: avoid; }
         }
       `}</style>
@@ -164,7 +210,7 @@ export default function VoucherPage() {
           <div className="bg-blue-600 text-white rounded-xl p-2.5"><Printer size={22} /></div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
-            <p className="text-gray-500 text-sm">با وارد کردن چند مقدار، نام از دیتابیس ({ACCOUNT_COUNT} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
+            <p className="text-gray-500 text-sm">با وارد کردن شماره حساب، نام از دیتابیس ({(accountCount ?? ACCOUNT_COUNT).toLocaleString()} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
           </div>
         </div>
 
@@ -231,9 +277,11 @@ export default function VoucherPage() {
           </div>
 
           {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
-          <div id="voucher-print">
-            <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
-            <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+          <div className="vch-wrap" ref={wrapRef}>
+            <div id="voucher-print" ref={previewRef}>
+              <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+              <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+            </div>
           </div>
         </div>
       </div>
