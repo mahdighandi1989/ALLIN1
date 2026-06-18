@@ -219,7 +219,7 @@ export default function VoucherPage() {
           </div>
         </div>
 
-        <div className="voucher-grid grid lg:grid-cols-2 gap-6 items-start mt-4">
+        <div className="voucher-grid grid grid-cols-1 gap-6 items-start mt-4">
           {/* ---- inputs (not printed) ---- */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 no-print" dir="rtl">
             <h2 className="font-bold text-gray-800 mb-4">ورودی‌ها</h2>
