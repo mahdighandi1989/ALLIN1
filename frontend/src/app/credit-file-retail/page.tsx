@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
+import { AmtInput, DraftDrop, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -64,6 +65,7 @@ export default function CreditFileRetailPage() {
   const [a, setA] = useState<Acct>(ACCT0)
   const [facRows, setFacRows] = useState<FacRow[]>(facBase())
   const [secRows, setSecRows] = useState<SecRow[]>(secBase())
+  const [props, setProps] = useState<PropRow[]>([emptyProp()])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
@@ -72,11 +74,19 @@ export default function CreditFileRetailPage() {
 
   const set = (k: keyof Acct) => (e: any) => setA((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const setFac = (id: string, k: keyof FacRow) => (e: any) => setFacRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
+  const setFacV = (id: string, k: keyof FacRow) => (v: string) => setFacRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: v } : r)))
   const setSec = (id: string, k: keyof SecRow) => (e: any) => setSecRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
+  const setSecV = (id: string, k: keyof SecRow) => (v: string) => setSecRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: v } : r)))
+  const setProp = (i: number, k: keyof PropRow) => (e: any) => setProps((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: e.target.value } : r)))
+  const setPropV = (i: number, k: keyof PropRow) => (v: string) => setProps((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
+  const addProp = () => setProps((r) => [...r, emptyProp()])
+  const delProp = (i: number) => setProps((r) => (r.length > 1 ? r.filter((_, idx) => idx !== i) : r))
+  const toggleProp = (i: number) => setProps((r) => r.map((x, idx) => (idx === i ? { ...x, _open: !x._open } : x)))
+  const handleExtract = (r: any) => { const acct = r?.account_no || acc; if (acct) { setAcc(acct); loadAccount(acct) } }
 
   const facFromRecord = (f?: Facility) => ({
     facilityId: f?.id || '',
-    approvalDate: fmtDate(f?.start_date), amount: f && f.amount != null ? String(f.amount) : '',
+    approvalDate: fmtDate(f?.start_date), amount: fmtAmt(f && f.amount != null ? String(f.amount) : ''),
     rate: f && f.interest_rate != null ? String(f.interest_rate) : '',
     instalments: (f as any)?.installments || (f as any)?.tenor_months || '', maturity: fmtDate(f?.expiry_date),
   })
@@ -96,7 +106,7 @@ export default function CreditFileRetailPage() {
     setLoading(true)
     try {
       const d: any = await customersApi.detail(q)
-      const { customer, profile = {}, facilities: facs = [], guarantors = [] } = d
+      const { customer, profile = {}, facilities: facs = [], guarantors = [], properties: propList = [] } = d
       const acct = customer?.account_no || q
       setFacilities(facs)
       setA((s) => ({
@@ -110,6 +120,8 @@ export default function CreditFileRetailPage() {
         guarantor1Name: guarantors?.[0]?.guarantor_name || '', guarantor2Name: guarantors?.[1]?.guarantor_name || '',
         guarantor3Name: guarantors?.[2]?.guarantor_name || '', guarantorAvailable: (guarantors?.length || 0) > 0 ? true : s.guarantorAvailable,
       }))
+      // Two-way sync: properties already in the customer's املاک list fill the rows.
+      setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
       // Auto-bind predefined facility rows to the first matching real facility.
       setFacRows((rows) => rows.map((r) => {
         if (!r.matchKey) return r
@@ -143,7 +155,14 @@ export default function CreditFileRetailPage() {
         if (r.instalments.trim()) payload.installments = r.instalments.trim()
         if (Object.keys(payload).length) { await facilitiesApi.update(r.facilityId, payload); n++ }
       }
-      toast.success(`ذخیره شد — پروفایل${n ? ` و ${n} تسهیلات` : ''}`)
+
+      let pc = 0
+      try {
+        const res = await savePropertyRows(acct, a.customerName, props)
+        setProps(res.rows); pc = res.count
+      } catch (pe: any) { toast.error(pe?.message || String(pe)); setSaving(false); return }
+
+      toast.success(`ذخیره شد — پروفایل${n ? ` و ${n} تسهیلات` : ''}${pc ? ` و ${pc} ملک` : ''}`)
     } catch (e) {
       toast.error(parseApiError(e))
     } finally { setSaving(false) }
@@ -201,8 +220,8 @@ export default function CreditFileRetailPage() {
         .tools button { border: 0; background: transparent; color: #dc2626; cursor: pointer; padding: 0 4px; }
         .addbtn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #2563eb; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 6px; padding: 3px 8px; cursor: pointer; margin: 0 0 8px; }
         .print-only { display: none; }
-        .cf-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 14px; }
-        .cf-sign { width: 240px; } .cf-sign .line { border-top: 1px solid #000; margin-top: 26px; padding-top: 3px; font-weight: 600; }
+        .cf-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; }
+        .cf-sign { width: 260px; font-weight: 600; } .cf-sign .line { border-top: 1px solid #000; margin-top: 50px; padding-top: 4px; }
         .chk { display: inline-flex; align-items: center; gap: 3px; margin-right: 10px; }
         .cf-controls { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; }
         .cf-controls label { font-size: 12px; font-weight: 600; color: #334155; display: block; margin-bottom: 3px; }
@@ -238,8 +257,9 @@ export default function CreditFileRetailPage() {
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
           <div style={{ flexBasis: '100%', fontSize: 11, color: '#64748b' }}>
-            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است.
+            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. مبالغ خودکار کاما می‌گیرند. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است.
           </div>
+          <DraftDrop accountNo={a.accountNumber || acc} onExtracted={handleExtract} />
         </div>
 
         <div id="cf-sheet" ref={sheetRef}>
@@ -284,7 +304,7 @@ export default function CreditFileRetailPage() {
                 <td className="sn">{i + 1}</td>
                 <td className="desc">{r.custom ? <input value={r.label} onChange={setFac(r.uid, 'label')} placeholder="نوع تسهیلات" /> : r.label}</td>
                 <td><input value={r.approvalDate} onChange={setFac(r.uid, 'approvalDate')} /></td>
-                <td><input value={r.amount} onChange={setFac(r.uid, 'amount')} /></td>
+                <td><AmtInput value={r.amount} onValue={setFacV(r.uid, 'amount')} /></td>
                 <td><input value={r.rate} onChange={setFac(r.uid, 'rate')} /></td>
                 <td><input value={r.instalments} onChange={setFac(r.uid, 'instalments')} /></td>
                 <td><input value={r.maturity} onChange={setFac(r.uid, 'maturity')} /></td>
@@ -315,10 +335,10 @@ export default function CreditFileRetailPage() {
                   </select>
                   <span className="print-only">{tagLabel(r.facilityTag)}</span>
                 </td>
-                <td><input value={r.aed} onChange={setSec(r.uid, 'aed')} /></td>
-                <td><input value={r.usd} onChange={setSec(r.uid, 'usd')} /></td>
-                <td><input value={r.irr} onChange={setSec(r.uid, 'irr')} /></td>
-                <td><input value={r.other} onChange={setSec(r.uid, 'other')} /></td>
+                <td><AmtInput value={r.aed} onValue={setSecV(r.uid, 'aed')} /></td>
+                <td><AmtInput value={r.usd} onValue={setSecV(r.uid, 'usd')} /></td>
+                <td><AmtInput value={r.irr} onValue={setSecV(r.uid, 'irr')} /></td>
+                <td><AmtInput value={r.other} onValue={setSecV(r.uid, 'other')} /></td>
                 <td className="tools">{r.custom && <button title="حذف ردیف" onClick={() => delSecRow(r.uid)}><Trash2 size={13} /></button>}</td>
               </tr>
             ))}
@@ -328,6 +348,42 @@ export default function CreditFileRetailPage() {
             </td><td className="tools" /></tr>
           </tbody></table>
           <button className="addbtn" onClick={addSecRow}><Plus size={13} /> افزودن ردیف مدرک/وثیقه</button>
+
+          {/* Mortgaged Properties (املاک) — two-way synced with the customer's properties list */}
+          <table className="cf"><tbody>
+            <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک&nbsp;<span style={{ fontWeight: 400, fontSize: 9 }}>(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation (AED) *</td><td>Mortgage Amt (AED)</td><td className="tools">جزئیات / حذف</td></tr>
+            {props.map((p, i) => (
+              <React.Fragment key={i}>
+                <tr>
+                  <td className="sn">{i + 1}</td>
+                  <td><input value={p.prop_type} onChange={setProp(i, 'prop_type')} placeholder="Apartment / Villa" /></td>
+                  <td><input value={p.address} onChange={setProp(i, 'address')} /></td>
+                  <td><input value={p.city} onChange={setProp(i, 'city')} /></td>
+                  <td><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /></td>
+                  <td><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /></td>
+                  <td className="tools">
+                    <button className="screen-only" title="جزئیات بیشتر" onClick={() => toggleProp(i)} style={{ color: '#2563eb' }}>⋯</button>
+                    <button title="حذف" onClick={() => delProp(i)}><Trash2 size={13} /></button>
+                  </td>
+                </tr>
+                {p._open && (
+                  <tr className="screen-only"><td /><td colSpan={6}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, padding: '4px 0' }}>
+                      <label style={{ fontSize: 10 }}>پلاک ثبتی<input value={p.plate_no} onChange={setProp(i, 'plate_no')} /></label>
+                      <label style={{ fontSize: 10 }}>شماره سند رهنی<input value={p.mortgage_deed_no} onChange={setProp(i, 'mortgage_deed_no')} /></label>
+                      <label style={{ fontSize: 10 }}>تاریخ ترهین<input value={p.mortgage_date} onChange={setProp(i, 'mortgage_date')} /></label>
+                      <label style={{ fontSize: 10 }}>انقضای بیمه<input value={p.insurance_expiry} onChange={setProp(i, 'insurance_expiry')} /></label>
+                      <label style={{ fontSize: 10 }}>سن ساختمان<input value={p.building_age} onChange={setProp(i, 'building_age')} /></label>
+                      <label style={{ fontSize: 10 }}>مساحت زمین (م²)<input value={p.land_area} onChange={setProp(i, 'land_area')} /></label>
+                      <label style={{ fontSize: 10, gridColumn: '1 / span 3' }}>توضیحات<input value={p.remarks} onChange={setProp(i, 'remarks')} /></label>
+                    </div>
+                  </td></tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody></table>
+          <button className="addbtn" onClick={addProp}><Plus size={13} /> افزودن ملک</button>
 
           {/* Guarantor's Names */}
           <table className="cf"><tbody>
