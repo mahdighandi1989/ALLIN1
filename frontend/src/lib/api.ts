@@ -356,6 +356,10 @@ export const crmApi = {
     const { data } = await api.get(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`)
     return data
   },
+  async saveOfferLetterData(accountNo: string, body: { POBox?: string; CityCountry?: string; Salutation?: string; Branch?: string; snapshot?: Record<string, any> }): Promise<any> {
+    const { data } = await api.post(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
 
   // ---- Profile child records: mortgaged properties / fixed deposits / partners ----
   async addProperty(accountNo: string, body: Record<string, any>): Promise<any> {

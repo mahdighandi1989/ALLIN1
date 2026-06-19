@@ -4,19 +4,21 @@
 // account_type × facility_type:
 //   • retail + loan            → bilingual EN/AR Personal Loan (4 pages)
 //   • retail (non-loan) / any corporate → English letter (3 pages)
-// English text + the 25 terms are verbatim from the bank's Word templates;
-// the bilingual Personal Loan content lives in personalLoanContent.ts (extracted
-// verbatim from the bank's bilingual sample). Dynamic values come from the
-// customer/facility (editable), and each template prints to clean A4 pages.
-import React, { useState } from 'react'
+// Headers/footers, borders, the dark section bars, the gray label cells, the
+// account-number digit boxes and the document checkboxes are reproduced from the
+// bank's scanned samples. Values are two-way synced with the customer profile:
+// they prefill from the DB and are saved back (on Save / Print) so other forms
+// and reports can reuse them.
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Download, Search } from 'lucide-react'
+import { Printer, Download, Search, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { customersApi, parseApiError } from '@/lib/api'
+import { crmApi, parseApiError } from '@/lib/api'
 import { BANK_LOGO } from '@/app/voucher/logo'
 import { PL } from './personalLoanContent'
 
 const today = new Date().toISOString().slice(0, 10)
+const THIS_YEAR = String(new Date().getFullYear())
 
 const TERM_TEXTS = [
   'The above-mentioned facility is valid up to {ValidUntil}, subject to full rights of the bank, at its sole discretion, to cancel/ amend/ reduce the Credit Facility Limits, change the terms and conditions of this sanction letter during the validity should the need arises on reasonable grounds to protect the Bank’s legitimate interests.',
@@ -65,27 +67,27 @@ const SECURITIES_CORPORATE =
 
 type Fields = Record<string, string>
 const INITIAL: Fields = {
-  Prefix: 'M/S.', CompanyName: '', AccountNumber: '', POBox: '', CityCountry: 'DUBAI - U.A.E.',
-  Branch: '', RefNumber: '', IssueDate: today, RequestDate: '', ExpiryDate: '12 Months',
+  Prefix: 'M/S.', CompanyName: '', CompanyNameAr: '', AccountNumber: '', POBox: '', CityCountry: 'DUBAI - U.A.E.',
+  Branch: '', RefSerial: '', RefYear: THIS_YEAR, IssueDate: today, RequestDate: '', ExpiryDate: '12 Months',
   RequiredSecurities: SECURITIES_CORPORATE, Remarks: '', FacilityType: 'Overdraft',
   CreditLimit: '', InterestRate: '', ValidUntil: '', ProcessingFee: '1000',
   AccountSuffix: '', AcceptanceDate: '',
   // Personal-loan fields
-  LoanAmount: '', LoanTenor: '', MonthlyInstallment: '', Purpose: 'PERSONAL NEED', SubjectDate: '',
+  LoanAmount: '', LoanInterestRate: '', LoanTenor: '', MonthlyInstallment: '', Purpose: 'PERSONAL NEED', SubjectDate: '',
 }
 
-const LOAN_TYPES = new Set(['loan'])
-const isLoanFac = (ft: string) => LOAN_TYPES.has(String(ft || '').toLowerCase())
-
-// Branch code → name, so the bilingual header table reads e.g. "AJMAN - 2900".
+// Branch code → name; used for the dropdown and the bilingual header table
+// ("AJMAN - 2900"). The select stores the "NAME - CODE" string directly.
 const BRANCH_NAMES: Record<string, string> = {
   '2533': 'BUR DUBAI', '2690': 'ABU DHABI', '2776': 'SHARJAH', '2900': 'AJMAN',
   '4350': 'SHEIKH ZAYED ROAD', '2624': 'AL MAKTOUM', '2898': 'MURSHID BAZAR',
   '1741': 'AL AIN', '3535': 'HEAD OFFICE',
 }
+const BRANCH_OPTIONS = Object.entries(BRANCH_NAMES).map(([code, name]) => `${name} - ${code}`)
 const fmtBranch = (code?: string) => {
   const c = String(code || '').trim()
   if (!c) return ''
+  if (c.includes(' - ')) return c // already "NAME - CODE"
   return BRANCH_NAMES[c] ? `${BRANCH_NAMES[c]} - ${c}` : c
 }
 
@@ -98,10 +100,19 @@ export default function OfferLetterPage() {
   const [f, setF] = useState<Fields>(INITIAL)
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [isCorporate, setIsCorporate] = useState(true)
   const [tpl, setTpl] = useState<'auto' | 'english' | 'personal'>('auto')
+  // Required-document checkboxes (bilingual form). Default: all ticked.
+  const [checks, setChecks] = useState<boolean[]>(() => PL.securities.map(() => true))
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
+  const toggleCheck = (i: number) => setChecks((c) => c.map((v, idx) => (idx === i ? !v : v)))
+
+  // Department reference number: "182/4/<serial>/<year>" — prefix fixed, serial
+  // typed, year auto (current year unless overridden).
+  const refYear = f.RefYear || THIS_YEAR
+  const refNumber = `182/4/${f.RefSerial || '____'}/${refYear}`
 
   // Auto template: a retail account with a (personal) LOAN → bilingual letter;
   // everything else → English. Recomputes live as the loaded account type or the
@@ -115,40 +126,92 @@ export default function OfferLetterPage() {
     if (!a) { toast.error('شماره حساب را وارد کنید'); return }
     setLoading(true)
     try {
-      const d: any = await customersApi.detail(a)
-      const c = d.customer || {}
-      const profile = d.profile || {}
-      const pdata = profile.data || {}
-      const facs: any[] = Array.isArray(d.facilities) ? d.facilities : []
-      const corp = ['corporate', 'sme'].includes(String(c.account_type || '').toLowerCase())
-      const loanFac = facs.find((x) => isLoanFac(x.facility_type))
-      const fac = loanFac || facs[0]
+      const d: any = await crmApi.offerLetterData(a)
+      const corp = ['corporate', 'sme'].includes(String(d.AccountType || '').toLowerCase())
+      const saved = (d.Saved && typeof d.Saved === 'object') ? d.Saved : {}
       setIsCorporate(corp)
+      const withSlash = (v: any) => (v ? `${v}/-` : '')
       setF((s) => ({
         ...s,
-        Prefix: corp ? 'M/S.' : 'Mr.',
-        CompanyName: c.name || s.CompanyName,
-        AccountNumber: c.account_no || a,
-        POBox: pdata.po_box || pdata.POBox || s.POBox,
-        Branch: fmtBranch(c.branch) || s.Branch,
-        CityCountry: (c.branch ? `${BRANCH_NAMES[String(c.branch).trim()] || c.branch} - U.A.E.` : s.CityCountry),
-        RequiredSecurities: corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL,
-        FacilityType: fac?.facility_type ? facTypeLabel(fac.facility_type) : s.FacilityType,
-        CreditLimit: fac?.amount != null ? Number(fac.amount).toLocaleString() + '/-' : s.CreditLimit,
-        InterestRate: fac?.interest_rate != null ? `${fac.interest_rate} % p.a.` : s.InterestRate,
+        Prefix: saved.Prefix || d.Salutation || (corp ? 'M/S.' : 'Mr.'),
+        CompanyName: saved.CompanyName || d.CompanyName || s.CompanyName,
+        CompanyNameAr: saved.CompanyNameAr || d.CompanyNameAr || s.CompanyNameAr,
+        AccountNumber: d.AccountNumber || a,
+        POBox: saved.POBox || d.POBox || s.POBox,
+        CityCountry: saved.CityCountry || d.CityCountry || s.CityCountry,
+        Branch: saved.Branch || fmtBranch(d.Branch) || s.Branch,
+        RefSerial: saved.RefSerial || s.RefSerial,
+        RefYear: saved.RefYear || THIS_YEAR,
+        FacilityType: saved.FacilityType || d.FacilityType || s.FacilityType,
+        CreditLimit: saved.CreditLimit || withSlash(d.CreditLimit) || s.CreditLimit,
+        InterestRate: saved.InterestRate || d.InterestRate || s.InterestRate,
+        ValidUntil: saved.ValidUntil || d.ValidUntil || s.ValidUntil,
+        RequiredSecurities: saved.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
         // loan specifics
-        LoanAmount: loanFac?.amount != null ? Number(loanFac.amount).toLocaleString() + '/-' : s.LoanAmount,
-        LoanTenor: loanFac?.tenor_months ? String(loanFac.tenor_months) : s.LoanTenor,
-        MonthlyInstallment: loanFac?.installments || s.MonthlyInstallment,
-        AccountSuffix: pdata.suffix || s.AccountSuffix,
+        LoanAmount: saved.LoanAmount || withSlash(d.LoanAmount) || s.LoanAmount,
+        LoanInterestRate: saved.LoanInterestRate || d.LoanInterestRate || s.LoanInterestRate,
+        LoanTenor: saved.LoanTenor || d.LoanTenor || s.LoanTenor,
+        MonthlyInstallment: saved.MonthlyInstallment || d.MonthlyInstallment || s.MonthlyInstallment,
+        Purpose: saved.Purpose || d.Purpose || s.Purpose || 'PERSONAL NEED',
+        SubjectDate: saved.SubjectDate || s.SubjectDate,
+        AcceptanceDate: saved.AcceptanceDate || s.AcceptanceDate,
+        Remarks: saved.Remarks || s.Remarks,
       }))
-      toast.success(`«${c.name || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${facs.length} تسهیلات`)
+      if (Array.isArray(saved.securitiesChecked) && saved.securitiesChecked.length === PL.securities.length) {
+        setChecks(saved.securitiesChecked)
+      }
+      if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
+      toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setLoading(false) }
   }
 
+  // Two-way sync: persist reusable fields + a full snapshot to the customer
+  // profile so other forms/reports can use them (and the form restores next time).
+  const saveOffer = async (silent = false) => {
+    const a = (acc || f.AccountNumber).trim()
+    if (!a) { if (!silent) toast.error('ابتدا حساب را بارگیری کنید'); return false }
+    setSaving(true)
+    try {
+      await crmApi.saveOfferLetterData(a, {
+        POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
+        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl },
+      })
+      if (!silent) toast.success('در پروندهٔ مشتری ذخیره شد')
+      return true
+    } catch (e) { if (!silent) toast.error(parseApiError(e)); return false }
+    finally { setSaving(false) }
+  }
+  const printDoc = async () => { await saveOffer(true); setTimeout(() => window.print(), 50) }
+
+  // Auto-fit: if a page's content is taller than the printable A4 area, shrink it
+  // (CSS zoom, which also reduces the laid-out height) so it never spills over.
+  const printRef = useRef<HTMLDivElement>(null)
+  const fitPages = useCallback(() => {
+    const root = printRef.current
+    if (!root) return
+    const MM = 96 / 25.4
+    const avail = (297 - 9 - 13 - 12) * MM // A4 height − top/bottom padding − footer reserve
+    root.querySelectorAll<HTMLElement>('.ol-page').forEach((pg) => {
+      const fit = pg.querySelector<HTMLElement>('.ol-fit')
+      if (!fit) return
+      fit.style.setProperty('zoom', '1')
+      const h = fit.scrollHeight
+      if (h > avail) fit.style.setProperty('zoom', String(Math.max(0.6, avail / h)))
+    })
+  }, [])
+  useEffect(() => { fitPages() })
+  useEffect(() => {
+    const on = () => fitPages()
+    window.addEventListener('resize', on)
+    window.addEventListener('beforeprint', on)
+    const t = setTimeout(on, 350)
+    return () => { window.removeEventListener('resize', on); window.removeEventListener('beforeprint', on); clearTimeout(t) }
+  }, [fitPages])
+
   const field = 'w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-yellow-50'
-  const F = ({ k, label, area }: { k: string; label: string; area?: boolean }) => (
+  // F is a render *function* (not a nested component) so inputs keep focus while typing.
+  const F = (k: string, label: string, area?: boolean) => (
     <label className="block">
       <span className="text-[11px] text-gray-500">{label}</span>
       {area
@@ -157,9 +220,18 @@ export default function OfferLetterPage() {
     </label>
   )
 
-  // Letterhead differs per form type (verbatim from the scanned samples):
-  //   english   → logo + "REGIONAL OFFICE" (left); bank name + "Licensed by CBUAE" + REF/DATE (right)
-  //   bilingual → logo + bank name (left); "BSI-ROL-V002-2024" + 3-row Date/Branch/Ref table (right)
+  // Account number as a row of one-digit cells, like the scanned form.
+  const DigitBoxes = ({ value }: { value: string }) => {
+    const digits = String(value || '').replace(/\D/g, '')
+    const cells = digits ? digits.split('') : Array(12).fill('')
+    return <div className="pl-digits">{cells.map((d, i) => <span key={i}>{d}</span>)}</div>
+  }
+  const CheckBox = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
+    <span className={'pl-chkbox' + (on ? ' on' : '')} onClick={onClick} role="checkbox" aria-checked={on}>{on ? '✓' : ''}</span>
+  )
+
+  // Letterhead differs per form type (verbatim from the scanned samples) and
+  // repeats on every page (ref/date included).
   const Letterhead = ({ mode }: { mode: 'english' | 'bilingual' }) =>
     mode === 'english' ? (
       <div className="ol-head ol-head--en">
@@ -175,7 +247,7 @@ export default function OfferLetterPage() {
           <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
           <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">U.A.E</span></div>
           <div className="ol-lic">&quot;Licensed by CBUAE&quot;</div>
-          <div className="ol-refline">REF: {f.RefNumber || '____________'}</div>
+          <div className="ol-refline">REF: {refNumber}</div>
           <div className="ol-refline">DATE: {f.IssueDate || '____________'}</div>
         </div>
       </div>
@@ -195,7 +267,7 @@ export default function OfferLetterPage() {
           <table className="ol-hdr-tbl"><tbody>
             <tr><td className="hdr-en">Date</td><td className="hdr-v">{f.IssueDate || '—'}</td><td className="hdr-ar" dir="rtl">التاريخ</td></tr>
             <tr><td className="hdr-en">Branch Name &amp; Code</td><td className="hdr-v">{f.Branch || '—'}</td><td className="hdr-ar" dir="rtl">اسم و رقم الفرع</td></tr>
-            <tr><td className="hdr-en">Offer Letter Ref #</td><td className="hdr-v">{f.RefNumber || '—'}</td><td className="hdr-ar" dir="rtl">رقم اشعار القرض</td></tr>
+            <tr><td className="hdr-en">Offer Letter Ref #</td><td className="hdr-v">{refNumber}</td><td className="hdr-ar" dir="rtl">رقم اشعار القرض</td></tr>
           </tbody></table>
         </div>
       </div>
@@ -217,13 +289,9 @@ export default function OfferLetterPage() {
       <div className="ol-foot ol-foot--bi">Page {n} of {total}</div>
     )
 
-  // Bilingual two-column row (EN left / AR right)
-  const Bi = ({ en, ar, n }: { en: string; ar: string; n?: number }) => (
-    <tr>
-      {n != null && <td className="bi-n">{n}</td>}
-      <td className="bi-en">{en}</td>
-      <td className="bi-ar" dir="rtl">{ar}</td>
-    </tr>
+  // Bilingual EN/AR side-by-side line.
+  const Row2 = ({ en, ar, bold }: { en: string; ar: string; bold?: boolean }) => (
+    <div className="bi-row2" style={bold ? { fontWeight: 700 } : undefined}><div>{en}</div><div className="ar" dir="rtl">{ar}</div></div>
   )
 
   return (
@@ -232,6 +300,7 @@ export default function OfferLetterPage() {
         .ol-page { box-sizing: border-box; width: 210mm; min-height: 297mm; background:#fff; margin:0 auto 8mm;
                    padding: 9mm 13mm 13mm; color:#111; font-family: "Times New Roman", Georgia, serif;
                    font-size: 9.3pt; line-height: 1.2; box-shadow: 0 1px 6px rgba(0,0,0,.12); position:relative; }
+        .ol-fit { transform-origin: top left; }
         .ol-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:2mm; }
         .ol-head--en { margin-bottom:1mm; }
         .ol-head-left { display:flex; gap:3mm; align-items:center; }
@@ -254,13 +323,13 @@ export default function OfferLetterPage() {
         .ol-hdr-tbl .hdr-en { text-align:left; font-family:Arial, sans-serif; }
         .ol-hdr-tbl .hdr-v { text-align:center; font-weight:700; min-width:24mm; }
         .ol-hdr-tbl .hdr-ar { text-align:right; }
-        .ol-title { text-align:center; font-weight:800; font-size:13pt; text-decoration:underline; margin:3mm 0 2mm; letter-spacing:1px; }
-        .ol-title-ar { text-align:center; font-weight:800; font-size:12pt; margin:-1mm 0 2mm; }
+        .ol-title { text-align:center; font-weight:800; font-size:13pt; text-decoration:underline; margin:3mm 0 1mm; letter-spacing:1px; }
+        .ol-title-ar { text-align:center; font-weight:800; font-size:12pt; margin:0 0 2mm; }
         .ol-rcpt { font-weight:700; }
         .ol-p { margin:1.4mm 0; text-align:justify; }
         .ol-tbl { width:100%; border-collapse:collapse; margin:2.5mm 0; }
         .ol-tbl th, .ol-tbl td { border:1px solid #000; padding:1.2mm 2mm; font-size:9pt; text-align:center; }
-        .ol-tbl th { background:#e8eefc; font-family:Arial, sans-serif; }
+        .ol-tbl th { background:#e9e9ee; font-family:Arial, sans-serif; }
         .ol-sec { white-space:pre-wrap; font-size:9pt; margin:1mm 0 2mm; }
         .ol-sign { display:flex; justify-content:space-between; margin-top:9mm; font-weight:700; font-size:9pt; }
         .ol-sign span { border-top:1px solid #000; padding-top:1mm; width:70mm; text-align:center; }
@@ -277,23 +346,41 @@ export default function OfferLetterPage() {
         /* bilingual pages are framed by a full-page border, like the scanned form */
         .ol-page--bordered::before { content:''; position:absolute; top:5mm; left:6mm; right:6mm; bottom:5mm; border:1px solid #111; pointer-events:none; }
         .ol-dots { letter-spacing:1px; }
-        /* bilingual */
-        .bi { width:100%; border-collapse:collapse; margin:2mm 0; }
-        .bi td { border:1px solid #000; padding:1.3mm 2mm; vertical-align:top; font-size:8.6pt; }
-        .bi .bi-n { width:7mm; text-align:center; font-weight:700; }
-        .bi .bi-en { width:48%; text-align:left; }
-        .bi .bi-ar { width:48%; text-align:right; font-family:"Traditional Arabic","Times New Roman",serif; font-size:9.5pt; }
+        /* bilingual blocks */
         .bi-row2 { display:flex; justify-content:space-between; gap:6mm; margin:1.2mm 0; }
         .bi-row2 .ar { direction:rtl; text-align:right; font-size:10pt; }
         .bi-conf { text-align:right; font-size:9pt; }
+        .ol-p.ar { font-size:9.5pt; }
+        /* Personal-loan tables: dark section bars, gray label cells, bordered grid */
+        .pl-tbl { width:100%; border-collapse:collapse; margin:2mm 0; }
+        .pl-tbl td { border:1px solid #000; padding:1mm 1.6mm; font-size:8.4pt; vertical-align:middle; }
+        .pl-bar td { background:#1b1c22; color:#fff; padding:1.1mm 2mm; }
+        .pl-bar-row { display:flex; justify-content:space-between; font-weight:700; font-size:9pt; }
+        .pl-lbl { background:#d6d8e2; font-weight:600; width:23%; }
+        .pl-lbl .ar { font-size:7.6pt; font-weight:400; direction:rtl; }
+        .pl-val { background:#fff; }
+        .pl-num { width:6mm; text-align:center; font-weight:700; background:#d6d8e2; }
+        .pl-chk { width:8mm; text-align:center; }
+        .pl-ar { text-align:right; direction:rtl; font-size:8.2pt; }
+        .pl-chkbox { display:inline-block; width:3.6mm; height:3.6mm; border:1.2px solid #000; line-height:3.3mm; text-align:center; font-size:8pt; font-weight:800; color:#0a6b2e; cursor:pointer; }
+        .pl-tick { color:#0a6b2e; font-weight:800; margin-left:1.5mm; }
+        .pl-digits { display:flex; gap:0; flex-wrap:wrap; }
+        .pl-digits span { display:inline-block; min-width:5.4mm; height:5.4mm; line-height:5.4mm; border:1px solid #000; border-left:none; text-align:center; font-weight:700; font-size:9.5pt; }
+        .pl-digits span:first-child { border-left:1px solid #000; }
+        .pl-note { font-size:7.8pt; margin:1mm 0; font-weight:600; }
+        .pl-close { margin:2mm 0; }
+        .pl-close .ar { direction:rtl; text-align:right; font-size:8.6pt; }
+        .pl-decl-h { display:flex; justify-content:space-between; font-weight:700; margin:1mm 0; }
+        .pl-decl-h .ar { direction:rtl; }
 
         @media print {
           @page { size: A4 portrait; margin: 0; }
           html, body, .min-h-screen { margin:0 !important; padding:0 !important; min-height:0 !important; background:#fff !important; }
           .ol-page { margin:0 !important; box-shadow:none !important; page-break-after: always; }
           .ol-page:last-child { page-break-after: auto; }
-          .ol-tbl, .bi, .ol-sign { page-break-inside: avoid; }
+          .ol-tbl, .pl-tbl tr, .ol-sign { page-break-inside: avoid; }
           #ol-controls { display:none !important; }
+          .pl-chkbox { cursor:default; }
         }
       `}</style>
 
@@ -304,12 +391,12 @@ export default function OfferLetterPage() {
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
               <h1 className="text-lg font-bold text-gray-900">Offer Letter — نامهٔ پیشنهادِ تسهیلات</h1>
-              <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ قالب بر اساس نوع حساب×تسهیلات خودکار انتخاب می‌شود (شخصی‌وام → دوزبانه، بقیه → English).</p>
+              <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ قالب بر اساس نوع حساب×تسهیلات خودکار انتخاب می‌شود (شخصی‌وام → دوزبانه، بقیه → English). داده‌ها از پروندهٔ مشتری خوانده و هنگام ذخیره/چاپ به آن برمی‌گردد.</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-end gap-2 mb-3 bg-blue-50 border border-blue-100 rounded-lg p-3">
-            <label className="flex-1 min-w-[180px]">
+            <label className="flex-1 min-w-[160px]">
               <span className="text-[11px] text-gray-500">Account No</span>
               <input value={acc} onChange={(e) => setAcc(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && loadAccount()}
                 placeholder="مثلاً 172999" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -326,103 +413,128 @@ export default function OfferLetterPage() {
                 <option value="personal">Personal Loan دوزبانه (4p)</option>
               </select>
             </label>
-            <button onClick={() => window.print()} type="button"
+            <button onClick={() => saveOffer()} disabled={saving} type="button"
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md px-4 py-2 text-sm font-medium">
+              <Save size={15} /> {saving ? '...' : 'ذخیره'}
+            </button>
+            <button onClick={printDoc} type="button"
               className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Download size={15} /> Print / PDF
             </button>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-            <F k="Prefix" label="Prefix (Mr./Ms./M/S.)" />
-            <F k="CompanyName" label="Customer / Company Name" />
-            <F k="AccountNumber" label="Account Number" />
-            <F k="POBox" label="P.O. Box" />
-            <F k="CityCountry" label="City / Country" />
-            <F k="Branch" label="Branch Name & Code" />
-            <F k="RefNumber" label="Offer Letter Ref #" />
-            <F k="IssueDate" label="Issue Date" />
-            <F k="RequestDate" label="Request Date" />
-            <F k="FacilityType" label="Facility Type" />
-            <F k="CreditLimit" label="Credit Limit (AED)" />
-            <F k="InterestRate" label="Interest Rate" />
-            <F k="ValidUntil" label="Valid Until / Expiry" />
-            <F k="ProcessingFee" label="Processing Fee (AED)" />
-            <F k="AccountSuffix" label="Account Suffix" />
-            <F k="AcceptanceDate" label="Acceptance Date" />
+            {F('Prefix', 'Prefix / عنوان (Mr./Ms./M/S.)')}
+            {F('CompanyName', 'Customer / Company Name')}
+            {F('AccountNumber', 'Account Number')}
+            {F('POBox', 'P.O. Box')}
+            {F('CityCountry', 'City / Country')}
+            <label className="block">
+              <span className="text-[11px] text-gray-500">Branch Name &amp; Code</span>
+              <select value={f.Branch} onChange={set('Branch')} className={field}>
+                <option value="">—</option>
+                {BRANCH_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                {f.Branch && !BRANCH_OPTIONS.includes(f.Branch) && <option value={f.Branch}>{f.Branch}</option>}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-gray-500">Ref Serial (شمارهٔ متغیر)</span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-400">182/4/</span>
+                <input value={f.RefSerial} onChange={set('RefSerial')} className={field} placeholder="202" />
+                <span className="text-xs text-gray-400">/</span>
+                <input value={f.RefYear} onChange={set('RefYear')} className={field + ' w-16'} />
+              </div>
+            </label>
+            {F('IssueDate', 'Issue Date')}
+            {F('FacilityType', 'Facility Type')}
+            {F('CreditLimit', 'Credit Limit (AED)')}
+            {F('InterestRate', 'Interest Rate')}
+            {F('ValidUntil', 'Valid Until / Expiry')}
+            {F('ProcessingFee', 'Processing Fee (AED)')}
+            {F('AccountSuffix', 'Account Suffix')}
+            {F('AcceptanceDate', 'Acceptance / Borrower Date')}
             {effectiveTpl === 'personal' && <>
-              <F k="SubjectDate" label="Application Date" />
-              <F k="LoanAmount" label="Loan Amount (AED)" />
-              <F k="LoanTenor" label="Loan Tenor (Months)" />
-              <F k="MonthlyInstallment" label="Monthly Installment" />
-              <F k="Purpose" label="Purpose" />
+              {F('SubjectDate', 'Application Date')}
+              {F('LoanAmount', 'Loan Amount (AED)')}
+              {F('LoanInterestRate', 'Loan Interest Rate')}
+              {F('LoanTenor', 'Loan Tenor (Months)')}
+              {F('MonthlyInstallment', 'Monthly Installment')}
+              {F('Purpose', 'Purpose')}
             </>}
           </div>
           <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
-            <F k="Remarks" label="Remarks (جدول)" area />
-            <F k="RequiredSecurities" label="REQUIRED SECURITIES / DOCUMENTS (English template)" area />
+            {F('Remarks', 'Remarks (جدول)', true)}
+            {effectiveTpl === 'english' && F('RequiredSecurities', 'REQUIRED SECURITIES / DOCUMENTS (English template)', true)}
           </div>
         </div>
 
         {/* ---------------- printable document ---------------- */}
-        <div id="offer-print" dir="ltr">
+        <div id="offer-print" dir="ltr" ref={printRef}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
               <div className="ol-page">
-                <Letterhead mode="english" />
-                <div className="ol-title">OFFER LETTER</div>
-                <div className="ol-rcpt">{f.Prefix} {f.CompanyName || '________________'}</div>
-                <div className="ol-rcpt">ACCOUNT NO: {f.AccountNumber || '____________'}</div>
-                <div>P.O. Box {f.POBox || '______'}</div>
-                <div>{f.CityCountry}</div>
-                <div className="ol-p" style={{ fontWeight: 700 }}>Private &amp; Confidential</div>
-                <div className="ol-p">Dear Sir,</div>
-                <div className="ol-p">With reference to your request via letter Dated: {f.RequestDate || '____________'}, we are pleased to inform you that the below mentioned {f.FacilityType || 'Overdraft'} facility is approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
-                <table className="ol-tbl">
-                  <thead><tr><th>Facility</th><th>Credit Limit (AED)</th><th>Interest Rate</th><th>Remarks</th></tr></thead>
-                  <tbody><tr>
-                    <td>{f.FacilityType || '—'}</td>
-                    <td>{f.CreditLimit || '—'}</td>
-                    <td style={{ whiteSpace: 'pre-wrap' }}>{f.InterestRate || '—'}</td>
-                    <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
-                  </tr></tbody>
-                </table>
-                <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
-                <div className="ol-sec">{f.RequiredSecurities}</div>
-                <div className="ol-sign">
-                  <span>Head of Credit Facility Department</span>
-                  <span>Customer Signature with Stamp</span>
+                <div className="ol-fit">
+                  <Letterhead mode="english" />
+                  <div className="ol-title">OFFER LETTER</div>
+                  <div className="ol-rcpt">{f.Prefix} {f.CompanyName || '________________'}</div>
+                  <div className="ol-rcpt">ACCOUNT NO: {f.AccountNumber || '____________'}</div>
+                  <div>P.O. Box {f.POBox || '______'}</div>
+                  <div>{f.CityCountry}</div>
+                  <div className="ol-p" style={{ fontWeight: 700 }}>Private &amp; Confidential</div>
+                  <div className="ol-p">Dear Sir,</div>
+                  <div className="ol-p">With reference to your request via letter Dated: {f.RequestDate || '____________'}, we are pleased to inform you that the below mentioned {f.FacilityType || 'Overdraft'} facility is approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
+                  <table className="ol-tbl">
+                    <thead><tr><th>Facility</th><th>Credit Limit (AED)</th><th>Interest Rate</th><th>Remarks</th></tr></thead>
+                    <tbody><tr>
+                      <td>{f.FacilityType || '—'}</td>
+                      <td>{f.CreditLimit || '—'}</td>
+                      <td style={{ whiteSpace: 'pre-wrap' }}>{f.InterestRate || '—'}</td>
+                      <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
+                    </tr></tbody>
+                  </table>
+                  <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
+                  <div className="ol-sec">{f.RequiredSecurities}</div>
+                  <div className="ol-sign">
+                    <span>Head of Credit Facility Department</span>
+                    <span>Customer Signature with Stamp</span>
+                  </div>
                 </div>
                 <PageFooter mode="english" n={1} total={3} />
               </div>
 
               {/* ===== ENGLISH PAGE 2 ===== */}
               <div className="ol-page">
-                <Letterhead mode="english" />
-                <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
-                <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
-                <div className="ol-sign"><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
+                <div className="ol-fit">
+                  <Letterhead mode="english" />
+                  <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
+                  <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
+                  <div className="ol-sign"><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
+                </div>
                 <PageFooter mode="english" n={2} total={3} />
               </div>
 
               {/* ===== ENGLISH PAGE 3 ===== */}
               <div className="ol-page">
-                <Letterhead mode="english" />
-                <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
-                <div className="ol-p">Please read the content of this letter and if you agree kindly sign the original copy and return it to us as confirmation for our records not later than one month from the date of this letter; if not accepted it will be deemed to have lapsed.</div>
-                <div className="ol-p">We trust that you will find the above limits and its terms to your satisfaction and will utilize the same for our mutual benefits. While assuring you of our best service at all times, we appreciate your kind co-operation and prompt reply.</div>
-                <div className="ol-p" style={{ marginTop: '4mm' }}>Yours truly,</div>
-                <div style={{ fontWeight: 700 }}>Bank Saderat Iran</div>
-                <div>Credit Facility Department</div>
-                <div className="ol-sign"><span>Manager Signature &amp; Stamp</span><span>&nbsp;</span></div>
-                <div className="ol-dots" style={{ marginTop: '6mm' }}>....................................................................................................................................</div>
-                <div className="ol-p">I read all pages of offer letter and I agreed with the terms and conditions mentioned thereof.</div>
-                <div className="ol-p">Encl: Duplicate of this letter accepted and agreed by</div>
-                <div>{isCorporate ? 'M/s' : 'Mr.'}: {f.CompanyName || '..............................................................'}</div>
-                <div>Date: {f.AcceptanceDate || '............................'}</div>
-                <div className="ol-sign" style={{ marginTop: '8mm' }}>
-                  <span>Authorized Signature(s)</span>
-                  {isCorporate ? <span>Company Stamp</span> : <span>&nbsp;</span>}
+                <div className="ol-fit">
+                  <Letterhead mode="english" />
+                  <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
+                  <div className="ol-p">Please read the content of this letter and if you agree kindly sign the original copy and return it to us as confirmation for our records not later than one month from the date of this letter; if not accepted it will be deemed to have lapsed.</div>
+                  <div className="ol-p">We trust that you will find the above limits and its terms to your satisfaction and will utilize the same for our mutual benefits. While assuring you of our best service at all times, we appreciate your kind co-operation and prompt reply.</div>
+                  <div className="ol-p" style={{ marginTop: '4mm' }}>Yours truly,</div>
+                  <div style={{ fontWeight: 700 }}>Bank Saderat Iran</div>
+                  <div>Credit Facility Department</div>
+                  <div className="ol-sign"><span>Manager Signature &amp; Stamp</span><span>&nbsp;</span></div>
+                  <div className="ol-dots" style={{ marginTop: '6mm' }}>....................................................................................................................................</div>
+                  <div className="ol-p">I read all pages of offer letter and I agreed with the terms and conditions mentioned thereof.</div>
+                  <div className="ol-p">Encl: Duplicate of this letter accepted and agreed by</div>
+                  <div>{isCorporate ? 'M/s' : 'Mr.'}: {f.CompanyName || '..............................................................'}</div>
+                  <div>Date: {f.AcceptanceDate || '............................'}</div>
+                  <div className="ol-sign" style={{ marginTop: '8mm' }}>
+                    <span>Authorized Signature(s)</span>
+                    {isCorporate ? <span>Company Stamp</span> : <span>&nbsp;</span>}
+                  </div>
                 </div>
                 <PageFooter mode="english" n={3} total={3} />
               </div>
@@ -432,72 +544,117 @@ export default function OfferLetterPage() {
             <>
               {/* ===== BILINGUAL PAGE 1 — recipient, loan details, securities ===== */}
               <div className="ol-page ol-page--bordered">
-                <Letterhead mode="bilingual" />
-                <div className="bi-conf"><b>{PL.header.confidential.en}</b></div>
-                <div className="bi-conf" dir="rtl"><b>{PL.header.confidential.ar}</b></div>
-                <div className="ol-title">{PL.header.title.en}</div>
-                <div className="ol-title-ar" dir="rtl">{PL.header.title.ar}</div>
-                <div className="ol-rcpt">{f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{f.CompanyName || '________________'}</div>
-                <div>P.O. Box: {f.POBox || '______'}</div>
-                <div>{f.CityCountry}</div>
-                <div className="bi-row2"><div><b>{PL.subject.en}</b> {f.SubjectDate || '__________'}</div><div className="ar"><b>{PL.subject.ar}</b></div></div>
-                <div className="bi-row2"><div>{PL.dear.en}</div><div className="ar">{PL.dear.ar}</div></div>
-                <div className="ol-p">{PL.intro.en}</div>
-                <div className="ol-p ar" dir="rtl" style={{ textAlign: 'right' }}>{PL.intro.ar}</div>
+                <div className="ol-fit">
+                  <Letterhead mode="bilingual" />
+                  <div className="bi-conf"><b>{PL.header.confidential.en}</b></div>
+                  <div className="bi-conf" dir="rtl"><b>{PL.header.confidential.ar}</b></div>
+                  <div className="ol-title">{PL.header.title.en}</div>
+                  <div className="ol-title-ar" dir="rtl">{PL.header.title.ar}</div>
+                  <div className="ol-rcpt">{f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{f.CompanyName || '________________'}</div>
+                  <div>P.O. Box: {f.POBox || '______'}</div>
+                  <div>{f.CityCountry}</div>
+                  <Row2 en={`Subject: Personal Loan Application dated: ${f.SubjectDate || '__________'}`} ar={'الموضوع: طلب القرض الشخصي المؤرخ'} bold />
+                  <Row2 en={PL.dear.en} ar={PL.dear.ar} />
+                  <div className="ol-p">{PL.intro.en}</div>
+                  <div className="ol-p ar" dir="rtl" style={{ textAlign: 'right' }}>{PL.intro.ar}</div>
 
-                {/* Details of Loan */}
-                <table className="bi"><tbody>
-                  <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.detailsTitle.en} / {PL.detailsTitle.ar}</td></tr>
-                  <Bi en={`${PL.labels.accountNumber?.en || 'Account Number'} : ${f.AccountNumber || '—'}`} ar={PL.labels.accountNumber?.ar || ''} />
-                  <Bi en={`${PL.labels.loanAmount?.en || 'Loan Amount (AED)'} : ${f.LoanAmount || '—'}`} ar={PL.labels.loanAmount?.ar || ''} />
-                  <Bi en={`${PL.labels.interestRate?.en || 'Interest Rate'} : ${f.InterestRate || '—'}`} ar={PL.labels.interestRate?.ar || ''} />
-                  <Bi en={`${PL.labels.tenor?.en || 'Loan Tenor (Months)'} : ${f.LoanTenor || '—'}`} ar={PL.labels.tenor?.ar || ''} />
-                  <Bi en={`${PL.labels.installment?.en || 'Monthly Installment'} : ${f.MonthlyInstallment || '—'}`} ar={PL.labels.installment?.ar || ''} />
-                  <Bi en={`${PL.labels.purpose?.en || 'Purpose'} : ${f.Purpose || '—'}`} ar={PL.labels.purpose?.ar || ''} />
-                  <Bi en={`${PL.processingFees.label.en}: ${PL.processingFees.value.en}`} ar={`${PL.processingFees.label.ar} ${PL.processingFees.value.ar}`} />
-                  <Bi en={`${PL.latePayment.label.en}: ${PL.latePayment.value.en}`} ar={`${PL.latePayment.label.ar} ${PL.latePayment.value.ar}`} />
-                </tbody></table>
+                  {/* Details of Loan */}
+                  <table className="pl-tbl"><tbody>
+                    <tr className="pl-bar"><td colSpan={4}><div className="pl-bar-row"><span>{PL.detailsTitle.en}</span><span dir="rtl">{PL.detailsTitle.ar}</span></div></td></tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.labels.accountNumber.en}</div><div className="ar" dir="rtl">{PL.labels.accountNumber.ar}</div></td>
+                      <td className="pl-val" colSpan={3}><DigitBoxes value={f.AccountNumber} /></td>
+                    </tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.labels.loanAmount.en}</div><div className="ar" dir="rtl">{PL.labels.loanAmount.ar}</div></td>
+                      <td className="pl-val">{f.LoanAmount || '—'}{f.LoanAmount && <span className="pl-tick">✓</span>}</td>
+                      <td className="pl-lbl"><div>{PL.labels.interestRate.en}</div><div className="ar" dir="rtl">{PL.labels.interestRate.ar}</div></td>
+                      <td className="pl-val">{f.LoanInterestRate || f.InterestRate || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.labels.tenor.en}</div><div className="ar" dir="rtl">{PL.labels.tenor.ar}</div></td>
+                      <td className="pl-val">{f.LoanTenor || '—'}{f.LoanTenor && <span className="pl-tick">✓</span>}</td>
+                      <td className="pl-lbl"><div>{PL.labels.installment.en}</div><div className="ar" dir="rtl">{PL.labels.installment.ar}</div></td>
+                      <td className="pl-val">{f.MonthlyInstallment || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.labels.purpose.en}</div><div className="ar" dir="rtl">{PL.labels.purpose.ar}</div></td>
+                      <td className="pl-val" colSpan={3}>{f.Purpose || '—'}</td>
+                    </tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.processingFees.label.en}</div><div className="ar" dir="rtl">{PL.processingFees.label.ar}</div></td>
+                      <td className="pl-val" colSpan={3} style={{ fontSize: '7.4pt' }}><div>{PL.processingFees.value.en}</div><div dir="rtl" style={{ textAlign: 'right' }}>{PL.processingFees.value.ar}</div></td>
+                    </tr>
+                    <tr>
+                      <td className="pl-lbl"><div>{PL.latePayment.label.en}</div><div className="ar" dir="rtl">{PL.latePayment.label.ar}</div></td>
+                      <td className="pl-val" colSpan={3} style={{ fontSize: '7.4pt' }}><div>{PL.latePayment.value.en}</div><div dir="rtl" style={{ textAlign: 'right' }}>{PL.latePayment.value.ar}</div></td>
+                    </tr>
+                  </tbody></table>
 
-                {/* Required Security Documents */}
-                <table className="bi"><tbody>
-                  <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.securitiesTitle.en} / {PL.securitiesTitle.ar}</td></tr>
-                  {PL.securities.map((s, i) => <Bi key={i} n={Number(s.n) || i + 1} en={s.en} ar={s.ar} />)}
-                </tbody></table>
-                <div className="ol-p" style={{ fontSize: '8pt' }}>{PL.securitiesNote.en} {PL.securitiesNote.ar}</div>
+                  {/* Required Security Documents */}
+                  <table className="pl-tbl"><tbody>
+                    <tr className="pl-bar"><td colSpan={4}><div className="pl-bar-row"><span>{PL.securitiesTitle.en}</span><span dir="rtl">{PL.securitiesTitle.ar}</span></div></td></tr>
+                    {PL.securities.map((s, i) => (
+                      <tr key={i}>
+                        <td className="pl-num">{s.n}</td>
+                        <td className="pl-chk"><CheckBox on={!!checks[i]} onClick={() => toggleCheck(i)} /></td>
+                        <td className="pl-val">{s.en}</td>
+                        <td className="pl-val pl-ar" dir="rtl">{s.ar}</td>
+                      </tr>
+                    ))}
+                  </tbody></table>
+                  <div className="pl-note">{PL.securitiesNote.en}</div>
+                </div>
                 <PageFooter mode="bilingual" n={1} total={4} />
               </div>
 
               {/* ===== BILINGUAL PAGE 2 — terms 1–7 ===== */}
               <div className="ol-page ol-page--bordered">
-                <Letterhead mode="bilingual" />
-                <table className="bi"><tbody>
-                  {PL.terms.slice(0, 7).map((t, i) => <Bi key={i} n={i + 1} en={t.en} ar={t.ar} />)}
-                </tbody></table>
+                <div className="ol-fit">
+                  <Letterhead mode="bilingual" />
+                  <table className="pl-tbl"><tbody>
+                    {PL.terms.slice(0, 7).map((t, i) => (
+                      <tr key={i}><td className="pl-num">{i + 1}</td><td className="pl-val">{t.en}</td><td className="pl-val pl-ar" dir="rtl">{t.ar}</td></tr>
+                    ))}
+                  </tbody></table>
+                </div>
                 <PageFooter mode="bilingual" n={2} total={4} />
               </div>
 
-              {/* ===== BILINGUAL PAGE 3 — remaining terms + bank signature ===== */}
+              {/* ===== BILINGUAL PAGE 3 — terms 8–13 + bank signature ===== */}
               <div className="ol-page ol-page--bordered">
-                <Letterhead mode="bilingual" />
-                <table className="bi"><tbody>
-                  {PL.terms.slice(7).map((t, i) => <Bi key={i} n={i + 8} en={t.en} ar={t.ar} />)}
-                </tbody></table>
-                <div className="bi-row2" style={{ marginTop: '4mm' }}><div>{PL.closing.yoursSincerely.en}</div><div className="ar">{PL.closing.yoursSincerely.ar}</div></div>
-                <div className="bi-row2"><div>{PL.closing.forBank.en}</div><div className="ar">{PL.closing.forBank.ar}</div></div>
-                <div className="ol-sign"><span>{PL.closing.headDept.en}</span><span dir="rtl">{PL.closing.headDept.ar}</span></div>
+                <div className="ol-fit">
+                  <Letterhead mode="bilingual" />
+                  <table className="pl-tbl"><tbody>
+                    {PL.terms.slice(7, 12).map((t, i) => (
+                      <tr key={i}><td className="pl-num">{i + 8}</td><td className="pl-val">{t.en}</td><td className="pl-val pl-ar" dir="rtl">{t.ar}</td></tr>
+                    ))}
+                  </tbody></table>
+                  <div className="pl-close"><div>{PL.terms[12].en}</div><div className="ar" dir="rtl">{PL.terms[12].ar}</div></div>
+                  <Row2 en={PL.closing.yoursSincerely.en} ar={PL.closing.yoursSincerely.ar} />
+                  <Row2 en={PL.closing.forBank.en} ar={PL.closing.forBank.ar} />
+                  <div className="ol-sign" style={{ marginTop: '10mm' }}>
+                    <span>{PL.closing.headDept.en}<br />{PL.closing.signStamp.en}</span>
+                    <span dir="rtl">{PL.closing.headDept.ar}<br />{PL.closing.signStamp.ar}</span>
+                  </div>
+                </div>
                 <PageFooter mode="bilingual" n={3} total={4} />
               </div>
 
               {/* ===== BILINGUAL PAGE 4 — borrower declaration ===== */}
               <div className="ol-page ol-page--bordered">
-                <Letterhead mode="bilingual" />
-                <div className="bi-row2" style={{ fontWeight: 700 }}><div>{PL.closing.borrowerDeclaration.en}</div><div className="ar">{PL.closing.borrowerDeclaration.ar}</div></div>
-                <table className="bi"><tbody><Bi en={PL.declaration.en} ar={PL.declaration.ar} /></tbody></table>
-                <table className="bi"><tbody>
-                  <Bi en={`${PL.borrowerSign[0]?.en || 'Borrower Signature'}`} ar={PL.borrowerSign[0]?.ar || ''} />
-                  <Bi en={`${PL.borrowerSign[1]?.en || 'Borrower Name:'} ${f.CompanyName || ''}`} ar={PL.borrowerSign[1]?.ar || ''} />
-                  <Bi en={`${PL.borrowerSign[2]?.en || 'Date:'} ${f.AcceptanceDate || ''}`} ar={PL.borrowerSign[2]?.ar || ''} />
-                </tbody></table>
+                <div className="ol-fit">
+                  <Letterhead mode="bilingual" />
+                  <div className="pl-decl-h"><span>Borrower Declaration:</span><span className="ar" dir="rtl">{PL.closing.borrowerDeclaration.ar}</span></div>
+                  <table className="pl-tbl"><tbody>
+                    <tr><td className="pl-val">{PL.declaration.en}</td><td className="pl-val pl-ar" dir="rtl">{PL.declaration.ar}</td></tr>
+                  </tbody></table>
+                  <table className="pl-tbl"><tbody>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[0].en}</td><td className="pl-val">&nbsp;</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[0].ar}</td></tr>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[1].en}</td><td className="pl-val">{f.CompanyName}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[1].ar}</td></tr>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[2].en}</td><td className="pl-val">{f.AcceptanceDate}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[2].ar}</td></tr>
+                  </tbody></table>
+                </div>
                 <PageFooter mode="bilingual" n={4} total={4} />
               </div>
             </>
@@ -506,13 +663,4 @@ export default function OfferLetterPage() {
       </div>
     </Layout>
   )
-}
-
-function facTypeLabel(ft: string): string {
-  const m: Record<string, string> = {
-    overdraft: 'Overdraft', loan: 'Loan', lc: 'Letter of Credit', lc_sight: 'LC (Sight)',
-    lc_usance: 'LC (Usance)', lg: 'Letter of Guarantee', log: 'Letter of Guarantee',
-    cheque_discounting: 'Cheque Discounting', trust_receipt: 'Trust Receipt', other: 'Facility',
-  }
-  return m[String(ft || '').toLowerCase()] || ft || 'Facility'
 }
