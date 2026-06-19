@@ -989,7 +989,6 @@ async def extract_draft(
         keyed entries in the profile data_json / KYC columns → overwrite in place;
       • guarantors are upserted by (account, guarantor account / name).
     """
-    from app.services.draft_extract import extract_from_docx
     from app.services.customer_link import ensure_customer
     from app.models.customer import AccountType
 
@@ -998,6 +997,10 @@ async def extract_draft(
         raise HTTPException(status_code=400, detail="Empty file")
     if not (file.filename or "").lower().endswith((".docx",)):
         raise HTTPException(status_code=415, detail="Please upload a Word .docx draft")
+    try:
+        from app.services.draft_extract import extract_from_docx  # needs python-docx
+    except Exception as exc:  # pragma: no cover - dependency guard
+        raise HTTPException(status_code=503, detail=f"Draft parser unavailable on server ({exc}). Install python-docx.")
     try:
         parsed = extract_from_docx(raw)
     except Exception as exc:  # pragma: no cover - defensive
