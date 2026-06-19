@@ -360,6 +360,14 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  // Parse a filled committee-approval draft (.docx) → prefill fields + persist to DB.
+  async extractDraft(accountNo: string, file: File): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    if (accountNo) form.append('account_no', accountNo)
+    const { data } = await api.post('/api/crm/extract-draft', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
 
   // ---- Profile child records: mortgaged properties / fixed deposits / partners ----
   async addProperty(accountNo: string, body: Record<string, any>): Promise<any> {

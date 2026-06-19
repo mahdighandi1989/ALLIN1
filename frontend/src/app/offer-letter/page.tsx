@@ -11,7 +11,7 @@
 // and reports can reuse them.
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Download, Search, Save } from 'lucide-react'
+import { Printer, Download, Search, Save, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { crmApi, parseApiError } from '@/lib/api'
 import { BANK_LOGO } from '@/app/voucher/logo'
@@ -104,6 +104,8 @@ export default function OfferLetterPage() {
   const [saving, setSaving] = useState(false)
   const [isCorporate, setIsCorporate] = useState(true)
   const [tpl, setTpl] = useState<'auto' | 'english' | 'personal'>('auto')
+  const [extracting, setExtracting] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   // Required-document checkboxes (bilingual form). Default: all ticked.
   const [checks, setChecks] = useState<boolean[]>(() => PL.securities.map(() => true))
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
@@ -185,6 +187,46 @@ export default function OfferLetterPage() {
     finally { setSaving(false) }
   }
   const printDoc = async () => { await saveOffer(true); setTimeout(() => window.print(), 50) }
+
+  // Drop / pick a filled committee-approval draft (.docx): the backend parses it,
+  // persists everything to the customer record, and returns the fields that
+  // prefill this Offer Letter.
+  const handleDraft = async (file?: File | null) => {
+    if (!file) return
+    if (!/\.docx$/i.test(file.name)) { toast.error('فقط فایل Word با پسوند .docx'); return }
+    setExtracting(true)
+    try {
+      const a = (acc || f.AccountNumber).trim()
+      const r: any = await crmApi.extractDraft(a, file)
+      const o = r.offer || {}
+      const corp = ['corporate', 'sme'].includes(String(r.account_type || o.AccountType || '').toLowerCase())
+      if (o.AccountType) setIsCorporate(corp)
+      if (!acc && r.account_no) setAcc(r.account_no)
+      const withSlash = (v: any) => (v ? `${v}/-` : '')
+      setF((s) => ({
+        ...s,
+        CompanyName: o.CompanyName || s.CompanyName,
+        AccountNumber: o.AccountNumber || s.AccountNumber,
+        Branch: o.Branch || s.Branch,
+        FacilityType: o.FacilityType || s.FacilityType,
+        CreditLimit: withSlash(o.CreditLimit) || s.CreditLimit,
+        LoanAmount: withSlash(o.LoanAmount) || s.LoanAmount,
+        InterestRate: o.InterestRate || s.InterestRate,
+        LoanInterestRate: o.LoanInterestRate || s.LoanInterestRate,
+        LoanTenor: o.LoanTenor || s.LoanTenor,
+        Purpose: o.Purpose || s.Purpose,
+        BusinessType: o.BusinessType || s.BusinessType,
+        Rating: o.Rating || s.Rating,
+        SubjectDate: o.SubjectDate || s.SubjectDate,
+      }))
+      const parts = [`«${o.CompanyName || r.account_no}»`]
+      if (Array.isArray(r.profile_keys) && r.profile_keys.length) parts.push(`${r.profile_keys.length} مورد در پروفایل`)
+      if (r.guarantors_added) parts.push(`${r.guarantors_added} ضامن جدید`)
+      if (r.guarantors_updated) parts.push(`${r.guarantors_updated} ضامن به‌روز`)
+      toast.success('استخراج و ثبت شد: ' + parts.join(' · '))
+    } catch (e) { toast.error(parseApiError(e)) }
+    finally { setExtracting(false) }
+  }
 
   // Auto-fit: if a page's content is taller than the printable A4 area, shrink it
   // (CSS zoom, which also reduces the laid-out height) so it never spills over.
@@ -426,6 +468,23 @@ export default function OfferLetterPage() {
               className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Download size={15} /> Print / PDF
             </button>
+          </div>
+
+          {/* Draft (مصوبه) drop zone → smart extract into the fields + customer DB */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleDraft(e.dataTransfer.files?.[0]) }}
+            className={`mb-3 rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'}`}
+          >
+            <input id="draftFile" type="file" accept=".docx" className="hidden"
+              onChange={(e) => { handleDraft(e.target.files?.[0]); e.currentTarget.value = '' }} />
+            <div className="flex items-center justify-center gap-2 text-sm">
+              <Upload size={16} className="text-blue-600" />
+              <label htmlFor="draftFile" className="cursor-pointer font-medium text-blue-700 hover:underline">انتخاب فایل پیش‌نویس مصوبه (.docx)</label>
+              <span className="text-gray-500">یا فایل را اینجا بکش و رها کن — استخراج هوشمند فیلدها و ثبت در دیتابیس مشتری</span>
+              {extracting && <span className="text-blue-600 font-medium">⏳ در حال استخراج…</span>}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
