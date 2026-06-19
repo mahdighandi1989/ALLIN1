@@ -145,15 +145,9 @@ export default function SanctionPage() {
     if (!a) { if (!silent) toast.error('ابتدا حساب را بارگیری کنید'); return false }
     setSaving(true)
     try {
-      const snapshot = { ...f, limits, recip, fin, guars, banks }
-      // Scalar facts shared with the rest of the app (deduped, keyed).
-      const fields: Record<string, string> = {
-        relationship_date: f.RelationshipDate, established_since: f.EstablishedSince,
-        review_date: f.DateOfReview, credit_application_no: f.CreditAppNo,
-        business_type: f.BusinessActivity, aecb_score: f.AECBScore, auditor: f.AuditorName,
-        monthly_salary: f.MonthlySalary, customer_profile: f.Background,
-      }
-      await crmApi.saveOfferLetterData(a, { Branch: f.BranchName, fields, snapshot, snapshot_key: 'sanction' })
+      // First-class persistence: a deduped credit_reviews row + promoted profile
+      // columns + the exact snapshot (for restore) — all in one call.
+      await crmApi.saveSanction(a, { snapshot: { ...f }, limits, recip, fin, guars, banks })
       if (!silent) toast.success('مصوبه در پروندهٔ مشتری ذخیره شد')
       return true
     } catch (e) { if (!silent) toast.error(parseApiError(e)); return false }

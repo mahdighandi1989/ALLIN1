@@ -54,6 +54,19 @@ class CustomerProfile(Base):
     profile_completeness = Column(String(20))
     updated_by = Column(String(80))
     last_updated = Column(String(30))
+    # First-class facts captured from the credit-committee approval (مصوبه) /
+    # parsed drafts — promoted out of data_json so they are searchable/reportable.
+    aecb_score = Column(String(20))
+    established_since = Column(String(30))
+    relationship_date = Column(String(30))
+    monthly_salary = Column(String(40))
+    auditor = Column(String(120))
+    credit_application_no = Column(String(80))
+    review_date = Column(String(30))
+    proposed_facility = Column(String(80))
+    proposed_amount = Column(String(40))
+    proposed_tenor = Column(String(40))
+    proposed_rate = Column(String(40))
     # Full 200-field record verbatim (partners, securities, collateral, mortgage,
     # guarantors summary, undertakings, attachments, …) so nothing is lost.
     data_json = Column(Text)
