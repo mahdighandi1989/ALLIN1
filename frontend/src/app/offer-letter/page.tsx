@@ -74,6 +74,7 @@ const INITIAL: Fields = {
   AccountSuffix: '', AcceptanceDate: '',
   // Personal-loan fields
   LoanAmount: '', LoanInterestRate: '', LoanTenor: '', MonthlyInstallment: '', Purpose: 'PERSONAL NEED', SubjectDate: '',
+  LienAmount: '',
 }
 
 // Branch code → name; used for the dropdown and the bilingual header table
@@ -153,6 +154,7 @@ export default function OfferLetterPage() {
         LoanTenor: saved.LoanTenor || d.LoanTenor || s.LoanTenor,
         MonthlyInstallment: saved.MonthlyInstallment || d.MonthlyInstallment || s.MonthlyInstallment,
         Purpose: saved.Purpose || d.Purpose || s.Purpose || 'PERSONAL NEED',
+        LienAmount: saved.LienAmount || withSlash(d.LoanAmount) || s.LienAmount,
         SubjectDate: saved.SubjectDate || s.SubjectDate,
         AcceptanceDate: saved.AcceptanceDate || s.AcceptanceDate,
         Remarks: saved.Remarks || s.Remarks,
@@ -247,8 +249,10 @@ export default function OfferLetterPage() {
           <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
           <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">U.A.E</span></div>
           <div className="ol-lic">&quot;Licensed by CBUAE&quot;</div>
-          <div className="ol-refline">REF: {refNumber}</div>
-          <div className="ol-refline">DATE: {f.IssueDate || '____________'}</div>
+          <div className="ol-refblock">
+            <div className="ol-refline">REF: {refNumber}</div>
+            <div className="ol-refline">DATE: {f.IssueDate || '____________'}</div>
+          </div>
         </div>
       </div>
     ) : (
@@ -300,20 +304,21 @@ export default function OfferLetterPage() {
         .ol-page { box-sizing: border-box; width: 210mm; min-height: 297mm; background:#fff; margin:0 auto 8mm;
                    padding: 9mm 13mm 13mm; color:#111; font-family: "Times New Roman", Georgia, serif;
                    font-size: 9.3pt; line-height: 1.2; box-shadow: 0 1px 6px rgba(0,0,0,.12); position:relative; }
-        .ol-fit { transform-origin: top left; }
+        .ol-fit { transform-origin: top left; display:flex; flex-direction:column; min-height:255mm; }
         .ol-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:2mm; }
-        .ol-head--en { margin-bottom:1mm; }
+        .ol-head--en { margin-bottom:4mm; align-items:center; }
         .ol-head-left { display:flex; gap:3mm; align-items:center; }
-        .ol-logo { height:13mm; width:auto; object-fit:contain; }
-        .ol-ro { text-align:center; }
-        .ol-ro-ar { font-size:8pt; color:#222; }
-        .ol-ro-en { font-family:Arial, sans-serif; font-size:8pt; letter-spacing:1px; color:#222; }
-        .ol-head-right--en { text-align:right; font-family:Arial, sans-serif; }
-        .ol-bank-ar { font-size:11pt; color:#111; font-family:"Traditional Arabic","Times New Roman",serif; }
-        .ol-bank-en { font-weight:800; font-size:12.5pt; color:#0a1f6b; letter-spacing:.3px; }
+        .ol-logo { height:12mm; width:auto; object-fit:contain; }
+        .ol-ro { text-align:center; line-height:1.2; }
+        .ol-ro-ar { font-size:8.5pt; color:#222; text-align:center; }
+        .ol-ro-en { font-family:Arial, sans-serif; font-size:7.6pt; letter-spacing:1px; color:#222; text-align:center; }
+        .ol-head-right--en { text-align:right; font-family:Arial, sans-serif; line-height:1.3; }
+        .ol-bank-ar { font-size:10.5pt; color:#111; font-family:"Traditional Arabic","Times New Roman",serif; }
+        .ol-bank-en { font-weight:800; font-size:12pt; color:#0a1f6b; letter-spacing:.3px; }
         .ol-uae { font-weight:600; font-size:8pt; }
-        .ol-lic { font-size:8pt; font-style:italic; margin-bottom:.5mm; }
-        .ol-refline { font-size:9pt; }
+        .ol-lic { font-size:7.5pt; font-style:italic; margin-bottom:2mm; }
+        .ol-refblock { text-align:left; display:inline-block; }
+        .ol-refline { font-size:8.7pt; }
         .ol-head--bi .ol-head-left > div { line-height:1.15; }
         .ol-lic-bi { font-size:7pt; color:#333; }
         .ol-head-right--bi { text-align:right; }
@@ -335,7 +340,7 @@ export default function OfferLetterPage() {
         .ol-sign span { border-top:1px solid #000; padding-top:1mm; width:70mm; text-align:center; }
         .ol-terms-h { font-weight:800; text-decoration:underline; margin:2.5mm 0 1.5mm; }
         ol.ol-terms { margin:0; padding-left:6mm; } ol.ol-terms li { margin:0.8mm 0; text-align:justify; }
-        .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; }
+        .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; border-top:0.8px solid #555; padding-top:1.2mm; }
         .ol-foot--en { display:flex; align-items:flex-end; gap:4mm; }
         .ol-foot-pg { font-family:Georgia,serif; font-size:9pt; white-space:nowrap; }
         .ol-foot-addr { flex:1; text-align:center; line-height:1.25; }
@@ -461,6 +466,7 @@ export default function OfferLetterPage() {
               {F('LoanTenor', 'Loan Tenor (Months)')}
               {F('MonthlyInstallment', 'Monthly Installment')}
               {F('Purpose', 'Purpose')}
+              {F('LienAmount', 'Lien Amount (AED) — مبلغ وثیقهٔ توديع')}
             </>}
           </div>
           <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
@@ -496,7 +502,7 @@ export default function OfferLetterPage() {
                   </table>
                   <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
                   <div className="ol-sec">{f.RequiredSecurities}</div>
-                  <div className="ol-sign">
+                  <div className="ol-sign" style={{ marginTop: 'auto' }}>
                     <span>Head of Credit Facility Department</span>
                     <span>Customer Signature with Stamp</span>
                   </div>
@@ -510,7 +516,7 @@ export default function OfferLetterPage() {
                   <Letterhead mode="english" />
                   <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
                   <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
-                  <div className="ol-sign"><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
+                  <div className="ol-sign" style={{ marginTop: 'auto' }}><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
                 </div>
                 <PageFooter mode="english" n={2} total={3} />
               </div>
@@ -531,7 +537,7 @@ export default function OfferLetterPage() {
                   <div className="ol-p">Encl: Duplicate of this letter accepted and agreed by</div>
                   <div>{isCorporate ? 'M/s' : 'Mr.'}: {f.CompanyName || '..............................................................'}</div>
                   <div>Date: {f.AcceptanceDate || '............................'}</div>
-                  <div className="ol-sign" style={{ marginTop: '8mm' }}>
+                  <div className="ol-sign" style={{ marginTop: 'auto' }}>
                     <span>Authorized Signature(s)</span>
                     {isCorporate ? <span>Company Stamp</span> : <span>&nbsp;</span>}
                   </div>
@@ -598,8 +604,8 @@ export default function OfferLetterPage() {
                       <tr key={i}>
                         <td className="pl-num">{s.n}</td>
                         <td className="pl-chk"><CheckBox on={!!checks[i]} onClick={() => toggleCheck(i)} /></td>
-                        <td className="pl-val">{s.en}</td>
-                        <td className="pl-val pl-ar" dir="rtl">{s.ar}</td>
+                        <td className="pl-val">{s.en.replace('250,000', f.LienAmount || '________')}</td>
+                        <td className="pl-val pl-ar" dir="rtl">{s.ar.replace('250,000', f.LienAmount || '________')}</td>
                       </tr>
                     ))}
                   </tbody></table>
@@ -633,7 +639,7 @@ export default function OfferLetterPage() {
                   <div className="pl-close"><div>{PL.terms[12].en}</div><div className="ar" dir="rtl">{PL.terms[12].ar}</div></div>
                   <Row2 en={PL.closing.yoursSincerely.en} ar={PL.closing.yoursSincerely.ar} />
                   <Row2 en={PL.closing.forBank.en} ar={PL.closing.forBank.ar} />
-                  <div className="ol-sign" style={{ marginTop: '10mm' }}>
+                  <div className="ol-sign" style={{ marginTop: 'auto' }}>
                     <span>{PL.closing.headDept.en}<br />{PL.closing.signStamp.en}</span>
                     <span dir="rtl">{PL.closing.headDept.ar}<br />{PL.closing.signStamp.ar}</span>
                   </div>
@@ -649,7 +655,7 @@ export default function OfferLetterPage() {
                   <table className="pl-tbl"><tbody>
                     <tr><td className="pl-val">{PL.declaration.en}</td><td className="pl-val pl-ar" dir="rtl">{PL.declaration.ar}</td></tr>
                   </tbody></table>
-                  <table className="pl-tbl"><tbody>
+                  <table className="pl-tbl" style={{ marginTop: 'auto' }}><tbody>
                     <tr><td className="pl-lbl">{PL.borrowerSign[0].en}</td><td className="pl-val">&nbsp;</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[0].ar}</td></tr>
                     <tr><td className="pl-lbl">{PL.borrowerSign[1].en}</td><td className="pl-val">{f.CompanyName}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[1].ar}</td></tr>
                     <tr><td className="pl-lbl">{PL.borrowerSign[2].en}</td><td className="pl-val">{f.AcceptanceDate}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[2].ar}</td></tr>
