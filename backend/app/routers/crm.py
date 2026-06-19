@@ -659,14 +659,37 @@ async def offer_letter_data(
             select(Facility).where(Facility.customer_id == cust.id, Facility.is_deleted == False)
         )
     ).scalars().all()
+
+    def _ftv(f):
+        return str(getattr(f.facility_type, "value", f.facility_type) or "").lower()
+
     fac = max(facs, key=lambda f: float(f.amount or 0), default=None) if facs else None
+    # For a personal loan we want the LOAN facility specifically (not just the
+    # biggest), so the loan amount / tenor / installment prefill is correct.
+    loan_fac = next((f for f in facs if _ftv(f) == "loan"), None) or fac
     ftype = (getattr(fac.facility_type, "value", fac.facility_type) if fac else "") or ""
     rate = None
     if fac is not None and fac.interest_rate is not None:
         rate = f"{float(fac.interest_rate):g}% p.a."
+    loan_rate = None
+    if loan_fac is not None and loan_fac.interest_rate is not None:
+        loan_rate = f"{float(loan_fac.interest_rate):g}% p.a."
+
+    acct_type = str(getattr(cust.account_type, "value", cust.account_type) or "retail").lower()
+    is_corp = acct_type in ("corporate", "sme")
+    # Salutation: an explicitly stored one wins; otherwise derive from the type.
+    salutation = pget("Salutation", "Title", "Prefix") or ("M/S." if is_corp else "Mr.")
+
+    # Any previously-saved Offer Letter snapshot (ref serial, dates, checkbox
+    # state, edited values) so the form restores exactly what was last saved.
+    saved = pdata.get("offer_letter") if isinstance(pdata.get("offer_letter"), dict) else {}
+
     return {
         "CompanyName": cust.name or "",
+        "CompanyNameAr": getattr(cust, "name_ar", "") or "",
         "AccountNumber": acc,
+        "AccountType": acct_type,
+        "Salutation": salutation,
         "POBox": pget("POBox", "PO Box", "P.O.Box", "POBOX", "Po Box"),
         "CityCountry": pget("CityCountry", "City", "Emirate") or "DUBAI - U.A.E.",
         "Branch": cust.branch or "",
@@ -677,8 +700,84 @@ async def offer_letter_data(
         "InterestRate": rate or "",
         "ExpiryDate": (str(fac.expiry_date) if fac and getattr(fac, "expiry_date", None) else ""),
         "ValidUntil": (str(fac.expiry_date) if fac and getattr(fac, "expiry_date", None) else ""),
+        # Loan-specific prefill (for the bilingual Personal Loan template)
+        "LoanAmount": (f"{float(loan_fac.amount):,.0f}" if loan_fac and loan_fac.amount else ""),
+        "LoanInterestRate": loan_rate or "",
+        "LoanTenor": (str(loan_fac.tenor_months) if loan_fac and loan_fac.tenor_months else ""),
+        "MonthlyInstallment": (str(loan_fac.installments) if loan_fac and loan_fac.installments else ""),
+        "Purpose": (str(loan_fac.purpose) if loan_fac and loan_fac.purpose else ""),
         "facilities_count": len(facs),
+        "Saved": saved,
     }
+
+
+class OfferLetterSave(BaseModel):
+    """Free-form Offer Letter snapshot to persist on the customer's profile so the
+    same values (P.O. Box, salutation, ref, terms, checkbox state) are reusable
+    by other forms/reports. Stored in CustomerProfile.data_json."""
+
+    POBox: Optional[str] = None
+    CityCountry: Optional[str] = None
+    Salutation: Optional[str] = None
+    Branch: Optional[str] = None
+    snapshot: dict = Field(default_factory=dict)
+
+
+@router.post("/offer-letter-data/{account_no}")
+async def save_offer_letter_data(
+    account_no: str,
+    payload: OfferLetterSave,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Two-way sync: persist the Offer Letter's reusable fields into the customer's
+    shared profile record (data_json), creating the profile row if missing. The
+    P.O. Box / City / Salutation are lifted to top-level keys so every other form
+    reads them; the full snapshot is kept under ``offer_letter``."""
+    acc = (account_no or "").strip()
+    cust = (
+        await db.execute(
+            select(Customer).where(Customer.account_no == acc, Customer.is_deleted == False)
+        )
+    ).scalar_one_or_none()
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    cp = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    if cp is None:
+        cp = CustomerProfile(account_no=acc, customer_name=cust.name)
+        db.add(cp)
+
+    try:
+        data = json.loads(cp.data_json) if cp.data_json else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+
+    # Lift the reusable identity fields to top level (only when non-empty).
+    if payload.POBox:
+        data["POBox"] = payload.POBox.strip()
+    if payload.CityCountry:
+        data["CityCountry"] = payload.CityCountry.strip()
+    if payload.Salutation:
+        data["Salutation"] = payload.Salutation.strip()
+    # Keep the full snapshot for an exact restore next time.
+    if payload.snapshot:
+        data["offer_letter"] = payload.snapshot
+
+    cp.data_json = json.dumps(data, ensure_ascii=False)
+    cp.last_updated = date.today().isoformat()
+    cp.updated_by = getattr(user, "username", "") or ""
+
+    # A typed branch can also refresh the customer record (so other views agree).
+    if payload.Branch and not cust.branch:
+        cust.branch = payload.Branch.strip()[:100]
+
+    await db.commit()
+    return {"ok": True, "account_no": acc, "saved_keys": sorted(data.keys())}
 
 
 # ---------------------------------------------------------------------------
