@@ -356,8 +356,16 @@ export const crmApi = {
     const { data } = await api.get(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`)
     return data
   },
-  async saveOfferLetterData(accountNo: string, body: { POBox?: string; CityCountry?: string; Salutation?: string; Branch?: string; snapshot?: Record<string, any> }): Promise<any> {
+  async saveOfferLetterData(accountNo: string, body: { POBox?: string; CityCountry?: string; Salutation?: string; Branch?: string; snapshot?: Record<string, any>; snapshot_key?: string; fields?: Record<string, any> }): Promise<any> {
     const { data } = await api.post(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  // Parse a filled committee-approval draft (.docx) → prefill fields + persist to DB.
+  async extractDraft(accountNo: string, file: File): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    if (accountNo) form.append('account_no', accountNo)
+    const { data } = await api.post('/api/crm/extract-draft', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     return data
   },
 

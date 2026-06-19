@@ -708,6 +708,9 @@ async def offer_letter_data(
         "Purpose": (str(loan_fac.purpose) if loan_fac and loan_fac.purpose else ""),
         "facilities_count": len(facs),
         "Saved": saved,
+        # Full parsed profile blob (extracted draft facts live here) so the
+        # sanction/مصوبه form can prefill from what was saved earlier.
+        "ProfileData": pdata,
     }
 
 
@@ -721,6 +724,8 @@ class OfferLetterSave(BaseModel):
     Salutation: Optional[str] = None
     Branch: Optional[str] = None
     snapshot: dict = Field(default_factory=dict)
+    snapshot_key: str = "offer_letter"
+    fields: dict = Field(default_factory=dict)  # extra top-level scalar facts (deduped by key)
 
 
 @router.post("/offer-letter-data/{account_no}")
@@ -764,11 +769,26 @@ async def save_offer_letter_data(
         data["CityCountry"] = payload.CityCountry.strip()
     if payload.Salutation:
         data["Salutation"] = payload.Salutation.strip()
-    # Keep the full snapshot for an exact restore next time.
+    # Arbitrary scalar facts (e.g. from the sanction form) merged top-level →
+    # keyed, so re-saving overwrites in place (no duplicates) and other forms
+    # can read them.
+    for k, v in (payload.fields or {}).items():
+        if v not in (None, ""):
+            data[str(k)] = v
+    # Keep the full snapshot for an exact restore next time, under its own key
+    # (offer_letter / sanction / …) so different forms never clobber each other.
     if payload.snapshot:
-        data["offer_letter"] = payload.snapshot
+        data[payload.snapshot_key or "offer_letter"] = payload.snapshot
 
     cp.data_json = json.dumps(data, ensure_ascii=False)
+    # Mirror KYC-relevant facts to their structured columns when provided.
+    _f = payload.fields or {}
+    if _f.get("trade_license_no"):
+        cp.trade_license_no = str(_f["trade_license_no"])[:80]
+    if _f.get("trade_license_expiry"):
+        cp.trade_license_expiry = str(_f["trade_license_expiry"])[:30]
+    if _f.get("business_type") and not (cp.business_type or "").strip():
+        cp.business_type = str(_f["business_type"])[:200]
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
 
@@ -778,6 +798,142 @@ async def save_offer_letter_data(
 
     await db.commit()
     return {"ok": True, "account_no": acc, "saved_keys": sorted(data.keys())}
+
+
+@router.post("/extract-draft")
+async def extract_draft(
+    file: UploadFile = File(...),
+    account_no: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Parse a filled credit-committee approval DRAFT (.docx) and (a) return the
+    fields that prefill the Offer Letter, and (b) persist everything extracted to
+    the customer's record — idempotently, so re-extracting or later printing the
+    Offer Letter never creates duplicates:
+      • scalar facts (trade license, AECB score, address, proposed terms, …) are
+        keyed entries in the profile data_json / KYC columns → overwrite in place;
+      • guarantors are upserted by (account, guarantor account / name).
+    """
+    from app.services.draft_extract import extract_from_docx
+    from app.services.customer_link import ensure_customer
+    from app.models.customer import AccountType
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if not (file.filename or "").lower().endswith((".docx",)):
+        raise HTTPException(status_code=415, detail="Please upload a Word .docx draft")
+    try:
+        parsed = extract_from_docx(raw)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=422, detail=f"Could not read the draft: {exc}")
+
+    acc = (account_no or "").strip() or (parsed.get("account_no") or "").strip()
+    if not acc:
+        raise HTTPException(status_code=422, detail="No account number found in the draft.")
+
+    offer = parsed.get("offer", {})
+    pf = parsed.get("profile", {})
+
+    customer = await ensure_customer(db, acc, offer.get("CompanyName"))
+    if customer is not None:
+        at = offer.get("AccountType")
+        if at in ("retail", "corporate", "sme"):
+            customer.account_type = AccountType(at)
+        if pf.get("address") and not (customer.address or "").strip():
+            customer.address = pf["address"]
+        if parsed.get("branch_code") and not (customer.branch or "").strip():
+            customer.branch = parsed["branch_code"][:100]
+
+    cp = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    if cp is None:
+        cp = CustomerProfile(account_no=acc, customer_name=offer.get("CompanyName"))
+        db.add(cp)
+    try:
+        data = json.loads(cp.data_json) if cp.data_json else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    # Merge extracted scalar facts (keyed → no duplicates on re-extract).
+    for k, v in pf.items():
+        if v:
+            data[k] = v
+    data["draft_extracted_at"] = datetime.now().isoformat(timespec="seconds")
+    cp.data_json = json.dumps(data, ensure_ascii=False)
+    # Mirror the KYC-relevant facts to their structured columns.
+    if pf.get("trade_license_no"):
+        cp.trade_license_no = pf["trade_license_no"][:80]
+    if pf.get("trade_license_expiry"):
+        cp.trade_license_expiry = pf["trade_license_expiry"][:30]
+    if pf.get("business_type") and not (cp.business_type or "").strip():
+        cp.business_type = pf["business_type"][:200]
+    cp.last_updated = date.today().isoformat()
+    cp.updated_by = getattr(user, "username", "") or ""
+
+    # Guarantors — upsert (dedupe), never scatter duplicates.
+    g_added = g_updated = 0
+    for g in parsed.get("guarantors", []):
+        gname = (g.get("name") or "").strip()
+        gacc = (g.get("account") or "").strip()
+        if not gname:
+            continue
+        if gacc:
+            await ensure_customer(db, gacc, gname)
+        row = None
+        if gacc:
+            row = (
+                await db.execute(
+                    select(Guarantor).where(
+                        Guarantor.account_no == acc,
+                        Guarantor.guarantor_account == gacc,
+                        Guarantor.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            row = (
+                await db.execute(
+                    select(Guarantor).where(
+                        Guarantor.account_no == acc,
+                        Guarantor.guarantor_name == gname,
+                        Guarantor.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            gid = f"G-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
+            row = Guarantor(id=gid, account_no=acc, date_added=date.today().isoformat(),
+                            created_by=getattr(user, "username", "") or "")
+            db.add(row)
+            g_added += 1
+        else:
+            g_updated += 1
+        row.guarantor_name = gname[:200]
+        if gacc:
+            row.guarantor_account = gacc[:50]
+        if g.get("branch"):
+            row.branch = g["branch"][:20]
+        if customer is not None and getattr(customer, "name", None) and not row.customer_name:
+            row.customer_name = customer.name
+
+    try:
+        await recompute_completeness(db, acc)
+    except Exception:
+        pass
+    await db.commit()
+    return {
+        "ok": True,
+        "account_no": acc,
+        "account_type": offer.get("AccountType", ""),
+        "offer": offer,
+        "profile_keys": sorted([k for k in pf.keys() if pf[k]]),
+        "guarantors_added": g_added,
+        "guarantors_updated": g_updated,
+    }
 
 
 # ---------------------------------------------------------------------------
