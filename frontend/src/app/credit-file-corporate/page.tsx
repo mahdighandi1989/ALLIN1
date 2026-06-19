@@ -211,10 +211,10 @@ export default function CreditFileCorporatePage() {
         .cf-branch { border: 1px solid #000; padding: 4px 8px; font-weight: 700; margin-bottom: 6px; }
         .cf-branch input { border: 0; font-weight: 700; font-size: 11px; }
         table.cf { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-        table.cf td, table.cf th { border: 1px solid #000; padding: 2px 5px; font-size: 10px; vertical-align: middle; }
-        table.cf .band { background: #d1d5db; font-weight: 700; font-size: 11px; text-align: left; padding: 3px 6px; }
-        table.cf .hdr td { background: #eef0f3; font-weight: 700; text-align: center; }
-        table.cf td.sn { text-align: center; width: 30px; } table.cf td.desc { font-weight: 600; }
+        table.cf td, table.cf th { border: 1px solid #000; padding: 2px 5px; font-size: 10px; vertical-align: middle; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        table.cf .band { background: #c7ccd3; font-weight: 700; font-size: 11px; text-align: left; padding: 3px 6px; }
+        table.cf .hdr td { background: #dde1e7; font-weight: 700; text-align: center; }
+        table.cf td.sn { text-align: center; width: 30px; background: #eef1f5; } table.cf td.desc { font-weight: 600; background: #eef1f5; }
         table.cf input { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: #eaf3ff; }
         table.cf input:focus { outline: 1px solid #2563eb; }
         .tools { width: 1%; white-space: nowrap; background: #f8fafc; }
