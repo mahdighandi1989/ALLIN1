@@ -66,7 +66,7 @@ const SECURITIES_CORPORATE =
 type Fields = Record<string, string>
 const INITIAL: Fields = {
   Prefix: 'M/S.', CompanyName: '', AccountNumber: '', POBox: '', CityCountry: 'DUBAI - U.A.E.',
-  RefNumber: '', IssueDate: today, RequestDate: '', ExpiryDate: '12 Months',
+  Branch: '', RefNumber: '', IssueDate: today, RequestDate: '', ExpiryDate: '12 Months',
   RequiredSecurities: SECURITIES_CORPORATE, Remarks: '', FacilityType: 'Overdraft',
   CreditLimit: '', InterestRate: '', ValidUntil: '', ProcessingFee: '1000',
   AccountSuffix: '', AcceptanceDate: '',
@@ -77,16 +77,37 @@ const INITIAL: Fields = {
 const LOAN_TYPES = new Set(['loan'])
 const isLoanFac = (ft: string) => LOAN_TYPES.has(String(ft || '').toLowerCase())
 
+// Branch code → name, so the bilingual header table reads e.g. "AJMAN - 2900".
+const BRANCH_NAMES: Record<string, string> = {
+  '2533': 'BUR DUBAI', '2690': 'ABU DHABI', '2776': 'SHARJAH', '2900': 'AJMAN',
+  '4350': 'SHEIKH ZAYED ROAD', '2624': 'AL MAKTOUM', '2898': 'MURSHID BAZAR',
+  '1741': 'AL AIN', '3535': 'HEAD OFFICE',
+}
+const fmtBranch = (code?: string) => {
+  const c = String(code || '').trim()
+  if (!c) return ''
+  return BRANCH_NAMES[c] ? `${BRANCH_NAMES[c]} - ${c}` : c
+}
+
+// Footer address (English template only) — verbatim from the scanned form.
+const FOOT_AR = 'ص.ب : ٤١٨٢ ، دبي – إ.ع.م.  تليفون : ٦٠٣٥٥٥٥ ٩٧١٤+  فاكس : ٢٢١٥٩٦١ ٩٧١٤+'
+const FOOT_EN = 'P.O. BOX: 4182, DUBAI – U.A.E.  TEL: +9714-6035555, FAX: +9714-2215961'
+const FOOT_SWIFT = 'SWIFT CODE : BSIRAEAD'
+
 export default function OfferLetterPage() {
   const [f, setF] = useState<Fields>(INITIAL)
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
   const [isCorporate, setIsCorporate] = useState(true)
   const [tpl, setTpl] = useState<'auto' | 'english' | 'personal'>('auto')
-  const [autoTpl, setAutoTpl] = useState<'english' | 'personal'>('english')
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
 
+  // Auto template: a retail account with a (personal) LOAN → bilingual letter;
+  // everything else → English. Recomputes live as the loaded account type or the
+  // Facility Type typed in the inputs changes, so the form shifts automatically.
+  const isLoanType = /loan/i.test(f.FacilityType) && !/overdraft|over\s*draft/i.test(f.FacilityType)
+  const autoTpl: 'english' | 'personal' = !isCorporate && isLoanType ? 'personal' : 'english'
   const effectiveTpl = tpl === 'auto' ? autoTpl : tpl
 
   const loadAccount = async () => {
@@ -103,14 +124,14 @@ export default function OfferLetterPage() {
       const loanFac = facs.find((x) => isLoanFac(x.facility_type))
       const fac = loanFac || facs[0]
       setIsCorporate(corp)
-      setAutoTpl(!corp && loanFac ? 'personal' : 'english')
       setF((s) => ({
         ...s,
         Prefix: corp ? 'M/S.' : 'Mr.',
         CompanyName: c.name || s.CompanyName,
         AccountNumber: c.account_no || a,
         POBox: pdata.po_box || pdata.POBox || s.POBox,
-        CityCountry: (c.branch ? `${c.branch} - U.A.E.` : s.CityCountry),
+        Branch: fmtBranch(c.branch) || s.Branch,
+        CityCountry: (c.branch ? `${BRANCH_NAMES[String(c.branch).trim()] || c.branch} - U.A.E.` : s.CityCountry),
         RequiredSecurities: corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL,
         FacilityType: fac?.facility_type ? facTypeLabel(fac.facility_type) : s.FacilityType,
         CreditLimit: fac?.amount != null ? Number(fac.amount).toLocaleString() + '/-' : s.CreditLimit,
@@ -136,26 +157,65 @@ export default function OfferLetterPage() {
     </label>
   )
 
-  const Letterhead = () => (
-    <div className="ol-head">
-      <div className="ol-head-left">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={BANK_LOGO} alt="Bank Saderat Iran" className="ol-logo" />
-        <div>
-          <div className="ol-bank">BANK SADERAT IRAN <span style={{ fontWeight: 400, fontSize: '8pt' }}>s.a.e</span></div>
-          <div className="ol-bank-sub">U.A.E. &nbsp;|&nbsp; Licensed by the Central Bank of the U.A.E.</div>
-          <div className="ol-bank-sub">Credit Facility Department</div>
+  // Letterhead differs per form type (verbatim from the scanned samples):
+  //   english   → logo + "REGIONAL OFFICE" (left); bank name + "Licensed by CBUAE" + REF/DATE (right)
+  //   bilingual → logo + bank name (left); "BSI-ROL-V002-2024" + 3-row Date/Branch/Ref table (right)
+  const Letterhead = ({ mode }: { mode: 'english' | 'bilingual' }) =>
+    mode === 'english' ? (
+      <div className="ol-head ol-head--en">
+        <div className="ol-head-left">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BANK_LOGO} alt="Bank Saderat Iran" className="ol-logo" />
+          <div className="ol-ro">
+            <div className="ol-ro-ar" dir="rtl">المكتب الاقليمي</div>
+            <div className="ol-ro-en">REGIONAL OFFICE</div>
+          </div>
+        </div>
+        <div className="ol-head-right ol-head-right--en">
+          <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
+          <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">U.A.E</span></div>
+          <div className="ol-lic">&quot;Licensed by CBUAE&quot;</div>
+          <div className="ol-refline">REF: {f.RefNumber || '____________'}</div>
+          <div className="ol-refline">DATE: {f.IssueDate || '____________'}</div>
         </div>
       </div>
-      <div className="ol-head-right">
-        <div><b>Offer Letter No:</b> {f.RefNumber || '____________'}</div>
-        <div><b>Date:</b> {f.IssueDate || '____________'}</div>
+    ) : (
+      <div className="ol-head ol-head--bi">
+        <div className="ol-head-left">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BANK_LOGO} alt="Bank Saderat Iran" className="ol-logo" />
+          <div>
+            <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
+            <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">s.a.e</span></div>
+            <div className="ol-lic-bi">Licensed by the Central Bank of the U.A.E</div>
+          </div>
+        </div>
+        <div className="ol-head-right ol-head-right--bi">
+          <div className="ol-bsi">BSI-ROL-V002-2024</div>
+          <table className="ol-hdr-tbl"><tbody>
+            <tr><td className="hdr-en">Date</td><td className="hdr-v">{f.IssueDate || '—'}</td><td className="hdr-ar" dir="rtl">التاريخ</td></tr>
+            <tr><td className="hdr-en">Branch Name &amp; Code</td><td className="hdr-v">{f.Branch || '—'}</td><td className="hdr-ar" dir="rtl">اسم و رقم الفرع</td></tr>
+            <tr><td className="hdr-en">Offer Letter Ref #</td><td className="hdr-v">{f.RefNumber || '—'}</td><td className="hdr-ar" dir="rtl">رقم اشعار القرض</td></tr>
+          </tbody></table>
+        </div>
       </div>
-    </div>
-  )
-  const FootAddr = ({ p }: { p: string }) => (
-    <div className="ol-foot">P.O. Box {f.POBox || '—'}, DUBAI – U.A.E. &nbsp;|&nbsp; SWIFT: BSIRAEAD &nbsp;|&nbsp; Bank Saderat Iran — Credit Facility Department &nbsp;|&nbsp; {p}</div>
-  )
+    )
+
+  // Footer differs per form type: english carries the bank address + SWIFT with a
+  // "N | Page" marker; bilingual carries only "Page N of M".
+  const PageFooter = ({ mode, n, total }: { mode: 'english' | 'bilingual'; n: number; total: number }) =>
+    mode === 'english' ? (
+      <div className="ol-foot ol-foot--en">
+        <div className="ol-foot-pg">{n} | Page</div>
+        <div className="ol-foot-addr">
+          <div className="ol-foot-ar" dir="rtl">{FOOT_AR}</div>
+          <div className="ol-foot-en">{FOOT_EN}</div>
+          <div className="ol-foot-swift">{FOOT_SWIFT}</div>
+        </div>
+      </div>
+    ) : (
+      <div className="ol-foot ol-foot--bi">Page {n} of {total}</div>
+    )
 
   // Bilingual two-column row (EN left / AR right)
   const Bi = ({ en, ar, n }: { en: string; ar: string; n?: number }) => (
@@ -172,12 +232,28 @@ export default function OfferLetterPage() {
         .ol-page { box-sizing: border-box; width: 210mm; min-height: 297mm; background:#fff; margin:0 auto 8mm;
                    padding: 9mm 13mm 13mm; color:#111; font-family: "Times New Roman", Georgia, serif;
                    font-size: 9.3pt; line-height: 1.2; box-shadow: 0 1px 6px rgba(0,0,0,.12); position:relative; }
-        .ol-head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #0a3d91; padding-bottom:2mm; }
+        .ol-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:2mm; }
+        .ol-head--en { margin-bottom:1mm; }
         .ol-head-left { display:flex; gap:3mm; align-items:center; }
-        .ol-logo { height:14mm; width:auto; object-fit:contain; }
-        .ol-bank { font-family: Arial, sans-serif; font-weight:800; color:#0a3d91; font-size:14pt; letter-spacing:.5px; }
-        .ol-bank-sub { font-family: Arial, sans-serif; font-size:7pt; color:#444; }
-        .ol-head-right { font-family: Arial, sans-serif; font-size:8.5pt; text-align:right; white-space:nowrap; }
+        .ol-logo { height:13mm; width:auto; object-fit:contain; }
+        .ol-ro { text-align:center; }
+        .ol-ro-ar { font-size:8pt; color:#222; }
+        .ol-ro-en { font-family:Arial, sans-serif; font-size:8pt; letter-spacing:1px; color:#222; }
+        .ol-head-right--en { text-align:right; font-family:Arial, sans-serif; }
+        .ol-bank-ar { font-size:11pt; color:#111; font-family:"Traditional Arabic","Times New Roman",serif; }
+        .ol-bank-en { font-weight:800; font-size:12.5pt; color:#0a1f6b; letter-spacing:.3px; }
+        .ol-uae { font-weight:600; font-size:8pt; }
+        .ol-lic { font-size:8pt; font-style:italic; margin-bottom:.5mm; }
+        .ol-refline { font-size:9pt; }
+        .ol-head--bi .ol-head-left > div { line-height:1.15; }
+        .ol-lic-bi { font-size:7pt; color:#333; }
+        .ol-head-right--bi { text-align:right; }
+        .ol-bsi { font-size:7.5pt; font-family:Arial, sans-serif; margin-bottom:1mm; }
+        .ol-hdr-tbl { border-collapse:collapse; font-size:7.5pt; margin-left:auto; }
+        .ol-hdr-tbl td { border:1px solid #000; padding:0.6mm 1.5mm; white-space:nowrap; }
+        .ol-hdr-tbl .hdr-en { text-align:left; font-family:Arial, sans-serif; }
+        .ol-hdr-tbl .hdr-v { text-align:center; font-weight:700; min-width:24mm; }
+        .ol-hdr-tbl .hdr-ar { text-align:right; }
         .ol-title { text-align:center; font-weight:800; font-size:13pt; text-decoration:underline; margin:3mm 0 2mm; letter-spacing:1px; }
         .ol-title-ar { text-align:center; font-weight:800; font-size:12pt; margin:-1mm 0 2mm; }
         .ol-rcpt { font-weight:700; }
@@ -190,7 +266,16 @@ export default function OfferLetterPage() {
         .ol-sign span { border-top:1px solid #000; padding-top:1mm; width:70mm; text-align:center; }
         .ol-terms-h { font-weight:800; text-decoration:underline; margin:2.5mm 0 1.5mm; }
         ol.ol-terms { margin:0; padding-left:6mm; } ol.ol-terms li { margin:0.8mm 0; text-align:justify; }
-        .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; text-align:center; font-size:7pt; color:#666; font-family:Arial,sans-serif; border-top:1px solid #ccc; padding-top:1mm; }
+        .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; }
+        .ol-foot--en { display:flex; align-items:flex-end; gap:4mm; }
+        .ol-foot-pg { font-family:Georgia,serif; font-size:9pt; white-space:nowrap; }
+        .ol-foot-addr { flex:1; text-align:center; line-height:1.25; }
+        .ol-foot-ar { font-size:8pt; color:#111; }
+        .ol-foot-en { font-style:italic; font-size:8pt; color:#111; }
+        .ol-foot-swift { font-style:italic; font-size:8pt; color:#111; }
+        .ol-foot--bi { text-align:right; font-family:Arial, sans-serif; font-weight:700; font-size:8.5pt; bottom:7mm; }
+        /* bilingual pages are framed by a full-page border, like the scanned form */
+        .ol-page--bordered::before { content:''; position:absolute; top:5mm; left:6mm; right:6mm; bottom:5mm; border:1px solid #111; pointer-events:none; }
         .ol-dots { letter-spacing:1px; }
         /* bilingual */
         .bi { width:100%; border-collapse:collapse; margin:2mm 0; }
@@ -200,6 +285,7 @@ export default function OfferLetterPage() {
         .bi .bi-ar { width:48%; text-align:right; font-family:"Traditional Arabic","Times New Roman",serif; font-size:9.5pt; }
         .bi-row2 { display:flex; justify-content:space-between; gap:6mm; margin:1.2mm 0; }
         .bi-row2 .ar { direction:rtl; text-align:right; font-size:10pt; }
+        .bi-conf { text-align:right; font-size:9pt; }
 
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -252,7 +338,8 @@ export default function OfferLetterPage() {
             <F k="AccountNumber" label="Account Number" />
             <F k="POBox" label="P.O. Box" />
             <F k="CityCountry" label="City / Country" />
-            <F k="RefNumber" label="Offer Letter No" />
+            <F k="Branch" label="Branch Name & Code" />
+            <F k="RefNumber" label="Offer Letter Ref #" />
             <F k="IssueDate" label="Issue Date" />
             <F k="RequestDate" label="Request Date" />
             <F k="FacilityType" label="Facility Type" />
@@ -282,7 +369,7 @@ export default function OfferLetterPage() {
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
               <div className="ol-page">
-                <Letterhead />
+                <Letterhead mode="english" />
                 <div className="ol-title">OFFER LETTER</div>
                 <div className="ol-rcpt">{f.Prefix} {f.CompanyName || '________________'}</div>
                 <div className="ol-rcpt">ACCOUNT NO: {f.AccountNumber || '____________'}</div>
@@ -306,21 +393,21 @@ export default function OfferLetterPage() {
                   <span>Head of Credit Facility Department</span>
                   <span>Customer Signature with Stamp</span>
                 </div>
-                <FootAddr p="Page 1 of 3" />
+                <PageFooter mode="english" n={1} total={3} />
               </div>
 
               {/* ===== ENGLISH PAGE 2 ===== */}
               <div className="ol-page">
-                <Letterhead />
+                <Letterhead mode="english" />
                 <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
                 <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
                 <div className="ol-sign"><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
-                <FootAddr p="Page 2 of 3" />
+                <PageFooter mode="english" n={2} total={3} />
               </div>
 
               {/* ===== ENGLISH PAGE 3 ===== */}
               <div className="ol-page">
-                <Letterhead />
+                <Letterhead mode="english" />
                 <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
                 <div className="ol-p">Please read the content of this letter and if you agree kindly sign the original copy and return it to us as confirmation for our records not later than one month from the date of this letter; if not accepted it will be deemed to have lapsed.</div>
                 <div className="ol-p">We trust that you will find the above limits and its terms to your satisfaction and will utilize the same for our mutual benefits. While assuring you of our best service at all times, we appreciate your kind co-operation and prompt reply.</div>
@@ -337,64 +424,83 @@ export default function OfferLetterPage() {
                   <span>Authorized Signature(s)</span>
                   {isCorporate ? <span>Company Stamp</span> : <span>&nbsp;</span>}
                 </div>
-                <FootAddr p="Page 3 of 3" />
+                <PageFooter mode="english" n={3} total={3} />
               </div>
             </>
           ) : (
-            /* ================= BILINGUAL PERSONAL LOAN ================= */
-            <div className="ol-page">
-              <Letterhead />
-              <div className="bi-row2"><div style={{ fontWeight: 700 }}>{PL.header.confidential.en}</div><div className="ar" style={{ fontWeight: 700 }}>{PL.header.confidential.ar}</div></div>
-              <div className="ol-title">{PL.header.title.en}</div>
-              <div className="ol-title-ar" dir="rtl">{PL.header.title.ar}</div>
-              <div className="ol-rcpt">{f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{f.CompanyName || '________________'}</div>
-              <div>P.O. Box: {f.POBox || '______'}</div>
-              <div>{f.CityCountry}</div>
-              <div className="bi-row2"><div><b>{PL.subject.en}</b> {f.SubjectDate || '__________'}</div><div className="ar"><b>{PL.subject.ar}</b></div></div>
-              <div className="bi-row2"><div>{PL.dear.en}</div><div className="ar">{PL.dear.ar}</div></div>
-              <div className="ol-p">{PL.intro.en}</div>
-              <div className="ol-p ar" dir="rtl" style={{ textAlign: 'right' }}>{PL.intro.ar}</div>
+            /* ===== BILINGUAL PERSONAL LOAN (4 bordered pages, like the scan) ===== */
+            <>
+              {/* ===== BILINGUAL PAGE 1 — recipient, loan details, securities ===== */}
+              <div className="ol-page ol-page--bordered">
+                <Letterhead mode="bilingual" />
+                <div className="bi-conf"><b>{PL.header.confidential.en}</b></div>
+                <div className="bi-conf" dir="rtl"><b>{PL.header.confidential.ar}</b></div>
+                <div className="ol-title">{PL.header.title.en}</div>
+                <div className="ol-title-ar" dir="rtl">{PL.header.title.ar}</div>
+                <div className="ol-rcpt">{f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{f.CompanyName || '________________'}</div>
+                <div>P.O. Box: {f.POBox || '______'}</div>
+                <div>{f.CityCountry}</div>
+                <div className="bi-row2"><div><b>{PL.subject.en}</b> {f.SubjectDate || '__________'}</div><div className="ar"><b>{PL.subject.ar}</b></div></div>
+                <div className="bi-row2"><div>{PL.dear.en}</div><div className="ar">{PL.dear.ar}</div></div>
+                <div className="ol-p">{PL.intro.en}</div>
+                <div className="ol-p ar" dir="rtl" style={{ textAlign: 'right' }}>{PL.intro.ar}</div>
 
-              {/* Details of Loan */}
-              <table className="bi"><tbody>
-                <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.detailsTitle.en} / {PL.detailsTitle.ar}</td></tr>
-                <Bi en={`${PL.labels.accountNumber?.en || 'Account Number'} : ${f.AccountNumber || '—'}`} ar={PL.labels.accountNumber?.ar || ''} />
-                <Bi en={`${PL.labels.loanAmount?.en || 'Loan Amount (AED)'} : ${f.LoanAmount || '—'}`} ar={PL.labels.loanAmount?.ar || ''} />
-                <Bi en={`${PL.labels.interestRate?.en || 'Interest Rate'} : ${f.InterestRate || '—'}`} ar={PL.labels.interestRate?.ar || ''} />
-                <Bi en={`${PL.labels.tenor?.en || 'Loan Tenor (Months)'} : ${f.LoanTenor || '—'}`} ar={PL.labels.tenor?.ar || ''} />
-                <Bi en={`${PL.labels.installment?.en || 'Monthly Installment'} : ${f.MonthlyInstallment || '—'}`} ar={PL.labels.installment?.ar || ''} />
-                <Bi en={`${PL.labels.purpose?.en || 'Purpose'} : ${f.Purpose || '—'}`} ar={PL.labels.purpose?.ar || ''} />
-                <Bi en={`${PL.processingFees.label.en}: ${PL.processingFees.value.en}`} ar={`${PL.processingFees.label.ar} ${PL.processingFees.value.ar}`} />
-                <Bi en={`${PL.latePayment.label.en}: ${PL.latePayment.value.en}`} ar={`${PL.latePayment.label.ar} ${PL.latePayment.value.ar}`} />
-              </tbody></table>
+                {/* Details of Loan */}
+                <table className="bi"><tbody>
+                  <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.detailsTitle.en} / {PL.detailsTitle.ar}</td></tr>
+                  <Bi en={`${PL.labels.accountNumber?.en || 'Account Number'} : ${f.AccountNumber || '—'}`} ar={PL.labels.accountNumber?.ar || ''} />
+                  <Bi en={`${PL.labels.loanAmount?.en || 'Loan Amount (AED)'} : ${f.LoanAmount || '—'}`} ar={PL.labels.loanAmount?.ar || ''} />
+                  <Bi en={`${PL.labels.interestRate?.en || 'Interest Rate'} : ${f.InterestRate || '—'}`} ar={PL.labels.interestRate?.ar || ''} />
+                  <Bi en={`${PL.labels.tenor?.en || 'Loan Tenor (Months)'} : ${f.LoanTenor || '—'}`} ar={PL.labels.tenor?.ar || ''} />
+                  <Bi en={`${PL.labels.installment?.en || 'Monthly Installment'} : ${f.MonthlyInstallment || '—'}`} ar={PL.labels.installment?.ar || ''} />
+                  <Bi en={`${PL.labels.purpose?.en || 'Purpose'} : ${f.Purpose || '—'}`} ar={PL.labels.purpose?.ar || ''} />
+                  <Bi en={`${PL.processingFees.label.en}: ${PL.processingFees.value.en}`} ar={`${PL.processingFees.label.ar} ${PL.processingFees.value.ar}`} />
+                  <Bi en={`${PL.latePayment.label.en}: ${PL.latePayment.value.en}`} ar={`${PL.latePayment.label.ar} ${PL.latePayment.value.ar}`} />
+                </tbody></table>
 
-              {/* Required Security Documents */}
-              <table className="bi"><tbody>
-                <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.securitiesTitle.en} / {PL.securitiesTitle.ar}</td></tr>
-                {PL.securities.map((s, i) => <Bi key={i} n={Number(s.n) || i + 1} en={s.en} ar={s.ar} />)}
-              </tbody></table>
-              <div className="ol-p" style={{ fontSize: '8pt' }}>{PL.securitiesNote.en} {PL.securitiesNote.ar}</div>
+                {/* Required Security Documents */}
+                <table className="bi"><tbody>
+                  <tr><td colSpan={3} style={{ background: '#e8eefc', fontWeight: 700, textAlign: 'center' }}>{PL.securitiesTitle.en} / {PL.securitiesTitle.ar}</td></tr>
+                  {PL.securities.map((s, i) => <Bi key={i} n={Number(s.n) || i + 1} en={s.en} ar={s.ar} />)}
+                </tbody></table>
+                <div className="ol-p" style={{ fontSize: '8pt' }}>{PL.securitiesNote.en} {PL.securitiesNote.ar}</div>
+                <PageFooter mode="bilingual" n={1} total={4} />
+              </div>
 
-              {/* Terms */}
-              <table className="bi"><tbody>
-                {PL.terms.map((t, i) => <Bi key={i} n={i + 1} en={t.en} ar={t.ar} />)}
-              </tbody></table>
+              {/* ===== BILINGUAL PAGE 2 — terms 1–7 ===== */}
+              <div className="ol-page ol-page--bordered">
+                <Letterhead mode="bilingual" />
+                <table className="bi"><tbody>
+                  {PL.terms.slice(0, 7).map((t, i) => <Bi key={i} n={i + 1} en={t.en} ar={t.ar} />)}
+                </tbody></table>
+                <PageFooter mode="bilingual" n={2} total={4} />
+              </div>
 
-              {/* Bank signature */}
-              <div className="bi-row2" style={{ marginTop: '4mm' }}><div>{PL.closing.yoursSincerely.en}</div><div className="ar">{PL.closing.yoursSincerely.ar}</div></div>
-              <div className="bi-row2"><div>{PL.closing.forBank.en}</div><div className="ar">{PL.closing.forBank.ar}</div></div>
-              <div className="ol-sign"><span>{PL.closing.headDept.en}</span><span dir="rtl">{PL.closing.headDept.ar}</span></div>
+              {/* ===== BILINGUAL PAGE 3 — remaining terms + bank signature ===== */}
+              <div className="ol-page ol-page--bordered">
+                <Letterhead mode="bilingual" />
+                <table className="bi"><tbody>
+                  {PL.terms.slice(7).map((t, i) => <Bi key={i} n={i + 8} en={t.en} ar={t.ar} />)}
+                </tbody></table>
+                <div className="bi-row2" style={{ marginTop: '4mm' }}><div>{PL.closing.yoursSincerely.en}</div><div className="ar">{PL.closing.yoursSincerely.ar}</div></div>
+                <div className="bi-row2"><div>{PL.closing.forBank.en}</div><div className="ar">{PL.closing.forBank.ar}</div></div>
+                <div className="ol-sign"><span>{PL.closing.headDept.en}</span><span dir="rtl">{PL.closing.headDept.ar}</span></div>
+                <PageFooter mode="bilingual" n={3} total={4} />
+              </div>
 
-              {/* Borrower declaration */}
-              <div className="bi-row2" style={{ marginTop: '4mm', fontWeight: 700 }}><div>{PL.closing.borrowerDeclaration.en}</div><div className="ar">{PL.closing.borrowerDeclaration.ar}</div></div>
-              <table className="bi"><tbody><Bi en={PL.declaration.en} ar={PL.declaration.ar} /></tbody></table>
-              <table className="bi"><tbody>
-                <Bi en={`${PL.borrowerSign[0]?.en || 'Borrower Signature'}`} ar={PL.borrowerSign[0]?.ar || ''} />
-                <Bi en={`${PL.borrowerSign[1]?.en || 'Borrower Name:'} ${f.CompanyName || ''}`} ar={PL.borrowerSign[1]?.ar || ''} />
-                <Bi en={`${PL.borrowerSign[2]?.en || 'Date:'} ${f.AcceptanceDate || ''}`} ar={PL.borrowerSign[2]?.ar || ''} />
-              </tbody></table>
-              <FootAddr p="Personal Loan" />
-            </div>
+              {/* ===== BILINGUAL PAGE 4 — borrower declaration ===== */}
+              <div className="ol-page ol-page--bordered">
+                <Letterhead mode="bilingual" />
+                <div className="bi-row2" style={{ fontWeight: 700 }}><div>{PL.closing.borrowerDeclaration.en}</div><div className="ar">{PL.closing.borrowerDeclaration.ar}</div></div>
+                <table className="bi"><tbody><Bi en={PL.declaration.en} ar={PL.declaration.ar} /></tbody></table>
+                <table className="bi"><tbody>
+                  <Bi en={`${PL.borrowerSign[0]?.en || 'Borrower Signature'}`} ar={PL.borrowerSign[0]?.ar || ''} />
+                  <Bi en={`${PL.borrowerSign[1]?.en || 'Borrower Name:'} ${f.CompanyName || ''}`} ar={PL.borrowerSign[1]?.ar || ''} />
+                  <Bi en={`${PL.borrowerSign[2]?.en || 'Date:'} ${f.AcceptanceDate || ''}`} ar={PL.borrowerSign[2]?.ar || ''} />
+                </tbody></table>
+                <PageFooter mode="bilingual" n={4} total={4} />
+              </div>
+            </>
           )}
         </div>
       </div>
