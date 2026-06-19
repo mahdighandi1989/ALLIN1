@@ -69,6 +69,28 @@ def _after(lines: list[str], *labels: str) -> str:
     return ""
 
 
+def _cell_pairs(doc) -> dict[str, str]:
+    """label → value from ADJACENT table cells (the common "Label | value"
+    layout), so we catch fields that aren't written as inline "Label: value"."""
+    d: dict[str, str] = {}
+    for t in doc.tables:
+        for row in t.rows:
+            seq: list[str] = []
+            prev = None
+            for c in row.cells:
+                tx = c.text.strip()
+                if tx and tx != prev:
+                    seq.append(tx)
+                    prev = tx
+            for i in range(len(seq) - 1):
+                key = re.sub(r"\s+", " ", seq[i].strip().rstrip(":").strip().lower())
+                val = seq[i + 1].strip()
+                if 2 <= len(key) <= 60 and val and not key.replace(" ", "").isdigit() and "\n" not in seq[i]:
+                    d.setdefault(key, val)
+    return d
+
+
+
 _BRANCH_NAMES = {
     "2533": "BUR DUBAI", "2690": "ABU DHABI", "2776": "SHARJAH", "2900": "AJMAN",
     "4350": "SHEIKH ZAYED ROAD", "2624": "AL MAKTOUM", "2898": "MURSHID BAZAR",
@@ -86,79 +108,96 @@ def extract_from_docx(data: bytes) -> dict:
     lines = _lines(doc)
     full = "\n".join(lines)
     kv = _kv(lines)
+    cellkv = _cell_pairs(doc)
+
+    def g(*labels: str) -> str:
+        """Robust label lookup: inline "Label: value" → adjacent cell → block."""
+        for lb in labels:
+            k = re.sub(r"\s+", " ", lb.strip().lower())
+            if kv.get(k):
+                return kv[k].strip()
+        for lb in labels:
+            k = re.sub(r"\s+", " ", lb.strip().lower())
+            if cellkv.get(k):
+                return cellkv[k].strip()
+        return _after(lines, *labels)
 
     # --- identity ---------------------------------------------------------
-    name = _clean(kv.get("customer name", ""))
-    acc_raw = kv.get("account number", "")
+    name = _clean(g("customer name", "customer's name", "customer’s name", "name of customer", "borrower name", "name of borrower"))
+    acc_raw = g("account number", "account no", "account no.", "a/c no", "a/c no.", "account #", "acct no", "cif")
     nums = re.findall(r"\d+", acc_raw)
     account_no = next((n for n in nums if len(n) == 6), (nums[1] if len(nums) > 1 else (nums[0] if nums else "")))
     branch_code = nums[0] if nums and len(nums[0]) == 4 else ""
     suffix = nums[-1] if len(nums) >= 3 else ""
     account_display = "-".join(nums) if nums else acc_raw
 
-    branch_name = _clean(kv.get("branch name", ""))
+    branch_name = _clean(g("branch name", "branch", "branch name & code", "branch name and code", "branch & code", "branch code"))
     bc = branch_code or (re.search(r"\b(\d{4})\b", branch_name).group(1) if re.search(r"\b(\d{4})\b", branch_name) else "")
     branch_label = f"{_BRANCH_NAMES.get(bc)} - {bc}" if bc and _BRANCH_NAMES.get(bc) else branch_name
 
-    btype = (kv.get("borrower type", "") or _after(lines, "Borrower Type")).lower()
-    account_type = "corporate" if ("corporate" in btype or "sme" in btype) else ("retail" if "retail" in btype else "")
+    btype = (g("borrower type", "customer type", "type of borrower", "segment") or "").lower()
+    account_type = "corporate" if ("corporate" in btype or "sme" in btype) else ("retail" if ("retail" in btype or "individual" in btype) else "")
 
-    # --- proposed facility (stated in prose) -----------------------------
-    amount = tenor = facility = ""
-    m = re.search(r"fresh\s+(commercial|personal)\s+loan[^\n.]*?AED\s*([\d,]+)\s*/?-?[^\n.]*?period of\s*(\d+)\s*months", full, re.I)
-    if m:
-        facility = f"{m.group(1).title()} Loan"
-        amount = m.group(2).replace(",", "")
-        tenor = m.group(3)
+    # --- proposed facility: amount / tenor / rate / type (independent) -----
+    amount = ""
+    for pat in (
+        r"fresh\s+(?:commercial|personal)\s+loan[^.\n]*?AED\s*([\d,]+)",
+        r"(?:proposed|fresh)[^.\n]*?loan[^.\n]*?AED\s*([\d,]+)",
+        r"loan (?:facility )?of\s*AED\s*([\d,]+)",
+        r"AED\s*([\d,]+)\s*/?-?\s*for a period of",
+    ):
+        mm = re.search(pat, full, re.I)
+        if mm:
+            amount = mm.group(1).replace(",", "")
+            break
+    mt = (re.search(r"period of\s*(\d+)\s*months", full, re.I)
+          or re.search(r"(\d+)\s*months?\s*from\s*dod", full, re.I)
+          or re.search(r"proposed[^\n]*?(\d{1,2})\s*months", full, re.I))
+    tenor = mt.group(1) if mt else ""
+    mf = re.search(r"fresh\s+(commercial|personal)\s+loan", full, re.I)
+    if mf:
+        facility = f"{mf.group(1).title()} Loan"
+    elif re.search(r"\bPIM\b|personal loan", full, re.I):
+        facility = "Personal Loan"
+    elif re.search(r"commercial loan|\bCL[\b-]", full, re.I):
+        facility = "Commercial Loan"
     else:
-        m2 = re.search(r"AED\s*([\d,]+)\s*/?-?\s*for a period of\s*(\d+)\s*months", full, re.I)
-        if m2:
-            amount, tenor = m2.group(1).replace(",", ""), m2.group(2)
-        mt = re.search(r"Proposed\s+(?:CL|PIM|Personal Loan|Commercial Loan|Loan)[^\n]*?(\d+)\s*months", full, re.I)
-        if mt and not tenor:
-            tenor = mt.group(1)
-    # interest rate: prefer the "to be (at) X% p.a." phrasing
-    rate = ""
-    mr = re.search(r"to be(?:\s+at)?\s*([\d.]+)\s*%\s*p\.?\s*a", full, re.I) or re.search(r"([\d.]+)\s*%\s*p\.?\s*a", full, re.I)
-    if mr:
-        rate = f"{mr.group(1)}% p.a."
+        facility = ""
+    mr = (re.search(r"to be(?:\s+at)?\s*([\d.]+)\s*%\s*p\.?\s*a", full, re.I)
+          or re.search(r"([\d.]+)\s*%\s*(?:p\.?\s*a|per annum)", full, re.I))
+    rate = f"{mr.group(1)}% p.a." if mr else ""
 
-    purpose = _clean(_after(lines, "Purpose") or kv.get("purpose", ""))
+    purpose = _clean(_after(lines, "Purpose") or g("purpose"))
     # The customer's application/request-letter date → the Offer Letter "Subject" date.
-    app_date = ""
     mapp = re.search(r"customer (?:request )?letter (?:dated|dtd)\.?\s*(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", full, re.I)
-    if mapp:
-        app_date = mapp.group(1)
-    business = _clean(kv.get("business activity", "") or kv.get("business type", ""))
-    rating = _clean(kv.get("proposed customer rating", "") or kv.get("existing customer rating", ""))
+    app_date = mapp.group(1) if mapp else ""
+    business = _clean(g("business activity", "business type", "nature of business", "activity"))
+    rating = _clean(g("proposed customer rating", "proposed rating", "customer rating", "rating"))
+    existing_rating = _clean(g("existing customer rating", "existing rating"))
 
     # --- profile enrichment ----------------------------------------------
     tl_no = tl_exp = ""
     mtl = re.search(r"trade licen[cs]e no\.?\s*([A-Za-z0-9\-]+).*?(?:till|validity|valid till|expiry)[^\d]*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})", full, re.I)
     if mtl:
         tl_no, tl_exp = mtl.group(1), mtl.group(2)
+    if not tl_no:
+        tl_no = _clean(g("trade license no", "trade license", "trade licence no", "license no"))
 
-    established = _clean(kv.get("company/ firm established since", "") or kv.get("company/firm established since", ""))
+    established = _clean(g("company/ firm established since", "company/firm established since", "established since", "date of establishment", "incorporation date", "establishment date"))
     if not established:
         me = re.search(r"established on\s*([0-9A-Za-z/\-]+)", full, re.I)
         established = me.group(1) if me else ""
-    relationship = _clean(kv.get("relationship date", ""))
-    auditor = _clean(kv.get("auditor’s name", "") or kv.get("auditor's name", ""))
-    credit_app = _clean(kv.get("credit application #", "") or kv.get("loan application #", ""))
-    review_date = _clean(kv.get("date of review", ""))
+    relationship = _clean(g("relationship date", "relationship since", "banking relationship since"))
+    auditor = _clean(g("auditor’s name", "auditor's name", "auditor", "audited by"))
+    credit_app = _clean(g("credit application #", "loan application #", "credit application no", "loan application no", "application #", "ca #"))
+    review_date = _clean(g("date of review", "review date"))
 
-    aecb = ""
-    ma = re.search(r"credit score is[^\d]*([\d]{3,4})", full, re.I)
-    if ma:
-        aecb = ma.group(1)
-    address = ""
+    ma = re.search(r"credit score is[^\d]*([\d]{3,4})", full, re.I) or re.search(r"\baecb\b[^\d]{0,20}(\d{3,4})", full, re.I)
+    aecb = ma.group(1) if ma else ""
     mad = re.search(r"located at\s*(.+?)(?:\.\s|\.$|\n)", full, re.I)
-    if mad:
-        address = _clean(mad.group(1))
-    salary = ""
-    ms = re.search(r"monthly salary of AED\s*([\d,]+)", full, re.I)
-    if ms:
-        salary = ms.group(1).replace(",", "")
+    address = _clean(mad.group(1)) if mad else _clean(g("address", "office address", "registered address"))
+    ms = re.search(r"monthly salary of AED\s*([\d,]+)", full, re.I) or re.search(r"salary[^\d]{0,20}AED\s*([\d,]+)", full, re.I)
+    salary = ms.group(1).replace(",", "") if ms else ""
     profile_text = _clean(_after(lines, "Customer Profile"))
 
     # --- guarantors (rows like "Name (Guarantor -1) | 2624 | 124076") -----
@@ -184,6 +223,7 @@ def extract_from_docx(data: bytes) -> dict:
         "Purpose": purpose,
         "BusinessType": business,
         "Rating": rating,
+        "ExistingRating": existing_rating,
         "LoanTenor": tenor,
         "InterestRate": rate,
         "LoanInterestRate": rate,

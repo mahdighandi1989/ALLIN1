@@ -81,7 +81,35 @@ export default function CreditFileCorporatePage() {
   const addProp = () => setProps((r) => [...r, emptyProp()])
   const delProp = (i: number) => setProps((r) => (r.length > 1 ? r.filter((_, idx) => idx !== i) : r))
   const toggleProp = (i: number) => setProps((r) => r.map((x, idx) => (idx === i ? { ...x, _open: !x._open } : x)))
-  const handleExtract = (r: any) => { const acct = r?.account_no || acc; if (acct) { setAcc(acct); loadAccount(acct) } }
+  const handleExtract = async (r: any) => {
+    const o = r?.offer || {}
+    const pf = r?.profile || {}
+    const acct = r?.account_no || acc
+    if (acct) { setAcc(acct); await loadAccount(acct) } // pull DB-persisted data first
+    // Overlay the draft-derived values loadAccount cannot provide.
+    setA((s) => ({
+      ...s,
+      customerName: s.customerName || o.CompanyName || '',
+      businessType: s.businessType || o.BusinessType || pf.business_type || '',
+      rating: o.Rating || s.rating,
+      tradeLicenseNum: s.tradeLicenseNum || pf.trade_license_no || '',
+      tradeLicenseExpiry: s.tradeLicenseExpiry || pf.trade_license_expiry || '',
+    }))
+    // Proposed facility → fill the matching (empty) facility row.
+    const ft = String(o.FacilityType || pf.proposed_facility || '').toLowerCase()
+    const amt = o.LoanAmount || o.CreditLimit || (pf.proposed_amount ? fmtAmt(pf.proposed_amount) : '')
+    const rate = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const ten = o.LoanTenor || pf.proposed_tenor || ''
+    if (amt || rate || ten) {
+      setFacRows((rows) => {
+        let t = rows.findIndex((rw) => /loan/.test(rw.label.toLowerCase()) && /loan/.test(ft))
+        if (t < 0) t = rows.findIndex((rw) => rw.matchKey === 'corpLoan')
+        if (t < 0) return rows
+        return rows.map((rw, i) => (i === t ? { ...rw, amount: rw.amount || amt, rate: rw.rate || rate, expiry: rw.expiry || (ten ? `${ten} MONTHS` : '') } : rw))
+      })
+    }
+    toast.success('استخراج و در فیلدها نگاشت شد')
+  }
 
   const facFromRecord = (f?: Facility) => ({
     facilityId: f?.id || '', amount: fmtAmt(f && f.amount != null ? String(f.amount) : ''),

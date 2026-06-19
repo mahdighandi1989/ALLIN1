@@ -82,7 +82,25 @@ export default function CreditFileRetailPage() {
   const addProp = () => setProps((r) => [...r, emptyProp()])
   const delProp = (i: number) => setProps((r) => (r.length > 1 ? r.filter((_, idx) => idx !== i) : r))
   const toggleProp = (i: number) => setProps((r) => r.map((x, idx) => (idx === i ? { ...x, _open: !x._open } : x)))
-  const handleExtract = (r: any) => { const acct = r?.account_no || acc; if (acct) { setAcc(acct); loadAccount(acct) } }
+  const handleExtract = async (r: any) => {
+    const o = r?.offer || {}
+    const pf = r?.profile || {}
+    const acct = r?.account_no || acc
+    if (acct) { setAcc(acct); await loadAccount(acct) } // pull DB-persisted data first (incl. guarantors)
+    setA((s) => ({ ...s, customerName: s.customerName || o.CompanyName || '', rating: o.Rating || s.rating }))
+    // Proposed loan → fill the (empty) Personal Loan row.
+    const amt = o.LoanAmount || o.CreditLimit || (pf.proposed_amount ? fmtAmt(pf.proposed_amount) : '')
+    const rate = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const ten = o.LoanTenor || pf.proposed_tenor || ''
+    if (amt || rate || ten) {
+      setFacRows((rows) => {
+        const t = rows.findIndex((rw) => rw.matchKey === 'personal')
+        if (t < 0) return rows
+        return rows.map((rw, i) => (i === t ? { ...rw, amount: rw.amount || amt, rate: rw.rate || rate, instalments: rw.instalments || ten } : rw))
+      })
+    }
+    toast.success('استخراج و در فیلدها نگاشت شد')
+  }
 
   const facFromRecord = (f?: Facility) => ({
     facilityId: f?.id || '',

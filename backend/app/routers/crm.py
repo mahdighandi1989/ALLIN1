@@ -1119,6 +1119,8 @@ async def extract_draft(
         "review_id": review.id,
         "account_type": offer.get("AccountType", ""),
         "offer": offer,
+        "profile": pf,
+        "guarantors": parsed.get("guarantors", []),
         "profile_keys": sorted([k for k in pf.keys() if pf[k]]),
         "guarantors_added": g_added,
         "guarantors_updated": g_updated,
