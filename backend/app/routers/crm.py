@@ -708,6 +708,9 @@ async def offer_letter_data(
         "Purpose": (str(loan_fac.purpose) if loan_fac and loan_fac.purpose else ""),
         "facilities_count": len(facs),
         "Saved": saved,
+        # Full parsed profile blob (extracted draft facts live here) so the
+        # sanction/مصوبه form can prefill from what was saved earlier.
+        "ProfileData": pdata,
     }
 
 
@@ -721,6 +724,8 @@ class OfferLetterSave(BaseModel):
     Salutation: Optional[str] = None
     Branch: Optional[str] = None
     snapshot: dict = Field(default_factory=dict)
+    snapshot_key: str = "offer_letter"
+    fields: dict = Field(default_factory=dict)  # extra top-level scalar facts (deduped by key)
 
 
 @router.post("/offer-letter-data/{account_no}")
@@ -764,11 +769,26 @@ async def save_offer_letter_data(
         data["CityCountry"] = payload.CityCountry.strip()
     if payload.Salutation:
         data["Salutation"] = payload.Salutation.strip()
-    # Keep the full snapshot for an exact restore next time.
+    # Arbitrary scalar facts (e.g. from the sanction form) merged top-level →
+    # keyed, so re-saving overwrites in place (no duplicates) and other forms
+    # can read them.
+    for k, v in (payload.fields or {}).items():
+        if v not in (None, ""):
+            data[str(k)] = v
+    # Keep the full snapshot for an exact restore next time, under its own key
+    # (offer_letter / sanction / …) so different forms never clobber each other.
     if payload.snapshot:
-        data["offer_letter"] = payload.snapshot
+        data[payload.snapshot_key or "offer_letter"] = payload.snapshot
 
     cp.data_json = json.dumps(data, ensure_ascii=False)
+    # Mirror KYC-relevant facts to their structured columns when provided.
+    _f = payload.fields or {}
+    if _f.get("trade_license_no"):
+        cp.trade_license_no = str(_f["trade_license_no"])[:80]
+    if _f.get("trade_license_expiry"):
+        cp.trade_license_expiry = str(_f["trade_license_expiry"])[:30]
+    if _f.get("business_type") and not (cp.business_type or "").strip():
+        cp.business_type = str(_f["business_type"])[:200]
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
 

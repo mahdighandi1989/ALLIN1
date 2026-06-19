@@ -37,6 +37,15 @@ const FORMS: FormDef[] = [
     ready: true,
   },
   {
+    href: '/sanction',
+    title: 'Credit Approval (مصوبه)',
+    subtitle: 'مصوبه / پیش‌نویس مصوبهٔ کمیتهٔ اعتباری',
+    description: 'فرمِ مصوبهٔ کمیتهٔ اعتباری (CRU/RCC) که قبل از Offer Letter پرینت و به کمیته می‌رود؛ بر اساس نوعِ حساب (حقیقی/حقوقی) ساخته می‌شود، از دیتابیس پر و هنگام ذخیره/چاپ در پروندهٔ مشتری به‌روزرسانی می‌شود. خروجیِ آن با استخراجِ Offer Letter هم‌گام است.',
+    icon: FileSignature,
+    category: 'Credit',
+    ready: true,
+  },
+  {
     href: '/credit-file',
     title: 'Credit File Summary',
     subtitle: 'خلاصهٔ فایلِ اعتباری (تشخیص خودکارِ حقیقی/حقوقی)',
