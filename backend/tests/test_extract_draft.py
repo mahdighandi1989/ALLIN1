@@ -67,6 +67,14 @@ async def test_extract_draft_fills_and_dedupes(client, auth_headers, db_session)
     rg = await client.get("/api/crm/guarantors/127987", headers=auth_headers)
     assert len(rg.json()) == 1
 
+    # A first-class credit-review row was created (and deduped on re-extract).
+    assert b1.get("review_id")
+    rc = await client.get("/api/crm/credit-reviews/127987", headers=auth_headers)
+    assert rc.status_code == 200
+    assert len(rc.json()) == 1
+    assert rc.json()[0]["proposed_amount"] == "80000"
+    assert rc.json()[0]["source"] == "draft_extract"
+
     # Extracted facts persisted to the shared profile (readable by other forms).
     rd = await client.get("/api/crm/offer-letter-data/127987", headers=auth_headers)
     assert rd.status_code == 200

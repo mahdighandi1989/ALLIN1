@@ -360,6 +360,15 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  // Credit Approval (مصوبه) form: first-class persistence (credit_reviews + profile cols).
+  async saveSanction(accountNo: string, body: { snapshot: Record<string, any>; limits?: any[]; recip?: any[]; fin?: any[]; guars?: any[]; banks?: any[] }): Promise<any> {
+    const { data } = await api.post(`/api/crm/sanction/${encodeURIComponent(accountNo)}`, body)
+    return data
+  },
+  async listCreditReviews(accountNo: string): Promise<any[]> {
+    const { data } = await api.get(`/api/crm/credit-reviews/${encodeURIComponent(accountNo)}`)
+    return data
+  },
   // Parse a filled committee-approval draft (.docx) → prefill fields + persist to DB.
   async extractDraft(accountNo: string, file: File): Promise<any> {
     const form = new FormData()

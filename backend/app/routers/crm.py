@@ -24,6 +24,7 @@ from app.database import get_db
 from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS, JournalEntry, CustomTask, CustomerProfile, CustomerNote, Attachment
 from app.services import attachments as attachments_store
 from app.models.guarantor import Guarantor
+from app.models.credit_review import CreditReview
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
@@ -800,6 +801,179 @@ async def save_offer_letter_data(
     return {"ok": True, "account_no": acc, "saved_keys": sorted(data.keys())}
 
 
+# ---------------------------------------------------------------------------
+# Credit-review (مصوبه) first-class persistence — promoted out of data_json so the
+# committee-approval facts are searchable / reportable.
+# ---------------------------------------------------------------------------
+_PROFILE_SCALAR_COLS = [
+    "aecb_score", "established_since", "relationship_date", "monthly_salary",
+    "auditor", "credit_application_no", "review_date", "proposed_facility",
+    "proposed_amount", "proposed_tenor", "proposed_rate", "business_type",
+    "trade_license_no", "trade_license_expiry",
+]
+_REVIEW_SCALAR_COLS = [
+    "customer_name", "account_type", "branch", "borrower_type", "request_type",
+    "date_of_review", "credit_application_no", "business_activity", "existing_rating",
+    "proposed_rating", "rating_notes", "relationship_date", "established_since",
+    "ca_expiry_existing", "ca_expiry_proposed", "purpose", "major_changes", "background",
+    "pep", "account_conduct", "aecb_score", "cru_findings", "cru_recommendation",
+    "monthly_salary", "auditor", "proposed_facility", "proposed_amount", "proposed_tenor",
+    "proposed_rate",
+]
+_SN2REVIEW = {
+    "CustomerName": "customer_name", "BranchName": "branch", "BorrowerType": "borrower_type",
+    "RequestType": "request_type", "DateOfReview": "date_of_review", "CreditAppNo": "credit_application_no",
+    "BusinessActivity": "business_activity", "ExistingRating": "existing_rating",
+    "ProposedRating": "proposed_rating", "RatingNotes": "rating_notes", "RelationshipDate": "relationship_date",
+    "EstablishedSince": "established_since", "CAExpiryExisting": "ca_expiry_existing",
+    "CAExpiryProposed": "ca_expiry_proposed", "Purpose": "purpose", "MajorChanges": "major_changes",
+    "Background": "background", "PEP": "pep", "AccountConduct": "account_conduct", "AECBScore": "aecb_score",
+    "CRUFindings": "cru_findings", "CRURecommendation": "cru_recommendation", "MonthlySalary": "monthly_salary",
+    "AuditorName": "auditor",
+}
+
+
+def _set_col(obj, name: str, value):
+    if value in (None, ""):
+        return
+    col = obj.__table__.columns.get(name)
+    ml = getattr(getattr(col, "type", None), "length", None)
+    setattr(obj, name, str(value)[:ml] if ml else str(value))
+
+
+def _apply_profile_scalars(cp, d: dict):
+    """Write the promoted first-class facts onto the profile."""
+    for k in _PROFILE_SCALAR_COLS:
+        if k == "business_type" and (cp.business_type or "").strip():
+            continue  # never clobber an existing business type
+        _set_col(cp, k, d.get(k))
+
+
+async def _upsert_credit_review(db, account_no: str, rf: dict, source: str, username: str):
+    """Upsert ONE row per (account, review date): re-saving the same review updates
+    in place (no duplicates); a new review date adds a history row."""
+    review_date = str(rf.get("date_of_review") or "").strip()
+    q = select(CreditReview).where(
+        CreditReview.account_no == account_no,
+        CreditReview.is_deleted == False,  # noqa: E712
+    )
+    if review_date:
+        q = q.where(CreditReview.date_of_review == review_date)
+    else:
+        q = q.where((CreditReview.date_of_review == None) | (CreditReview.date_of_review == ""))  # noqa: E711
+    row = (await db.execute(q.order_by(CreditReview.created_at.desc()).limit(1))).scalar_one_or_none()
+    created = row is None
+    if row is None:
+        row = CreditReview(account_no=account_no, created_by=username)
+        db.add(row)
+    for c in _REVIEW_SCALAR_COLS:
+        _set_col(row, c, rf.get(c))
+    for jc, key in [("limits_json", "limits"), ("recip_json", "recip"), ("fin_json", "fin"),
+                    ("guarantors_json", "guars"), ("banks_json", "banks")]:
+        if rf.get(key) is not None:
+            setattr(row, jc, json.dumps(rf.get(key), ensure_ascii=False))
+    row.source = source
+    return row, created
+
+
+def _review_out(r: CreditReview) -> dict:
+    return {
+        "id": r.id, "account_no": r.account_no, "customer_name": r.customer_name,
+        "account_type": r.account_type, "date_of_review": r.date_of_review,
+        "proposed_facility": r.proposed_facility, "proposed_amount": r.proposed_amount,
+        "proposed_tenor": r.proposed_tenor, "proposed_rate": r.proposed_rate,
+        "aecb_score": r.aecb_score, "proposed_rating": r.proposed_rating, "purpose": r.purpose,
+        "cru_recommendation": r.cru_recommendation, "source": r.source,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+class SanctionSave(BaseModel):
+    snapshot: dict = Field(default_factory=dict)
+    limits: list = Field(default_factory=list)
+    recip: list = Field(default_factory=list)
+    fin: list = Field(default_factory=list)
+    guars: list = Field(default_factory=list)
+    banks: list = Field(default_factory=list)
+
+
+@router.post("/sanction/{account_no}")
+async def save_sanction(
+    account_no: str,
+    payload: SanctionSave,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Persist the credit-committee approval (مصوبه) form: a first-class
+    ``credit_reviews`` row (deduped per review date) + the promoted profile
+    columns + the exact snapshot under data_json["sanction"] for restore."""
+    from app.services.customer_link import ensure_customer
+
+    acc = (account_no or "").strip()
+    cust = await ensure_customer(db, acc, (payload.snapshot or {}).get("CustomerName"))
+    sn = payload.snapshot or {}
+    username = getattr(user, "username", "") or ""
+
+    # Review row fields from the form snapshot.
+    rf = {col: sn.get(k) for k, col in _SN2REVIEW.items()}
+    bt = str(sn.get("BorrowerType", "")).lower()
+    rf["account_type"] = "corporate" if ("corp" in bt or "sme" in bt) else "retail"
+    rf.update(limits=payload.limits, recip=payload.recip, fin=payload.fin,
+              guars=payload.guars, banks=payload.banks)
+    review, created = await _upsert_credit_review(db, acc, rf, "sanction_form", username)
+    if cust is not None and not review.customer_name:
+        review.customer_name = cust.name
+
+    # Profile: promote the reusable scalars + keep the exact snapshot for restore.
+    cp = (
+        await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))
+    ).scalar_one_or_none()
+    if cp is None:
+        cp = CustomerProfile(account_no=acc, customer_name=cust.name if cust else None)
+        db.add(cp)
+    _apply_profile_scalars(cp, {
+        "aecb_score": sn.get("AECBScore"), "established_since": sn.get("EstablishedSince"),
+        "relationship_date": sn.get("RelationshipDate"), "monthly_salary": sn.get("MonthlySalary"),
+        "auditor": sn.get("AuditorName"), "credit_application_no": sn.get("CreditAppNo"),
+        "review_date": sn.get("DateOfReview"), "business_type": sn.get("BusinessActivity"),
+    })
+    try:
+        data = json.loads(cp.data_json) if cp.data_json else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    data["sanction"] = {**sn, "limits": payload.limits, "recip": payload.recip,
+                        "fin": payload.fin, "guars": payload.guars, "banks": payload.banks}
+    cp.data_json = json.dumps(data, ensure_ascii=False)
+    cp.last_updated = date.today().isoformat()
+    cp.updated_by = username
+    if sn.get("BranchName") and cust is not None and not (cust.branch or "").strip():
+        cust.branch = str(sn["BranchName"])[:100]
+
+    await db.commit()
+    return {"ok": True, "account_no": acc, "review_id": review.id, "created": created}
+
+
+@router.get("/credit-reviews/{account_no}")
+async def list_credit_reviews(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """All credit-committee reviews for an account (newest first) — the queryable
+    history that feeds reports/dashboards."""
+    rows = (
+        await db.execute(
+            select(CreditReview)
+            .where(CreditReview.account_no == (account_no or "").strip(),
+                   CreditReview.is_deleted == False)  # noqa: E712
+            .order_by(CreditReview.created_at.desc())
+        )
+    ).scalars().all()
+    return [_review_out(r) for r in rows]
+
+
 @router.post("/extract-draft")
 async def extract_draft(
     file: UploadFile = File(...),
@@ -864,13 +1038,8 @@ async def extract_draft(
             data[k] = v
     data["draft_extracted_at"] = datetime.now().isoformat(timespec="seconds")
     cp.data_json = json.dumps(data, ensure_ascii=False)
-    # Mirror the KYC-relevant facts to their structured columns.
-    if pf.get("trade_license_no"):
-        cp.trade_license_no = pf["trade_license_no"][:80]
-    if pf.get("trade_license_expiry"):
-        cp.trade_license_expiry = pf["trade_license_expiry"][:30]
-    if pf.get("business_type") and not (cp.business_type or "").strip():
-        cp.business_type = pf["business_type"][:200]
+    # Promote the extracted facts to their first-class profile columns.
+    _apply_profile_scalars(cp, pf)
     cp.last_updated = date.today().isoformat()
     cp.updated_by = getattr(user, "username", "") or ""
 
@@ -920,6 +1089,22 @@ async def extract_draft(
         if customer is not None and getattr(customer, "name", None) and not row.customer_name:
             row.customer_name = customer.name
 
+    # Record the extracted draft as a first-class credit-review (deduped per date).
+    rf = {
+        "customer_name": offer.get("CompanyName"), "account_type": offer.get("AccountType"),
+        "branch": offer.get("Branch"), "borrower_type": offer.get("AccountType"),
+        "date_of_review": pf.get("review_date"), "credit_application_no": pf.get("credit_application_no"),
+        "business_activity": offer.get("BusinessType"), "proposed_rating": offer.get("Rating"),
+        "rating_notes": (f"Proposed interest rate {pf.get('proposed_rate')}" if pf.get("proposed_rate") else None),
+        "relationship_date": pf.get("relationship_date"), "established_since": pf.get("established_since"),
+        "purpose": offer.get("Purpose"), "aecb_score": pf.get("aecb_score"),
+        "background": pf.get("customer_profile"), "monthly_salary": pf.get("monthly_salary"),
+        "auditor": pf.get("auditor"), "proposed_facility": pf.get("proposed_facility") or offer.get("FacilityType"),
+        "proposed_amount": pf.get("proposed_amount"), "proposed_tenor": pf.get("proposed_tenor"),
+        "proposed_rate": pf.get("proposed_rate"),
+    }
+    review, _rcreated = await _upsert_credit_review(db, acc, rf, "draft_extract", getattr(user, "username", "") or "")
+
     try:
         await recompute_completeness(db, acc)
     except Exception:
@@ -928,6 +1113,7 @@ async def extract_draft(
     return {
         "ok": True,
         "account_no": acc,
+        "review_id": review.id,
         "account_type": offer.get("AccountType", ""),
         "offer": offer,
         "profile_keys": sorted([k for k in pf.keys() if pf[k]]),
