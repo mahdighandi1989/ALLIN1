@@ -22,7 +22,7 @@ const MATCH: Record<string, (f: Facility) => boolean> = {
 
 type FacRow = { uid: string; label: string; custom: boolean; matchKey?: string; facilityId: string; amount: string; rate: string; expiry: string; notices: string }
 type SecRow = { uid: string; label: string; custom: boolean; facilityTag: string; aed: string; usd: string; irr: string; other: string }
-type Partner = { uid: string; name: string; nationality: string; share: string; remarks: string }
+type Partner = { uid: string; dbId?: string; name: string; nationality: string; share: string; remarks: string }
 
 const facBase = (): FacRow[] => ([
   ['Overdraft', 'overdraft'], ['Corporate Loan', 'corpLoan'], ['Cheque Discounting', 'chequeDisc'],
@@ -64,6 +64,7 @@ export default function CreditFileCorporatePage() {
   const [secRows, setSecRows] = useState<SecRow[]>(secBase())
   const [partners, setPartners] = useState<Partner[]>(partnersBase())
   const [props, setProps] = useState<PropRow[]>([emptyProp()])
+  const [partnerNameList, setPartnerNameList] = useState<string[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
@@ -152,7 +153,7 @@ export default function CreditFileCorporatePage() {
         managerIdExpiry: profile?.emirates_id_expiry || '', managerIdRemarks: profile?.emirates_id_remarks || '',
       }))
       if (parts.length) {
-        setPartners(parts.map((p: any) => ({ uid: uid(), name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' })))
+        setPartners(parts.map((p: any) => ({ uid: uid(), dbId: p.id, name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' })))
       }
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
@@ -196,7 +197,23 @@ export default function CreditFileCorporatePage() {
         setProps(res.rows); pc = res.count
       } catch (pe: any) { toast.error(pe?.message || String(pe)); setSaving(false); return }
 
-      toast.success(`ذخیره شد — پروفایل${n ? ` و ${n} تسهیلات` : ''}${pc ? ` و ${pc} ملک` : ''}`)
+      // Partners: two-way upsert (dedup by id; new rows captured; empties skipped).
+      let pn = 0
+      const pr = partners.map((p) => ({ ...p }))
+      for (let i = 0; i < pr.length; i++) {
+        const p = pr[i]
+        if (!p.name.trim()) continue
+        const body: Record<string, any> = {
+          name: p.name.trim(), customer_name: a.customerName || undefined,
+          nationality: p.nationality.trim() || undefined, share: p.share.trim() || undefined,
+          remarks: p.remarks.trim() || undefined,
+        }
+        if (p.dbId) { await crmApi.updatePartner(p.dbId, body); pn++ }
+        else { const res = await crmApi.addPartner(acct, body); if (res?.id) pr[i] = { ...p, dbId: res.id }; pn++ }
+      }
+      setPartners(pr)
+
+      toast.success(`ذخیره شد — پروفایل${n ? ` و ${n} تسهیلات` : ''}${pc ? ` و ${pc} ملک` : ''}${pn ? ` و ${pn} شریک` : ''}`)
     } catch (e) {
       toast.error(parseApiError(e))
     } finally { setSaving(false) }
@@ -232,6 +249,7 @@ export default function CreditFileCorporatePage() {
   useEffect(() => {
     const qp = new URLSearchParams(window.location.search).get('acc')
     if (qp) { setAcc(qp); loadAccount(qp) }
+    crmApi.partnerNames().then(setPartnerNameList).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -345,6 +363,7 @@ export default function CreditFileCorporatePage() {
           </tbody></table>
 
           <CountryDataList />
+          <datalist id="cf-partner-names">{partnerNameList.map((n) => <option key={n} value={n} />)}</datalist>
           {/* Partners */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={6}>Partners Details</td></tr>
@@ -352,7 +371,7 @@ export default function CreditFileCorporatePage() {
             {partners.map((p, i) => (
               <tr key={p.uid}>
                 <td className="sn">{i + 1}</td>
-                <td><input value={p.name} onChange={setPartner(p.uid, 'name')} /></td>
+                <td><input list="cf-partner-names" value={p.name} onChange={setPartner(p.uid, 'name')} placeholder="جستجو / نام شریک" /></td>
                 <td><CountryInput value={p.nationality} onChange={setPartner(p.uid, 'nationality')} /></td>
                 <td><PctInput value={p.share} onValue={setPartnerV(p.uid, 'share')} /></td>
                 <td><input value={p.remarks} onChange={setPartner(p.uid, 'remarks')} /></td>

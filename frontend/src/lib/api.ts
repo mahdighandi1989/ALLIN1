@@ -405,6 +405,10 @@ export const crmApi = {
     const { data } = await api.post(`/api/crm/partners/${encodeURIComponent(accountNo)}`, body)
     return data
   },
+  async partnerNames(): Promise<string[]> {
+    const { data } = await api.get('/api/crm/partner-names')
+    return data
+  },
   async updatePartner(id: string, body: Record<string, any>): Promise<any> {
     const { data } = await api.patch(`/api/crm/partners/${encodeURIComponent(id)}`, body)
     return data
