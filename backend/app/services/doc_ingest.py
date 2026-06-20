@@ -26,7 +26,51 @@ from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty
 from app.services.customer_link import ensure_customer
 
-EXTRACTION_PROMPT = """You are a meticulous UAE banking credit-file analyst. Read the ATTACHED document(s) end to end (every page) and extract the data for the bank's customer database.
+# ---------------------------------------------------------------------------
+# Schema-driven field registry. The list of facts the model is asked to extract
+# (and that ``persist_customer`` writes to real columns) is DERIVED from the live
+# ``CustomerProfile`` schema — so when a new column is added to the model later,
+# it is automatically asked-for and persisted with NO change here. Only the few
+# non-extractable columns below are excluded.
+# ---------------------------------------------------------------------------
+_PROFILE_SKIP_COLS = {
+    # identity / handled at the customer level
+    "account_no", "customer_name", "account_type", "branch",
+    # housekeeping / computed
+    "rating", "customer_status", "profile_completeness", "updated_by",
+    "last_updated", "data_json", "created_at",
+    # per-document file paths (populated by the upload feature, not from content)
+    "trade_license_doc", "passport_doc", "emirates_id_doc", "visa_doc", "tenancy_doc",
+    # officer-only free-text notes — never auto-filled by the model
+    "trade_license_remarks", "passport_remarks", "emirates_id_remarks",
+}
+# Friendlier key the model is more likely to emit  ->  real column it maps to.
+_FIELD_ALIASES = {"nationality": "passport_nationality"}
+_COL_TO_FRIENDLY = {v: k for k, v in _FIELD_ALIASES.items()}
+
+
+def extractable_profile_fields() -> list[str]:
+    """The field keys the model should fill, derived live from the CustomerProfile
+    schema (with a friendly alias where one exists). Adding a column to the model
+    automatically adds it here — no prompt or persist edits needed."""
+    out: list[str] = []
+    for c in CustomerProfile.__table__.columns:
+        if c.name in _PROFILE_SKIP_COLS:
+            continue
+        out.append(_COL_TO_FRIENDLY.get(c.name, c.name))
+    return out
+
+
+def _build_fields_block() -> str:
+    """Pretty 3-per-line JSON skeleton of the extractable fields for the prompt."""
+    parts = [f'"{k}": ""' for k in extractable_profile_fields()]
+    return ",\n".join("        " + ", ".join(parts[i:i + 3]) for i in range(0, len(parts), 3))
+
+
+def build_extraction_prompt() -> str:
+    """Assemble the extraction prompt with the field list taken from the schema."""
+    return (
+        """You are a meticulous UAE banking credit-file analyst. Read the ATTACHED document(s) end to end (every page) and extract the data for the bank's customer database.
 
 A single file MAY contain data for MORE THAN ONE customer/account (e.g. a borrower plus guarantors, or several approvals). Detect every distinct account and attribute each fact to the CORRECT account — never mix customers.
 
@@ -40,13 +84,9 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
       "account_type": "retail" | "corporate",
       "branch": "<branch name and/or code>",
       "fields": {
-        "business_type": "", "trade_license_no": "", "trade_license_issue": "", "trade_license_expiry": "",
-        "established_since": "", "relationship_date": "", "aecb_score": "",
-        "monthly_salary": "", "auditor": "", "address": "", "po_box": "",
-        "passport_no": "", "passport_issue": "", "passport_expiry": "", "nationality": "",
-        "emirates_id_no": "", "emirates_id_issue": "", "emirates_id_expiry": "",
-        "visa_no": "", "visa_expiry": "", "tenancy_no": "", "tenancy_expiry": "",
-        "proposed_facility": "", "proposed_amount": "", "proposed_tenor": "", "proposed_rate": ""
+"""
+        + _build_fields_block()
+        + """
       },
       "guarantors": [ {"name": "", "account": "", "branch": ""} ],
       "properties": [ {"prop_type": "", "address": "", "city": "", "country": "",
@@ -64,14 +104,20 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
 }
 
 Rules:
+- Extract EVERY field listed under "fields" that the document actually contains — including the small ones officers often miss: every ID's issue date AND expiry date, visa number/issue/expiry/type, tenancy number/issue/expiry/address, whether the Emirates ID is "golden" (Yes/No), etc.
 - Only include fields you actually find; omit unknowns (do NOT invent values).
 - Always capture the customer's full legal NAME exactly as printed.
 - Capture each ID document's NUMBER together with its ISSUE and EXPIRY dates.
 - "nationality" ONLY if it is explicitly printed — never guess or assume it.
+- Dates as printed (DD/MM/YYYY is fine); a RENEWED document's later date should be reported so the record updates.
 - "account_no" is the 6-digit core (the middle group of 2624-115524-011 is 115524).
 - Numbers as plain digits (no thousands separators) where possible.
 - "documents" must list, for EVERY page or page-range, which document it is and which account it belongs to.
-- Output ONLY the JSON object."""
+- Output ONLY the JSON object.""")
+
+
+# Built once from the current schema (the model is fully defined at import).
+EXTRACTION_PROMPT = build_extraction_prompt()
 
 
 def parse_model_json(text: str) -> dict:
@@ -129,9 +175,34 @@ def _acc_of(cust: dict) -> str:
     return acc
 
 
+def _apply_extracted_fields(cp, fields: dict) -> None:
+    """Write extracted scalars onto the profile, SCHEMA-DRIVEN: any key matching a
+    CustomerProfile column (directly or via alias) is promoted to that column.
+
+    Write policy (smart, no blind overwrite):
+      • KYC document dates (issue/expiry) UPDATE on renewal — a later date wins, so
+        a renewed passport/EID/visa/tenancy refreshes the record.
+      • everything else is fill-empty — a possibly-wrong extraction never clobbers
+        a value an officer has already curated.
+    """
+    cols = {c.name: c for c in CustomerProfile.__table__.columns}
+    for key, v in (fields or {}).items():
+        if v in (None, ""):
+            continue
+        col = _FIELD_ALIASES.get(key, key)
+        if col in _PROFILE_SKIP_COLS or col not in cols:
+            continue  # not a writable column → stays in data_json only
+        cur = getattr(cp, col, "")
+        cur = cur.strip() if isinstance(cur, str) else (cur or "")
+        take = _newer_or_empty(str(v), str(cur)) if col in _KYC_DATE_COLS else (not cur)
+        if take:
+            ml = getattr(getattr(cols[col], "type", None), "length", None)
+            setattr(cp, col, str(v)[:ml] if ml else str(v))
+
+
 async def persist_customer(db: AsyncSession, cust: dict, username: str, source: str = "import_ai") -> dict:
     """Apply one extracted customer dict to the DB (deduped). Returns a summary."""
-    from app.routers.crm import _apply_profile_scalars, _upsert_credit_review  # shared helpers
+    from app.routers.crm import _upsert_credit_review  # shared helper
 
     acc = _acc_of(cust)
     if not acc:
@@ -153,31 +224,11 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     if cp is None:
         cp = CustomerProfile(account_no=acc, customer_name=name)
         db.add(cp)
-    _apply_profile_scalars(cp, fields)  # promote known credit scalars to real columns
-    # Promote identity/KYC facts to their real columns — fill-empty so the model
-    # can never overwrite a value an officer already curated (e.g. a wrong
-    # nationality won't clobber a correct one).
-    _kyc_map = {
-        "trade_license_no": "trade_license_no", "trade_license_issue": "trade_license_issue",
-        "trade_license_expiry": "trade_license_expiry",
-        "passport_no": "passport_no", "passport_issue": "passport_issue", "passport_expiry": "passport_expiry",
-        "nationality": "passport_nationality", "passport_nationality": "passport_nationality",
-        "emirates_id_no": "emirates_id_no", "emirates_id_issue": "emirates_id_issue", "emirates_id_expiry": "emirates_id_expiry",
-        "visa_no": "visa_no", "visa_expiry": "visa_expiry",
-        "tenancy_no": "tenancy_no", "tenancy_expiry": "tenancy_expiry",
-    }
-    for src, col in _kyc_map.items():
-        v = fields.get(src)
-        if not v:
-            continue
-        cur = (getattr(cp, col, "") or "").strip()
-        # ID dates UPDATE on renewal (later date wins); numbers/nationality are
-        # fill-empty (never clobbered by a possibly-wrong extraction).
-        take = _newer_or_empty(str(v), cur) if col in _KYC_DATE_COLS else (not cur)
-        if take:
-            column = cp.__table__.columns.get(col)
-            ml = getattr(getattr(column, "type", None), "length", None)
-            setattr(cp, col, str(v)[:ml] if ml else str(v))
+    # Schema-driven: promote EVERY recognised field to its real column (identity,
+    # KYC docs incl. issue dates / visa type / tenancy address / golden EID, and
+    # the credit scalars). Adding a new column to the model later is picked up here
+    # automatically — no edit needed.
+    _apply_extracted_fields(cp, fields)
     try:
         data = json.loads(cp.data_json) if cp.data_json else {}
         if not isinstance(data, dict):

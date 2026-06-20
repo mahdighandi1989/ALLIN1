@@ -10,6 +10,7 @@ import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
   CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote, Mail,
 } from 'lucide-react'
+import { CountryDataList } from '@/components/creditFileBits'
 const CHECKLIST_STEPS = [
   'Offer Letter', 'Document Verification', 'Document Scanning', 'Add to Table',
   'Central Folder Upload', 'Regulatory Document (Contra)', 'K.Y.C', 'Summary', 'Archive',
@@ -448,6 +449,7 @@ function CustomerDetailInner() {
               </span>
             )}
           </div>
+          <CountryDataList />
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {KYC_DOCS.map(([title, nk, ek, extras]) => (
               <div key={nk} className="border border-gray-200 rounded-lg p-3">
@@ -458,10 +460,16 @@ function CustomerDetailInner() {
                       placeholder="Number" className="w-full border border-gray-300 rounded px-2 py-1 text-sm mt-1" />
                     <input value={kycForm[ek] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [ek]: e.target.value }))}
                       placeholder="Expiry (YYYY-MM-DD)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
-                    {extras.map(([k, ph]) => (
-                      <input key={k} value={kycForm[k] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [k]: e.target.value }))}
-                        placeholder={ph} className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
-                    ))}
+                    {extras.map(([k, ph]) => {
+                      // Nationality / country sub-fields get the searchable country list.
+                      const isCountry = k.endsWith('nationality') || k === 'country'
+                      return (
+                        <input key={k} value={kycForm[k] || ''} list={isCountry ? 'cf-countries' : undefined}
+                          onChange={(e) => setKycForm((s: any) => ({ ...s, [k]: e.target.value }))}
+                          placeholder={isCountry ? `${ph} (جستجوی کشور…)` : ph}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
+                      )
+                    })}
                   </>
                 ) : (
                   <>
