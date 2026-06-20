@@ -217,14 +217,24 @@ function CustomerDetailInner() {
   const attMeta = (a: any): { title?: string; link?: string; pages?: any[] } => {
     try { const m = JSON.parse(a?.notes || '{}'); return (m && typeof m === 'object') ? m : {} } catch { return {} }
   }
-  const openAttachment = async (a: any) => {
+  const openAttachment = async (a: any, pageNum?: string | number) => {
+    // Open in a new tab (NOT download). Fetch the bytes authed, then point a
+    // pre-opened tab at the inline blob so the browser's PDF viewer honors #page.
+    const win = window.open('', '_blank')
     try {
-      // Drive-stored files OPEN in a new tab (the Drive viewer) instead of downloading.
+      const blob = await crmApi.attachmentBlob(a.id)
+      const url = URL.createObjectURL(blob)
+      const frag = pageNum ? `#page=${String(pageNum).match(/\d+/)?.[0] || ''}` : ''
+      if (win) win.location.href = url + frag
+      else window.open(url + frag, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) {
+      // Fallback: open the Drive viewer (still "open", not download).
       const meta = attMeta(a)
       const link = meta.link || (a.drive_file_id ? `https://drive.google.com/file/d/${a.drive_file_id}/view` : '')
-      if (link) { window.open(link, '_blank', 'noopener,noreferrer'); return }
-      await downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name || a.file_name || 'document')
-    } catch (e) { toast.error(parseApiError(e)) }
+      if (link) { if (win) win.location.href = link; else window.open(link, '_blank', 'noopener') }
+      else { if (win) win.close(); toast.error(parseApiError(e)) }
+    }
   }
   const removeAttachment = async (aid: string) => {
     if (!confirm('Remove this document?')) return
@@ -873,7 +883,7 @@ function CustomerDetailInner() {
                         {pages.length > 0 && (
                           <div className="mt-0.5 whitespace-normal text-xs text-gray-500">
                             {pages.map((p: any, i: number) => (
-                              <button key={i} type="button" onClick={() => openAttachment(a)} className="mr-3 hover:text-blue-600">
+                              <button key={i} type="button" onClick={() => openAttachment(a, p.pages)} className="mr-3 hover:text-blue-600">
                                 📄 ص {p.pages}: <span className="font-medium">{p.type}</span>
                               </button>
                             ))}

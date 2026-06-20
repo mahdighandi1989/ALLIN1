@@ -1585,6 +1585,35 @@ async def download_attachment(
     return FileResponse(str(path), filename=download_name)
 
 
+@router.get("/attachments/{attachment_id}/view")
+async def view_attachment(
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Stream a document INLINE (Content-Disposition: inline) so the browser opens
+    it in a viewer (and honors #page=N) instead of downloading it."""
+    import mimetypes
+
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    name = a.original_name or a.file_name or "document"
+    mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    if a.drive_file_id:
+        from app.services import drive_sync, google_drive
+        try:
+            data = await drive_sync.download_attachment(a.drive_file_id)
+        except google_drive.DriveError as exc:
+            raise HTTPException(status_code=502, detail=f"Drive download failed: {exc}")
+        return Response(content=data, media_type=mime,
+                        headers={"Content-Disposition": f'inline; filename="{name}"'})
+    path = attachments_store.resolve(a.file_path or "")
+    if path is None:
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(str(path), filename=name, content_disposition_type="inline")
+
+
 @router.delete("/attachments/{attachment_id}")
 async def delete_attachment(
     attachment_id: str,
