@@ -1448,6 +1448,20 @@ async def delete_partner(
     return await _delete_child(db, Partner, item_id)
 
 
+@router.get("/partner-names")
+async def partner_names(db: AsyncSession = Depends(get_db), user=Depends(require_editor)):
+    """Distinct partner/shareholder names for autocomplete (search & select)."""
+    rows = (
+        await db.execute(
+            select(Partner.name).where(
+                Partner.name.isnot(None), Partner.name != "",
+                Partner.is_deleted == False,  # noqa: E712
+            ).distinct().limit(1000)
+        )
+    ).scalars().all()
+    return sorted({(n or "").strip() for n in rows if (n or "").strip()})
+
+
 # ===========================================================================
 # Document attachments — real per-row / per-checklist upload + download (A10/A15).
 # The file bytes are stored on disk (services.attachments); the row records the

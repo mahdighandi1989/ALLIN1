@@ -14,7 +14,7 @@ export default function ClientWrapper({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       {children}
-      <Toaster position="top-right" />
+      <Toaster position="top-right" containerClassName="app-toaster" />
     </AuthProvider>
   )
 }

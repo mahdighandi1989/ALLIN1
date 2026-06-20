@@ -28,6 +28,10 @@ const facBase = (): FacRow[] => [
   { uid: uid(), label: 'Personal Loan', custom: false, matchKey: 'personal', facilityId: '', approvalDate: '', amount: '', rate: '', instalments: '', maturity: '' },
   { uid: uid(), label: 'Staff Loan', custom: false, matchKey: 'staff', facilityId: '', approvalDate: '', amount: '', rate: '', instalments: '', maturity: '' },
 ]
+const facLabel = (ft: string): string => (({
+  overdraft: 'Overdraft', loan: 'Personal Loan',
+} as Record<string, string>)[String(ft || '').toLowerCase()] || (ft ? String(ft) : 'Facility'))
+
 const secBase = (): SecRow[] => [
   { uid: uid(), label: 'Underlien Deposits', custom: false, facilityTag: '', aed: '', usd: '', irr: '', other: '' },
   { uid: uid(), label: 'Cheques', custom: false, facilityTag: '', aed: '', usd: '', irr: '', other: '' },
@@ -141,12 +145,21 @@ export default function CreditFileRetailPage() {
       }))
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
-      // Auto-bind predefined facility rows to the first matching real facility.
-      setFacRows((rows) => rows.map((r) => {
-        if (!r.matchKey) return r
-        const f = facs.find((x: Facility) => MATCH[r.matchKey!]?.(x))
-        return f ? { ...r, ...facFromRecord(f) } : r
-      }))
+      // Bind predefined rows, then AUTO-ADD a row for every extra facility so
+      // nothing in the DB is left off the form.
+      setFacRows((rows) => {
+        const used = new Set<string>()
+        const mapped = rows.map((r) => {
+          if (!r.matchKey) return r
+          const f = facs.find((x: Facility) => MATCH[r.matchKey!]?.(x) && !used.has(x.id))
+          if (f) { used.add(f.id); return { ...r, ...facFromRecord(f) } }
+          return r
+        })
+        const extra = facs.filter((x: Facility) => !used.has(x.id)).map((x: Facility) => ({
+          uid: uid(), label: x.name || facLabel(x.facility_type), custom: true, ...facFromRecord(x),
+        }))
+        return [...mapped, ...extra]
+      })
       toast.success(`بارگیری «${customer?.name || acct}» — ${facs.length} تسهیلات`)
     } catch (e) {
       toast.error(parseApiError(e))
@@ -383,7 +396,7 @@ export default function CreditFileRetailPage() {
 
           {/* Mortgaged Properties (املاک) — two-way synced with the customer's properties list */}
           <table className="cf"><tbody>
-            <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک&nbsp;<span style={{ fontWeight: 400, fontSize: 9 }}>(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
+            <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک<span className="screen-only" style={{ fontWeight: 400, fontSize: 9 }}>&nbsp;(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
             <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation *</td><td>Mortgage Amt</td><td className="tools">جزئیات / حذف</td></tr>
             {props.map((p, i) => (
               <React.Fragment key={i}>

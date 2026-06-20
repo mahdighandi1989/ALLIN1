@@ -162,6 +162,19 @@ body {
   .no-print {
     display: none !important;
   }
+
+  /* Never print transient toasts/notifications (they were being captured into
+     the printout). The Toaster container carries this class. */
+  .app-toaster {
+    display: none !important;
+  }
+
+  /* Placeholder/helper text must never appear on a printout (empty inputs would
+     otherwise print their grey placeholder, e.g. "جستجوی کشور"). */
+  input::placeholder, textarea::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+  }
   
   .print-break-before {
     break-before: page;
