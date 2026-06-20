@@ -16,6 +16,14 @@ from enum import Enum
 from typing import Dict, List, Optional, TypedDict
 
 
+# Claude Code OAuth (subscription) tokens are only honored when the request
+# carries Claude Code's own system-prompt prefix as the FIRST system block.
+# Without it Anthropic rejects / heavily throttles the call (e.g. 429) even
+# though the token is valid and has quota — which is exactly why the same token
+# works in tools that send this prefix but failed here before.
+CLAUDE_CODE_SYSTEM = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
 # ---------------------------------------------------------------------------
 # Capabilities — what a model can do. Used to auto-pick a model for a task when
 # no explicit route is set, and shown as chips in the UI.

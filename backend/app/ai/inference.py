@@ -94,6 +94,7 @@ async def complete(
         if oauth:
             headers["authorization"] = f"Bearer {key}"
             headers["anthropic-beta"] = "oauth-2025-04-20"
+            headers["user-agent"] = "claude-cli/1.0 (external)"
         else:
             headers["x-api-key"] = key
         payload: Dict[str, Any] = {
@@ -101,12 +102,22 @@ async def complete(
             "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}],
         }
-        if system:
+        if oauth:
+            # Subscription tokens require Claude Code's system prefix first; keep
+            # the app's own system prompt as a second block.
+            blocks = [{"type": "text", "text": catalog.CLAUDE_CODE_SYSTEM}]
+            if system:
+                blocks.append({"type": "text", "text": system})
+            payload["system"] = blocks
+        elif system:
             payload["system"] = system
         if temp is not None:
             payload["temperature"] = temp
     elif family == "gemini":
-        url = f"{base_url}/v1beta/models/{api_id}:generateContent?key={key}"
+        # Google model ids are lowercase-hyphenated; tolerate "models/" prefix,
+        # stray spaces and casing (e.g. "Gemini 2.5 Flash" → "gemini-2.5-flash").
+        gid = "-".join((api_id or "").strip().removeprefix("models/").split()).lower()
+        url = f"{base_url}/v1beta/models/{gid}:generateContent?key={key}"
         headers = {"content-type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
