@@ -148,6 +148,67 @@ async def test_persist_properties_dedup(db_session):
     assert len(rows) == 1 and float(rows[0].valuation) == 15400000
 
 
+def test_extraction_is_schema_driven():
+    """The field list the model is asked for is derived from the CustomerProfile
+    schema — so previously-missed sub-fields are covered and a future column would
+    be picked up automatically (no prompt edit)."""
+    fields = doc_ingest.extractable_profile_fields()
+    for k in ("visa_issue", "visa_type", "tenancy_issue", "tenancy_address",
+              "emirates_id_golden", "nationality", "trade_license_issue", "auditor"):
+        assert k in fields, f"{k} should be extractable"
+    # housekeeping / file-path / officer-notes columns are excluded
+    for k in ("data_json", "passport_doc", "profile_completeness", "account_no",
+              "passport_remarks", "created_at"):
+        assert k not in fields, f"{k} should NOT be extractable"
+    # and they actually reach the prompt sent to the model
+    for k in ("visa_type", "tenancy_address", "emirates_id_golden"):
+        assert k in doc_ingest.EXTRACTION_PROMPT
+
+
+async def test_persist_full_kyc_schema_driven(db_session):
+    """Every recognised KYC sub-field is promoted to its real column (incl. the ones
+    the old hardcoded map dropped: visa type/issue, tenancy address, golden EID)."""
+    payload = {
+        "account_no": "660011", "name": "KYC Co", "account_type": "corporate",
+        "fields": {
+            "visa_no": "V-123", "visa_issue": "01/01/2024", "visa_expiry": "01/01/2027",
+            "visa_type": "Investor", "tenancy_no": "T-9", "tenancy_issue": "02/02/2025",
+            "tenancy_address": "Marina, Dubai", "emirates_id_golden": "Yes",
+            "nationality": "Iran", "auditor": "KPMG", "monthly_salary": "45000",
+        },
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"]
+    await db_session.commit()
+    from app.models.crm import CustomerProfile
+    from sqlalchemy import select as _sel
+    cp = (await db_session.execute(_sel(CustomerProfile).where(CustomerProfile.account_no == "660011"))).scalar_one()
+    assert cp.visa_type == "Investor" and cp.visa_no == "V-123"
+    assert cp.tenancy_address == "Marina, Dubai" and cp.tenancy_no == "T-9"
+    assert cp.emirates_id_golden == "Yes"
+    assert cp.passport_nationality == "Iran"   # via the "nationality" alias
+    assert cp.auditor == "KPMG" and cp.monthly_salary == "45000"
+
+
+async def test_persist_kyc_renewal_updates_date_but_fillempty_text(db_session):
+    """KYC dates update on renewal (later wins); curated text is never clobbered."""
+    from app.models.crm import CustomerProfile
+    from sqlalchemy import select as _sel
+    cp = CustomerProfile(account_no="660022", passport_expiry="01/01/2026",
+                         passport_nationality="India")
+    db_session.add(cp)
+    await db_session.commit()
+    payload = {"account_no": "660022", "name": "X", "fields": {
+        "passport_expiry": "01/01/2031",   # renewal → later date wins
+        "nationality": "Pakistan",          # already set → must NOT clobber
+    }}
+    await doc_ingest.persist_customer(db_session, payload, "tester")
+    await db_session.commit()
+    row = (await db_session.execute(_sel(CustomerProfile).where(CustomerProfile.account_no == "660022"))).scalar_one()
+    assert row.passport_expiry == "01/01/2031"     # updated on renewal
+    assert row.passport_nationality == "India"      # curated value preserved
+
+
 def test_split_pdf_and_offset():
     import io
     import pytest
