@@ -422,6 +422,7 @@ async def analyze_document(
         raise HTTPException(status_code=413, detail=f"حجم فایل زیاد است (حداکثر {limit // (1024*1024)} MB برای این نوع)")
 
     documents: list = []
+    chunk_errors: list = []
     if lower.endswith(_EXCEL_EXT) or mime in ("text/csv",):
         # Office/Excel/CSV tables: parse locally to text and let the model extract
         # every row/account (chunked for big tables), routing each to its customer.
@@ -487,24 +488,44 @@ async def analyze_document(
                 raise HTTPException(status_code=413, detail=f"فایلِ بزرگ قابلِ تقسیم نبود: {exc}")
         else:
             parts = [(0, data)]
+        # Resolve the model ONCE (DB), then send the chunks CONCURRENTLY (no DB),
+        # bounded by a semaphore so the provider's rate limit isn't hammered.
+        rr = await inference.resolve_multimodal(db, [{"mimetype": mime}], model_id=model_id)
+        if not rr.get("ok"):
+            err = rr.get("error")
+            if err == "model_incapable":
+                raise HTTPException(status_code=422, detail={
+                    "error": "model_incapable", "model": rr.get("model"),
+                    "message": f"«{rr.get('model')}» نمی‌تواند این فایل را بخواند. یکی از مدل‌های پیشنهادی را انتخاب کن:",
+                    "suggestions": rr.get("suggestions", [])})
+            if err == "no_model":
+                raise HTTPException(status_code=400, detail="هیچ مدلِ سند/تصویرخوان در تنظیمات فعال نیست.")
+            raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}")
+        resolved = rr["resolved"]
+        model_name = resolved.display_name
+        import asyncio
+        sem = asyncio.Semaphore(3)  # rate-limit: at most 3 chunks in flight
+
+        async def _one(start: int, pbytes: bytes):
+            async with sem:
+                res = await inference.send_multimodal(
+                    resolved, doc_ingest.EXTRACTION_PROMPT,
+                    [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
+                if not res.get("ok") and "429" in str(res.get("error", "")):
+                    await asyncio.sleep(2)  # single backoff retry on rate-limit
+                    res = await inference.send_multimodal(
+                        resolved, doc_ingest.EXTRACTION_PROMPT,
+                        [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
+            return start, res
+
+        sent = await asyncio.gather(*[_one(s, b) for (s, b) in parts])
         merged: dict = {}
-        model_name = None
-        for (start, pbytes) in parts:
-            res = await inference.complete_multimodal(
-                db, doc_ingest.EXTRACTION_PROMPT,
-                [{"filename": fname, "mimetype": mime, "data": pbytes}], model_id=model_id)
+        errs: list = []
+        for start, res in sorted(sent, key=lambda x: x[0]):
             if not res.get("ok"):
-                err = res.get("error")
-                if err == "model_incapable":
-                    raise HTTPException(status_code=422, detail={
-                        "error": "model_incapable", "model": res.get("model"),
-                        "message": f"«{res.get('model')}» نمی‌تواند این فایل را بخواند. یکی از مدل‌های پیشنهادی را انتخاب کن:",
-                        "suggestions": res.get("suggestions", [])})
-                if err == "no_model":
-                    raise HTTPException(status_code=400, detail="هیچ مدلِ سند/تصویرخوان در تنظیمات فعال نیست.")
-                raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}")
+                errs.append(res.get("error"))
+                continue
             parsed = doc_ingest.parse_model_json(res.get("text", ""))
-            model_name = res.get("model")
             off = (start - 1) if start else 0
             for c in (parsed.get("customers") or []):
                 a = doc_ingest._acc_of(c)
@@ -521,7 +542,8 @@ async def analyze_document(
                     documents.append(d)
         customers = list(merged.values())
         if not customers:
-            raise HTTPException(status_code=422, detail="مدل نتوانست داده‌ای استخراج کند. مدلِ قوی‌تری انتخاب کن.")
+            raise HTTPException(status_code=502, detail=f"استخراج ناموفق بود: {errs[0] if errs else 'داده‌ای یافت نشد'}")
+        chunk_errors = errs  # surfaced in the response so partial failures are visible
     else:
         raise HTTPException(status_code=415, detail="فقط PDF، تصویر یا Word (.docx) پشتیبانی می‌شود.")
 
@@ -598,5 +620,6 @@ async def analyze_document(
     return {
         "ok": True, "model": model_name, "filename": fname,
         "customers": results, "multi_customer": len(saved) > 1, "documents": documents,
+        "chunk_errors": [e for e in chunk_errors if e],
         "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id, "reused": reused},
     }

@@ -190,26 +190,39 @@ async def complete_multimodal(
     Returns ``{ok, text, model}`` on success, or ``{ok: False, error, suggestions}``
     where ``error`` is "no_model" / "model_incapable" / "<provider error>".
     """
-    import base64
-    from app.ai import catalog
+    rr = await resolve_multimodal(db, files, model_id=model_id, task=task)
+    if not rr.get("ok"):
+        return rr
+    return await send_multimodal(rr["resolved"], prompt, files, system=system, max_tokens=max_tokens)
 
+
+async def resolve_multimodal(db: AsyncSession, files: list, *, model_id: Optional[int] = None,
+                             task: str = "document_extraction") -> Dict[str, Any]:
+    """Resolve + capability-check a model for multimodal extraction. Does the DB
+    work ONCE so the actual sends can run concurrently without sharing the
+    session. Returns ``{ok, resolved}`` or ``{ok: False, error, suggestions}``."""
     resolved = None
     if model_id is not None:
         resolved = await ai_manager.resolve_specific(db, model_id, task)
     if resolved is None:
         resolved = await ai_manager.resolve(db, task) or await ai_manager.resolve(db, "general")
     if resolved is None or not resolved.is_usable:
-        return {"ok": False, "error": "no_model", "text": "", "model": None}
-
-    needs_pdf = any((f.get("mimetype") or "").lower() == "application/pdf" for f in files)
+        return {"ok": False, "error": "no_model"}
+    needs_pdf = any((f.get("mimetype") or "").lower() == "application/pdf" for f in (files or []))
     caps = set(resolved.capabilities or [])
-    # Text-only (no binary files) needs no vision/documents capability.
     cap_ok = True if not files else (("documents" in caps) if needs_pdf else (("vision" in caps) or ("documents" in caps)))
     if not cap_ok:
         suggestions = await ai_manager.capable_models(db, "documents" if needs_pdf else "vision")
-        return {"ok": False, "error": "model_incapable", "model": resolved.display_name,
-                "suggestions": [s for s in suggestions if s["id"] != getattr(resolved, "model_id_db", None)],
-                "text": ""}
+        return {"ok": False, "error": "model_incapable", "model": resolved.display_name, "suggestions": suggestions}
+    return {"ok": True, "resolved": resolved}
+
+
+async def send_multimodal(resolved, prompt: str, files: list, *, system: Optional[str] = None,
+                          max_tokens: int = 8000) -> Dict[str, Any]:
+    """POST a multimodal request for an ALREADY-resolved model — no DB access, so
+    many of these can be awaited concurrently (e.g. PDF page-chunks)."""
+    import base64
+    from app.ai import catalog
 
     base_url = (resolved.base_url
                 or catalog.PROVIDER_CATALOG.get(resolved.provider_key, {}).get("base_url") or "").rstrip("/")
