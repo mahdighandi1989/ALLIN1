@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
@@ -202,16 +202,31 @@ export default function CreditFileCorporatePage() {
     } finally { setSaving(false) }
   }
 
-  const printSheet = () => {
+  // Fit the whole sheet onto ONE A4 page: measure at the REAL print width (190mm)
+  // so text wrapping matches the printout, then shrink with CSS zoom. Runs on the
+  // Print button AND on Ctrl+P (beforeprint).
+  const fitSheet = useCallback(() => {
     const el = sheetRef.current
-    if (el) {
-      const w = el.offsetWidth || 1
-      const printHmm = (190 * el.scrollHeight) / w
-      const z = printHmm > 277 ? Math.max(0.5, 277 / printHmm) : 1
-      el.style.setProperty('--pz', String(z))
-    }
-    setTimeout(() => window.print(), 40)
-  }
+    if (!el) return
+    const MMpx = 96 / 25.4
+    const savedW = el.style.width
+    const savedZ = (el.style as any).zoom
+    el.style.width = '190mm'
+    ;(el.style as any).zoom = '1'
+    void el.offsetHeight // force reflow at print width
+    const hMm = el.scrollHeight / MMpx
+    el.style.width = savedW
+    ;(el.style as any).zoom = savedZ
+    const avail = 281 // A4 minus page margins
+    const z = hMm > avail ? Math.max(0.4, (avail - 2) / hMm) : 1
+    el.style.setProperty('--pz', String(z))
+  }, [])
+  const printSheet = () => { fitSheet(); setTimeout(() => window.print(), 60) }
+  useEffect(() => {
+    const on = () => fitSheet()
+    window.addEventListener('beforeprint', on)
+    return () => window.removeEventListener('beforeprint', on)
+  }, [fitSheet])
 
   // Auto-load when arriving from the unified /credit-file router (?acc=…).
   useEffect(() => {

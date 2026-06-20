@@ -166,7 +166,7 @@ export default function SanctionPage() {
       const fit = pg.querySelector<HTMLElement>('.sn-fit')
       if (!fit) return
       fit.style.setProperty('zoom', '1')
-      if (fit.scrollHeight > avail) fit.style.setProperty('zoom', String(Math.max(0.55, avail / fit.scrollHeight)))
+      if (fit.scrollHeight > avail) fit.style.setProperty('zoom', String(Math.max(0.4, avail / fit.scrollHeight)))
     })
   }, [])
   useEffect(() => { fitPages() })

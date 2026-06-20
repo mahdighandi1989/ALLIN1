@@ -241,7 +241,7 @@ export default function OfferLetterPage() {
       if (!fit) return
       fit.style.setProperty('zoom', '1')
       const h = fit.scrollHeight
-      if (h > avail) fit.style.setProperty('zoom', String(Math.max(0.6, avail / h)))
+      if (h > avail) fit.style.setProperty('zoom', String(Math.max(0.4, avail / h)))
     })
   }, [])
   useEffect(() => { fitPages() })
