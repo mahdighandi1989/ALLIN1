@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
-import { AmtInput, DraftDrop, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
+import { AmtInput, PctInput, DraftDrop, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -90,7 +90,8 @@ export default function CreditFileRetailPage() {
     setA((s) => ({ ...s, customerName: s.customerName || o.CompanyName || '', rating: o.Rating || s.rating }))
     // Proposed loan → fill the (empty) Personal Loan row.
     const amt = o.LoanAmount || o.CreditLimit || (pf.proposed_amount ? fmtAmt(pf.proposed_amount) : '')
-    const rate = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const rateRaw = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const rate = rateRaw ? `${rateRaw}%` : ''
     const ten = o.LoanTenor || pf.proposed_tenor || ''
     if (amt || rate || ten) {
       setFacRows((rows) => {
@@ -105,7 +106,7 @@ export default function CreditFileRetailPage() {
   const facFromRecord = (f?: Facility) => ({
     facilityId: f?.id || '',
     approvalDate: fmtDate(f?.start_date), amount: fmtAmt(f && f.amount != null ? String(f.amount) : ''),
-    rate: f && f.interest_rate != null ? String(f.interest_rate) : '',
+    rate: f && f.interest_rate != null ? `${f.interest_rate}%` : '',
     instalments: (f as any)?.installments || (f as any)?.tenor_months || '', maturity: fmtDate(f?.expiry_date),
   })
   const bindFac = (id: string) => (e: any) => {
@@ -323,7 +324,7 @@ export default function CreditFileRetailPage() {
                 <td className="desc">{r.custom ? <input value={r.label} onChange={setFac(r.uid, 'label')} placeholder="نوع تسهیلات" /> : r.label}</td>
                 <td><input value={r.approvalDate} onChange={setFac(r.uid, 'approvalDate')} /></td>
                 <td><AmtInput value={r.amount} onValue={setFacV(r.uid, 'amount')} /></td>
-                <td><input value={r.rate} onChange={setFac(r.uid, 'rate')} /></td>
+                <td><PctInput value={r.rate} onValue={setFacV(r.uid, 'rate')} /></td>
                 <td><input value={r.instalments} onChange={setFac(r.uid, 'instalments')} /></td>
                 <td><input value={r.maturity} onChange={setFac(r.uid, 'maturity')} /></td>
                 <td className="tools">
@@ -370,7 +371,7 @@ export default function CreditFileRetailPage() {
           {/* Mortgaged Properties (املاک) — two-way synced with the customer's properties list */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک&nbsp;<span style={{ fontWeight: 400, fontSize: 9 }}>(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
-            <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation (AED) *</td><td>Mortgage Amt (AED)</td><td className="tools">جزئیات / حذف</td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation *</td><td>Mortgage Amt</td><td className="tools">جزئیات / حذف</td></tr>
             {props.map((p, i) => (
               <React.Fragment key={i}>
                 <tr>
@@ -378,8 +379,8 @@ export default function CreditFileRetailPage() {
                   <td><input value={p.prop_type} onChange={setProp(i, 'prop_type')} placeholder="Apartment / Villa" /></td>
                   <td><input value={p.address} onChange={setProp(i, 'address')} /></td>
                   <td><input value={p.city} onChange={setProp(i, 'city')} /></td>
-                  <td><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /></td>
-                  <td><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /></td>
+                  <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /><select value={p.valuation_currency} onChange={setProp(i, 'valuation_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
+                  <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /><select value={p.mortgage_currency} onChange={setProp(i, 'mortgage_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
                   <td className="tools">
                     <button className="screen-only" title="جزئیات بیشتر" onClick={() => toggleProp(i)} style={{ color: '#2563eb' }}>⋯</button>
                     <button title="حذف" onClick={() => delProp(i)}><Trash2 size={13} /></button>

@@ -39,17 +39,54 @@ export function AmtInput({ value, onValue, style }: { value: string; onValue: (v
   )
 }
 
+// Selectable currencies (per amount, not a column each).
+export const CCY = ['AED', 'IRR', 'USD', 'EUR', 'GBP']
+
+// Percentage cell: type a number, the "%" is appended on blur.
+export function PctInput({ value, onValue, style }: { value: string; onValue: (v: string) => void; style?: React.CSSProperties }) {
+  const fmt = (s: string) => {
+    const t = String(s || '').trim()
+    if (!t || t.endsWith('%')) return t
+    return /^-?\d*\.?\d+$/.test(t) ? `${t}%` : t
+  }
+  return (
+    <input value={value || ''} inputMode="decimal" style={style}
+      onChange={(e) => onValue(e.target.value)}
+      onBlur={(e) => onValue(fmt(e.target.value))} />
+  )
+}
+
+// Searchable country list (native datalist → type to filter, custom allowed).
+export const COUNTRIES = [
+  'United Arab Emirates', 'Iran', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman',
+  'India', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Nepal', 'Afghanistan', 'Philippines',
+  'Egypt', 'Jordan', 'Lebanon', 'Syria', 'Iraq', 'Yemen', 'Sudan', 'Turkey', 'Türkiye',
+  'United Kingdom', 'United States', 'Canada', 'Germany', 'France', 'Italy', 'Spain',
+  'Netherlands', 'Switzerland', 'Sweden', 'Russia', 'Ukraine', 'China', 'Japan',
+  'South Korea', 'Indonesia', 'Malaysia', 'Singapore', 'Thailand', 'Vietnam',
+  'Australia', 'New Zealand', 'South Africa', 'Nigeria', 'Kenya', 'Ethiopia', 'Morocco',
+  'Algeria', 'Tunisia', 'Libya', 'Somalia', 'Brazil', 'Argentina', 'Mexico',
+]
+export function CountryDataList() {
+  return <datalist id="cf-countries">{COUNTRIES.map((c) => <option key={c} value={c} />)}</datalist>
+}
+export function CountryInput({ value, onChange }: { value: string; onChange: (e: any) => void }) {
+  return <input list="cf-countries" value={value} onChange={onChange} placeholder="جستجوی کشور…" />
+}
+
 // ---- Properties (املاک) -------------------------------------------------
 export type PropRow = {
   id?: string
-  prop_type: string; address: string; city: string; valuation: string; mortgage_amount: string
+  prop_type: string; address: string; city: string
+  valuation: string; valuation_currency: string; mortgage_amount: string; mortgage_currency: string
   // extra (optional) — saved to DB, not printed on the one-page summary
   plate_no: string; mortgage_deed_no: string; mortgage_date: string; insurance_expiry: string
   building_age: string; land_area: string; remarks: string
   _open?: boolean
 }
 export const emptyProp = (): PropRow => ({
-  prop_type: '', address: '', city: '', valuation: '', mortgage_amount: '',
+  prop_type: '', address: '', city: '',
+  valuation: '', valuation_currency: 'AED', mortgage_amount: '', mortgage_currency: 'AED',
   plate_no: '', mortgage_deed_no: '', mortgage_date: '', insurance_expiry: '',
   building_age: '', land_area: '', remarks: '',
 })
@@ -57,7 +94,9 @@ export const propFromRecord = (p: any): PropRow => ({
   id: p.id,
   prop_type: p.prop_type || '', address: p.address || '', city: p.city || '',
   valuation: p.valuation != null ? fmtAmt(String(p.valuation)) : '',
+  valuation_currency: p.valuation_currency || 'AED',
   mortgage_amount: p.mortgage_amount != null ? fmtAmt(String(p.mortgage_amount)) : '',
+  mortgage_currency: p.mortgage_currency || 'AED',
   plate_no: p.plate_no || '', mortgage_deed_no: p.mortgage_deed_no || '',
   mortgage_date: p.mortgage_date || '', insurance_expiry: p.insurance_expiry || '',
   building_age: p.building_age || '', land_area: p.land_area || '', remarks: p.remarks || '',
@@ -86,7 +125,9 @@ export async function savePropertyRows(
       address: r.address.trim() || undefined,
       city: r.city.trim() || undefined,
       valuation: onlyNum(r.valuation),
+      valuation_currency: r.valuation_currency || 'AED',
       mortgage_amount: onlyNum(r.mortgage_amount),
+      mortgage_currency: r.mortgage_currency || 'AED',
       plate_no: r.plate_no.trim() || undefined,
       mortgage_deed_no: r.mortgage_deed_no.trim() || undefined,
       mortgage_date: r.mortgage_date.trim() || undefined,
