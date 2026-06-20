@@ -280,6 +280,17 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
             model.input_cost_per_1m = mdef.get("input_cost_per_1m")
             model.output_cost_per_1m = mdef.get("output_cost_per_1m")
 
+    # Prune catalog models that the catalog no longer defines (e.g. retired
+    # Gemini 1.5). Only touches catalog-sourced rows — never custom/admin-added —
+    # and detaches any task route first so nothing dangles.
+    catalog_keys = {mdef["model_key"] for _, mdef in catalog.iter_catalog_models()}
+    for mk, m in existing_models.items():
+        if (getattr(m, "source", "catalog") or "catalog") != "custom" and not getattr(m, "is_custom", False) and mk not in catalog_keys:
+            for r in (await db.execute(select(AITaskRoute).where(AITaskRoute.model_id == m.id))).scalars():
+                r.model_id = None
+            await db.delete(m)
+            counts["models_removed"] = counts.get("models_removed", 0) + 1
+
     # Make sure a route row exists for every task (unrouted = auto-pick).
     existing_routes = {
         r.task: r for r in (await db.execute(select(AITaskRoute))).scalars()
