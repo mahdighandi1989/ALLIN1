@@ -88,6 +88,32 @@ def parse_model_json(text: str) -> dict:
         return {}
 
 
+def _newer_or_empty(new: str, old: str) -> bool:
+    """True if ``new`` should replace ``old`` for a date field: old empty, or new
+    is a later (renewed) date. Unparseable new → keep old (don't clobber)."""
+    if not (new or "").strip():
+        return False
+    if not (old or "").strip():
+        return True
+    try:
+        from dateutil import parser as _dp
+        nd = _dp.parse(new, dayfirst=True, fuzzy=True).date()
+    except Exception:
+        return False
+    try:
+        from dateutil import parser as _dp
+        od = _dp.parse(old, dayfirst=True, fuzzy=True).date()
+    except Exception:
+        return True
+    return nd >= od
+
+
+_KYC_DATE_COLS = {
+    "trade_license_issue", "trade_license_expiry", "passport_issue", "passport_expiry",
+    "emirates_id_issue", "emirates_id_expiry", "visa_expiry", "tenancy_expiry",
+}
+
+
 def _acc_of(cust: dict) -> str:
     acc = str(cust.get("account_no") or "").strip()
     if re.fullmatch(r"\d{6}", acc):
@@ -138,7 +164,13 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     }
     for src, col in _kyc_map.items():
         v = fields.get(src)
-        if v and not (getattr(cp, col, "") or "").strip():
+        if not v:
+            continue
+        cur = (getattr(cp, col, "") or "").strip()
+        # ID dates UPDATE on renewal (later date wins); numbers/nationality are
+        # fill-empty (never clobbered by a possibly-wrong extraction).
+        take = _newer_or_empty(str(v), cur) if col in _KYC_DATE_COLS else (not cur)
+        if take:
             column = cp.__table__.columns.get(col)
             ml = getattr(getattr(column, "type", None), "length", None)
             setattr(cp, col, str(v)[:ml] if ml else str(v))
@@ -200,18 +232,25 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "guarantors_added": g_added, "guarantors_updated": g_updated}
 
 
-def record_documents_on_profile(data: dict, documents: list, drive_link: str, drive_id: str, filename: str) -> dict:
+def record_documents_on_profile(data: dict, documents: list, drive_link: str, drive_id: str, filename: str, sha: str = "") -> dict:
     """Append the page→document map + Drive link to a profile data_json dict
-    (deduped by drive id). Mutates and returns ``data``."""
+    (deduped by content hash, falling back to drive id). Mutates and returns it."""
     if not isinstance(data, dict):
         data = {}
     docs = data.get("imported_documents")
     if not isinstance(docs, list):
         docs = []
-    # Drop any prior entry for the same Drive file (re-import overwrites).
-    docs = [d for d in docs if isinstance(d, dict) and d.get("drive_id") != drive_id]
+    # Drop any prior entry for the SAME file (by content hash or Drive id) so a
+    # re-import refreshes in place instead of duplicating.
+    def _same(d):
+        if not isinstance(d, dict):
+            return False
+        if sha and d.get("sha") == sha:
+            return True
+        return bool(drive_id) and d.get("drive_id") == drive_id
+    docs = [d for d in docs if not _same(d)]
     docs.append({
-        "filename": filename, "drive_id": drive_id, "drive_link": drive_link,
+        "filename": filename, "drive_id": drive_id, "drive_link": drive_link, "sha": sha,
         "pages": [d for d in (documents or []) if isinstance(d, dict)],
         "imported_at": date.today().isoformat(),
     })

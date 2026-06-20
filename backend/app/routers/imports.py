@@ -473,43 +473,68 @@ async def analyze_document(
             results.append({"ok": False, "reason": str(exc)})
     saved = [r for r in results if r.get("ok")]
 
-    # Store the file once in Drive, then link it under every customer.
-    primary = saved[0]["account_no"] if saved else "unknown"
-    drive = await drive_sync.sync_attachment(account_no=primary, facility_id="",
-                                             original_name=fname, data=data, mimetype=mime)
+    # Content hash → re-uploading the SAME file reuses the existing Drive copy
+    # instead of creating a duplicate.
+    import hashlib
+    sha = hashlib.sha256(data).hexdigest()
+    prior = (await db.execute(
+        select(Attachment).where(Attachment.content_sha256 == sha,
+                                 Attachment.drive_file_id != None,  # noqa: E711
+                                 Attachment.drive_file_id != ""))
+    ).scalars().first()
+
     drive_id = drive_link = drive_name = ""
-    if drive.get("ok"):
-        r = drive.get("result", {})
-        drive_id, drive_link, drive_name = r.get("id", ""), r.get("link", ""), r.get("name", "")
+    reused = False
+    if prior is not None:
+        # Same bytes already in Drive — reuse it (no second upload).
+        drive_id = prior.drive_file_id or ""
+        drive_name = prior.file_name or fname
+        try:
+            drive_link = (_json.loads(prior.notes or "{}") or {}).get("link", "") if prior.notes else ""
+        except Exception:
+            drive_link = ""
+        if not drive_link and drive_id:
+            drive_link = f"https://drive.google.com/file/d/{drive_id}/view"
+        reused = True
+    else:
+        primary = saved[0]["account_no"] if saved else "unknown"
+        drive = await drive_sync.sync_attachment(account_no=primary, facility_id="",
+                                                 original_name=fname, data=data, mimetype=mime)
+        if drive.get("ok"):
+            r = drive.get("result", {})
+            drive_id, drive_link, drive_name = r.get("id", ""), r.get("link", ""), r.get("name", "")
 
     for r in saved:
         acc = r["account_no"]
         my_docs = [d for d in documents if isinstance(d, dict) and (
             not d.get("customer_account") or str(d.get("customer_account")).endswith(acc) or acc in str(d.get("customer_account")))]
         if drive_id:
+            notes = _json.dumps({"title": _doc_title(my_docs, fname), "link": drive_link,
+                                 "source": "ai_import", "pages": my_docs}, ensure_ascii=False)
+            # Dedup the per-customer link by content hash → same file never doubles up.
             exists = (await db.execute(select(Attachment).where(
-                Attachment.account_no == acc, Attachment.drive_file_id == drive_id))).scalar_one_or_none()
+                Attachment.account_no == acc, Attachment.content_sha256 == sha))).scalar_one_or_none()
             if exists is None:
                 db.add(Attachment(
                     id=f"ATT-{acc}-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:3]}",
-                    account_no=acc, facility_id="", file_name=drive_name, original_name=fname,
-                    drive_file_id=drive_id, file_size=str(len(data)), upload_date=_date.today().isoformat(),
-                    uploaded_by=username, is_shared=("true" if len(saved) > 1 else "false"),
-                    notes=_json.dumps({"title": _doc_title(my_docs, fname), "link": drive_link,
-                                       "source": "ai_import", "pages": my_docs}, ensure_ascii=False)))
-        cp = (await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))).scalar_one_or_none()
-        if cp is not None:
-            try:
-                pdata = _json.loads(cp.data_json) if cp.data_json else {}
-            except Exception:
-                pdata = {}
-            doc_ingest.record_documents_on_profile(pdata, my_docs, drive_link, drive_id, fname)
-            cp.data_json = _json.dumps(pdata, ensure_ascii=False)
+                    account_no=acc, facility_id="", file_name=drive_name or fname, original_name=fname,
+                    drive_file_id=drive_id, content_sha256=sha, file_size=str(len(data)),
+                    upload_date=_date.today().isoformat(), uploaded_by=username,
+                    is_shared=("true" if len(saved) > 1 else "false"), notes=notes))
+            else:
+                exists.notes = notes  # refresh page-map/title in place (no new row)
+            cp = (await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))).scalar_one_or_none()
+            if cp is not None:
+                try:
+                    pdata = _json.loads(cp.data_json) if cp.data_json else {}
+                except Exception:
+                    pdata = {}
+                doc_ingest.record_documents_on_profile(pdata, my_docs, drive_link, drive_id, fname, sha)
+                cp.data_json = _json.dumps(pdata, ensure_ascii=False)
 
     await db.commit()
     return {
         "ok": True, "model": model_name, "filename": fname,
         "customers": results, "multi_customer": len(saved) > 1, "documents": documents,
-        "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id,
-                  "skipped": drive.get("skipped", False), "reason": drive.get("reason") or drive.get("error")},
+        "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id, "reused": reused},
     }
