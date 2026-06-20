@@ -95,3 +95,15 @@ async def test_analyze_xlsx_reaches_branch(client, auth_headers):
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
     assert r.status_code in (400, 502), r.text
+
+
+async def test_reupload_same_file_no_duplicate_review(client, auth_headers, db_session):
+    db_session.add(Customer(account_no="115524", name="X"))
+    await db_session.commit()
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    for _ in range(2):  # upload + extract the SAME file twice
+        r = await client.post("/api/imports/analyze", headers=auth_headers,
+                              files={"file": ("efco.docx", _draft_docx(), mime)})
+        assert r.status_code == 200, r.text
+    rc = await client.get("/api/crm/credit-reviews/115524", headers=auth_headers)
+    assert len(rc.json()) == 1  # deduped per review date — not duplicated on re-upload

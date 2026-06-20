@@ -164,6 +164,9 @@ class Attachment(Base):
     # ``file_path`` is left empty. Legacy/disk-stored files have it empty and use
     # ``file_path`` instead. Download/delete branch on which one is set.
     drive_file_id = Column(String(128))
+    # SHA-256 of the file bytes — lets re-uploading the SAME file reuse the
+    # existing Drive copy + attachment instead of creating duplicates.
+    content_sha256 = Column(String(64), index=True)
     file_size = Column(String(20))
     upload_date = Column(String(30))
     uploaded_by = Column(String(80))
