@@ -436,7 +436,7 @@ export default function CreditFileCorporatePage() {
 
           {/* Mortgaged Properties (املاک) — two-way synced with the customer's properties list */}
           <table className="cf"><tbody>
-            <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک&nbsp;<span style={{ fontWeight: 400, fontSize: 9 }}>(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
+            <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک<span className="screen-only" style={{ fontWeight: 400, fontSize: 9 }}>&nbsp;(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
             <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation *</td><td>Mortgage Amt</td><td className="tools">جزئیات / حذف</td></tr>
             {props.map((p, i) => (
               <React.Fragment key={i}>

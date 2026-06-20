@@ -213,8 +213,16 @@ function CustomerDetailInner() {
       toast.success(`${created.length} document(s) uploaded`)
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  // Parse the JSON metadata an AI-import stores in `notes` (title + page→doc map + Drive link).
+  const attMeta = (a: any): { title?: string; link?: string; pages?: any[] } => {
+    try { const m = JSON.parse(a?.notes || '{}'); return (m && typeof m === 'object') ? m : {} } catch { return {} }
+  }
   const openAttachment = async (a: any) => {
     try {
+      // Drive-stored files OPEN in a new tab (the Drive viewer) instead of downloading.
+      const meta = attMeta(a)
+      const link = meta.link || (a.drive_file_id ? `https://drive.google.com/file/d/${a.drive_file_id}/view` : '')
+      if (link) { window.open(link, '_blank', 'noopener,noreferrer'); return }
       await downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name || a.file_name || 'document')
     } catch (e) { toast.error(parseApiError(e)) }
   }
@@ -852,9 +860,26 @@ function CustomerDetailInner() {
               <table className="w-full text-sm whitespace-nowrap">
                 <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Document', 'Facility', 'Row', 'Uploaded', 'By', 'Size', 'Shared', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}</tr></thead>
                 <tbody className="divide-y">
-                  {attachments.map((a: any) => (
+                  {attachments.map((a: any) => {
+                    const meta = attMeta(a)
+                    const pages = Array.isArray(meta.pages) ? meta.pages : []
+                    return (
                     <tr key={a.id}>
-                      <td className="px-3 py-1.5"><button onClick={() => openAttachment(a)} type="button" className="text-blue-600 hover:underline">{a.original_name || a.file_name}</button></td>
+                      <td className="px-3 py-1.5">
+                        <button onClick={() => openAttachment(a)} type="button" className="text-blue-600 hover:underline">
+                          {meta.title || a.original_name || a.file_name}
+                        </button>
+                        {a.drive_file_id && <span className="ml-1.5 text-[10px] text-emerald-600">↗ Drive</span>}
+                        {pages.length > 0 && (
+                          <div className="mt-0.5 whitespace-normal text-xs text-gray-500">
+                            {pages.map((p: any, i: number) => (
+                              <button key={i} type="button" onClick={() => openAttachment(a)} className="mr-3 hover:text-blue-600">
+                                📄 ص {p.pages}: <span className="font-medium">{p.type}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-1.5">{val(a.facility_id)}</td>
                       <td className="px-3 py-1.5">{val(a.row_index)}</td>
                       <td className="px-3 py-1.5">{(a.upload_date || '').slice(0, 10)}</td>
@@ -863,7 +888,7 @@ function CustomerDetailInner() {
                       <td className="px-3 py-1.5">{done(a.is_shared) ? 'Yes' : 'No'}</td>
                       <td className="px-3 py-1.5"><button onClick={() => removeAttachment(a.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>

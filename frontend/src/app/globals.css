@@ -168,6 +168,13 @@ body {
   .app-toaster {
     display: none !important;
   }
+
+  /* Placeholder/helper text must never appear on a printout (empty inputs would
+     otherwise print their grey placeholder, e.g. "جستجوی کشور"). */
+  input::placeholder, textarea::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
+  }
   
   .print-break-before {
     break-before: page;

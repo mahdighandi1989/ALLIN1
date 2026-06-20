@@ -39,10 +39,12 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
       "account_type": "retail" | "corporate",
       "branch": "<branch name and/or code>",
       "fields": {
-        "business_type": "", "trade_license_no": "", "trade_license_expiry": "",
+        "business_type": "", "trade_license_no": "", "trade_license_issue": "", "trade_license_expiry": "",
         "established_since": "", "relationship_date": "", "aecb_score": "",
         "monthly_salary": "", "auditor": "", "address": "", "po_box": "",
-        "passport_no": "", "passport_expiry": "", "emirates_id_no": "", "emirates_id_expiry": "",
+        "passport_no": "", "passport_issue": "", "passport_expiry": "", "nationality": "",
+        "emirates_id_no": "", "emirates_id_issue": "", "emirates_id_expiry": "",
+        "visa_no": "", "visa_expiry": "", "tenancy_no": "", "tenancy_expiry": "",
         "proposed_facility": "", "proposed_amount": "", "proposed_tenor": "", "proposed_rate": ""
       },
       "guarantors": [ {"name": "", "account": "", "branch": ""} ],
@@ -59,6 +61,9 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
 
 Rules:
 - Only include fields you actually find; omit unknowns (do NOT invent values).
+- Always capture the customer's full legal NAME exactly as printed.
+- Capture each ID document's NUMBER together with its ISSUE and EXPIRY dates.
+- "nationality" ONLY if it is explicitly printed — never guess or assume it.
 - "account_no" is the 6-digit core (the middle group of 2624-115524-011 is 115524).
 - Numbers as plain digits (no thousands separators) where possible.
 - "documents" must list, for EVERY page or page-range, which document it is and which account it belongs to.
@@ -118,7 +123,25 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     if cp is None:
         cp = CustomerProfile(account_no=acc, customer_name=name)
         db.add(cp)
-    _apply_profile_scalars(cp, fields)  # promote known scalars to real columns
+    _apply_profile_scalars(cp, fields)  # promote known credit scalars to real columns
+    # Promote identity/KYC facts to their real columns — fill-empty so the model
+    # can never overwrite a value an officer already curated (e.g. a wrong
+    # nationality won't clobber a correct one).
+    _kyc_map = {
+        "trade_license_no": "trade_license_no", "trade_license_issue": "trade_license_issue",
+        "trade_license_expiry": "trade_license_expiry",
+        "passport_no": "passport_no", "passport_issue": "passport_issue", "passport_expiry": "passport_expiry",
+        "nationality": "passport_nationality", "passport_nationality": "passport_nationality",
+        "emirates_id_no": "emirates_id_no", "emirates_id_issue": "emirates_id_issue", "emirates_id_expiry": "emirates_id_expiry",
+        "visa_no": "visa_no", "visa_expiry": "visa_expiry",
+        "tenancy_no": "tenancy_no", "tenancy_expiry": "tenancy_expiry",
+    }
+    for src, col in _kyc_map.items():
+        v = fields.get(src)
+        if v and not (getattr(cp, col, "") or "").strip():
+            column = cp.__table__.columns.get(col)
+            ml = getattr(getattr(column, "type", None), "length", None)
+            setattr(cp, col, str(v)[:ml] if ml else str(v))
     try:
         data = json.loads(cp.data_json) if cp.data_json else {}
         if not isinstance(data, dict):
