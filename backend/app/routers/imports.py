@@ -318,9 +318,14 @@ from typing import Optional
 
 from fastapi import Form
 
-_AI_MAX_BYTES = 25 * 1024 * 1024
+# PDFs/images are sent to the model inline → bounded by the provider's request
+# limit (Anthropic PDF max is 32 MB). Locally-parsed files (Word/Excel/CSV) never
+# go base64 to the model, so they can be much larger.
+_AI_MAX_BYTES = 32 * 1024 * 1024
+_DOC_MAX_BYTES = 60 * 1024 * 1024
 _IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/tiff", "image/bmp")
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".csv")
 
 
 def _guess_mime(filename: str, given: str) -> str:
@@ -371,14 +376,53 @@ async def analyze_document(
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
-    if len(data) > _AI_MAX_BYTES:
-        raise HTTPException(status_code=413, detail=f"File too large (max {_AI_MAX_BYTES // (1024*1024)} MB)")
     fname = file.filename or "document"
     mime = _guess_mime(fname, file.content_type or "")
     username = getattr(user, "username", "") or ""
+    lower = fname.lower()
+    is_local = lower.endswith(".docx") or lower.endswith(_EXCEL_EXT)
+    limit = _DOC_MAX_BYTES if is_local else _AI_MAX_BYTES
+    if len(data) > limit:
+        raise HTTPException(status_code=413, detail=f"حجم فایل زیاد است (حداکثر {limit // (1024*1024)} MB برای این نوع)")
 
     documents: list = []
-    if mime == _DOCX_MIME or fname.lower().endswith(".docx"):
+    if lower.endswith(_EXCEL_EXT) or mime in ("text/csv",):
+        # Office/Excel/CSV tables: parse locally to text and let the model extract
+        # every row/account (chunked for big tables), routing each to its customer.
+        from app.services import doc_ingest as _di
+        try:
+            table_text = _di.workbook_to_text(data, fname)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"جدول قابلِ خواندن نبود: {exc}")
+        if not (table_text or "").strip():
+            raise HTTPException(status_code=422, detail="جدول خالی است.")
+        chunks = _di.chunk_text(table_text, 100000)
+        merged: dict = {}
+        model_name = None
+        for ci, ch in enumerate(chunks):
+            prompt = (_di.EXTRACTION_PROMPT +
+                      f"\n\nThe content below is a SPREADSHEET/TABLE (part {ci+1} of {len(chunks)}). "
+                      "Each row is usually ONE account/customer; extract EVERY row and attribute it "
+                      "to the correct account. There are no page images — ignore the 'documents' array.\n\n"
+                      "TABLE CONTENT:\n" + ch)
+            res = await inference.complete(db, prompt, task="document_extraction", model_id=model_id, max_tokens=8000)
+            if not res.get("ok"):
+                if res.get("error") == "no_model":
+                    raise HTTPException(status_code=400, detail="هیچ مدلی در تنظیمات فعال نیست.")
+                raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {res.get('error')}")
+            model_name = res.get("model")
+            for c in (doc_ingest.parse_model_json(res.get("text", "")).get("customers") or []):
+                acc = doc_ingest._acc_of(c)
+                if not acc:
+                    continue
+                if acc in merged:
+                    doc_ingest.merge_customer(merged[acc], c)
+                else:
+                    merged[acc] = c
+        customers = list(merged.values())
+        if not customers:
+            raise HTTPException(status_code=422, detail="هیچ حساب/مشتری از جدول استخراج نشد.")
+    elif mime == _DOCX_MIME or lower.endswith(".docx"):
         # Word drafts: use the deterministic parser (no AI needed).
         from app.services.draft_extract import extract_from_docx
         try:

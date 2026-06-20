@@ -60,13 +60,18 @@ async def complete(
     system: Optional[str] = None,
     max_tokens: int = 1024,
     temperature: Optional[float] = None,
+    model_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Resolve ``task`` to a model and return its completion of ``prompt``.
+    """Resolve ``task`` (or an explicit ``model_id``) to a model and complete ``prompt``.
 
     Falls back to the ``general`` task when ``task`` has no usable model. Returns
     ``{"ok": False, "error": "no_model"}`` when nothing is configured.
     """
-    resolved = await ai_manager.resolve(db, task)
+    resolved = None
+    if model_id is not None:
+        resolved = await ai_manager.resolve_specific(db, model_id, task)
+    if resolved is None or not resolved.is_usable:
+        resolved = await ai_manager.resolve(db, task)
     if resolved is None or not resolved.is_usable:
         resolved = await ai_manager.resolve(db, "general")
     if resolved is None or not resolved.is_usable:
@@ -198,7 +203,8 @@ async def complete_multimodal(
 
     needs_pdf = any((f.get("mimetype") or "").lower() == "application/pdf" for f in files)
     caps = set(resolved.capabilities or [])
-    cap_ok = ("documents" in caps) if needs_pdf else (("vision" in caps) or ("documents" in caps))
+    # Text-only (no binary files) needs no vision/documents capability.
+    cap_ok = True if not files else (("documents" in caps) if needs_pdf else (("vision" in caps) or ("documents" in caps)))
     if not cap_ok:
         suggestions = await ai_manager.capable_models(db, "documents" if needs_pdf else "vision")
         return {"ok": False, "error": "model_incapable", "model": resolved.display_name,
