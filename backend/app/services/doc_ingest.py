@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer, AccountType
 from app.models.crm import CustomerProfile
 from app.models.guarantor import Guarantor
+from app.models.profile_entities import MortgagedProperty
 from app.services.customer_link import ensure_customer
 
 EXTRACTION_PROMPT = """You are a meticulous UAE banking credit-file analyst. Read the ATTACHED document(s) end to end (every page) and extract the data for the bank's customer database.
@@ -48,6 +49,9 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
         "proposed_facility": "", "proposed_amount": "", "proposed_tenor": "", "proposed_rate": ""
       },
       "guarantors": [ {"name": "", "account": "", "branch": ""} ],
+      "properties": [ {"prop_type": "", "address": "", "city": "", "country": "",
+                       "valuation": "", "valuation_currency": "AED", "mortgage_amount": "", "mortgage_currency": "AED",
+                       "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "", "insurance_expiry": ""} ],
       "review": {
         "date_of_review": "", "credit_application_no": "", "purpose": "",
         "proposed_rating": "", "rating_notes": "", "cru_recommendation": ""
@@ -227,9 +231,86 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if customer is not None and customer.name and not row.customer_name:
             row.customer_name = customer.name
 
+    # Properties (املاک) — upsert with smart matching so a similar property isn't
+    # duplicated: match on plate no / mortgage deed no, else type+address.
+    p_added = p_updated = 0
+    for p in (cust.get("properties") or []):
+        if not isinstance(p, dict):
+            continue
+        ptype = (p.get("prop_type") or "").strip()
+        addr = (p.get("address") or "").strip()
+        plate = (p.get("plate_no") or "").strip()
+        deed = (p.get("mortgage_deed_no") or "").strip()
+        if not (ptype or addr or plate or deed):
+            continue
+        prow = await _match_property(db, acc, plate, deed, ptype, addr)
+        if prow is None:
+            import uuid
+            from datetime import datetime
+            prow = MortgagedProperty(id=f"PROP-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
+                                     account_no=acc, date_added=date.today().isoformat(), created_by=username)
+            db.add(prow)
+            p_added += 1
+        else:
+            p_updated += 1
+        # fill-empty so curated values are never clobbered
+        _set_prop(prow, "prop_type", ptype)
+        _set_prop(prow, "address", addr)
+        _set_prop(prow, "city", p.get("city"))
+        _set_prop(prow, "country", p.get("country"))
+        _set_prop(prow, "plate_no", plate)
+        _set_prop(prow, "mortgage_deed_no", deed)
+        _set_prop(prow, "mortgage_date", p.get("mortgage_date"))
+        _set_prop(prow, "insurance_expiry", p.get("insurance_expiry"))
+        _set_prop(prow, "valuation_currency", p.get("valuation_currency"))
+        _set_prop(prow, "mortgage_currency", p.get("mortgage_currency"))
+        if prow.valuation in (None, "") and _num(p.get("valuation")) is not None:
+            prow.valuation = _num(p.get("valuation"))
+        if prow.mortgage_amount in (None, "") and _num(p.get("mortgage_amount")) is not None:
+            prow.mortgage_amount = _num(p.get("mortgage_amount"))
+        if customer is not None and customer.name and not prow.customer_name:
+            prow.customer_name = customer.name
+
     return {"ok": True, "account_no": acc, "name": name or acc,
+            "customer_id": (customer.id if customer is not None else None),
+            "facility_hint": (cust.get("fields", {}).get("proposed_facility")
+                              or (cust.get("review", {}) or {}).get("proposed_facility") or ""),
             "fields_saved": sorted(fields.keys()),
-            "guarantors_added": g_added, "guarantors_updated": g_updated}
+            "guarantors_added": g_added, "guarantors_updated": g_updated,
+            "properties_added": p_added, "properties_updated": p_updated}
+
+
+def _num(v):
+    try:
+        s = re.sub(r"[^\d.\-]", "", str(v or ""))
+        return float(s) if s not in ("", "-", ".") else None
+    except Exception:
+        return None
+
+
+def _set_prop(row, col: str, v) -> None:
+    """Fill-empty a string column on a property row (don't clobber)."""
+    v = (str(v).strip() if v not in (None, "") else "")
+    if v and not (getattr(row, col, "") or "").strip():
+        column = row.__table__.columns.get(col)
+        ml = getattr(getattr(column, "type", None), "length", None)
+        setattr(row, col, v[:ml] if ml else v)
+
+
+async def _match_property(db: AsyncSession, acc: str, plate: str, deed: str, ptype: str, addr: str):
+    """Find an existing property for ``acc`` matching plate/deed, else type+address."""
+    from app.models.profile_entities import MortgagedProperty as MP
+    rows = (await db.execute(select(MP).where(MP.account_no == acc, MP.is_deleted == False))).scalars().all()  # noqa: E712
+    for r in rows:
+        if plate and (r.plate_no or "").strip().lower() == plate.lower():
+            return r
+        if deed and (r.mortgage_deed_no or "").strip().lower() == deed.lower():
+            return r
+    if ptype and addr:
+        for r in rows:
+            if (r.prop_type or "").strip().lower() == ptype.lower() and (r.address or "").strip().lower() == addr.lower():
+                return r
+    return None
 
 
 def record_documents_on_profile(data: dict, documents: list, drive_link: str, drive_id: str, filename: str, sha: str = "") -> dict:
@@ -335,3 +416,41 @@ def merge_customer(into: dict, more: dict) -> None:
                     into["guarantors"].append(g)
         elif v not in (None, "") and not into.get(k):
             into[k] = v
+
+
+# ---------------------------------------------------------------------------
+# Oversized PDFs → split into page-chunks (each under the provider's inline
+# limit) so a big file is extracted section-by-section and merged.
+# ---------------------------------------------------------------------------
+def split_pdf(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 12):
+    """Return ([(start_page_1based, pdf_bytes), ...], total_pages). Each chunk is
+    <= max_bytes (or a single page if one page alone exceeds it)."""
+    import io
+    from pypdf import PdfReader, PdfWriter
+
+    reader = PdfReader(io.BytesIO(data))
+    n = len(reader.pages)
+    chunks: list[tuple[int, bytes]] = []
+    i = 0
+    while i < n:
+        end = min(i + max_pages, n)
+        while end > i:
+            w = PdfWriter()
+            for p in range(i, end):
+                w.add_page(reader.pages[p])
+            buf = io.BytesIO()
+            w.write(buf)
+            b = buf.getvalue()
+            if len(b) <= max_bytes or (end - i) == 1:
+                chunks.append((i + 1, b))
+                i = end
+                break
+            end -= 1
+    return chunks, n
+
+
+def offset_pages(pages: str, offset: int) -> str:
+    """Shift the page numbers in a "1-2" / "3" string by ``offset`` (chunk → global)."""
+    if not offset:
+        return str(pages or "")
+    return re.sub(r"\d+", lambda m: str(int(m.group()) + offset), str(pages or ""))

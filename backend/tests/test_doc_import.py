@@ -107,3 +107,33 @@ async def test_reupload_same_file_no_duplicate_review(client, auth_headers, db_s
         assert r.status_code == 200, r.text
     rc = await client.get("/api/crm/credit-reviews/115524", headers=auth_headers)
     assert len(rc.json()) == 1  # deduped per review date — not duplicated on re-upload
+
+
+async def test_persist_properties_dedup(db_session):
+    base = {"account_no": "550011", "name": "Prop Co", "account_type": "corporate",
+            "properties": [{"prop_type": "Land & Building", "address": "Deira", "city": "Dubai",
+                            "plate_no": "P-9", "valuation": "15,400,000", "valuation_currency": "AED"}]}
+    r1 = await doc_ingest.persist_customer(db_session, base, "tester")
+    assert r1["properties_added"] == 1
+    await db_session.commit()
+    # same property (matched by plate_no) → updated, not duplicated
+    r2 = await doc_ingest.persist_customer(db_session, base, "tester")
+    assert r2["properties_added"] == 0 and r2["properties_updated"] == 1
+    await db_session.commit()
+    from app.models.profile_entities import MortgagedProperty
+    from sqlalchemy import select as _sel
+    rows = (await db_session.execute(_sel(MortgagedProperty).where(MortgagedProperty.account_no == "550011"))).scalars().all()
+    assert len(rows) == 1 and float(rows[0].valuation) == 15400000
+
+
+def test_split_pdf_and_offset():
+    import io
+    import pytest
+    PdfWriter = pytest.importorskip("pypdf").PdfWriter  # prod-only dep
+    w = PdfWriter()
+    for _ in range(5):
+        w.add_blank_page(width=200, height=200)
+    buf = io.BytesIO(); w.write(buf)
+    chunks, n = doc_ingest.split_pdf(buf.getvalue(), max_bytes=10_000_000, max_pages=2)
+    assert n == 5 and len(chunks) == 3 and chunks[0][0] == 1 and chunks[1][0] == 3
+    assert doc_ingest.offset_pages("1-2", 2) == "3-4"

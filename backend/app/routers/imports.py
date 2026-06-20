@@ -322,6 +322,7 @@ from fastapi import Form
 # limit (Anthropic PDF max is 32 MB). Locally-parsed files (Word/Excel/CSV) never
 # go base64 to the model, so they can be much larger.
 _AI_MAX_BYTES = 32 * 1024 * 1024
+_PDF_MAX_BYTES = 64 * 1024 * 1024   # PDFs over the inline limit are split server-side
 _DOC_MAX_BYTES = 60 * 1024 * 1024
 _IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/tiff", "image/bmp")
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -340,6 +341,36 @@ def _doc_title(docs: list, filename: str) -> str:
     if types:
         return ", ".join(list(dict.fromkeys(types))[:4])
     return filename or "Imported document"
+
+
+async def _match_facility(db: AsyncSession, customer_id, hint: str) -> str:
+    """Best-effort: map a proposed-facility hint to one of the customer's existing
+    facilities, so the imported file is filed under the right facility."""
+    if not customer_id or not (hint or "").strip():
+        return ""
+    from app.models.facility import Facility
+    facs = (await db.execute(
+        select(Facility).where(Facility.customer_id == customer_id, Facility.is_deleted == False))  # noqa: E712
+    ).scalars().all()
+    if not facs:
+        return ""
+    h = str(hint).lower()
+    want = None
+    if "overdraft" in h:
+        want = "overdraft"
+    elif "loan" in h:
+        want = "loan"
+    elif "guarantee" in h or "\blg\b" in h or "log" in h:
+        want = "lg"
+    elif "lc" in h or ("letter" in h and "credit" in h):
+        want = "lc"
+    for f in facs:
+        ft = str(getattr(f.facility_type, "value", f.facility_type) or "").lower()
+        if want and want in ft:
+            return f.id
+        if f.name and h in str(f.name).lower():
+            return f.id
+    return ""
 
 
 @router.get("/ai-models")
@@ -380,8 +411,13 @@ async def analyze_document(
     mime = _guess_mime(fname, file.content_type or "")
     username = getattr(user, "username", "") or ""
     lower = fname.lower()
-    is_local = lower.endswith(".docx") or lower.endswith(_EXCEL_EXT)
-    limit = _DOC_MAX_BYTES if is_local else _AI_MAX_BYTES
+    is_pdf = mime == "application/pdf" or lower.endswith(".pdf")
+    if lower.endswith(".docx") or lower.endswith(_EXCEL_EXT):
+        limit = _DOC_MAX_BYTES
+    elif is_pdf:
+        limit = _PDF_MAX_BYTES  # bigger PDFs are split into page-chunks below
+    else:
+        limit = _AI_MAX_BYTES   # a single image can't be split
     if len(data) > limit:
         raise HTTPException(status_code=413, detail=f"حجم فایل زیاد است (حداکثر {limit // (1024*1024)} MB برای این نوع)")
 
@@ -441,24 +477,49 @@ async def analyze_document(
                        "proposed_rate": pf.get("proposed_rate"), "proposed_facility": pf.get("proposed_facility")},
         }]
         model_name = "Word draft parser"
-    elif mime == "application/pdf" or mime in _IMAGE_MIMES:
-        res = await inference.complete_multimodal(
-            db, doc_ingest.EXTRACTION_PROMPT,
-            [{"filename": fname, "mimetype": mime, "data": data}], model_id=model_id)
-        if not res.get("ok"):
-            err = res.get("error")
-            if err == "model_incapable":
-                raise HTTPException(status_code=422, detail={
-                    "error": "model_incapable", "model": res.get("model"),
-                    "message": f"«{res.get('model')}» نمی‌تواند این فایل را بخواند. یکی از مدل‌های پیشنهادی را انتخاب کن:",
-                    "suggestions": res.get("suggestions", [])})
-            if err == "no_model":
-                raise HTTPException(status_code=400, detail="هیچ مدلِ سند/تصویرخوان در تنظیمات فعال نیست.")
-            raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}")
-        parsed = doc_ingest.parse_model_json(res.get("text", ""))
-        customers = parsed.get("customers") or []
-        documents = parsed.get("documents") or []
-        model_name = res.get("model")
+    elif is_pdf or mime in _IMAGE_MIMES:
+        # Big PDFs are split into page-chunks (each under the inline limit) and
+        # extracted section-by-section, then merged with global page numbers.
+        if is_pdf and len(data) > _AI_MAX_BYTES:
+            try:
+                parts = doc_ingest.split_pdf(data)[0]
+            except Exception as exc:
+                raise HTTPException(status_code=413, detail=f"فایلِ بزرگ قابلِ تقسیم نبود: {exc}")
+        else:
+            parts = [(0, data)]
+        merged: dict = {}
+        model_name = None
+        for (start, pbytes) in parts:
+            res = await inference.complete_multimodal(
+                db, doc_ingest.EXTRACTION_PROMPT,
+                [{"filename": fname, "mimetype": mime, "data": pbytes}], model_id=model_id)
+            if not res.get("ok"):
+                err = res.get("error")
+                if err == "model_incapable":
+                    raise HTTPException(status_code=422, detail={
+                        "error": "model_incapable", "model": res.get("model"),
+                        "message": f"«{res.get('model')}» نمی‌تواند این فایل را بخواند. یکی از مدل‌های پیشنهادی را انتخاب کن:",
+                        "suggestions": res.get("suggestions", [])})
+                if err == "no_model":
+                    raise HTTPException(status_code=400, detail="هیچ مدلِ سند/تصویرخوان در تنظیمات فعال نیست.")
+                raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}")
+            parsed = doc_ingest.parse_model_json(res.get("text", ""))
+            model_name = res.get("model")
+            off = (start - 1) if start else 0
+            for c in (parsed.get("customers") or []):
+                a = doc_ingest._acc_of(c)
+                if not a:
+                    continue
+                if a in merged:
+                    doc_ingest.merge_customer(merged[a], c)
+                else:
+                    merged[a] = c
+            for d in (parsed.get("documents") or []):
+                if isinstance(d, dict):
+                    if off:
+                        d["pages"] = doc_ingest.offset_pages(d.get("pages", ""), off)
+                    documents.append(d)
+        customers = list(merged.values())
         if not customers:
             raise HTTPException(status_code=422, detail="مدل نتوانست داده‌ای استخراج کند. مدلِ قوی‌تری انتخاب کن.")
     else:
@@ -515,9 +576,10 @@ async def analyze_document(
             exists = (await db.execute(select(Attachment).where(
                 Attachment.account_no == acc, Attachment.content_sha256 == sha))).scalar_one_or_none()
             if exists is None:
+                fac_id = await _match_facility(db, r.get("customer_id"), r.get("facility_hint"))
                 db.add(Attachment(
                     id=f"ATT-{acc}-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:3]}",
-                    account_no=acc, facility_id="", file_name=drive_name or fname, original_name=fname,
+                    account_no=acc, facility_id=fac_id, file_name=drive_name or fname, original_name=fname,
                     drive_file_id=drive_id, content_sha256=sha, file_size=str(len(data)),
                     upload_date=_date.today().isoformat(), uploaded_by=username,
                     is_shared=("true" if len(saved) > 1 else "false"), notes=notes))

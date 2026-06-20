@@ -166,6 +166,8 @@ export default function ImportPage() {
                       <div className="text-xs text-gray-600">
                         {c.fields_saved?.length ? `${c.fields_saved.length} فیلد` : 'بدون فیلدِ جدید'}
                         {c.guarantors_added ? ` · ${c.guarantors_added} ضامن جدید` : ''}
+                        {c.properties_added ? ` · ${c.properties_added} ملک جدید` : ''}
+                        {c.properties_updated ? ` · ${c.properties_updated} ملک به‌روز` : ''}
                       </div>
                     </div>
                   ) : <div className="text-red-700 text-xs">ثبت نشد: {c.reason}</div>}
