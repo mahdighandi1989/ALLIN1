@@ -437,6 +437,11 @@ export const crmApi = {
   async deleteAttachment(id: string): Promise<void> {
     await api.delete(`/api/crm/attachments/${encodeURIComponent(id)}`)
   },
+  // Fetch an attachment's bytes (authed) so it can be opened inline in a new tab.
+  async attachmentBlob(id: string): Promise<Blob> {
+    const { data } = await api.get(`/api/crm/attachments/${encodeURIComponent(id)}/view`, { responseType: 'blob' })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
