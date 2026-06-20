@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
-import { AmtInput, DraftDrop, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
+import { AmtInput, PctInput, DraftDrop, CountryInput, CountryDataList, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -76,6 +76,7 @@ export default function CreditFileCorporatePage() {
   const setSec = (id: string, k: keyof SecRow) => (e: any) => setSecRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
   const setSecV = (id: string, k: keyof SecRow) => (v: string) => setSecRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: v } : r)))
   const setPartner = (id: string, k: keyof Partner) => (e: any) => setPartners((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
+  const setPartnerV = (id: string, k: keyof Partner) => (v: string) => setPartners((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: v } : r)))
   const setProp = (i: number, k: keyof PropRow) => (e: any) => setProps((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: e.target.value } : r)))
   const setPropV = (i: number, k: keyof PropRow) => (v: string) => setProps((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
   const addProp = () => setProps((r) => [...r, emptyProp()])
@@ -98,7 +99,8 @@ export default function CreditFileCorporatePage() {
     // Proposed facility → fill the matching (empty) facility row.
     const ft = String(o.FacilityType || pf.proposed_facility || '').toLowerCase()
     const amt = o.LoanAmount || o.CreditLimit || (pf.proposed_amount ? fmtAmt(pf.proposed_amount) : '')
-    const rate = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const rateRaw = String(o.InterestRate || pf.proposed_rate || '').replace(/[^\d.]/g, '')
+    const rate = rateRaw ? `${rateRaw}%` : ''
     const ten = o.LoanTenor || pf.proposed_tenor || ''
     if (amt || rate || ten) {
       setFacRows((rows) => {
@@ -113,7 +115,7 @@ export default function CreditFileCorporatePage() {
 
   const facFromRecord = (f?: Facility) => ({
     facilityId: f?.id || '', amount: fmtAmt(f && f.amount != null ? String(f.amount) : ''),
-    rate: f && f.interest_rate != null ? String(f.interest_rate) : '', expiry: fmtDate(f?.expiry_date), notices: f?.notes || '',
+    rate: f && f.interest_rate != null ? `${f.interest_rate}%` : '', expiry: fmtDate(f?.expiry_date), notices: f?.notes || '',
   })
   const bindFac = (id: string) => (e: any) => {
     const f = facilities.find((x) => x.id === e.target.value)
@@ -327,6 +329,7 @@ export default function CreditFileCorporatePage() {
               <td><input value={a.managerIdExpiry} onChange={set('managerIdExpiry')} /></td><td><input value={a.managerIdRemarks} onChange={set('managerIdRemarks')} /></td></tr>
           </tbody></table>
 
+          <CountryDataList />
           {/* Partners */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={6}>Partners Details</td></tr>
@@ -335,8 +338,8 @@ export default function CreditFileCorporatePage() {
               <tr key={p.uid}>
                 <td className="sn">{i + 1}</td>
                 <td><input value={p.name} onChange={setPartner(p.uid, 'name')} /></td>
-                <td><input value={p.nationality} onChange={setPartner(p.uid, 'nationality')} /></td>
-                <td><input value={p.share} onChange={setPartner(p.uid, 'share')} /></td>
+                <td><CountryInput value={p.nationality} onChange={setPartner(p.uid, 'nationality')} /></td>
+                <td><PctInput value={p.share} onValue={setPartnerV(p.uid, 'share')} /></td>
                 <td><input value={p.remarks} onChange={setPartner(p.uid, 'remarks')} /></td>
                 <td className="tools"><button title="حذف" onClick={() => delPartner(p.uid)}><Trash2 size={13} /></button></td>
               </tr>
@@ -353,7 +356,7 @@ export default function CreditFileCorporatePage() {
                 <td className="sn">{i + 1}</td>
                 <td className="desc">{r.custom ? <input value={r.label} onChange={setFac(r.uid, 'label')} placeholder="نوع تسهیلات" /> : r.label}</td>
                 <td><AmtInput value={r.amount} onValue={setFacV(r.uid, 'amount')} /></td>
-                <td><input value={r.rate} onChange={setFac(r.uid, 'rate')} /></td>
+                <td><PctInput value={r.rate} onValue={setFacV(r.uid, 'rate')} /></td>
                 <td><input value={r.expiry} onChange={setFac(r.uid, 'expiry')} /></td>
                 <td><input value={r.notices} onChange={setFac(r.uid, 'notices')} /></td>
                 <td className="tools">
@@ -400,7 +403,7 @@ export default function CreditFileCorporatePage() {
           {/* Mortgaged Properties (املاک) — two-way synced with the customer's properties list */}
           <table className="cf"><tbody>
             <tr><td className="band" colSpan={7}>Mortgaged Properties / املاک&nbsp;<span style={{ fontWeight: 400, fontSize: 9 }}>(نوع و ارزیابی اجباری‌اند؛ بقیه اختیاری و در دیتابیس ذخیره می‌شود)</span></td></tr>
-            <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation (AED) *</td><td>Mortgage Amt (AED)</td><td className="tools">جزئیات / حذف</td></tr>
+            <tr className="hdr"><td>S/No.</td><td>Type *</td><td>Address</td><td>City</td><td>Valuation *</td><td>Mortgage Amt</td><td className="tools">جزئیات / حذف</td></tr>
             {props.map((p, i) => (
               <React.Fragment key={i}>
                 <tr>
@@ -408,8 +411,8 @@ export default function CreditFileCorporatePage() {
                   <td><input value={p.prop_type} onChange={setProp(i, 'prop_type')} placeholder="Land & Building" /></td>
                   <td><input value={p.address} onChange={setProp(i, 'address')} /></td>
                   <td><input value={p.city} onChange={setProp(i, 'city')} /></td>
-                  <td><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /></td>
-                  <td><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /></td>
+                  <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /><select value={p.valuation_currency} onChange={setProp(i, 'valuation_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
+                  <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /><select value={p.mortgage_currency} onChange={setProp(i, 'mortgage_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
                   <td className="tools">
                     <button className="screen-only" title="جزئیات بیشتر" onClick={() => toggleProp(i)} style={{ color: '#2563eb' }}>⋯</button>
                     <button title="حذف" onClick={() => delProp(i)}><Trash2 size={13} /></button>

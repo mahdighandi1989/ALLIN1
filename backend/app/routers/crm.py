@@ -1256,7 +1256,7 @@ _PROPERTY_FIELDS = {
     "facility_id", "customer_name", "country", "plate_no", "mortgage_deed_no",
     "city", "address", "prop_type", "building_age", "land_area", "cnbc",
     "valuation", "valuation_currency", "insurance_expiry", "insurance_no",
-    "last_valuation_date", "mortgage_date", "mortgage_amount", "remarks",
+    "last_valuation_date", "mortgage_date", "mortgage_amount", "mortgage_currency", "remarks",
 }
 
 
@@ -1278,6 +1278,7 @@ class PropertyCreate(BaseModel):
     last_valuation_date: str = ""
     mortgage_date: str = ""
     mortgage_amount: Optional[float] = None
+    mortgage_currency: str = "AED"
     remarks: str = ""
 
 
@@ -1299,6 +1300,7 @@ class PropertyUpdate(BaseModel):
     last_valuation_date: Optional[str] = None
     mortgage_date: Optional[str] = None
     mortgage_amount: Optional[float] = None
+    mortgage_currency: Optional[str] = None
     remarks: Optional[str] = None
 
 

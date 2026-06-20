@@ -45,6 +45,7 @@ class MortgagedProperty(Base):
     last_valuation_date = Column(String(30)) # تاریخ آخرین ارزیابی
     mortgage_date = Column(String(30))       # تاریخ ترهین
     mortgage_amount = Column(Numeric(18, 2)) # مبلغ ترهین
+    mortgage_currency = Column(String(10), default="AED")  # ارز مبلغ ترهین
     remarks = Column(String(400))
     created_by = Column(String(80))
     date_added = Column(String(30))
