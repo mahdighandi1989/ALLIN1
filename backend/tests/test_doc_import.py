@@ -65,3 +65,33 @@ async def test_analyze_docx_fastpath(client, auth_headers, db_session):
     assert rd.status_code == 200
     rc = await client.get("/api/crm/credit-reviews/115524", headers=auth_headers)
     assert len(rc.json()) >= 1
+
+
+def _xlsx_bytes() -> bytes:
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Account", "Name", "Nationality"])
+    ws.append(["2624-440011-1", "Alpha Co", "Iran"])
+    ws.append(["2624-440022-2", "Beta Co", "UAE"])
+    buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
+
+
+def test_workbook_to_text_and_chunk():
+    txt = doc_ingest.workbook_to_text(_xlsx_bytes(), "t.xlsx")
+    assert "Alpha Co" in txt and "440022" in txt
+    chunks = doc_ingest.chunk_text(txt, 50)
+    assert len(chunks) >= 1
+    # CSV path
+    csv = doc_ingest.workbook_to_text(b"Account,Name\n440033,Gamma", "t.csv")
+    assert "Gamma" in csv
+
+
+async def test_analyze_xlsx_reaches_branch(client, auth_headers):
+    # No AI key in tests → the spreadsheet branch parses then reports no usable
+    # model (400), proving the Excel path is wired (not a 415/500).
+    files = {"file": ("book.xlsx", _xlsx_bytes(),
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
+    assert r.status_code in (400, 502), r.text

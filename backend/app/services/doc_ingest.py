@@ -217,3 +217,82 @@ def record_documents_on_profile(data: dict, documents: list, drive_link: str, dr
     })
     data["imported_documents"] = docs
     return data
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheet / Office tables → text, so a big table spanning many accounts can
+# be fed to the model (chunked) and every row routed to its customer.
+# ---------------------------------------------------------------------------
+def workbook_to_text(data: bytes, filename: str) -> str:
+    """Flatten an Excel/CSV file to CSV-like text across ALL sheets."""
+    name = (filename or "").lower()
+    if name.endswith(".csv"):
+        for enc in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                return data.decode(enc)
+            except Exception:
+                continue
+        return data.decode("utf-8", "replace")
+    out: list[str] = []
+    if name.endswith((".xlsx", ".xlsm")):
+        import io
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        try:
+            for sh in wb.sheetnames:
+                ws = wb[sh]
+                out.append(f"## Sheet: {sh}")
+                for row in ws.iter_rows(values_only=True):
+                    cells = ["" if v is None else str(v) for v in row]
+                    if any(c.strip() for c in cells):
+                        out.append(",".join(cells))
+        finally:
+            wb.close()
+    elif name.endswith(".xls"):
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=data)
+        for sh in wb.sheets():
+            out.append(f"## Sheet: {sh.name}")
+            for r in range(sh.nrows):
+                cells = [str(sh.cell_value(r, c)) for c in range(sh.ncols)]
+                if any(c.strip() for c in cells):
+                    out.append(",".join(cells))
+    return "\n".join(out)
+
+
+def chunk_text(text: str, max_chars: int = 100000) -> list[str]:
+    """Split table text into chunks under ``max_chars``, repeating the sheet/header
+    hint at the top of each chunk so every chunk stays self-describing."""
+    lines = (text or "").split("\n")
+    header = "\n".join(lines[:2])
+    chunks: list[str] = []
+    cur: list[str] = []
+    size = 0
+    for ln in lines:
+        if size + len(ln) + 1 > max_chars and cur:
+            chunks.append("\n".join(cur))
+            cur = [header] if header else []
+            size = len(header)
+        cur.append(ln)
+        size += len(ln) + 1
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks or [text]
+
+
+def merge_customer(into: dict, more: dict) -> None:
+    """Merge a customer dict parsed from a later chunk into an existing one."""
+    for k, v in more.items():
+        if k in ("fields", "review") and isinstance(v, dict):
+            base = into.setdefault(k, {})
+            for kk, vv in v.items():
+                if vv not in (None, "") and not base.get(kk):
+                    base[kk] = vv
+        elif k == "guarantors" and isinstance(v, list):
+            into.setdefault("guarantors", [])
+            seen = {(g.get("name"), g.get("account")) for g in into["guarantors"] if isinstance(g, dict)}
+            for g in v:
+                if isinstance(g, dict) and (g.get("name"), g.get("account")) not in seen:
+                    into["guarantors"].append(g)
+        elif v not in (None, "") and not into.get(k):
+            into[k] = v

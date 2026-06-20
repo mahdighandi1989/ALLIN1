@@ -30,7 +30,7 @@ export default function ImportPage() {
       .catch(() => {})
   }, [])
 
-  const OK_EXT = /\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|docx)$/i
+  const OK_EXT = /\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|docx|xlsx|xlsm|xls|csv)$/i
   const addFiles = (fl?: FileList | File[] | null) => {
     if (!fl) return
     const arr = Array.from(fl).filter((f) => OK_EXT.test(f.name))
@@ -73,7 +73,7 @@ export default function ImportPage() {
           <div className="bg-blue-600 text-white rounded-xl p-2.5"><FileText size={22} /></div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">ایمپورتِ هوشمندِ اسناد</h1>
-            <p className="text-gray-500 text-sm">یک یا چند فایلِ PDF / تصویر / Word را بارگذاری کن؛ مدلِ هوش‌مصنوعی هر فایل را استخراج و در دیتابیسِ مشتری ثبت می‌کند و فایل‌ها به Google Drive منتقل و در پروفایلِ مشتری لینک می‌شوند.</p>
+            <p className="text-gray-500 text-sm">یک یا چند فایلِ PDF / تصویر / Word / Excel را بارگذاری کن؛ مدلِ هوش‌مصنوعی هر فایل را استخراج و در دیتابیسِ مشتری ثبت می‌کند و فایل‌ها به Google Drive منتقل و در پروفایلِ مشتری لینک می‌شوند.</p>
           </div>
         </div>
 
@@ -102,12 +102,12 @@ export default function ImportPage() {
             onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
             className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'}`}
           >
-            <input id="docfile" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tiff,.tif,.bmp,.docx" className="hidden"
+            <input id="docfile" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tiff,.tif,.bmp,.docx,.xlsx,.xlsm,.xls,.csv" className="hidden"
               onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = '' }} />
             <Upload size={24} className="mx-auto text-blue-600 mb-2" />
             <div className="text-sm text-gray-700">
               <label htmlFor="docfile" className="text-blue-700 font-semibold cursor-pointer hover:underline">انتخاب چند فایل</label>
-              {' '}یا بکش و رها کن — PDF، تصویر، یا Word
+              {' '}یا بکش و رها کن — PDF، تصویر، Word یا Excel
             </div>
           </div>
 
