@@ -31,6 +31,12 @@ const facBase = (): FacRow[] => ([
 const secBase = (): SecRow[] => ['Underlien Deposits', 'Cheques', 'Collaterals'].map((label) => ({ uid: uid(), label, custom: false, facilityTag: '', aed: '', usd: '', irr: '', other: '' }))
 const partnersBase = (): Partner[] => Array.from({ length: 3 }, () => ({ uid: uid(), name: '', nationality: '', share: '', remarks: '' }))
 
+const facLabel = (ft: string): string => (({
+  overdraft: 'Overdraft', loan: 'Corporate Loan', cheque_discounting: 'Cheque Discounting',
+  trust_receipt: 'Trust Receipt', lc_sight: 'LC (Sight)', lc: 'LC (Sight)', lc_usance: 'LC (Usance)',
+  log: 'Letter of Guarantee', lg: 'Letter of Guarantee',
+} as Record<string, string>)[String(ft || '').toLowerCase()] || (ft ? String(ft) : 'Facility'))
+
 type Acct = {
   date: string; branchCode: string; branchName: string; customerName: string; accountNumber: string; businessType: string
   rating: string; callReport: string; previousFiles: string
@@ -157,11 +163,21 @@ export default function CreditFileCorporatePage() {
       }
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
-      setFacRows((rows) => rows.map((r) => {
-        if (!r.matchKey) return r
-        const f = facs.find((x: Facility) => MATCH[r.matchKey!]?.(x))
-        return f ? { ...r, ...facFromRecord(f) } : r
-      }))
+      // Bind predefined rows to facilities, then AUTO-ADD a row for every extra
+      // facility so nothing in the DB is left off the form.
+      setFacRows((rows) => {
+        const used = new Set<string>()
+        const mapped = rows.map((r) => {
+          if (!r.matchKey) return r
+          const f = facs.find((x: Facility) => MATCH[r.matchKey!]?.(x) && !used.has(x.id))
+          if (f) { used.add(f.id); return { ...r, ...facFromRecord(f) } }
+          return r
+        })
+        const extra = facs.filter((x: Facility) => !used.has(x.id)).map((x: Facility) => ({
+          uid: uid(), label: x.name || facLabel(x.facility_type), custom: true, ...facFromRecord(x),
+        }))
+        return [...mapped, ...extra]
+      })
       toast.success(`بارگیری «${customer?.name || acct}» — ${facs.length} تسهیلات`)
     } catch (e) {
       toast.error(parseApiError(e))
