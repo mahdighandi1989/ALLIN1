@@ -148,6 +148,32 @@ class AIManager:
             context_window=model.context_window,
         )
 
+    async def resolve_specific(self, db: AsyncSession, model_id: int, task: str = "chat") -> Optional[ResolvedModel]:
+        """Build a usable model for an explicitly-chosen ``model_id`` (or None)."""
+        model = await db.get(AIModel, model_id)
+        if model is None:
+            return None
+        providers = {p.key: p for p in (await db.execute(select(AIProvider))).scalars()}
+        return self._try_build(model, providers, task)
+
+    async def capable_models(self, db: AsyncSession, need: str = "documents") -> list:
+        """Enabled+configured models that can read documents/images, best first.
+
+        ``need`` is a capability id ("documents" or "vision"); a model qualifies if
+        it has that capability (documents implies it can also handle images)."""
+        providers = {p.key: p for p in (await db.execute(select(AIProvider))).scalars()}
+        models = (
+            await db.execute(select(AIModel).where(AIModel.enabled.is_(True)).order_by(AIModel.priority))
+        ).scalars().all()
+        out = []
+        for m in models:
+            caps = set(m.capabilities or [])
+            ok = "documents" in caps if need == "documents" else (("vision" in caps) or ("documents" in caps))
+            if ok and self._try_build(m, providers, "document_extraction"):
+                out.append({"id": m.id, "display_name": m.display_name, "capabilities": list(caps),
+                            "provider_key": m.provider_key, "priority": m.priority})
+        return out
+
     async def is_available(self, db: AsyncSession, task: Optional[str] = None) -> bool:
         """True if at least one usable model exists (optionally for ``task``)."""
         if task is not None:

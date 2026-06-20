@@ -713,6 +713,21 @@ export const importsApi = {
     })
     return data
   },
+  // AI document import: list document/vision models (wired from Settings) + analyze a file.
+  async aiModels(): Promise<{ models: any[]; drive_enabled: boolean }> {
+    const { data } = await api.get('/api/imports/ai-models')
+    return data
+  },
+  async analyzeDocument(file: File, modelId?: number): Promise<any> {
+    const form = new FormData()
+    form.append('file', file)
+    if (modelId != null) form.append('model_id', String(modelId))
+    const { data } = await api.post('/api/imports/analyze', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 200000,
+    })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------

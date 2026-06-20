@@ -1,146 +1,169 @@
 'use client'
 
-import { useState } from 'react'
+// AI Document Import — upload a PDF / image / Word file, pick an AI model
+// (wired live from Settings; enable/route there), and let it extract the
+// content and write each customer's data into the database. The file itself is
+// moved to Google Drive and linked under every customer it belongs to.
+import React, { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
-import { importsApi, downloadFile, parseApiError } from '@/lib/api'
-import { ImportResult } from '@/types'
-import { Upload, Download, FileSpreadsheet, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Upload, FileText, Loader2, CheckCircle2, AlertTriangle, ExternalLink, Cpu } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { importsApi, parseApiError } from '@/lib/api'
 
-type Kind = 'customers' | 'facilities'
+type Model = { id: number; display_name: string; capabilities: string[]; supports_pdf?: boolean; provider_key?: string }
 
 export default function ImportPage() {
-  const [kind, setKind] = useState<Kind>('customers')
+  const [models, setModels] = useState<Model[]>([])
+  const [driveEnabled, setDriveEnabled] = useState(false)
+  const [modelId, setModelId] = useState<number | 'auto'>('auto')
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<ImportResult | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [result, setResult] = useState<any>(null)
+  const [incapable, setIncapable] = useState<any>(null)
 
-  const run = async (dryRun: boolean) => {
-    if (!file) {
-      toast.error('Please choose a file first')
+  useEffect(() => {
+    importsApi.aiModels()
+      .then((d) => { setModels(d.models || []); setDriveEnabled(!!d.drive_enabled) })
+      .catch(() => {})
+  }, [])
+
+  const pick = (f?: File | null) => {
+    if (!f) return
+    if (!/\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|docx)$/i.test(f.name)) {
+      toast.error('فقط PDF، تصویر یا Word (.docx)')
       return
     }
-    setBusy(true)
-    setResult(null)
-    try {
-      const res = kind === 'customers'
-        ? await importsApi.customers(file, dryRun)
-        : await importsApi.facilities(file, dryRun)
-      setResult(res)
-      if (dryRun) {
-        toast.success(`Validated: ${res.would_create} would be created`)
-      } else {
-        toast.success(`Imported ${res.created} ${kind}`)
-      }
-    } catch (e) {
-      toast.error(parseApiError(e))
-    } finally {
-      setBusy(false)
-    }
+    setFile(f); setResult(null); setIncapable(null)
   }
 
-  const downloadTemplate = () => {
-    downloadFile(`/api/imports/${kind}/template`, `${kind}-template.csv`)
-      .catch((e) => toast.error(parseApiError(e)))
+  const analyze = async () => {
+    if (!file) { toast.error('ابتدا یک فایل انتخاب کن'); return }
+    setBusy(true); setResult(null); setIncapable(null)
+    try {
+      const r = await importsApi.analyzeDocument(file, modelId === 'auto' ? undefined : modelId)
+      setResult(r)
+      const n = (r.customers || []).filter((c: any) => c.ok).length
+      toast.success(`استخراج شد — ${n} مشتری ثبت/به‌روزرسانی شد`)
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.error === 'model_incapable') {
+        setIncapable(detail)
+      } else {
+        toast.error(parseApiError(e))
+      }
+    } finally { setBusy(false) }
   }
+
+  const sel = 'border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
     <Layout>
-      <div className="flex items-center gap-2 mb-6">
-        <FileSpreadsheet size={22} className="text-gray-500" />
-        <h2 className="text-2xl font-bold">Import from Excel</h2>
-      </div>
-
-      <div className="max-w-2xl space-y-6">
-        <div className="bg-white rounded-lg shadow-sm p-6 space-y-4">
+      <div dir="rtl" className="max-w-3xl mx-auto">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="bg-blue-600 text-white rounded-xl p-2.5"><FileText size={22} /></div>
           <div>
-            <label className="block text-sm font-medium mb-1">What to import</label>
-            <div className="flex gap-2" data-testid="import-kind">
-              {(['customers', 'facilities'] as Kind[]).map((k) => (
-                <button key={k} type="button"
-                  onClick={() => { setKind(k); setResult(null) }}
-                  className={`px-4 py-2 rounded-lg border text-sm capitalize ${
-                    kind === k ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-50'
-                  }`}>
-                  {k}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="text-sm text-gray-500">
-            {kind === 'customers'
-              ? 'Columns: account_no, name, account_type, email, phone, branch, status. account_no + name required.'
-              : 'Columns: account_no (existing customer), name, facility_type, amount, currency, interest_rate, status. account_no + amount required.'}
-            <button onClick={downloadTemplate} className="ml-2 inline-flex items-center gap-1 text-blue-600 hover:underline">
-              <Download size={14} /> template
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Excel file (.xlsx / .xlsm)</label>
-            <input type="file" accept=".xlsx,.xlsm" data-testid="import-file"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null) }}
-              className="block w-full text-sm border rounded-lg p-2" />
-          </div>
-
-          <div className="flex gap-2">
-            <button onClick={() => run(true)} disabled={busy || !file}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50">
-              {busy ? 'Working…' : 'Validate (dry run)'}
-            </button>
-            <button onClick={() => run(false)} disabled={busy || !file} data-testid="import-run"
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-              <Upload size={16} /> {busy ? 'Importing…' : 'Import'}
-            </button>
+            <h1 className="text-2xl font-bold text-gray-900">ایمپورتِ هوشمندِ اسناد</h1>
+            <p className="text-gray-500 text-sm">PDF / تصویر / Word را بارگذاری کن؛ مدلِ هوش‌مصنوعی محتوا را استخراج و در دیتابیسِ مشتری ثبت می‌کند و فایل به Google Drive منتقل و در پروفایلِ مشتری لینک می‌شود.</p>
           </div>
         </div>
 
-        {result && (
-          <div className="bg-white rounded-lg shadow-sm p-6" data-testid="import-result">
-            <div className="flex items-center gap-2 mb-3">
-              {result.errors.length === 0
-                ? <CheckCircle2 size={18} className="text-green-600" />
-                : <AlertTriangle size={18} className="text-yellow-600" />}
-              <h3 className="font-medium">
-                {result.dry_run ? 'Validation result' : 'Import result'}
-              </h3>
+        <div className="bg-white border border-gray-200 rounded-xl p-5 mt-5 space-y-4">
+          {/* Model picker — wired from Settings */}
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex-1 min-w-[220px]">
+              <span className="text-[12px] text-gray-600 flex items-center gap-1"><Cpu size={13} /> مدلِ تحلیل (از تنظیمات)</span>
+              <select value={modelId} onChange={(e) => setModelId(e.target.value === 'auto' ? 'auto' : Number(e.target.value))} className={sel + ' w-full mt-1'}>
+                <option value="auto">خودکار (بهترین مدلِ فعال)</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>{m.display_name}{m.supports_pdf ? ' · PDF✓' : ' · فقط تصویر'}</option>
+                ))}
+              </select>
+            </label>
+            <div className="text-[11px] text-gray-400 pb-2">
+              فعال/غیرفعال و مسیریابیِ مدل‌ها فقط در «تنظیمات» انجام می‌شود.
+              {driveEnabled ? ' · Drive متصل است' : ' · Drive متصل نیست (فایل فقط استخراج می‌شود)'}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-4">
-              <Stat label="Rows" value={result.total_rows} />
-              <Stat label={result.dry_run ? 'Would create' : 'Created'} value={result.dry_run ? result.would_create : result.created} />
-              {result.skipped_existing != null && <Stat label="Skipped (existing)" value={result.skipped_existing} />}
-              <Stat label="Errors" value={result.errors.length} />
-            </div>
-            {result.errors.length > 0 && (
-              <div className="max-h-60 overflow-y-auto border rounded-lg">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">
-                    <th className="px-3 py-2 w-20">Row</th><th className="px-3 py-2">Error</th>
-                  </tr></thead>
-                  <tbody className="divide-y">
-                    {result.errors.map((e, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-1.5 text-gray-500">{e.row}</td>
-                        <td className="px-3 py-1.5 text-red-600">{e.error}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
-        )}
+
+          {/* Drop zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files?.[0]) }}
+            className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50'}`}
+          >
+            <input id="docfile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.tiff,.tif,.bmp,.docx" className="hidden"
+              onChange={(e) => { pick(e.target.files?.[0]); e.currentTarget.value = '' }} />
+            <Upload size={26} className="mx-auto text-blue-600 mb-2" />
+            <div className="text-sm text-gray-700">
+              <label htmlFor="docfile" className="text-blue-700 font-semibold cursor-pointer hover:underline">انتخاب فایل</label>
+              {' '}یا بکش و رها کن — PDF، تصویر، یا Word
+            </div>
+            {file && <div className="mt-2 text-sm font-medium text-gray-900">📎 {file.name} <span className="text-gray-400">({Math.round(file.size / 1024)} KB)</span></div>}
+          </div>
+
+          <button onClick={analyze} disabled={busy || !file}
+            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
+            {busy ? <><Loader2 size={16} className="animate-spin" /> در حال تحلیل و استخراج…</> : <><Cpu size={16} /> تحلیل و ثبت در دیتابیس</>}
+          </button>
+
+          {/* Model-incapable → ordered suggestions of currently-active models */}
+          {incapable && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+              <div className="flex items-center gap-2 text-amber-800 font-semibold"><AlertTriangle size={15} /> {incapable.message || `«${incapable.model}» از پسِ این فایل برنمی‌آید.`}</div>
+              {(incapable.suggestions || []).length > 0 ? (
+                <ul className="mt-2 space-y-1">
+                  {incapable.suggestions.map((s: any) => (
+                    <li key={s.id}>
+                      <button className="text-blue-700 hover:underline" onClick={() => { setModelId(s.id); setIncapable(null) }}>
+                        ▸ {s.display_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <div className="mt-1 text-amber-700 text-xs">هیچ مدلِ سند/تصویرخوانِ فعالِ دیگری در تنظیمات نیست.</div>}
+            </div>
+          )}
+
+          {/* Result */}
+          {result && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-3 text-sm">
+              <div className="flex items-center gap-2 text-gray-700">
+                <CheckCircle2 size={15} className="text-green-600" /> با مدلِ <b>{result.model}</b>
+                {result.multi_customer && <span className="text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">چند مشتری</span>}
+                {result.drive?.stored
+                  ? <a href={result.drive.link} target="_blank" rel="noreferrer" className="mr-auto inline-flex items-center gap-1 text-blue-700 hover:underline">فایل در Drive <ExternalLink size={12} /></a>
+                  : <span className="mr-auto text-xs text-gray-400">{result.drive?.skipped ? 'Drive غیرفعال' : 'در Drive ذخیره نشد'}</span>}
+              </div>
+              {(result.customers || []).map((c: any, i: number) => (
+                <div key={i} className={`rounded border p-2 ${c.ok ? 'border-green-200 bg-white' : 'border-red-200 bg-red-50'}`}>
+                  {c.ok ? (
+                    <div>
+                      <div className="font-semibold text-gray-900">{c.name} <span className="text-gray-400 font-normal">· {c.account_no}</span></div>
+                      <div className="text-xs text-gray-600 mt-0.5">
+                        {c.fields_saved?.length ? `${c.fields_saved.length} فیلد` : 'بدون فیلدِ جدید'}
+                        {c.guarantors_added ? ` · ${c.guarantors_added} ضامن جدید` : ''}
+                        {c.guarantors_updated ? ` · ${c.guarantors_updated} ضامن به‌روز` : ''}
+                      </div>
+                    </div>
+                  ) : <div className="text-red-700 text-xs">ثبت نشد: {c.reason}</div>}
+                </div>
+              ))}
+              {(result.documents || []).length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 mb-1">نقشهٔ صفحات → مستندات:</div>
+                  <ul className="text-xs text-gray-600 space-y-0.5">
+                    {result.documents.map((d: any, i: number) => (
+                      <li key={i}>• صفحهٔ {d.pages}: <b>{d.type}</b>{d.customer_account ? ` (حساب ${d.customer_account})` : ''}{d.summary ? ` — ${d.summary}` : ''}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-3 text-center">
-      <p className="text-xl font-bold">{value}</p>
-      <p className="text-xs text-gray-500">{label}</p>
-    </div>
   )
 }

@@ -302,3 +302,170 @@ async def import_facilities(
         "would_create": created,
         "errors": errors,
     }
+
+
+# ===========================================================================
+# AI document import — upload a PDF / image / Word file, let a chosen (or auto)
+# model extract it, persist each customer's data (deduped), store the file in
+# Google Drive and link it under every customer it belongs to, recording a
+# page→document map. Models are wired from Settings (enable/route there).
+# ===========================================================================
+import json as _json
+import mimetypes as _mimetypes
+import uuid as _uuid
+from datetime import datetime as _dt, date as _date
+from typing import Optional
+
+from fastapi import Form
+
+_AI_MAX_BYTES = 25 * 1024 * 1024
+_IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/tiff", "image/bmp")
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _guess_mime(filename: str, given: str) -> str:
+    if given and given != "application/octet-stream":
+        return given
+    guess, _ = _mimetypes.guess_type(filename or "")
+    return guess or "application/octet-stream"
+
+
+def _doc_title(docs: list, filename: str) -> str:
+    types = [d.get("type") for d in (docs or []) if isinstance(d, dict) and d.get("type")]
+    if types:
+        return ", ".join(list(dict.fromkeys(types))[:4])
+    return filename or "Imported document"
+
+
+@router.get("/ai-models")
+async def ai_import_models(db: AsyncSession = Depends(get_db), user=Depends(get_current_active_user)):
+    """Document/vision-capable models, wired live from Settings (enable/route is
+    controlled there; here they are only selectable)."""
+    from app.ai import ai_manager
+    from app.services import drive_sync
+
+    doc_caps = await ai_manager.capable_models(db, "documents")
+    vis_caps = await ai_manager.capable_models(db, "vision")
+    doc_ids = {m["id"] for m in doc_caps}
+    models = []
+    for m in doc_caps:
+        models.append({**m, "supports_pdf": True})
+    for m in vis_caps:
+        if m["id"] not in doc_ids:
+            models.append({**m, "supports_pdf": False})
+    return {"models": models, "drive_enabled": drive_sync.is_enabled()}
+
+
+@router.post("/analyze")
+async def analyze_document(
+    file: UploadFile = File(...),
+    model_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Extract a document with AI and persist it across the right customers."""
+    from app.ai import inference
+    from app.services import doc_ingest, drive_sync
+    from app.models.crm import Attachment, CustomerProfile
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(data) > _AI_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large (max {_AI_MAX_BYTES // (1024*1024)} MB)")
+    fname = file.filename or "document"
+    mime = _guess_mime(fname, file.content_type or "")
+    username = getattr(user, "username", "") or ""
+
+    documents: list = []
+    if mime == _DOCX_MIME or fname.lower().endswith(".docx"):
+        # Word drafts: use the deterministic parser (no AI needed).
+        from app.services.draft_extract import extract_from_docx
+        try:
+            dx = extract_from_docx(data)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not read the Word file: {exc}")
+        o, pf = dx.get("offer", {}), dx.get("profile", {})
+        customers = [{
+            "account_no": dx.get("account_no"), "account_display": dx.get("account_display"),
+            "name": o.get("CompanyName"), "account_type": o.get("AccountType"), "branch": o.get("Branch"),
+            "fields": {**pf, "business_type": o.get("BusinessType") or pf.get("business_type")},
+            "guarantors": dx.get("guarantors", []),
+            "review": {"date_of_review": pf.get("review_date"), "purpose": o.get("Purpose"),
+                       "proposed_rating": o.get("Rating"), "credit_application_no": pf.get("credit_application_no"),
+                       "proposed_amount": pf.get("proposed_amount"), "proposed_tenor": pf.get("proposed_tenor"),
+                       "proposed_rate": pf.get("proposed_rate"), "proposed_facility": pf.get("proposed_facility")},
+        }]
+        model_name = "Word draft parser"
+    elif mime == "application/pdf" or mime in _IMAGE_MIMES:
+        res = await inference.complete_multimodal(
+            db, doc_ingest.EXTRACTION_PROMPT,
+            [{"filename": fname, "mimetype": mime, "data": data}], model_id=model_id)
+        if not res.get("ok"):
+            err = res.get("error")
+            if err == "model_incapable":
+                raise HTTPException(status_code=422, detail={
+                    "error": "model_incapable", "model": res.get("model"),
+                    "message": f"«{res.get('model')}» نمی‌تواند این فایل را بخواند. یکی از مدل‌های پیشنهادی را انتخاب کن:",
+                    "suggestions": res.get("suggestions", [])})
+            if err == "no_model":
+                raise HTTPException(status_code=400, detail="هیچ مدلِ سند/تصویرخوان در تنظیمات فعال نیست.")
+            raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}")
+        parsed = doc_ingest.parse_model_json(res.get("text", ""))
+        customers = parsed.get("customers") or []
+        documents = parsed.get("documents") or []
+        model_name = res.get("model")
+        if not customers:
+            raise HTTPException(status_code=422, detail="مدل نتوانست داده‌ای استخراج کند. مدلِ قوی‌تری انتخاب کن.")
+    else:
+        raise HTTPException(status_code=415, detail="فقط PDF، تصویر یا Word (.docx) پشتیبانی می‌شود.")
+
+    # Persist each customer (deduped).
+    results = []
+    for c in customers:
+        try:
+            results.append(await doc_ingest.persist_customer(db, c, username))
+        except Exception as exc:  # never let one bad record break the batch
+            results.append({"ok": False, "reason": str(exc)})
+    saved = [r for r in results if r.get("ok")]
+
+    # Store the file once in Drive, then link it under every customer.
+    primary = saved[0]["account_no"] if saved else "unknown"
+    drive = await drive_sync.sync_attachment(account_no=primary, facility_id="",
+                                             original_name=fname, data=data, mimetype=mime)
+    drive_id = drive_link = drive_name = ""
+    if drive.get("ok"):
+        r = drive.get("result", {})
+        drive_id, drive_link, drive_name = r.get("id", ""), r.get("link", ""), r.get("name", "")
+
+    for r in saved:
+        acc = r["account_no"]
+        my_docs = [d for d in documents if isinstance(d, dict) and (
+            not d.get("customer_account") or str(d.get("customer_account")).endswith(acc) or acc in str(d.get("customer_account")))]
+        if drive_id:
+            exists = (await db.execute(select(Attachment).where(
+                Attachment.account_no == acc, Attachment.drive_file_id == drive_id))).scalar_one_or_none()
+            if exists is None:
+                db.add(Attachment(
+                    id=f"ATT-{acc}-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:3]}",
+                    account_no=acc, facility_id="", file_name=drive_name, original_name=fname,
+                    drive_file_id=drive_id, file_size=str(len(data)), upload_date=_date.today().isoformat(),
+                    uploaded_by=username, is_shared=("true" if len(saved) > 1 else "false"),
+                    notes=_json.dumps({"title": _doc_title(my_docs, fname), "link": drive_link,
+                                       "source": "ai_import", "pages": my_docs}, ensure_ascii=False)))
+        cp = (await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))).scalar_one_or_none()
+        if cp is not None:
+            try:
+                pdata = _json.loads(cp.data_json) if cp.data_json else {}
+            except Exception:
+                pdata = {}
+            doc_ingest.record_documents_on_profile(pdata, my_docs, drive_link, drive_id, fname)
+            cp.data_json = _json.dumps(pdata, ensure_ascii=False)
+
+    await db.commit()
+    return {
+        "ok": True, "model": model_name, "filename": fname,
+        "customers": results, "multi_customer": len(saved) > 1, "documents": documents,
+        "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id,
+                  "skipped": drive.get("skipped", False), "reason": drive.get("reason") or drive.get("error")},
+    }
