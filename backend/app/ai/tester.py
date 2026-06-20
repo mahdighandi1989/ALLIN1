@@ -86,14 +86,20 @@ async def test_model(db: AsyncSession, model_id: int) -> Dict[str, Any]:
     if family == "anthropic":
         url = f"{base_url}/v1/messages"
         headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        payload = {"model": api_id, "max_tokens": 16,
+                   "messages": [{"role": "user", "content": _PING}]}
         if oauth:
             headers["authorization"] = f"Bearer {key}"
             headers["anthropic-beta"] = "oauth-2025-04-20"
+            headers["user-agent"] = "claude-cli/1.0 (external)"
+            # Subscription (OAuth) tokens require Claude Code's system prefix.
+            payload["system"] = [{"type": "text", "text": catalog.CLAUDE_CODE_SYSTEM}]
         else:
             headers["x-api-key"] = key
-        payload = {"model": api_id, "max_tokens": 16,
-                   "messages": [{"role": "user", "content": _PING}]}
     elif family == "gemini":
+        # Google model ids are lowercase-hyphenated; tolerate "models/" prefix,
+        # stray spaces and casing (e.g. "Gemini 2.5 Flash" → "gemini-2.5-flash").
+        api_id = "-".join((api_id or "").strip().removeprefix("models/").split()).lower()
         url = f"{base_url}/v1beta/models/{api_id}:generateContent?key={key}"
         headers = {"content-type": "application/json"}
         payload = {"contents": [{"parts": [{"text": _PING}]}],
