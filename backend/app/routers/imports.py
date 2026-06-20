@@ -5,12 +5,13 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
+from app.models.import_job import ImportJob  # noqa: F401  (register import_jobs table)
 from app.services.excel_import import (
     parse_workbook,
     cell_str,
@@ -313,6 +314,7 @@ async def import_facilities(
 import json as _json
 import mimetypes as _mimetypes
 import uuid as _uuid
+from contextlib import asynccontextmanager as _asynccontextmanager
 from datetime import datetime as _dt, date as _date
 from typing import Optional
 
@@ -392,34 +394,16 @@ async def ai_import_models(db: AsyncSession = Depends(get_db), user=Depends(get_
     return {"models": models, "drive_enabled": drive_sync.is_enabled()}
 
 
-@router.post("/analyze")
-async def analyze_document(
-    file: UploadFile = File(...),
-    model_id: Optional[int] = Form(None),
-    db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_active_user),
-):
-    """Extract a document with AI and persist it across the right customers."""
+async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str,
+                            model_id, username: str) -> dict:
+    """Extract one uploaded document and persist it across the right customers.
+    Runs inside a background job so the browser never waits on a multi-minute call."""
     from app.ai import inference
     from app.services import doc_ingest, drive_sync
     from app.models.crm import Attachment, CustomerProfile
 
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-    fname = file.filename or "document"
-    mime = _guess_mime(fname, file.content_type or "")
-    username = getattr(user, "username", "") or ""
     lower = fname.lower()
     is_pdf = mime == "application/pdf" or lower.endswith(".pdf")
-    if lower.endswith(".docx") or lower.endswith(_EXCEL_EXT):
-        limit = _DOC_MAX_BYTES
-    elif is_pdf:
-        limit = _PDF_MAX_BYTES  # bigger PDFs are split into page-chunks below
-    else:
-        limit = _AI_MAX_BYTES   # a single image can't be split
-    if len(data) > limit:
-        raise HTTPException(status_code=413, detail=f"حجم فایل زیاد است (حداکثر {limit // (1024*1024)} MB برای این نوع)")
 
     documents: list = []
     chunk_errors: list = []
@@ -623,3 +607,136 @@ async def analyze_document(
         "chunk_errors": [e for e in chunk_errors if e],
         "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id, "reused": reused},
     }
+
+
+# ---------------------------------------------------------------------------
+# Background jobs — extraction can take minutes (big PDFs split into chunks),
+# longer than the HTTP gateway timeout. So /analyze records a job and returns its
+# id immediately; the UI polls /jobs/{id} until it's done. State lives in the DB
+# (table import_jobs) so a poll is answered correctly even with several API
+# workers (the upload and a later poll may hit different workers). The heavy
+# extraction itself runs as an in-process task on the worker that took the upload.
+# ---------------------------------------------------------------------------
+_BG_TASKS: set = set()  # keep strong refs so fire-and-forget tasks aren't GC'd
+
+
+@_asynccontextmanager
+async def _job_session():
+    """Yield a DB session for a background import job.
+
+    A job outlives the request that started it (that request's session is closed
+    once it returns), so it gets its own fresh session. Overridden in tests to
+    reuse the in-memory test session instead of opening a second connection."""
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
+async def _prune_jobs(db: AsyncSession, keep: int = 300) -> None:
+    """Best-effort housekeeping: keep the most recent ``keep`` finished jobs."""
+    try:
+        old = (await db.execute(
+            select(ImportJob.id).where(ImportJob.status != "running")
+            .order_by(ImportJob.started_at.desc()).offset(keep))).scalars().all()
+        if old:
+            await db.execute(delete(ImportJob).where(ImportJob.id.in_(old)))
+    except Exception:  # pragma: no cover - non-fatal
+        pass
+
+
+async def _create_job(db: AsyncSession, job_id: str, fname: str, username: str) -> None:
+    db.add(ImportJob(id=job_id, status="running", filename=fname, username=username))
+    await _prune_jobs(db)
+    await db.commit()
+
+
+async def _record_job_error(db: AsyncSession, job_id: str, http_status: int, detail) -> None:
+    row = await db.get(ImportJob, job_id)
+    if row is not None:
+        row.status = "error"
+        row.http_status = http_status
+        row.detail_json = _json.dumps(detail, ensure_ascii=False)
+        row.finished_at = func.now()
+    await db.commit()
+
+
+async def _run_import_job(job_id: str, data: bytes, fname: str, mime: str, model_id, username: str) -> None:
+    async with _job_session() as db:
+        try:
+            result = await _process_document(db, data, fname, mime, model_id, username)
+            row = await db.get(ImportJob, job_id)
+            if row is not None:
+                row.status = "done"
+                row.result_json = _json.dumps(result, ensure_ascii=False)
+                row.finished_at = func.now()
+            await db.commit()
+        except HTTPException as he:
+            await db.rollback()
+            await _record_job_error(db, job_id, he.status_code, he.detail)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("import job %s failed", job_id)
+            await db.rollback()
+            await _record_job_error(db, job_id, 500, str(exc))
+
+
+async def _spawn_job(job_id: str, data: bytes, fname: str, mime: str, model_id, username: str) -> None:
+    """Fire-and-forget the import job. Overridden in tests to run it inline so the
+    poll endpoint is deterministic."""
+    import asyncio
+    task = asyncio.create_task(_run_import_job(job_id, data, fname, mime, model_id, username))
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
+
+@router.post("/analyze")
+async def analyze_document(
+    file: UploadFile = File(...),
+    model_id: Optional[int] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Start an extraction job and return its id immediately (poll /jobs/{id})."""
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    fname = file.filename or "document"
+    mime = _guess_mime(fname, file.content_type or "")
+    lower = fname.lower()
+    is_pdf = mime == "application/pdf" or lower.endswith(".pdf")
+    if lower.endswith(".docx") or lower.endswith(_EXCEL_EXT):
+        limit = _DOC_MAX_BYTES
+    elif is_pdf:
+        limit = _PDF_MAX_BYTES
+    else:
+        limit = _AI_MAX_BYTES
+    if len(data) > limit:
+        raise HTTPException(status_code=413, detail=f"حجم فایل زیاد است (حداکثر {limit // (1024*1024)} MB برای این نوع)")
+
+    username = getattr(user, "username", "") or ""
+    job_id = _uuid.uuid4().hex[:12]
+    await _create_job(db, job_id, fname, username)
+    await _spawn_job(job_id, data, fname, mime, model_id, username)
+    return {"job_id": job_id, "status": "running", "filename": fname}
+
+
+@router.get("/jobs/{job_id}")
+async def import_job_status(job_id: str, db: AsyncSession = Depends(get_db),
+                            user=Depends(get_current_active_user)):
+    """Poll an import job: {status: running|done|error, result?|detail?}."""
+    row = await db.get(ImportJob, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Job not found (it may have expired). Please re-upload.")
+    out: dict = {"job_id": row.id, "status": row.status, "filename": row.filename}
+    if row.status == "done" and row.result_json:
+        try:
+            out["result"] = _json.loads(row.result_json)
+        except Exception:
+            out["result"] = None
+    elif row.status == "error":
+        out["http_status"] = row.http_status
+        if row.detail_json:
+            try:
+                out["detail"] = _json.loads(row.detail_json)
+            except Exception:
+                out["detail"] = row.detail_json
+    return out

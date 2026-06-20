@@ -727,15 +727,40 @@ export const importsApi = {
     const { data } = await api.get('/api/imports/ai-models')
     return data
   },
-  async analyzeDocument(file: File, modelId?: number): Promise<any> {
+  async analyzeDocument(file: File, modelId?: number, onTick?: () => void): Promise<any> {
+    // Start a background job (returns immediately), then poll until done — so a
+    // long extraction never hits the HTTP gateway timeout.
     const form = new FormData()
     form.append('file', file)
     if (modelId != null) form.append('model_id', String(modelId))
-    const { data } = await api.post('/api/imports/analyze', form, {
+    const { data: start } = await api.post('/api/imports/analyze', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 200000,
+      timeout: 300000, // generous: this only covers the file UPLOAD
     })
-    return data
+    const jobId = start.job_id
+    if (!jobId) return start
+    const deadline = Date.now() + 25 * 60 * 1000 // poll up to 25 min
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000))
+      if (onTick) onTick()
+      let j: any
+      try {
+        j = (await api.get(`/api/imports/jobs/${jobId}`)).data
+      } catch (e: any) {
+        // A long poll will occasionally hit a network blip or a 5xx gateway
+        // hiccup — keep waiting. Only a 4xx (e.g. the job genuinely expired) is
+        // terminal.
+        if (!e?.response || e.response.status >= 500) continue
+        throw e
+      }
+      if (j.status === 'done') return j.result
+      if (j.status === 'error') {
+        const err: any = new Error('extraction failed')
+        err.response = { data: { detail: j.detail }, status: j.http_status || 500 }
+        throw err
+      }
+    }
+    throw new Error('Extraction is taking too long; please try a smaller file.')
   },
 }
 

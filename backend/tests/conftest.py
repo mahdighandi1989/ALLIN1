@@ -119,6 +119,31 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
+def import_inline(db_session: AsyncSession, monkeypatch):
+    """Run AI-import background jobs inline, on the in-memory test session.
+
+    In production ``/api/imports/analyze`` fires the extraction off as a detached
+    task (with its own connection) so the browser can poll instead of waiting out
+    a multi-minute call. Under the test's StaticPool there is a single shared
+    aiosqlite connection, so a second session would clash; instead we (a) reuse
+    the request's session and (b) await the job before ``/analyze`` returns, so a
+    single poll of ``/jobs/{id}`` observes the finished result deterministically.
+    """
+    from contextlib import asynccontextmanager
+    from app.routers import imports as imports_router
+
+    @asynccontextmanager
+    async def _reuse():
+        yield db_session  # the fixture owns this session's lifecycle; don't close
+
+    async def _inline(job_id, data, fname, mime, model_id, username):
+        await imports_router._run_import_job(job_id, data, fname, mime, model_id, username)
+
+    monkeypatch.setattr(imports_router, "_job_session", _reuse)
+    monkeypatch.setattr(imports_router, "_spawn_job", _inline)
+
+
+@pytest.fixture
 async def test_user(db_session: AsyncSession) -> User:
     """Create a test user"""
     user = User(

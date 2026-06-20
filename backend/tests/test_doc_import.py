@@ -9,6 +9,20 @@ from app.models.customer import Customer
 from app.services import doc_ingest
 
 
+async def _poll(client, headers, job_id, tries: int = 50):
+    """Poll an import job to completion. Jobs run inline under ``import_inline``,
+    so this returns on the first read; the loop is just defensive."""
+    import asyncio
+    for _ in range(tries):
+        r = await client.get(f"/api/imports/jobs/{job_id}", headers=headers)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        if j["status"] != "running":
+            return j
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} never finished")
+
+
 def test_parse_model_json_tolerant():
     assert doc_ingest.parse_model_json('```json\n{"customers":[]}\n```') == {"customers": []}
     assert doc_ingest.parse_model_json('blah {"a":1} trailing')["a"] == 1
@@ -50,14 +64,16 @@ def _draft_docx() -> bytes:
     return buf.getvalue()
 
 
-async def test_analyze_docx_fastpath(client, auth_headers, db_session):
+async def test_analyze_docx_fastpath(client, auth_headers, db_session, import_inline):
     db_session.add(Customer(account_no="115524", name="Old"))
     await db_session.commit()
     files = {"file": ("efco.docx", _draft_docx(),
                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
     r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
     assert r.status_code == 200, r.text
-    b = r.json()
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    b = job["result"]
     assert b["ok"] and b["model"] == "Word draft parser"
     assert any(c.get("account_no") == "115524" for c in b["customers"])
     # data landed where other forms read it
@@ -88,16 +104,20 @@ def test_workbook_to_text_and_chunk():
     assert "Gamma" in csv
 
 
-async def test_analyze_xlsx_reaches_branch(client, auth_headers):
+async def test_analyze_xlsx_reaches_branch(client, auth_headers, import_inline):
     # No AI key in tests → the spreadsheet branch parses then reports no usable
-    # model (400), proving the Excel path is wired (not a 415/500).
+    # model. The job captures that as an error with http_status 400/502, proving
+    # the Excel path is wired (not a 415/500).
     files = {"file": ("book.xlsx", _xlsx_bytes(),
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
-    assert r.status_code in (400, 502), r.text
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "error", job
+    assert job["http_status"] in (400, 502), job
 
 
-async def test_reupload_same_file_no_duplicate_review(client, auth_headers, db_session):
+async def test_reupload_same_file_no_duplicate_review(client, auth_headers, db_session, import_inline):
     db_session.add(Customer(account_no="115524", name="X"))
     await db_session.commit()
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -105,6 +125,8 @@ async def test_reupload_same_file_no_duplicate_review(client, auth_headers, db_s
         r = await client.post("/api/imports/analyze", headers=auth_headers,
                               files={"file": ("efco.docx", _draft_docx(), mime)})
         assert r.status_code == 200, r.text
+        job = await _poll(client, auth_headers, r.json()["job_id"])
+        assert job["status"] == "done", job
     rc = await client.get("/api/crm/credit-reviews/115524", headers=auth_headers)
     assert len(rc.json()) == 1  # deduped per review date — not duplicated on re-upload
 
