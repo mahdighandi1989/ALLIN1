@@ -166,6 +166,8 @@ export default function ImportPage() {
                       <div className="text-xs text-gray-600">
                         {c.fields_saved?.length ? `${c.fields_saved.length} فیلد` : 'بدون فیلدِ جدید'}
                         {c.guarantors_added ? ` · ${c.guarantors_added} ضامن جدید` : ''}
+                        {c.partners_added ? ` · ${c.partners_added} شریک جدید` : ''}
+                        {c.facilities_added ? ` · ${c.facilities_added} تسهیلات جدید` : ''}
                         {c.properties_added ? ` · ${c.properties_added} ملک جدید` : ''}
                         {c.properties_updated ? ` · ${c.properties_updated} ملک به‌روز` : ''}
                       </div>

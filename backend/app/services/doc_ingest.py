@@ -37,7 +37,7 @@ _PROFILE_SKIP_COLS = {
     # identity / handled at the customer level
     "account_no", "customer_name", "account_type", "branch",
     # housekeeping / computed
-    "rating", "customer_status", "profile_completeness", "updated_by",
+    "customer_status", "profile_completeness", "updated_by",
     "last_updated", "data_json", "created_at",
     # per-document file paths (populated by the upload feature, not from content)
     "trade_license_doc", "passport_doc", "emirates_id_doc", "visa_doc", "tenancy_doc",
@@ -89,6 +89,9 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
         + """
       },
       "guarantors": [ {"name": "", "account": "", "branch": ""} ],
+      "partners": [ {"name": "", "nationality": "", "share": "", "remarks": ""} ],
+      "facilities": [ {"facility_type": "overdraft | loan | cheque_discounting | trust_receipt | lc_sight | lc_usance | lc | lg | log | other",
+                       "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "notes": ""} ],
       "properties": [ {"prop_type": "", "address": "", "city": "", "country": "",
                        "valuation": "", "valuation_currency": "AED", "mortgage_amount": "", "mortgage_currency": "AED",
                        "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "", "insurance_expiry": ""} ],
@@ -105,6 +108,8 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
 
 Rules:
 - Extract EVERY field listed under "fields" that the document actually contains — including the small ones officers often miss: every ID's issue date AND expiry date, visa number/issue/expiry/type, tenancy number/issue/expiry/address, whether the Emirates ID is "golden" (Yes/No), etc.
+- "partners" = the company's shareholders/partners (name, nationality, share %). "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
+- "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits.
 - Only include fields you actually find; omit unknowns (do NOT invent values).
 - Always capture the customer's full legal NAME exactly as printed.
 - Capture each ID document's NUMBER together with its ISSUE and EXPIRY dates.
@@ -282,6 +287,37 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if customer is not None and customer.name and not row.customer_name:
             row.customer_name = customer.name
 
+    # Partners / shareholders (شرکا) — upsert into the Partner table the corporate
+    # credit-file form reads from. Deduped by name within the account; fill-empty
+    # so a curated nationality/share is never clobbered. (Distinct from guarantors.)
+    from app.models.profile_entities import Partner
+    pt_added = pt_updated = 0
+    existing_partners = (await db.execute(select(Partner).where(
+        Partner.account_no == acc, Partner.is_deleted == False))).scalars().all()  # noqa: E712
+    for pt in (cust.get("partners") or []):
+        if not isinstance(pt, dict):
+            continue
+        pname = (pt.get("name") or "").strip()
+        if not pname:
+            continue
+        prow = next((r for r in existing_partners if (r.name or "").strip().lower() == pname.lower()), None)
+        if prow is None:
+            import uuid
+            from datetime import datetime
+            prow = Partner(id=f"PT-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
+                           account_no=acc, date_added=date.today().isoformat(), created_by=username)
+            db.add(prow)
+            existing_partners.append(prow)
+            pt_added += 1
+        else:
+            pt_updated += 1
+        prow.name = pname[:200]
+        _set_prop(prow, "nationality", pt.get("nationality"))
+        _set_prop(prow, "share", pt.get("share"))
+        _set_prop(prow, "remarks", pt.get("remarks"))
+        if customer is not None and customer.name and not prow.customer_name:
+            prow.customer_name = customer.name
+
     # Properties (املاک) — upsert with smart matching so a similar property isn't
     # duplicated: match on plate no / mortgage deed no, else type+address.
     p_added = p_updated = 0
@@ -322,12 +358,57 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if customer is not None and customer.name and not prow.customer_name:
             prow.customer_name = customer.name
 
+    # Facilities — create/upsert the real Facility records the credit-file form
+    # reads (so Facility Details fills in). Matched by (customer, facility_type);
+    # amounts/rate/expiry are fill-empty (a curated amount is never clobbered) and
+    # a NEW record is only created when an amount is present (no phantom limits).
+    f_added = f_updated = 0
+    if customer is not None:
+        from app.models.facility import Facility, FacilityType, FacilityStatus
+        valid_ft = {t.value for t in FacilityType}
+        existing_facs = (await db.execute(select(Facility).where(
+            Facility.customer_id == customer.id, Facility.is_deleted == False))).scalars().all()  # noqa: E712
+        for fc in (cust.get("facilities") or []):
+            if not isinstance(fc, dict):
+                continue
+            ft_raw = (fc.get("facility_type") or "").strip().lower().replace(" ", "_")
+            ft = ft_raw if ft_raw in valid_ft else ("other" if ft_raw else "")
+            amt = _num(fc.get("amount"))
+            rate = _num(fc.get("interest_rate"))
+            frow = None
+            if ft:
+                frow = next((r for r in existing_facs
+                             if str(getattr(r.facility_type, "value", r.facility_type) or "") == ft), None)
+            if frow is None:
+                if amt is None:
+                    continue  # no amount → nothing to anchor a new facility on
+                frow = Facility(customer_id=customer.id,
+                                facility_type=FacilityType(ft) if ft else FacilityType.OTHER,
+                                amount=amt, currency=(fc.get("currency") or "AED")[:3].upper(),
+                                status=FacilityStatus.ACTIVE)
+                db.add(frow)
+                existing_facs.append(frow)
+                f_added += 1
+            else:
+                if not frow.amount and amt is not None:
+                    frow.amount = amt
+                f_updated += 1
+            if rate is not None and not frow.interest_rate:
+                frow.interest_rate = rate
+            if fc.get("notes") and not (frow.notes or ""):
+                frow.notes = str(fc["notes"])
+            exp = _parse_date(fc.get("expiry_date"))
+            if exp and frow.expiry_date is None:
+                frow.expiry_date = exp
+
     return {"ok": True, "account_no": acc, "name": name or acc,
             "customer_id": (customer.id if customer is not None else None),
             "facility_hint": (cust.get("fields", {}).get("proposed_facility")
                               or (cust.get("review", {}) or {}).get("proposed_facility") or ""),
             "fields_saved": sorted(fields.keys()),
             "guarantors_added": g_added, "guarantors_updated": g_updated,
+            "partners_added": pt_added, "partners_updated": pt_updated,
+            "facilities_added": f_added, "facilities_updated": f_updated,
             "properties_added": p_added, "properties_updated": p_updated}
 
 
@@ -335,6 +416,18 @@ def _num(v):
     try:
         s = re.sub(r"[^\d.\-]", "", str(v or ""))
         return float(s) if s not in ("", "-", ".") else None
+    except Exception:
+        return None
+
+
+def _parse_date(v):
+    """Parse a printed date (DD/MM/YYYY etc.) to a date, or None if unparseable."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    try:
+        from dateutil import parser as _dp
+        return _dp.parse(s, dayfirst=True, fuzzy=True).date()
     except Exception:
         return None
 
@@ -451,20 +544,69 @@ def chunk_text(text: str, max_chars: int = 100000) -> list[str]:
     return chunks or [text]
 
 
+def _lc(d: dict, k: str) -> str:
+    return (d.get(k) or "").strip().lower()
+
+
+def _g_match(a: dict, b: dict) -> bool:
+    if _lc(a, "account") and _lc(a, "account") == _lc(b, "account"):
+        return True
+    return bool(_lc(b, "name")) and _lc(a, "name") == _lc(b, "name")
+
+
+def _name_match(a: dict, b: dict) -> bool:
+    return bool(_lc(b, "name")) and _lc(a, "name") == _lc(b, "name")
+
+
+def _ft_match(a: dict, b: dict) -> bool:
+    return bool(_lc(b, "facility_type")) and _lc(a, "facility_type") == _lc(b, "facility_type")
+
+
+def _prop_match(a: dict, b: dict) -> bool:
+    for key in ("plate_no", "mortgage_deed_no"):
+        if _lc(a, key) and _lc(a, key) == _lc(b, key):
+            return True
+    # same type and (one side has no address yet, or addresses agree) → same property
+    if _lc(a, "prop_type") and _lc(a, "prop_type") == _lc(b, "prop_type"):
+        aa, ab = _lc(a, "address"), _lc(b, "address")
+        if not aa or not ab or aa == ab:
+            return True
+    return False
+
+
+_LIST_MATCHERS = {"guarantors": _g_match, "partners": _name_match,
+                  "facilities": _ft_match, "properties": _prop_match}
+
+
+def _merge_list(into_list: list, more_list: list, matcher) -> None:
+    """Merge ``more_list`` into ``into_list``: a matching item is field-merged
+    (fill-empty) so a record split across chunks is reassembled; otherwise it is
+    appended."""
+    for item in (more_list or []):
+        if not isinstance(item, dict):
+            continue
+        match = next((ex for ex in into_list if isinstance(ex, dict) and matcher(ex, item)), None)
+        if match is None:
+            into_list.append(item)
+        else:
+            for k, vv in item.items():
+                if vv not in (None, "") and not match.get(k):
+                    match[k] = vv
+
+
 def merge_customer(into: dict, more: dict) -> None:
-    """Merge a customer dict parsed from a later chunk into an existing one."""
+    """Merge a customer dict parsed from a later chunk into an existing one — so a
+    big PDF split into page-chunks reassembles every list (partners, facilities,
+    properties, guarantors), even when a record's details span two chunks."""
     for k, v in more.items():
         if k in ("fields", "review") and isinstance(v, dict):
             base = into.setdefault(k, {})
             for kk, vv in v.items():
                 if vv not in (None, "") and not base.get(kk):
                     base[kk] = vv
-        elif k == "guarantors" and isinstance(v, list):
-            into.setdefault("guarantors", [])
-            seen = {(g.get("name"), g.get("account")) for g in into["guarantors"] if isinstance(g, dict)}
-            for g in v:
-                if isinstance(g, dict) and (g.get("name"), g.get("account")) not in seen:
-                    into["guarantors"].append(g)
+        elif k in _LIST_MATCHERS and isinstance(v, list):
+            into.setdefault(k, [])
+            _merge_list(into[k], v, _LIST_MATCHERS[k])
         elif v not in (None, "") and not into.get(k):
             into[k] = v
 
