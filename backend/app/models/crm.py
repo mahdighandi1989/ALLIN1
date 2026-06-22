@@ -67,6 +67,11 @@ class CustomerProfile(Base):
     proposed_amount = Column(String(40))
     proposed_tenor = Column(String(40))
     proposed_rate = Column(String(40))
+    # Credit-file summary header / history facts (corporate & retail summary forms).
+    grade = Column(String(20))            # VERY GOOD / GOOD / AVERAGE / POOR
+    call_report = Column(String(120))
+    previous_files = Column(String(20))   # No. of Previous Files
+    undertaking_from = Column(String(60)) # who gives undertakings (Guarantor/s, Partner/s)
     # Full 200-field record verbatim (partners, securities, collateral, mortgage,
     # guarantors summary, undertakings, attachments, …) so nothing is lost.
     data_json = Column(Text)
