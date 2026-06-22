@@ -44,6 +44,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # never let startup hard-crash on bootstrap issues
         logger.error("Database initialization failed: %s", exc)
 
+    # Reconcile AI-import jobs left 'running' by a previous process (a deploy or
+    # restart killed their in-flight task) so the browser stops polling them.
+    try:
+        from app.routers.imports import fail_orphaned_jobs
+
+        n = await fail_orphaned_jobs()
+        if n:
+            logger.info("Marked %d interrupted import job(s) as errored", n)
+    except Exception as exc:  # best-effort; never blocks boot
+        logger.error("Import-job reconcile failed: %s", exc)
+
     # Materialise a stub customer profile for any collateral (properties/FDs/…)
     # whose account_no has no customer yet, so nothing is stranded as an "island".
     try:
