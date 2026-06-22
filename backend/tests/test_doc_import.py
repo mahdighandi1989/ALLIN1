@@ -270,6 +270,26 @@ async def test_persist_security_and_summary_fields(db_session):
     assert r2["security_added"] == 0
 
 
+async def test_persist_facility_rate_overflow_is_dropped(db_session):
+    """A mis-extracted interest_rate (3190 into a Numeric(5,2) column) must NOT
+    crash the import — it is dropped, the facility still saves with its amount."""
+    from app.models.customer import Customer
+    from app.models.facility import Facility
+    from sqlalchemy import select as _sel
+    payload = {
+        "account_no": "990011", "name": "Big Co", "account_type": "corporate",
+        "facilities": [{"facility_type": "overdraft", "amount": "1000000",
+                        "interest_rate": "3190", "expiry_date": "30/05/2027"}],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["facilities_added"] == 1
+    await db_session.commit()
+    cid = (await db_session.execute(_sel(Customer.id).where(Customer.account_no == "990011"))).scalar_one()
+    fac = (await db_session.execute(_sel(Facility).where(Facility.customer_id == cid))).scalar_one()
+    assert float(fac.amount) == 1000000
+    assert fac.interest_rate is None  # the out-of-range rate was dropped, not stored
+
+
 def test_merge_customer_reassembles_lists_across_chunks():
     """A record split across PDF chunks (type in one, details in another) is
     field-merged, not dropped or duplicated."""

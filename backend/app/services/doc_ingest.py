@@ -389,10 +389,10 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         _set_prop(prow, "insurance_expiry", p.get("insurance_expiry"))
         _set_prop(prow, "valuation_currency", p.get("valuation_currency"))
         _set_prop(prow, "mortgage_currency", p.get("mortgage_currency"))
-        if prow.valuation in (None, "") and _num(p.get("valuation")) is not None:
-            prow.valuation = _num(p.get("valuation"))
-        if prow.mortgage_amount in (None, "") and _num(p.get("mortgage_amount")) is not None:
-            prow.mortgage_amount = _num(p.get("mortgage_amount"))
+        if prow.valuation in (None, "") and _num_bounded(p.get("valuation"), 1e16) is not None:
+            prow.valuation = _num_bounded(p.get("valuation"), 1e16)  # Numeric(18,2)
+        if prow.mortgage_amount in (None, "") and _num_bounded(p.get("mortgage_amount"), 1e16) is not None:
+            prow.mortgage_amount = _num_bounded(p.get("mortgage_amount"), 1e16)
         if customer is not None and customer.name and not prow.customer_name:
             prow.customer_name = customer.name
 
@@ -411,8 +411,8 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
                 continue
             ft_raw = (fc.get("facility_type") or "").strip().lower().replace(" ", "_")
             ft = ft_raw if ft_raw in valid_ft else ("other" if ft_raw else "")
-            amt = _num(fc.get("amount"))
-            rate = _num(fc.get("interest_rate"))
+            amt = _num_bounded(fc.get("amount"), 1e13)        # Numeric(15,2)
+            rate = _num_bounded(fc.get("interest_rate"), 1e3)  # Numeric(5,2) → < 1000
             frow = None
             if ft:
                 frow = next((r for r in existing_facs
@@ -457,6 +457,18 @@ def _num(v):
         return float(s) if s not in ("", "-", ".") else None
     except Exception:
         return None
+
+
+def _num_bounded(v, max_abs: float):
+    """Parse a number but DROP it if its magnitude won't fit the target DB column.
+
+    A mis-extracted value (e.g. an interest_rate of 3190 into a Numeric(5,2)
+    column) would otherwise raise a numeric-overflow on flush and roll back the
+    WHOLE import. Returning None here just skips that one value."""
+    n = _num(v)
+    if n is None or abs(n) >= max_abs:
+        return None
+    return n
 
 
 def _parse_date(v):
