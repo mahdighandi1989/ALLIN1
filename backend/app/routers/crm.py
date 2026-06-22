@@ -387,6 +387,7 @@ _KYC_FIELDS = [
     "emirates_id_no", "emirates_id_issue", "emirates_id_expiry", "emirates_id_remarks", "emirates_id_golden",
     "visa_no", "visa_issue", "visa_expiry", "visa_type",
     "tenancy_no", "tenancy_issue", "tenancy_expiry", "tenancy_address",
+    "grade", "call_report", "previous_files", "undertaking_from",
 ]
 
 
@@ -416,6 +417,10 @@ class ProfileUpdate(BaseModel):
     tenancy_issue: Optional[str] = None
     tenancy_expiry: Optional[str] = None
     tenancy_address: Optional[str] = None
+    grade: Optional[str] = None
+    call_report: Optional[str] = None
+    previous_files: Optional[str] = None
+    undertaking_from: Optional[str] = None
 
 
 @router.patch("/profile/{account_no}")

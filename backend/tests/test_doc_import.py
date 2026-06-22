@@ -154,7 +154,8 @@ def test_extraction_is_schema_driven():
     be picked up automatically (no prompt edit)."""
     fields = doc_ingest.extractable_profile_fields()
     for k in ("visa_issue", "visa_type", "tenancy_issue", "tenancy_address",
-              "emirates_id_golden", "nationality", "trade_license_issue", "auditor"):
+              "emirates_id_golden", "nationality", "trade_license_issue", "auditor",
+              "grade", "call_report", "previous_files"):
         assert k in fields, f"{k} should be extractable"
     # housekeeping / file-path / officer-notes columns are excluded
     for k in ("data_json", "passport_doc", "profile_completeness", "account_no",
@@ -239,6 +240,34 @@ async def test_persist_partners_and_facilities(db_session):
     r2 = await doc_ingest.persist_customer(db_session, payload, "tester")
     assert r2["partners_added"] == 0 and r2["facilities_added"] == 0
     await db_session.commit()
+
+
+async def test_persist_security_and_summary_fields(db_session):
+    """The credit-file summary header (grade/call report/previous files/undertaking)
+    and the Security matrix are extracted and persisted (columns + data_json)."""
+    import json as _j
+    from app.models.crm import CustomerProfile
+    from sqlalchemy import select as _sel
+    payload = {
+        "account_no": "880011", "name": "Sec Co", "account_type": "corporate",
+        "fields": {"grade": "GOOD", "call_report": "done 01/2026", "previous_files": "2",
+                   "undertaking_from": "Guarantor/s"},
+        "security": [{"type": "Cheques", "for_facility": "overdraft", "aed": "100000"},
+                     {"type": "Collaterals", "aed": "5000000"}],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["security_added"] == 2
+    await db_session.commit()
+    cp = (await db_session.execute(_sel(CustomerProfile).where(CustomerProfile.account_no == "880011"))).scalar_one()
+    assert cp.grade == "GOOD" and cp.call_report == "done 01/2026" and cp.previous_files == "2"
+    assert cp.undertaking_from == "Guarantor/s"
+    sd = _j.loads(cp.data_json)["security_details"]
+    assert {row["type"] for row in sd} == {"Cheques", "Collaterals"}
+    chq = next(row for row in sd if row["type"] == "Cheques")
+    assert chq["aed"] == "100000" and chq["for_facility"] == "overdraft"
+    # re-import the same security → no duplicate rows
+    r2 = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r2["security_added"] == 0
 
 
 def test_merge_customer_reassembles_lists_across_chunks():

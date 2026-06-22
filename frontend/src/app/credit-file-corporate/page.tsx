@@ -146,11 +146,16 @@ export default function CreditFileCorporatePage() {
       const pdata = (profile && profile.data) || {}
       const acct = customer?.account_no || q
       setFacilities(facs)
+      const uf = String(profile?.undertaking_from || '')
       setA((s) => ({
         ...s, accountNumber: acct, customerName: customer?.name || '',
         branchCode: customer?.branch_code || customer?.branch || '', branchName: customer?.branch || '',
         businessType: profile?.business_type || pdata.business_type || '', rating: profile?.rating || '',
+        callReport: profile?.call_report || '', previousFiles: profile?.previous_files || '',
+        grade: profile?.grade || s.grade,
         customerStatus: profile?.customer_status || s.customerStatus,
+        undertakingGuarantor: uf ? /guarant/i.test(uf) : s.undertakingGuarantor,
+        undertakingPartner: uf ? /partner/i.test(uf) : s.undertakingPartner,
         tradeLicenseNum: profile?.trade_license_no || '', tradeLicenseIssue: profile?.trade_license_issue || '',
         tradeLicenseExpiry: profile?.trade_license_expiry || '', tradeLicenseRemarks: profile?.trade_license_remarks || '',
         passportNum: profile?.passport_no || '', passportIssue: profile?.passport_issue || '',
@@ -158,6 +163,21 @@ export default function CreditFileCorporatePage() {
         managerIdNum: profile?.emirates_id_no || '', managerIdIssue: profile?.emirates_id_issue || '',
         managerIdExpiry: profile?.emirates_id_expiry || '', managerIdRemarks: profile?.emirates_id_remarks || '',
       }))
+      // Security/collateral matrix (data_json) → fill the base rows, append extras.
+      const sd: any[] = Array.isArray(pdata.security_details) ? pdata.security_details : []
+      if (sd.length) {
+        setSecRows(() => {
+          const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
+          sd.forEach((e: any) => {
+            const t = String(e?.type || '').trim()
+            const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
+            const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
+            if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
+            else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
+          })
+          return [...base, ...extra]
+        })
+      }
       if (parts.length) {
         setPartners(parts.map((p: any) => ({ uid: uid(), dbId: p.id, name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' })))
       }
@@ -192,10 +212,18 @@ export default function CreditFileCorporatePage() {
       const prof: Record<string, string> = {}
       const put = (k: string, v: string) => { if (v && v.trim()) prof[k] = v.trim() }
       put('business_type', a.businessType); put('rating', a.rating); put('customer_status', a.customerStatus)
+      put('call_report', a.callReport); put('previous_files', a.previousFiles); put('grade', a.grade)
+      prof['undertaking_from'] = [a.undertakingGuarantor && 'Guarantor/s', a.undertakingPartner && 'Partner/s'].filter(Boolean).join(', ')
       put('trade_license_no', a.tradeLicenseNum); put('trade_license_issue', a.tradeLicenseIssue); put('trade_license_expiry', a.tradeLicenseExpiry); put('trade_license_remarks', a.tradeLicenseRemarks)
       put('passport_no', a.passportNum); put('passport_issue', a.passportIssue); put('passport_expiry', a.passportExpiry); put('passport_remarks', a.passportRemarks)
       put('emirates_id_no', a.managerIdNum); put('emirates_id_issue', a.managerIdIssue); put('emirates_id_expiry', a.managerIdExpiry); put('emirates_id_remarks', a.managerIdRemarks)
       if (Object.keys(prof).length) await crmApi.updateProfile(acct, prof)
+
+      // Security/collateral matrix → data_json (the only place this table lives).
+      const secData = secRows
+        .filter((r) => r.label.trim() && (r.aed || r.usd || r.irr || r.other || r.facilityTag))
+        .map((r) => ({ type: r.label.trim(), for_facility: r.facilityTag || '', aed: r.aed || '', usd: r.usd || '', irr: r.irr || '', other: r.other || '' }))
+      if (secData.length) await crmApi.saveOfferLetterData(acct, { fields: { security_details: secData }, snapshot_key: 'credit_file_corporate' })
 
       let n = 0
       for (const r of facRows) {

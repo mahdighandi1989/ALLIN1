@@ -95,6 +95,8 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
       "properties": [ {"prop_type": "", "address": "", "city": "", "country": "",
                        "valuation": "", "valuation_currency": "AED", "mortgage_amount": "", "mortgage_currency": "AED",
                        "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "", "insurance_expiry": ""} ],
+      "security": [ {"type": "Underlien Deposits | Cheques | Collaterals | <as printed>", "for_facility": "",
+                     "aed": "", "usd": "", "irr": "", "other": ""} ],
       "review": {
         "date_of_review": "", "credit_application_no": "", "purpose": "",
         "proposed_rating": "", "rating_notes": "", "cru_recommendation": ""
@@ -110,6 +112,8 @@ Rules:
 - Extract EVERY field listed under "fields" that the document actually contains — including the small ones officers often miss: every ID's issue date AND expiry date, visa number/issue/expiry/type, tenancy number/issue/expiry/address, whether the Emirates ID is "golden" (Yes/No), etc.
 - "partners" = the company's shareholders/partners (name, nationality, share %). "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits.
+- "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
+- "grade" = the customer's history grade (VERY GOOD / GOOD / AVERAGE / POOR). "call_report" and "previous_files" (No. of Previous Files) come from the summary header. "undertaking_from" = who gives undertaking forms (e.g. "Guarantor/s", "Partner/s"). Fill these whenever the file shows them.
 - Only include fields you actually find; omit unknowns (do NOT invent values).
 - Always capture the customer's full legal NAME exactly as printed.
 - Capture each ID document's NUMBER together with its ISSUE and EXPIRY dates.
@@ -180,6 +184,36 @@ def _acc_of(cust: dict) -> str:
     return acc
 
 
+_SEC_COLS = ("type", "for_facility", "aed", "usd", "irr", "other")
+
+
+def _merge_security(data: dict, security: list) -> int:
+    """Upsert the security/collateral matrix into ``data['security_details']``,
+    deduped by row type (fill-empty per currency column). Returns rows added."""
+    rows = [s for s in (security or []) if isinstance(s, dict)
+            and any(str(s.get(k) or "").strip() for k in _SEC_COLS)]
+    if not rows:
+        return 0
+    out = data.get("security_details")
+    if not isinstance(out, list):
+        out = []
+    added = 0
+    for s in rows:
+        stype = str(s.get("type") or "").strip()
+        match = next((e for e in out if isinstance(e, dict)
+                      and stype and str(e.get("type") or "").strip().lower() == stype.lower()), None)
+        if match is None:
+            out.append({k: str(s.get(k) or "").strip() for k in _SEC_COLS})
+            added += 1
+        else:
+            for k in _SEC_COLS:
+                v = str(s.get(k) or "").strip()
+                if v and not str(match.get(k) or "").strip():
+                    match[k] = v
+    data["security_details"] = out
+    return added
+
+
 def _apply_extracted_fields(cp, fields: dict) -> None:
     """Write extracted scalars onto the profile, SCHEMA-DRIVEN: any key matching a
     CustomerProfile column (directly or via alias) is promoted to that column.
@@ -242,6 +276,10 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         data = {}
     for k, v in fields.items():
         data[str(k)] = v  # keyed → no duplicates on re-import
+    # Security/collateral matrix → data_json["security_details"] (the credit-file
+    # form reads this). Upsert by type so a re-import refreshes rows in place and
+    # never duplicates them; amounts are fill-empty.
+    sec_added = _merge_security(data, cust.get("security") or [])
     cp.data_json = json.dumps(data, ensure_ascii=False)
     cp.last_updated = date.today().isoformat()
     cp.updated_by = username
@@ -409,7 +447,8 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "guarantors_added": g_added, "guarantors_updated": g_updated,
             "partners_added": pt_added, "partners_updated": pt_updated,
             "facilities_added": f_added, "facilities_updated": f_updated,
-            "properties_added": p_added, "properties_updated": p_updated}
+            "properties_added": p_added, "properties_updated": p_updated,
+            "security_added": sec_added}
 
 
 def _num(v):
@@ -562,6 +601,10 @@ def _ft_match(a: dict, b: dict) -> bool:
     return bool(_lc(b, "facility_type")) and _lc(a, "facility_type") == _lc(b, "facility_type")
 
 
+def _sec_match(a: dict, b: dict) -> bool:
+    return bool(_lc(b, "type")) and _lc(a, "type") == _lc(b, "type")
+
+
 def _prop_match(a: dict, b: dict) -> bool:
     for key in ("plate_no", "mortgage_deed_no"):
         if _lc(a, key) and _lc(a, key) == _lc(b, key):
@@ -575,7 +618,7 @@ def _prop_match(a: dict, b: dict) -> bool:
 
 
 _LIST_MATCHERS = {"guarantors": _g_match, "partners": _name_match,
-                  "facilities": _ft_match, "properties": _prop_match}
+                  "facilities": _ft_match, "properties": _prop_match, "security": _sec_match}
 
 
 def _merge_list(into_list: list, more_list: list, matcher) -> None:

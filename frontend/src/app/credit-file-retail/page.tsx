@@ -130,12 +130,14 @@ export default function CreditFileRetailPage() {
     try {
       const d: any = await customersApi.detail(q)
       const { customer, profile = {}, facilities: facs = [], guarantors = [], properties: propList = [] } = d
+      const pdata = (profile && profile.data) || {}
       const acct = customer?.account_no || q
       setFacilities(facs)
       setA((s) => ({
         ...s, accountNumber: acct, customerName: customer?.name || '',
         branchCode: customer?.branch_code || customer?.branch || '', branchName: customer?.branch || '',
         rating: profile?.rating || '', customerStatus: profile?.customer_status || s.customerStatus,
+        previousFiles: profile?.previous_files || '', grade: profile?.grade || s.grade,
         passportNum: profile?.passport_no || '', passportIssue: profile?.passport_issue || '',
         passportExpiry: profile?.passport_expiry || '', passportRemarks: profile?.passport_remarks || '',
         emiratesIdNum: profile?.emirates_id_no || '', emiratesIdIssue: profile?.emirates_id_issue || '',
@@ -143,6 +145,21 @@ export default function CreditFileRetailPage() {
         guarantor1Name: guarantors?.[0]?.guarantor_name || '', guarantor2Name: guarantors?.[1]?.guarantor_name || '',
         guarantor3Name: guarantors?.[2]?.guarantor_name || '', guarantorAvailable: (guarantors?.length || 0) > 0 ? true : s.guarantorAvailable,
       }))
+      // Security/collateral matrix (data_json) → fill the base rows, append extras.
+      const sd: any[] = Array.isArray(pdata.security_details) ? pdata.security_details : []
+      if (sd.length) {
+        setSecRows(() => {
+          const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
+          sd.forEach((e: any) => {
+            const t = String(e?.type || '').trim()
+            const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
+            const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
+            if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
+            else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
+          })
+          return [...base, ...extra]
+        })
+      }
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
       // Bind predefined rows, then AUTO-ADD a row for every extra facility so
@@ -174,9 +191,16 @@ export default function CreditFileRetailPage() {
       const prof: Record<string, string> = {}
       const put = (k: string, v: string) => { if (v && v.trim()) prof[k] = v.trim() }
       put('rating', a.rating); put('customer_status', a.customerStatus)
+      put('previous_files', a.previousFiles); put('grade', a.grade)
       put('passport_no', a.passportNum); put('passport_issue', a.passportIssue); put('passport_expiry', a.passportExpiry); put('passport_remarks', a.passportRemarks)
       put('emirates_id_no', a.emiratesIdNum); put('emirates_id_issue', a.emiratesIdIssue); put('emirates_id_expiry', a.emiratesIdExpiry); put('emirates_id_remarks', a.emiratesRemarks)
       if (Object.keys(prof).length) await crmApi.updateProfile(acct, prof)
+
+      // Security/collateral matrix → data_json (the only place this table lives).
+      const secData = secRows
+        .filter((r) => r.label.trim() && (r.aed || r.usd || r.irr || r.other || r.facilityTag))
+        .map((r) => ({ type: r.label.trim(), for_facility: r.facilityTag || '', aed: r.aed || '', usd: r.usd || '', irr: r.irr || '', other: r.other || '' }))
+      if (secData.length) await crmApi.saveOfferLetterData(acct, { fields: { security_details: secData }, snapshot_key: 'credit_file_retail' })
 
       let n = 0
       for (const r of facRows) {
