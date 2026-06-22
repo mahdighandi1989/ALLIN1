@@ -181,6 +181,11 @@ export default function ImportPage() {
                           </div>
                         </details>
                       )}
+                      {c.kyc_missing?.length > 0 && (
+                        <div className="mt-1 text-[11px] text-amber-700">
+                          در این فایل یافت نشد: {c.kyc_missing.join('، ')}
+                        </div>
+                      )}
                     </div>
                   ) : <div className="text-red-700 text-xs">ثبت نشد: {c.reason}</div>}
                 </div>

@@ -374,6 +374,22 @@ async def test_fail_orphaned_jobs_marks_error(db_session, monkeypatch):
     assert done.status == "done"  # untouched
 
 
+async def test_kyc_date_field_rejects_non_date(db_session):
+    """A non-date in an issue/expiry field (e.g. the place of issue 'ABU DHABI')
+    is dropped, not stored; a real date is normalised and kept."""
+    from app.models.crm import CustomerProfile
+    from sqlalchemy import select as _sel
+    await doc_ingest.persist_customer(db_session, {
+        "account_no": "350994", "name": "Azoora",
+        "fields": {"trade_license_issue": "ABU DHABI", "trade_license_expiry": "10/03/2027"},
+    }, "t")
+    await db_session.commit()
+    cp = (await db_session.execute(_sel(CustomerProfile).where(
+        CustomerProfile.account_no == "350994"))).scalar_one()
+    assert (cp.trade_license_issue or "") == ""        # place-of-issue dropped
+    assert cp.trade_license_expiry == "10/03/2027"      # real date kept
+
+
 def test_merge_customer_reassembles_lists_across_chunks():
     """A record split across PDF chunks (type in one, details in another) is
     field-merged, not dropped or duplicated."""
