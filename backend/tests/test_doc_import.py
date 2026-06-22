@@ -290,6 +290,40 @@ async def test_persist_facility_rate_overflow_is_dropped(db_session):
     assert fac.interest_rate is None  # the out-of-range rate was dropped, not stored
 
 
+async def test_partner_reconcile_and_impossible_pct(db_session):
+    """Same partner spelled differently collapses to ONE row; an impossible share
+    (a capital amount as %) is dropped, not stored."""
+    from app.models.profile_entities import Partner
+    from sqlalchemy import select as _sel
+    await doc_ingest.persist_customer(db_session, {
+        "account_no": "771100", "name": "Co",
+        "partners": [{"name": "Yousef Mohamed Alhammadi", "share": "11.000000%"},
+                     {"name": "Capital Holder", "share": "3300000%"}],
+    }, "t")
+    await db_session.commit()
+    # second document: same person, extra middle name → must NOT duplicate
+    await doc_ingest.persist_customer(db_session, {
+        "account_no": "771100", "name": "Co",
+        "partners": [{"name": "Yousef Mohamed Ahmed Alhammadi", "nationality": "UAE"}],
+    }, "t")
+    await db_session.commit()
+    rows = (await db_session.execute(_sel(Partner).where(
+        Partner.account_no == "771100", Partner.is_deleted == False))).scalars().all()
+    yousefs = [r for r in rows if "ousef" in r.name]
+    assert len(yousefs) == 1, [r.name for r in rows]   # collapsed across spellings
+    assert yousefs[0].share == "11%"                    # trailing zeros trimmed
+    cap = next(r for r in rows if r.name == "Capital Holder")
+    assert (cap.share or "") == ""                       # impossible % dropped
+
+
+def test_same_person_and_clean_pct_units():
+    assert doc_ingest._same_person("Yousef Alhammadi", "Yousef Mohamed Alhammadi")
+    assert not doc_ingest._same_person("Khaled Shojae", "Valid Shojae")
+    assert doc_ingest._clean_pct("45.0000000%") == "45%"
+    assert doc_ingest._clean_pct("3300000%") == ""
+    assert doc_ingest._clean_pct("33.33") == "33.33%"
+
+
 def test_merge_customer_reassembles_lists_across_chunks():
     """A record split across PDF chunks (type in one, details in another) is
     field-merged, not dropped or duplicated."""

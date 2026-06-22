@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
-import { AmtInput, PctInput, DraftDrop, CountryInput, CountryDataList, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
+import { AmtInput, PctInput, WrapInput, DraftDrop, CountryInput, CountryDataList, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -345,6 +345,7 @@ export default function CreditFileCorporatePage() {
           * { box-sizing: border-box; }
           .no-print, .tools, .screen-only, .addbtn { display: none !important; }
           .print-only { display: inline !important; }
+          .print-wrap { display: block !important; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           #cf-sheet { width: 192mm; max-width: 192mm; margin: 0 auto; zoom: var(--pz, 1); }
           .cf-sheet { font-size: 8.5px; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
@@ -397,13 +398,13 @@ export default function CreditFileCorporatePage() {
             <tr className="hdr"><td>S/No.</td><td>Description</td><td>Number</td><td>Issue Date</td><td>Expiry</td><td>Remarks</td></tr>
             <tr><td className="sn">1</td><td className="desc">Trade License</td>
               <td><input value={a.tradeLicenseNum} onChange={set('tradeLicenseNum')} /></td><td><input value={a.tradeLicenseIssue} onChange={set('tradeLicenseIssue')} /></td>
-              <td><input value={a.tradeLicenseExpiry} onChange={set('tradeLicenseExpiry')} /></td><td><input value={a.tradeLicenseRemarks} onChange={set('tradeLicenseRemarks')} /></td></tr>
+              <td><input value={a.tradeLicenseExpiry} onChange={set('tradeLicenseExpiry')} /></td><td><WrapInput value={a.tradeLicenseRemarks} onChange={set('tradeLicenseRemarks')} /></td></tr>
             <tr><td className="sn">2</td><td className="desc">Passport</td>
               <td><input value={a.passportNum} onChange={set('passportNum')} /></td><td><input value={a.passportIssue} onChange={set('passportIssue')} /></td>
-              <td><input value={a.passportExpiry} onChange={set('passportExpiry')} /></td><td><input value={a.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
+              <td><input value={a.passportExpiry} onChange={set('passportExpiry')} /></td><td><WrapInput value={a.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
             <tr><td className="sn">3</td><td className="desc">Manager Emirates ID</td>
               <td><input value={a.managerIdNum} onChange={set('managerIdNum')} /></td><td><input value={a.managerIdIssue} onChange={set('managerIdIssue')} /></td>
-              <td><input value={a.managerIdExpiry} onChange={set('managerIdExpiry')} /></td><td><input value={a.managerIdRemarks} onChange={set('managerIdRemarks')} /></td></tr>
+              <td><input value={a.managerIdExpiry} onChange={set('managerIdExpiry')} /></td><td><WrapInput value={a.managerIdRemarks} onChange={set('managerIdRemarks')} /></td></tr>
           </tbody></table>
 
           <CountryDataList />
@@ -418,7 +419,7 @@ export default function CreditFileCorporatePage() {
                 <td><input list="cf-partner-names" value={p.name} onChange={setPartner(p.uid, 'name')} placeholder="جستجو / نام شریک" /></td>
                 <td><CountryInput value={p.nationality} onChange={setPartner(p.uid, 'nationality')} /></td>
                 <td><PctInput value={p.share} onValue={setPartnerV(p.uid, 'share')} /></td>
-                <td><input value={p.remarks} onChange={setPartner(p.uid, 'remarks')} /></td>
+                <td><WrapInput value={p.remarks} onChange={setPartner(p.uid, 'remarks')} /></td>
                 <td className="tools"><button title="حذف" onClick={() => delPartner(p.uid)}><Trash2 size={13} /></button></td>
               </tr>
             ))}
@@ -436,7 +437,7 @@ export default function CreditFileCorporatePage() {
                 <td><AmtInput value={r.amount} onValue={setFacV(r.uid, 'amount')} /></td>
                 <td><PctInput value={r.rate} onValue={setFacV(r.uid, 'rate')} /></td>
                 <td><input value={r.expiry} onChange={setFac(r.uid, 'expiry')} /></td>
-                <td><input value={r.notices} onChange={setFac(r.uid, 'notices')} /></td>
+                <td><WrapInput value={r.notices} onChange={setFac(r.uid, 'notices')} /></td>
                 <td className="tools">
                   <select value={r.facilityId} onChange={bindFac(r.uid)}>
                     <option value="">— تسهیلات —</option>
@@ -487,7 +488,7 @@ export default function CreditFileCorporatePage() {
                 <tr>
                   <td className="sn">{i + 1}</td>
                   <td><input value={p.prop_type} onChange={setProp(i, 'prop_type')} placeholder="Land & Building" /></td>
-                  <td><input value={p.address} onChange={setProp(i, 'address')} /></td>
+                  <td><WrapInput value={p.address} onChange={setProp(i, 'address')} /></td>
                   <td><input value={p.city} onChange={setProp(i, 'city')} /></td>
                   <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /><select value={p.valuation_currency} onChange={setProp(i, 'valuation_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
                   <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /><select value={p.mortgage_currency} onChange={setProp(i, 'mortgage_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
