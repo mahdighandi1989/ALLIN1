@@ -110,6 +110,8 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
 
 Rules:
 - Extract EVERY field listed under "fields" that the document actually contains — including the small ones officers often miss: every ID's issue date AND expiry date, visa number/issue/expiry/type, tenancy number/issue/expiry/address, whether the Emirates ID is "golden" (Yes/No), etc.
+- RECONCILE DUPLICATES & CONFLICTS: the file often states the SAME thing in several places or across several documents (two partner lists, an old + a renewed licence, two ID copies). For EVERY field and EVERY list (partners, guarantors, facilities, properties, IDs, …), when entries refer to the SAME real entity, output it ONCE, taking the value from the MOST AUTHORITATIVE and MOST RECENT source (prefer official/government documents and the latest date). Do NOT output the same entity twice, do NOT add up or blend conflicting numbers, and do NOT drop a genuinely distinct entity. Treat slightly different spellings of the same name as the same person.
+- Partner/share percentages are real percentages between 0 and 100 and should sum to about 100. A value that cannot be a percentage (e.g. a capital amount such as 3,300,000) is an extraction error — omit it. Likewise sanity-check every number against its meaning (an interest rate is not thousands of percent).
 - "partners" = the company's shareholders/partners (name, nationality, share %). "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
@@ -182,6 +184,43 @@ def _acc_of(cust: dict) -> str:
         if m:
             return m.group(1)
     return acc
+
+
+def _norm_name(s) -> str:
+    """Lowercase, drop punctuation, collapse spaces — for matching people across
+    differently-formatted documents."""
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", str(s or "").lower()).split())
+
+
+def _same_person(a, b) -> bool:
+    """True if two names denote the same person: equal once normalised, or one's
+    token-set is contained in the other (e.g. 'Yousef Alhammadi' ⊂ 'Yousef Mohamed
+    Alhammadi'). Conservative — needs ≥2 shared tokens to merge multi-word names."""
+    na, nb = _norm_name(a), _norm_name(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    ta = {t for t in na.split() if len(t) >= 2}
+    tb = {t for t in nb.split() if len(t) >= 2}
+    if len(ta) >= 2 and len(tb) >= 2 and (ta <= tb or tb <= ta):
+        return True
+    return False
+
+
+def _clean_pct(v) -> str:
+    """Normalise a share/percentage: trim trailing zeros (45.0000000 → 45%), and
+    DROP impossible percentages (a value >100 or <0 cannot be a share — it's a
+    mis-extracted capital/amount)."""
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    n = _num(s)
+    if n is None:
+        return s[:40]
+    if n < 0 or n > 100:
+        return ""
+    return f"{n:g}%"
 
 
 _SEC_COLS = ("type", "for_facility", "aed", "usd", "irr", "other")
@@ -305,9 +344,11 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
                 Guarantor.account_no == acc, Guarantor.guarantor_account == gacc,
                 Guarantor.is_deleted == False))).scalar_one_or_none()  # noqa: E712
         if row is None:
-            row = (await db.execute(select(Guarantor).where(
-                Guarantor.account_no == acc, Guarantor.guarantor_name == gname,
-                Guarantor.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+            # Match on the name even if it's spelled slightly differently across
+            # documents, so the same guarantor is never duplicated.
+            existing_g = (await db.execute(select(Guarantor).where(
+                Guarantor.account_no == acc, Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
+            row = next((r for r in existing_g if _same_person(r.guarantor_name, gname)), None)
         if row is None:
             import uuid
             from datetime import datetime
@@ -338,7 +379,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         pname = (pt.get("name") or "").strip()
         if not pname:
             continue
-        prow = next((r for r in existing_partners if (r.name or "").strip().lower() == pname.lower()), None)
+        prow = next((r for r in existing_partners if _same_person(r.name, pname)), None)
         if prow is None:
             import uuid
             from datetime import datetime
@@ -351,7 +392,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             pt_updated += 1
         prow.name = pname[:200]
         _set_prop(prow, "nationality", pt.get("nationality"))
-        _set_prop(prow, "share", pt.get("share"))
+        _set_prop(prow, "share", _clean_pct(pt.get("share")))  # drops impossible % (e.g. 3300000)
         _set_prop(prow, "remarks", pt.get("remarks"))
         if customer is not None and customer.name and not prow.customer_name:
             prow.customer_name = customer.name
@@ -602,11 +643,11 @@ def _lc(d: dict, k: str) -> str:
 def _g_match(a: dict, b: dict) -> bool:
     if _lc(a, "account") and _lc(a, "account") == _lc(b, "account"):
         return True
-    return bool(_lc(b, "name")) and _lc(a, "name") == _lc(b, "name")
+    return _same_person(a.get("name"), b.get("name"))
 
 
 def _name_match(a: dict, b: dict) -> bool:
-    return bool(_lc(b, "name")) and _lc(a, "name") == _lc(b, "name")
+    return _same_person(a.get("name"), b.get("name"))
 
 
 def _ft_match(a: dict, b: dict) -> bool:

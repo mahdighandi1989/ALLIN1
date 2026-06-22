@@ -25,17 +25,36 @@ export function fmtAmt(s: string | number | null | undefined): string {
   return (m[1] || '') + intp.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (m[3] || '')
 }
 
-// Amount cell: type digits without commas; they appear on blur. Module-level so
-// it keeps focus while typing.
+// Amount cell: shows grouped digits (1,000,000) whenever it's NOT being edited —
+// including values just loaded from the DB / an import — and the raw digits while
+// you type, so the cursor stays put. Module-level so it keeps focus while typing.
 export function AmtInput({ value, onValue, style }: { value: string; onValue: (v: string) => void; style?: React.CSSProperties }) {
+  const [focused, setFocused] = React.useState(false)
+  const shown = focused ? String(value ?? '').replace(/,/g, '') : fmtAmt(value)
   return (
     <input
-      value={value || ''}
+      value={shown}
       inputMode="decimal"
       style={style}
+      onFocus={() => setFocused(true)}
       onChange={(e) => onValue(e.target.value)}
-      onBlur={(e) => onValue(fmtAmt(e.target.value))}
+      onBlur={(e) => { setFocused(false); onValue(fmtAmt(e.target.value)) }}
     />
+  )
+}
+
+// Text cell rendered as an <input> on screen but as WRAPPING text in print, so
+// long content (notices, remarks, address) is fully visible on the printout
+// instead of being clipped to the single line of an input. Relies on the forms'
+// .screen-only / .print-only classes.
+export function WrapInput({ value, onChange, placeholder, style }: {
+  value: string; onChange: (e: any) => void; placeholder?: string; style?: React.CSSProperties
+}) {
+  return (
+    <>
+      <input className="screen-only" value={value || ''} onChange={onChange} placeholder={placeholder} style={style} />
+      <span className="print-only print-wrap">{value || ''}</span>
+    </>
   )
 }
 

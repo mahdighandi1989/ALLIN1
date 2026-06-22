@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
-import { AmtInput, PctInput, DraftDrop, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
+import { AmtInput, PctInput, WrapInput, DraftDrop, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -305,6 +305,7 @@ export default function CreditFileRetailPage() {
           * { box-sizing: border-box; }
           .no-print, .tools, .screen-only, .addbtn { display: none !important; }
           .print-only { display: inline !important; }
+          .print-wrap { display: block !important; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           /* Deterministic width (< printable 194mm) so the right border is never
              clipped, plus zoom auto-fit so added rows still fit ONE page. */
           #cf-sheet { width: 190mm; max-width: 190mm; margin: 0 auto; zoom: var(--pz, 1); }
@@ -358,10 +359,10 @@ export default function CreditFileRetailPage() {
             <tr className="hdr"><td>S/No.</td><td>Description</td><td>Number</td><td>Issue Date</td><td>Expiry</td><td>Remarks</td></tr>
             <tr><td className="sn">1</td><td className="desc">Passport</td>
               <td><input value={a.passportNum} onChange={set('passportNum')} /></td><td><input value={a.passportIssue} onChange={set('passportIssue')} /></td>
-              <td><input value={a.passportExpiry} onChange={set('passportExpiry')} /></td><td><input value={a.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
+              <td><input value={a.passportExpiry} onChange={set('passportExpiry')} /></td><td><WrapInput value={a.passportRemarks} onChange={set('passportRemarks')} /></td></tr>
             <tr><td className="sn">2</td><td className="desc">Emirates ID</td>
               <td><input value={a.emiratesIdNum} onChange={set('emiratesIdNum')} /></td><td><input value={a.emiratesIdIssue} onChange={set('emiratesIdIssue')} /></td>
-              <td><input value={a.emiratesIdExpiry} onChange={set('emiratesIdExpiry')} /></td><td><input value={a.emiratesRemarks} onChange={set('emiratesRemarks')} /></td></tr>
+              <td><input value={a.emiratesIdExpiry} onChange={set('emiratesIdExpiry')} /></td><td><WrapInput value={a.emiratesRemarks} onChange={set('emiratesRemarks')} /></td></tr>
           </tbody></table>
 
           {/* Facility Details */}
@@ -427,7 +428,7 @@ export default function CreditFileRetailPage() {
                 <tr>
                   <td className="sn">{i + 1}</td>
                   <td><input value={p.prop_type} onChange={setProp(i, 'prop_type')} placeholder="Apartment / Villa" /></td>
-                  <td><input value={p.address} onChange={setProp(i, 'address')} /></td>
+                  <td><WrapInput value={p.address} onChange={setProp(i, 'address')} /></td>
                   <td><input value={p.city} onChange={setProp(i, 'city')} /></td>
                   <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.valuation} onValue={setPropV(i, 'valuation')} /><select value={p.valuation_currency} onChange={setProp(i, 'valuation_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
                   <td><div style={{ display: 'flex', gap: 2, alignItems: 'center' }}><AmtInput value={p.mortgage_amount} onValue={setPropV(i, 'mortgage_amount')} /><select value={p.mortgage_currency} onChange={setProp(i, 'mortgage_currency')} style={{ flex: '0 0 auto', fontSize: 9, border: 0, background: '#eaf3ff' }}>{CCY.map((c) => <option key={c} value={c}>{c}</option>)}</select></div></td>
