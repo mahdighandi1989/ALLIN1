@@ -692,6 +692,28 @@ async def _spawn_job(job_id: str, data: bytes, fname: str, mime: str, model_id, 
     task.add_done_callback(_BG_TASKS.discard)
 
 
+async def fail_orphaned_jobs() -> int:
+    """At startup, any import job still 'running' is orphaned: the process that was
+    extracting it died on a restart/redeploy, so its task is gone and the row would
+    otherwise stay 'running' forever (the browser polling it endlessly). Mark such
+    jobs as errored so the poll returns a clear 'please re-upload' instead. Returns
+    how many were reconciled."""
+    try:
+        async with _job_session() as db:
+            rows = (await db.execute(select(ImportJob).where(ImportJob.status == "running"))).scalars().all()
+            for r in rows:
+                r.status = "error"
+                r.http_status = 503
+                r.detail_json = _json.dumps(
+                    "پردازش به‌خاطر ری‌استارتِ سرور نیمه‌کاره ماند؛ لطفاً دوباره فایل را بارگذاری کنید.",
+                    ensure_ascii=False)
+                r.finished_at = func.now()
+            await db.commit()
+            return len(rows)
+    except Exception:  # pragma: no cover - best-effort startup housekeeping
+        return 0
+
+
 @router.post("/analyze")
 async def analyze_document(
     file: UploadFile = File(...),

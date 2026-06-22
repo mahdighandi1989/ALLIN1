@@ -350,6 +350,30 @@ def test_prop_token_extracts_number():
     assert doc_ingest._prop_token("no number here") == ""
 
 
+async def test_fail_orphaned_jobs_marks_error(db_session, monkeypatch):
+    """A job left 'running' by a killed process is marked errored at startup so the
+    browser's poll stops waiting; finished jobs are untouched."""
+    from contextlib import asynccontextmanager
+    from app.routers import imports as imp
+    from app.models.import_job import ImportJob
+    from sqlalchemy import select as _sel
+    db_session.add(ImportJob(id="orphan1", status="running", filename="x.pdf"))
+    db_session.add(ImportJob(id="done1", status="done", filename="y.pdf"))
+    await db_session.commit()
+
+    @asynccontextmanager
+    async def _reuse():
+        yield db_session
+    monkeypatch.setattr(imp, "_job_session", _reuse)
+
+    n = await imp.fail_orphaned_jobs()
+    assert n == 1
+    orphan = (await db_session.execute(_sel(ImportJob).where(ImportJob.id == "orphan1"))).scalar_one()
+    assert orphan.status == "error" and orphan.http_status == 503
+    done = (await db_session.execute(_sel(ImportJob).where(ImportJob.id == "done1"))).scalar_one()
+    assert done.status == "done"  # untouched
+
+
 def test_merge_customer_reassembles_lists_across_chunks():
     """A record split across PDF chunks (type in one, details in another) is
     field-merged, not dropped or duplicated."""
