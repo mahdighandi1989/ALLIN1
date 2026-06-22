@@ -326,6 +326,13 @@ from fastapi import Form
 _AI_MAX_BYTES = 32 * 1024 * 1024
 _PDF_MAX_BYTES = 64 * 1024 * 1024   # PDFs over the inline limit are split server-side
 _DOC_MAX_BYTES = 60 * 1024 * 1024
+# Memory budget: the API runs on a small (512 MB) instance, so a big PDF is split
+# into SMALL page-chunks and the chunks are extracted ONE AT A TIME (each base64
+# payload freed before the next). Sending several big chunks at once is what
+# blew the 512 MB limit and got the instance OOM-killed mid-import.
+_PDF_SPLIT_BYTES = 5 * 1024 * 1024   # split any PDF bigger than this
+_PDF_CHUNK_BYTES = 5 * 1024 * 1024   # peak-memory lever: each chunk's bytes are bounded here
+_PDF_CHUNK_PAGES = 12                 # page cap per chunk (bytes cap usually bites first)
 _IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/tiff", "image/bmp")
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".csv")
@@ -463,17 +470,17 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         }]
         model_name = "Word draft parser"
     elif is_pdf or mime in _IMAGE_MIMES:
-        # Big PDFs are split into page-chunks (each under the inline limit) and
-        # extracted section-by-section, then merged with global page numbers.
-        if is_pdf and len(data) > _AI_MAX_BYTES:
+        # Big PDFs are split into SMALL page-chunks and extracted ONE AT A TIME so
+        # peak memory stays well under the instance limit (sending several big
+        # base64 payloads at once previously OOM-killed the worker mid-import).
+        if is_pdf and len(data) > _PDF_SPLIT_BYTES:
             try:
-                parts = doc_ingest.split_pdf(data)[0]
+                parts = doc_ingest.split_pdf(data, max_bytes=_PDF_CHUNK_BYTES, max_pages=_PDF_CHUNK_PAGES)[0]
             except Exception as exc:
                 raise HTTPException(status_code=413, detail=f"فایلِ بزرگ قابلِ تقسیم نبود: {exc}")
         else:
             parts = [(0, data)]
-        # Resolve the model ONCE (DB), then send the chunks CONCURRENTLY (no DB),
-        # bounded by a semaphore so the provider's rate limit isn't hammered.
+        # Resolve the model ONCE (DB), then send the chunks (no DB).
         rr = await inference.resolve_multimodal(db, [{"mimetype": mime}], model_id=model_id)
         if not rr.get("ok"):
             err = rr.get("error")
@@ -488,24 +495,20 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         resolved = rr["resolved"]
         model_name = resolved.display_name
         import asyncio
-        sem = asyncio.Semaphore(3)  # rate-limit: at most 3 chunks in flight
 
-        async def _one(start: int, pbytes: bytes):
-            async with sem:
+        merged: dict = {}
+        errs: list = []
+        for i in range(len(parts)):
+            start, pbytes = parts[i]
+            res = await inference.send_multimodal(
+                resolved, doc_ingest.EXTRACTION_PROMPT,
+                [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
+            if not res.get("ok") and "429" in str(res.get("error", "")):
+                await asyncio.sleep(3)  # single backoff retry on rate-limit
                 res = await inference.send_multimodal(
                     resolved, doc_ingest.EXTRACTION_PROMPT,
                     [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
-                if not res.get("ok") and "429" in str(res.get("error", "")):
-                    await asyncio.sleep(2)  # single backoff retry on rate-limit
-                    res = await inference.send_multimodal(
-                        resolved, doc_ingest.EXTRACTION_PROMPT,
-                        [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
-            return start, res
-
-        sent = await asyncio.gather(*[_one(s, b) for (s, b) in parts])
-        merged: dict = {}
-        errs: list = []
-        for start, res in sorted(sent, key=lambda x: x[0]):
+            parts[i] = None  # free this chunk's bytes before the next one
             if not res.get("ok"):
                 errs.append(res.get("error"))
                 continue
