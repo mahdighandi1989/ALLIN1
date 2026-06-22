@@ -324,6 +324,32 @@ def test_same_person_and_clean_pct_units():
     assert doc_ingest._clean_pct("33.33") == "33.33%"
 
 
+async def test_property_consolidates_same_number_one_import(db_session):
+    """The same property described several ways in ONE file (number stuffed in the
+    address, different type labels) collapses to a single row with merged details."""
+    from app.models.profile_entities import MortgagedProperty
+    from sqlalchemy import select as _sel
+    await doc_ingest.persist_customer(db_session, {
+        "account_no": "453100", "name": "Co",
+        "properties": [
+            {"prop_type": "Property", "address": "Property no. 638/140", "city": "Shiraz"},
+            {"prop_type": "FLAT", "address": "Property no. 638/140", "valuation": "458000", "valuation_currency": "AED"},
+            {"prop_type": "Apartment", "address": "Property no. 638/140"},
+        ],
+    }, "t")
+    await db_session.commit()
+    rows = (await db_session.execute(_sel(MortgagedProperty).where(
+        MortgagedProperty.account_no == "453100", MortgagedProperty.is_deleted == False))).scalars().all()
+    assert len(rows) == 1, [r.prop_type for r in rows]   # consolidated to ONE
+    assert float(rows[0].valuation) == 458000             # detail merged in
+
+
+def test_prop_token_extracts_number():
+    assert doc_ingest._prop_token("Property no. 638/140") == "638/140"
+    assert doc_ingest._prop_token("FLAT", "", "deed 638 / 140") == "638/140"
+    assert doc_ingest._prop_token("no number here") == ""
+
+
 def test_merge_customer_reassembles_lists_across_chunks():
     """A record split across PDF chunks (type in one, details in another) is
     field-merged, not dropped or duplicated."""

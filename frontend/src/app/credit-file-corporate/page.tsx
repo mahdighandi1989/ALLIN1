@@ -275,6 +275,12 @@ export default function CreditFileCorporatePage() {
     el.style.width = '190mm'
     ;(el.style as any).zoom = '1'
     void el.offsetHeight // force reflow at print width
+    // Re-grow the auto-resizing text cells at the REAL print width so long content
+    // is measured (and printed) at its true wrapped height — never clipped.
+    el.querySelectorAll('textarea.wrap-cell').forEach((t) => {
+      const ta = t as HTMLTextAreaElement
+      ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`
+    })
     const hMm = el.scrollHeight / MMpx
     el.style.width = savedW
     ;(el.style as any).zoom = savedZ
@@ -323,6 +329,7 @@ export default function CreditFileCorporatePage() {
         table.cf .hdr td { background: #dde1e7; font-weight: 700; text-align: center; }
         table.cf td.sn { text-align: center; width: 30px; background: #eef1f5; } table.cf td.desc { font-weight: 600; background: #eef1f5; }
         table.cf input { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: #eaf3ff; }
+        table.cf textarea.wrap-cell { width: 100%; border: 0; padding: 1px 2px; font-size: 10px; background: #eaf3ff; resize: none; overflow: hidden; font-family: inherit; line-height: 1.3; vertical-align: top; box-sizing: border-box; display: block; }
         table.cf input:focus { outline: 1px solid #2563eb; }
         .tools { width: 1%; white-space: nowrap; background: #f8fafc; }
         .tools select { font-size: 10px; max-width: 150px; border: 1px dashed #94a3b8; border-radius: 4px; }
@@ -350,6 +357,7 @@ export default function CreditFileCorporatePage() {
           .cf-sheet { font-size: 8.5px; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           table.cf input { background: transparent !important; }
+          table.cf textarea.wrap-cell { background: transparent !important; overflow: visible !important; }
           table.cf, .cf-row-top, .cf-title, .cf-branch { page-break-inside: avoid; }
         }
       `}</style>

@@ -113,7 +113,8 @@ Rules:
 - RECONCILE DUPLICATES & CONFLICTS: the file often states the SAME thing in several places or across several documents (two partner lists, an old + a renewed licence, two ID copies). For EVERY field and EVERY list (partners, guarantors, facilities, properties, IDs, …), when entries refer to the SAME real entity, output it ONCE, taking the value from the MOST AUTHORITATIVE and MOST RECENT source (prefer official/government documents and the latest date). Do NOT output the same entity twice, do NOT add up or blend conflicting numbers, and do NOT drop a genuinely distinct entity. Treat slightly different spellings of the same name as the same person.
 - Partner/share percentages are real percentages between 0 and 100 and should sum to about 100. A value that cannot be a percentage (e.g. a capital amount such as 3,300,000) is an extraction error — omit it. Likewise sanity-check every number against its meaning (an interest rate is not thousands of percent).
 - "partners" = the company's shareholders/partners (name, nationality, share %). "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
-- "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank.
+- "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
+- "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
 - "grade" = the customer's history grade (VERY GOOD / GOOD / AVERAGE / POOR). "rating" = the credit risk rating GRADE ONLY (e.g. "C", "BB"), without any surrounding words. "call_report" and "previous_files" (No. of Previous Files) come from the summary header. "undertaking_from" = who gives undertaking forms (e.g. "Guarantor/s", "Partner/s"). Fill these whenever the file shows them.
 - IDENTITY DATES MATTER: for the trade licence, passport, Emirates ID, visa and tenancy, look hard for BOTH the issue date AND the expiry date — they are printed on the document/card, its copy, or the KYC summary table. Do not leave a date blank if it appears anywhere in the file.
@@ -331,6 +332,11 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             review.setdefault("account_type", at)
         await _upsert_credit_review(db, acc, review, source, username)
 
+    # Fetch existing guarantors once; match in-memory (incl. rows added earlier in
+    # this same import) so a guarantor named slightly differently isn't duplicated.
+    existing_g = (await db.execute(select(Guarantor).where(
+        Guarantor.account_no == acc, Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
+    existing_g = list(existing_g)
     g_added = g_updated = 0
     for g in (cust.get("guarantors") or []):
         gname = (g.get("name") or "").strip()
@@ -341,14 +347,8 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             await ensure_customer(db, gacc, gname)
         row = None
         if gacc:
-            row = (await db.execute(select(Guarantor).where(
-                Guarantor.account_no == acc, Guarantor.guarantor_account == gacc,
-                Guarantor.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+            row = next((r for r in existing_g if (r.guarantor_account or "").strip() == gacc), None)
         if row is None:
-            # Match on the name even if it's spelled slightly differently across
-            # documents, so the same guarantor is never duplicated.
-            existing_g = (await db.execute(select(Guarantor).where(
-                Guarantor.account_no == acc, Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
             row = next((r for r in existing_g if _same_person(r.guarantor_name, gname)), None)
         if row is None:
             import uuid
@@ -356,6 +356,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             row = Guarantor(id=f"G-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
                             account_no=acc, date_added=date.today().isoformat(), created_by=username)
             db.add(row)
+            existing_g.append(row)
             g_added += 1
         else:
             g_updated += 1
@@ -398,8 +399,12 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if customer is not None and customer.name and not prow.customer_name:
             prow.customer_name = customer.name
 
-    # Properties (املاک) — upsert with smart matching so a similar property isn't
-    # duplicated: match on plate no / mortgage deed no, else type+address.
+    # Properties (املاک) — upsert with smart matching so the SAME property isn't
+    # duplicated (match on plate/deed, a shared property number, or address), even
+    # when it's mentioned several times in one file. Fetched once + matched
+    # in-memory so rows added earlier in this import are seen too.
+    existing_props = list((await db.execute(select(MortgagedProperty).where(
+        MortgagedProperty.account_no == acc, MortgagedProperty.is_deleted == False))).scalars().all())  # noqa: E712
     p_added = p_updated = 0
     for p in (cust.get("properties") or []):
         if not isinstance(p, dict):
@@ -410,13 +415,14 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         deed = (p.get("mortgage_deed_no") or "").strip()
         if not (ptype or addr or plate or deed):
             continue
-        prow = await _match_property(db, acc, plate, deed, ptype, addr)
+        prow = _find_property(existing_props, plate, deed, ptype, addr)
         if prow is None:
             import uuid
             from datetime import datetime
             prow = MortgagedProperty(id=f"PROP-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
                                      account_no=acc, date_added=date.today().isoformat(), created_by=username)
             db.add(prow)
+            existing_props.append(prow)
             p_added += 1
         else:
             p_updated += 1
@@ -534,14 +540,32 @@ def _set_prop(row, col: str, v) -> None:
         setattr(row, col, v[:ml] if ml else v)
 
 
-async def _match_property(db: AsyncSession, acc: str, plate: str, deed: str, ptype: str, addr: str):
-    """Find an existing property for ``acc`` matching plate/deed, else type+address."""
-    from app.models.profile_entities import MortgagedProperty as MP
-    rows = (await db.execute(select(MP).where(MP.account_no == acc, MP.is_deleted == False))).scalars().all()  # noqa: E712
+def _prop_token(*vals) -> str:
+    """Pull a property/deed/plate identifier (like '638/140') out of any of the
+    given texts, so the same property mentioned different ways (and even with the
+    number stuffed into the address) still matches."""
+    for v in vals:
+        m = re.search(r"\d+\s*/\s*\d+", str(v or ""))
+        if m:
+            return re.sub(r"\s+", "", m.group())
+    return ""
+
+
+def _find_property(rows, plate: str, deed: str, ptype: str, addr: str):
+    """Find a property in ``rows`` (already-loaded, incl. ones added earlier in this
+    same import) — by plate/deed, by a shared property number (e.g. 638/140) found
+    anywhere, by identical address, or by type+address — so the SAME property is
+    never stored as several rows, even within one file."""
+    in_tok = _prop_token(deed, plate, addr)
+    in_addr = (addr or "").strip().lower()
     for r in rows:
         if plate and (r.plate_no or "").strip().lower() == plate.lower():
             return r
         if deed and (r.mortgage_deed_no or "").strip().lower() == deed.lower():
+            return r
+        if in_tok and in_tok == _prop_token(r.mortgage_deed_no, r.plate_no, r.address):
+            return r
+        if in_addr and in_addr == (r.address or "").strip().lower():
             return r
     if ptype and addr:
         for r in rows:
@@ -663,6 +687,11 @@ def _prop_match(a: dict, b: dict) -> bool:
     for key in ("plate_no", "mortgage_deed_no"):
         if _lc(a, key) and _lc(a, key) == _lc(b, key):
             return True
+    ta = _prop_token(a.get("mortgage_deed_no"), a.get("plate_no"), a.get("address"))
+    if ta and ta == _prop_token(b.get("mortgage_deed_no"), b.get("plate_no"), b.get("address")):
+        return True
+    if _lc(a, "address") and _lc(a, "address") == _lc(b, "address"):
+        return True
     # same type and (one side has no address yet, or addresses agree) → same property
     if _lc(a, "prop_type") and _lc(a, "prop_type") == _lc(b, "prop_type"):
         aa, ab = _lc(a, "address"), _lc(b, "address")
