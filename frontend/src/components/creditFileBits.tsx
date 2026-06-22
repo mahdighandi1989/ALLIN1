@@ -43,18 +43,29 @@ export function AmtInput({ value, onValue, style }: { value: string; onValue: (v
   )
 }
 
-// Text cell rendered as an <input> on screen but as WRAPPING text in print, so
-// long content (notices, remarks, address) is fully visible on the printout
-// instead of being clipped to the single line of an input. Relies on the forms'
-// .screen-only / .print-only classes.
+// Text cell that WRAPS and grows: a textarea that auto-resizes to fit its content
+// so long text (notices, remarks, address) is fully visible both on screen and in
+// print, instead of being clipped to the single line of an <input>. Styled via
+// the forms' `table.cf textarea.wrap-cell` rule to look like the other cells.
 export function WrapInput({ value, onChange, placeholder, style }: {
   value: string; onChange: (e: any) => void; placeholder?: string; style?: React.CSSProperties
 }) {
+  const ref = React.useRef<HTMLTextAreaElement>(null)
+  const grow = () => {
+    const el = ref.current
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` }
+  }
+  React.useEffect(grow, [value])
   return (
-    <>
-      <input className="screen-only" value={value || ''} onChange={onChange} placeholder={placeholder} style={style} />
-      <span className="print-only print-wrap">{value || ''}</span>
-    </>
+    <textarea
+      ref={ref}
+      className="wrap-cell"
+      value={value || ''}
+      placeholder={placeholder}
+      rows={1}
+      onChange={(e) => { onChange(e); grow() }}
+      style={style}
+    />
   )
 }
 
