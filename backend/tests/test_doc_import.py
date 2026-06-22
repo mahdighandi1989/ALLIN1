@@ -209,6 +209,52 @@ async def test_persist_kyc_renewal_updates_date_but_fillempty_text(db_session):
     assert row.passport_nationality == "India"      # curated value preserved
 
 
+async def test_persist_partners_and_facilities(db_session):
+    """Import now also fills the corporate credit-file form: partners (Partner
+    table) and facility records (Facility table) the form reads from."""
+    from app.models.customer import Customer
+    from app.models.profile_entities import Partner
+    from app.models.facility import Facility
+    from sqlalchemy import select as _sel
+    payload = {
+        "account_no": "770011", "name": "Corp Co", "account_type": "corporate",
+        "partners": [{"name": "Ali Partner", "nationality": "Iran", "share": "60"},
+                     {"name": "Sara Partner", "nationality": "UAE", "share": "40"}],
+        "facilities": [{"facility_type": "overdraft", "amount": "500,000", "interest_rate": "8%",
+                        "expiry_date": "31/12/2027"},
+                       {"facility_type": "loan", "amount": "2000000"}],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["partners_added"] == 2 and r["facilities_added"] == 2
+    await db_session.commit()
+    cid = (await db_session.execute(_sel(Customer.id).where(Customer.account_no == "770011"))).scalar_one()
+    parts = (await db_session.execute(_sel(Partner).where(Partner.account_no == "770011"))).scalars().all()
+    assert {p.name for p in parts} == {"Ali Partner", "Sara Partner"}
+    facs = (await db_session.execute(_sel(Facility).where(Facility.customer_id == cid))).scalars().all()
+    od = next(f for f in facs if str(getattr(f.facility_type, "value", f.facility_type)) == "overdraft")
+    assert float(od.amount) == 500000 and float(od.interest_rate) == 8
+    assert od.expiry_date is not None
+
+    # Re-import the same → no duplicate partners/facilities (deduped, fill-empty).
+    r2 = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r2["partners_added"] == 0 and r2["facilities_added"] == 0
+    await db_session.commit()
+
+
+def test_merge_customer_reassembles_lists_across_chunks():
+    """A record split across PDF chunks (type in one, details in another) is
+    field-merged, not dropped or duplicated."""
+    into = {"properties": [{"prop_type": "Land & Building"}], "partners": [{"name": "Ali"}]}
+    more = {"properties": [{"prop_type": "Land & Building", "address": "Deira", "valuation": "15000000"}],
+            "partners": [{"name": "Sara", "nationality": "Iran"}],
+            "facilities": [{"facility_type": "overdraft", "amount": "500000"}]}
+    doc_ingest.merge_customer(into, more)
+    assert len(into["properties"]) == 1  # field-merged, not duplicated
+    assert into["properties"][0]["address"] == "Deira" and into["properties"][0]["valuation"] == "15000000"
+    assert len(into["partners"]) == 2
+    assert into["facilities"][0]["facility_type"] == "overdraft"
+
+
 def test_split_pdf_and_offset():
     import io
     import pytest
