@@ -531,11 +531,15 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
     else:
         raise HTTPException(status_code=415, detail="فقط PDF، تصویر یا Word (.docx) پشتیبانی می‌شود.")
 
-    # Persist each customer (deduped).
+    # Persist each customer (deduped). Each runs in its OWN savepoint so a single
+    # bad record (e.g. a value that overflows a column) rolls back just that
+    # customer instead of poisoning the whole transaction and failing the import.
     results = []
     for c in customers:
         try:
-            results.append(await doc_ingest.persist_customer(db, c, username))
+            async with db.begin_nested():
+                r = await doc_ingest.persist_customer(db, c, username)
+            results.append(r)
         except Exception as exc:  # never let one bad record break the batch
             results.append({"ok": False, "reason": str(exc)})
     saved = [r for r in results if r.get("ok")]
