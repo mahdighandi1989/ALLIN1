@@ -414,4 +414,7 @@ def test_split_pdf_and_offset():
     buf = io.BytesIO(); w.write(buf)
     chunks, n = doc_ingest.split_pdf(buf.getvalue(), max_bytes=10_000_000, max_pages=2)
     assert n == 5 and len(chunks) == 3 and chunks[0][0] == 1 and chunks[1][0] == 3
+    # the streaming generator yields the same chunks one at a time (low memory)
+    gen = list(doc_ingest.pdf_chunks(buf.getvalue(), max_bytes=10_000_000, max_pages=2))
+    assert [c[0] for c in gen] == [1, 3, 5]
     assert doc_ingest.offset_pages("1-2", 2) == "3-4"

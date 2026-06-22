@@ -472,14 +472,16 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
     elif is_pdf or mime in _IMAGE_MIMES:
         # Big PDFs are split into SMALL page-chunks and extracted ONE AT A TIME so
         # peak memory stays well under the instance limit (sending several big
-        # base64 payloads at once previously OOM-killed the worker mid-import).
+        # base64 payloads at once — or even holding the whole list of chunks —
+        # previously OOM-killed the worker mid-import). Chunks are STREAMED from a
+        # generator so the full set is never in memory at once.
         if is_pdf and len(data) > _PDF_SPLIT_BYTES:
             try:
-                parts = doc_ingest.split_pdf(data, max_bytes=_PDF_CHUNK_BYTES, max_pages=_PDF_CHUNK_PAGES)[0]
+                chunk_iter = doc_ingest.pdf_chunks(data, max_bytes=_PDF_CHUNK_BYTES, max_pages=_PDF_CHUNK_PAGES)
             except Exception as exc:
                 raise HTTPException(status_code=413, detail=f"فایلِ بزرگ قابلِ تقسیم نبود: {exc}")
         else:
-            parts = [(0, data)]
+            chunk_iter = iter([(0, data)])
         # Resolve the model ONCE (DB), then send the chunks (no DB).
         rr = await inference.resolve_multimodal(db, [{"mimetype": mime}], model_id=model_id)
         if not rr.get("ok"):
@@ -498,8 +500,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
 
         merged: dict = {}
         errs: list = []
-        for i in range(len(parts)):
-            start, pbytes = parts[i]
+        for start, pbytes in chunk_iter:
             res = await inference.send_multimodal(
                 resolved, doc_ingest.EXTRACTION_PROMPT,
                 [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
@@ -508,7 +509,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                 res = await inference.send_multimodal(
                     resolved, doc_ingest.EXTRACTION_PROMPT,
                     [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
-            parts[i] = None  # free this chunk's bytes before the next one
+            pbytes = None  # free this chunk's bytes before the next one
             if not res.get("ok"):
                 errs.append(res.get("error"))
                 continue

@@ -760,15 +760,16 @@ def merge_customer(into: dict, more: dict) -> None:
 # Oversized PDFs → split into page-chunks (each under the provider's inline
 # limit) so a big file is extracted section-by-section and merged.
 # ---------------------------------------------------------------------------
-def split_pdf(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 12):
-    """Return ([(start_page_1based, pdf_bytes), ...], total_pages). Each chunk is
-    <= max_bytes (or a single page if one page alone exceeds it)."""
+def pdf_chunks(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 12):
+    """Yield (start_page_1based, pdf_bytes) ONE chunk at a time — a generator so the
+    whole set of chunks is never held in memory at once (each chunk is freed once
+    the caller has sent it). Each chunk is <= max_bytes, or a single page if one
+    page alone exceeds it."""
     import io
     from pypdf import PdfReader, PdfWriter
 
     reader = PdfReader(io.BytesIO(data))
     n = len(reader.pages)
-    chunks: list[tuple[int, bytes]] = []
     i = 0
     while i < n:
         end = min(i + max_pages, n)
@@ -780,11 +781,20 @@ def split_pdf(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 1
             w.write(buf)
             b = buf.getvalue()
             if len(b) <= max_bytes or (end - i) == 1:
-                chunks.append((i + 1, b))
+                yield (i + 1, b)
                 i = end
                 break
             end -= 1
-    return chunks, n
+
+
+def split_pdf(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 12):
+    """Return ([(start_page_1based, pdf_bytes), ...], total_pages). Materialises all
+    chunks — prefer :func:`pdf_chunks` (the streaming generator) for large files."""
+    import io
+    from pypdf import PdfReader
+
+    n = len(PdfReader(io.BytesIO(data)).pages)
+    return list(pdf_chunks(data, max_bytes=max_bytes, max_pages=max_pages)), n
 
 
 def offset_pages(pages: str, offset: int) -> str:
