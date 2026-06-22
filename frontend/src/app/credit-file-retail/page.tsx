@@ -243,8 +243,8 @@ export default function CreditFileRetailPage() {
     const hMm = el.scrollHeight / MMpx
     el.style.width = savedW
     ;(el.style as any).zoom = savedZ
-    const avail = 281
-    const z = hMm > avail ? Math.max(0.4, (avail - 2) / hMm) : 1
+    const avail = 270
+    const z = hMm > avail ? Math.max(0.35, avail / hMm) : 1
     el.style.setProperty('--pz', String(z))
   }, [])
   const printSheet = () => { fitSheet(); setTimeout(() => window.print(), 60) }
@@ -315,6 +315,7 @@ export default function CreditFileRetailPage() {
              clipped, plus zoom auto-fit so added rows still fit ONE page. */
           #cf-sheet { width: 190mm; max-width: 190mm; margin: 0 auto; zoom: var(--pz, 1); }
           .cf-sheet { font-size: 9px; }
+          table.cf td, table.cf th, table.cf input, table.cf textarea.wrap-cell, table.cf select { font-size: 8.5px !important; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           table.cf input { background: transparent !important; }
           table.cf textarea.wrap-cell { background: transparent !important; overflow: visible !important; }
