@@ -171,6 +171,16 @@ export default function ImportPage() {
                         {c.properties_added ? ` · ${c.properties_added} ملک جدید` : ''}
                         {c.properties_updated ? ` · ${c.properties_updated} ملک به‌روز` : ''}
                       </div>
+                      {c.fields_saved?.length > 0 && (
+                        <details className="mt-1">
+                          <summary className="text-[11px] text-blue-600 cursor-pointer select-none">فیلدهای استخراج‌شده از فایل ({c.fields_saved.length}) — برای دیدن باز کن</summary>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {c.fields_saved.map((f: string) => (
+                              <span key={f} className="text-[10px] bg-gray-100 text-gray-700 rounded px-1.5 py-0.5">{f}</span>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   ) : <div className="text-red-700 text-xs">ثبت نشد: {c.reason}</div>}
                 </div>
