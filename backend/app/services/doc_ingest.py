@@ -117,7 +117,7 @@ Rules:
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
 - "grade" = the customer's history grade (VERY GOOD / GOOD / AVERAGE / POOR). "rating" = the credit risk rating GRADE ONLY (e.g. "C", "BB"), without any surrounding words. "call_report" and "previous_files" (No. of Previous Files) come from the summary header. "undertaking_from" = who gives undertaking forms (e.g. "Guarantor/s", "Partner/s"). Fill these whenever the file shows them.
-- IDENTITY DATES MATTER: for the trade licence, passport, Emirates ID, visa and tenancy, look hard for BOTH the issue date AND the expiry date — they are printed on the document/card, its copy, or the KYC summary table. Do not leave a date blank if it appears anywhere in the file.
+- IDENTITY DATES MATTER: for the trade licence, passport, Emirates ID, visa and tenancy, look hard for BOTH the issue date AND the expiry date — they are printed on the document/card, its copy, or the KYC summary table. Do not leave a date blank if it appears anywhere in the file. An issue/expiry value must be a real DATE (e.g. 10/03/2027) — the PLACE of issue (e.g. "Abu Dhabi", "Dubai") is NOT a date, so never put a city/emirate in an issue_date or expiry field.
 - Only include fields you actually find; omit unknowns (do NOT invent values). Give CLEAN values (just the value, not surrounding labels/words).
 - Always capture the customer's full legal NAME exactly as printed.
 - Capture each ID document's NUMBER together with its ISSUE and EXPIRY dates.
@@ -175,6 +175,14 @@ _KYC_DATE_COLS = {
     "trade_license_issue", "trade_license_expiry", "passport_issue", "passport_expiry",
     "emirates_id_issue", "emirates_id_expiry", "visa_expiry", "tenancy_expiry",
 }
+# The headline KYC facts; whichever of these the model did NOT find in a file are
+# reported back so the user can see at a glance what was simply not in the document
+# (vs. a sync bug).
+_KEY_KYC_FIELDS = [
+    "trade_license_no", "trade_license_issue", "trade_license_expiry",
+    "passport_no", "passport_issue", "passport_expiry", "nationality",
+    "emirates_id_no", "emirates_id_issue", "emirates_id_expiry",
+]
 
 
 def _acc_of(cust: dict) -> str:
@@ -274,8 +282,18 @@ def _apply_extracted_fields(cp, fields: dict) -> None:
             continue  # not a writable column → stays in data_json only
         cur = getattr(cp, col, "")
         cur = cur.strip() if isinstance(cur, str) else (cur or "")
-        take = _newer_or_empty(str(v), str(cur)) if col in _KYC_DATE_COLS else (not cur)
-        if take:
+        if col in _KYC_DATE_COLS:
+            # A date column must hold a DATE. The model sometimes drops the place of
+            # issue ("ABU DHABI") into the issue-date field — validate it parses as a
+            # date (and normalise it); otherwise skip so the field isn't polluted.
+            d = _parse_date(v)
+            if d is None:
+                continue
+            norm = d.strftime("%d/%m/%Y")
+            if _newer_or_empty(norm, str(cur)):
+                setattr(cp, col, norm)
+            continue
+        if not cur:  # other fields: fill-empty (never clobber a curated value)
             ml = getattr(getattr(cols[col], "type", None), "length", None)
             setattr(cp, col, str(v)[:ml] if ml else str(v))
 
@@ -492,6 +510,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "facility_hint": (cust.get("fields", {}).get("proposed_facility")
                               or (cust.get("review", {}) or {}).get("proposed_facility") or ""),
             "fields_saved": sorted(fields.keys()),
+            "kyc_missing": [k for k in _KEY_KYC_FIELDS if k not in fields],
             "guarantors_added": g_added, "guarantors_updated": g_updated,
             "partners_added": pt_added, "partners_updated": pt_updated,
             "facilities_added": f_added, "facilities_updated": f_updated,
