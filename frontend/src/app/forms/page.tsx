@@ -2,7 +2,7 @@
 
 import Layout from '@/components/Layout'
 import Link from 'next/link'
-import { Printer, FileSignature, ArrowLeft } from 'lucide-react'
+import { Printer, FileSignature, Mail, ArrowLeft } from 'lucide-react'
 
 // Central hub for printable forms. Adding a new form = adding one entry here
 // (a card), NOT a new top-level navigation tab. Group with `category` so the
@@ -52,6 +52,15 @@ const FORMS: FormDef[] = [
     description: 'شمارهٔ حساب را وارد کنید؛ سیستم از روی نوعِ حساب در دیتابیس، فرمِ مناسب (Retail یا Corporate) را باز می‌کند. اگر نوعِ حساب ثبت نشده باشد، می‌پرسد و انتخابتان را ذخیره می‌کند.',
     icon: FileSignature,
     category: 'Credit',
+    ready: true,
+  },
+  {
+    href: '/letter',
+    title: 'Official Letter',
+    subtitle: 'نامهٔ رسمی (سربرگِ بانک)',
+    description: 'قالبِ نامهٔ رسمیِ بانک صادرات (دفترِ منطقه‌ای) با سربرگ و فوتر، «بسمه تعالی»، شماره/تاریخ/پیوست، گیرنده، موضوع و متنِ آزاد. امضاکننده (سرپرستی منطقه خلیج فارس / دایره تسهیلات اعطایی) به‌صورتِ منوی کشویی است؛ نامه می‌تواند چند صفحه شود و سربرگ/فوتر در هر صفحه تکرار و صفحات شماره‌گذاری می‌شوند.',
+    icon: Mail,
+    category: 'Letters',
     ready: true,
   },
 ]
