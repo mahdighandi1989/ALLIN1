@@ -270,22 +270,38 @@ export default function CreditFileCorporatePage() {
     const el = sheetRef.current
     if (!el) return
     const MMpx = 96 / 25.4
-    const savedW = el.style.width
-    const savedZ = (el.style as any).zoom
-    el.style.width = '190mm'
-    ;(el.style as any).zoom = '1'
-    void el.offsetHeight // force reflow at print width
-    // Re-grow the auto-resizing text cells at the REAL print width so long content
-    // is measured (and printed) at its true wrapped height — never clipped.
-    el.querySelectorAll('textarea.wrap-cell').forEach((t) => {
+    const PRINT_W = 186   // mm — printed width (fills A4 width, safe inside the margins)
+    const avail = 270     // mm — one-A4 height budget (survives default print margins)
+    const regrow = () => el.querySelectorAll('textarea.wrap-cell').forEach((t) => {
       const ta = t as HTMLTextAreaElement
       ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`
     })
+    const savedW = el.style.width
+    const savedZ = (el.style as any).zoom
+    // Measure content height at the full print width.
+    el.style.width = `${PRINT_W}mm`
+    ;(el.style as any).zoom = '1'
+    void el.offsetHeight
+    regrow()
     const hMm = el.scrollHeight / MMpx
+    // If it's too tall, shrink with zoom — but render the sheet WIDER first so that
+    // after zoom the visual width is STILL the full page width. (A plain zoom scales
+    // width and height together, which is what left the sheet narrow + tiny.)
+    // width = PRINT_W/z  ⇒  visual width = PRINT_W, visual height = h(wider) × z ≤ avail.
+    let z = 1, pw = PRINT_W
+    if (hMm > avail) {
+      z = Math.max(0.4, avail / hMm)
+      pw = PRINT_W / z
+      el.style.width = `${pw}mm`
+      void el.offsetHeight
+      regrow()  // re-fit the text cells at the wider layout
+    }
+    // Restore the on-screen layout; print uses the CSS vars.
     el.style.width = savedW
     ;(el.style as any).zoom = savedZ
-    const avail = 270 // conservative one-A4 budget (survives default print margins)
-    const z = hMm > avail ? Math.max(0.35, avail / hMm) : 1
+    void el.offsetHeight
+    regrow()
+    el.style.setProperty('--pw', `${pw}mm`)
     el.style.setProperty('--pz', String(z))
   }, [])
   const printSheet = () => { fitSheet(); setTimeout(() => window.print(), 60) }
@@ -353,7 +369,7 @@ export default function CreditFileCorporatePage() {
           .no-print, .tools, .screen-only, .addbtn { display: none !important; }
           .print-only { display: inline !important; }
           .print-wrap { display: block !important; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
-          #cf-sheet { width: 192mm; max-width: 192mm; margin: 0 auto; zoom: var(--pz, 1); }
+          #cf-sheet { width: var(--pw, 192mm); max-width: none; margin: 0 auto; zoom: var(--pz, 1); }
           .cf-sheet { font-size: 8.5px; }
           table.cf td, table.cf th, table.cf input, table.cf textarea.wrap-cell, table.cf select { font-size: 9px !important; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
