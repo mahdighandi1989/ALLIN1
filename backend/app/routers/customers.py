@@ -440,7 +440,7 @@ async def create_customer(
     await db.commit()
     await db.refresh(customer)
     await record_audit(
-        action="create", entity_type="customer", entity_id=customer.id,
+        action="create", entity_type="customer", entity_id=customer.id, account_no=customer.account_no,
         detail=f"Created customer '{customer.name}'", user=current_user, request=request, db=db,
     )
     return customer
@@ -477,7 +477,7 @@ async def update_customer(
     await db.commit()
     await db.refresh(customer)
     await record_audit(
-        action="update", entity_type="customer", entity_id=customer.id,
+        action="update", entity_type="customer", entity_id=customer.id, account_no=customer.account_no,
         detail=f"Updated customer '{customer.name}'", user=current_user, request=request, db=db,
     )
     return customer
@@ -495,7 +495,7 @@ async def delete_customer(
     customer.is_deleted = True
     await db.commit()
     await record_audit(
-        action="delete", entity_type="customer", entity_id=customer.id,
+        action="delete", entity_type="customer", entity_id=customer.id, account_no=customer.account_no,
         detail=f"Deleted customer '{customer.name}'", user=current_user, request=request, db=db,
     )
     return None

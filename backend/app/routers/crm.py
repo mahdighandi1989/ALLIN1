@@ -34,6 +34,16 @@ from app.routers.auth import require_editor, require_admin, get_current_active_u
 
 router = APIRouter(tags=["crm"])
 
+
+async def _audit(db, user, *, action, entity_type, account_no, entity_id=None, detail=None):
+    """Record a customer-scoped action in the activity/audit log (best-effort)."""
+    from app.services.audit import record_audit
+    await record_audit(
+        action=action, entity_type=entity_type, entity_id=entity_id,
+        account_no=account_no, detail=detail, user=user, request=None, db=db,
+    )
+
+
 _DONE = {"✓", "1", "true", "yes", "done"}
 
 
@@ -79,6 +89,8 @@ async def toggle_checklist_step(
         user=getattr(user, "username", "") or "",
     ))
     await db.commit()
+    await _audit(db, user, action="update", entity_type="checklist", account_no=account_no,
+                 detail=f"{'تکمیلِ' if payload.done else 'لغوِ'} مرحلهٔ «{step_name}»")
     return {"account_no": account_no, "step": payload.step, "done": payload.done, "total": cp.total}
 
 
@@ -120,6 +132,8 @@ async def create_task(
     )
     db.add(t)
     await db.commit()
+    await _audit(db, user, action="create", entity_type="task", account_no=account_no, entity_id=tid,
+                 detail=f"تسکِ پیگیری: {payload.task_name}")
     return _task_dict(t)
 
 
@@ -255,6 +269,10 @@ async def add_guarantor(
         g.customer_name = customer.name
 
     await db.commit()
+    await _audit(db, user, action="create" if created else "update", entity_type="guarantor",
+                 account_no=account_no, entity_id=g.id,
+                 detail=f"{'افزودنِ' if created else 'ویرایشِ'} ضامن «{g.guarantor_name}»"
+                        + (f" — چک {g.cheque_no}" if g.cheque_no else ""))
     return {**_guarantor_out(g), "created": created}
 
 
@@ -318,6 +336,8 @@ async def add_facility(
     # A24: stamp an hourglass on every step of the new facility's own checklist.
     await seed_facility_checklist(db, account_no, fid, getattr(user, "username", "") or "")
     await db.commit()
+    await _audit(db, user, action="create", entity_type="facility", account_no=account_no, entity_id=fid,
+                 detail=f"افزودنِ تسهیلات «{f.name or f.facility_type.value}» — {f.currency} {float(f.amount or 0):,.0f}")
     return {
         "id": f.id, "name": f.name, "amount": float(f.amount or 0),
         "currency": f.currency, "facility_type": f.facility_type.value,
@@ -449,6 +469,9 @@ async def update_profile(
     # Recompute completeness so the stored % reflects the edit (A25).
     await recompute_completeness(db, account_no)
     await db.commit()
+    changed = [k for k in data if k in _KYC_FIELDS and data[k] is not None]
+    await _audit(db, user, action="update", entity_type="profile", account_no=account_no,
+                 detail="ویرایشِ پروفایل/مدارک" + (f" ({len(changed)} فیلد)" if changed else ""))
     result = {k: getattr(cp, k, None) for k in _KYC_FIELDS}
     result["profile_completeness"] = cp.profile_completeness
     return result
@@ -803,6 +826,8 @@ async def save_offer_letter_data(
         cust.branch = payload.Branch.strip()[:100]
 
     await db.commit()
+    await _audit(db, user, action="update", entity_type="offer_letter_data", account_no=acc,
+                 detail="ذخیرهٔ دادهٔ نامهٔ پیشنهادِ تسهیلات (Offer Letter)")
     return {"ok": True, "account_no": acc, "saved_keys": sorted(data.keys())}
 
 
@@ -957,6 +982,10 @@ async def save_sanction(
         cust.branch = str(sn["BranchName"])[:100]
 
     await db.commit()
+    await _audit(db, user, action="create" if created else "update", entity_type="sanction",
+                 account_no=acc, entity_id=review.id,
+                 detail=f"{'ثبتِ' if created else 'به‌روزرسانیِ'} مصوبهٔ کمیتهٔ اعتباری"
+                        + (f" — تاریخِ بررسی {review.date_of_review}" if review.date_of_review else ""))
     return {"ok": True, "account_no": acc, "review_id": review.id, "created": created}
 
 
@@ -1160,6 +1189,8 @@ async def add_note(
     )
     db.add(n)
     await db.commit()
+    await _audit(db, user, action="create", entity_type="note", account_no=account_no, entity_id=nid,
+                 detail=f"یادداشت: {(n.title or n.content or '')[:80]}")
     return {
         "id": n.id, "account_no": n.account_no, "title": n.title, "content": n.content,
         "category": n.category, "priority": n.priority, "created_by": n.created_by,
@@ -1548,6 +1579,8 @@ async def upload_attachment(
     )
     db.add(a)
     await db.commit()
+    await _audit(db, user, action="upload", entity_type="attachment", account_no=account_no, entity_id=aid,
+                 detail=f"بارگذاری مدرک: {original_name}")
     return _attachment_dict(a)
 
 

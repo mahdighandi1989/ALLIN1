@@ -180,8 +180,11 @@ async def create_offer(
     await db.refresh(offer)
     from app.services.audit import record_audit
     from app.services.notify_inapp import create_notification
+    acc = (
+        await db.execute(select(Customer.account_no).where(Customer.id == offer.customer_id))
+    ).scalar_one_or_none()
     await record_audit(
-        action="create", entity_type="offer_letter", entity_id=offer.id,
+        action="create", entity_type="offer_letter", entity_id=offer.id, account_no=acc,
         detail=f"Created offer letter {offer.id}", user=current_user, request=request, db=db,
     )
     await create_notification(

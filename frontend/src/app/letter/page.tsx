@@ -12,6 +12,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw } from 'lucide-react'
+import { auditApi } from '@/lib/api'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 
 const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
@@ -215,7 +216,7 @@ export default function LetterPage() {
             : <button onClick={() => { setDesign(false); setEditing(null) }} className="ltr-btn green"><Check size={15} /> پایانِ چیدمان</button>}
           {design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرهٔ چیدمان</button>}
           {design && <button onClick={resetTemplate} className="ltr-btn gray"><RotateCcw size={14} /> بازنشانی</button>}
-          <button onClick={() => window.print()} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
+          <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${f.subject ? ` — موضوع: ${f.subject}` : ''}${f.recipientDept ? ` — به ${f.recipientDept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{design
             ? 'دستهٔ ✥ = جابه‌جایی · دایرهٔ گوشه = عرض/ارتفاع · A/ف/خ = فونت/فاصلهٔ حروف/فاصلهٔ خط · دبل‌کلیک روی هر فیلد = تنظیمِ کاملِ آن فیلد · بعد «ذخیرهٔ چیدمان».'

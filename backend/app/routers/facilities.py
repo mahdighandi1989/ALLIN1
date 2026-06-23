@@ -340,7 +340,7 @@ async def create_facility(
     await seed_facility_checklist(db, acc, new_facility.id, getattr(current_user, "username", "") or "")
     await db.commit()
     await record_audit(
-        action="create", entity_type="facility", entity_id=new_facility.id,
+        action="create", entity_type="facility", entity_id=new_facility.id, account_no=acc or None,
         detail=f"Created facility '{new_facility.name or new_facility.id}'",
         user=current_user, request=request, db=db,
     )
@@ -370,8 +370,11 @@ async def update_facility(
 
     await db.commit()
     await db.refresh(facility)
+    acc = (
+        await db.execute(select(Customer.account_no).where(Customer.id == facility.customer_id))
+    ).scalar_one_or_none()
     await record_audit(
-        action="update", entity_type="facility", entity_id=facility.id,
+        action="update", entity_type="facility", entity_id=facility.id, account_no=acc,
         detail=f"Updated facility '{facility.name or facility.id}'",
         user=current_user, request=request, db=db,
     )
@@ -389,10 +392,13 @@ async def delete_facility(
     facility = await _get_active_facility(facility_id, db)
     facility.is_deleted = True
     # A5: cascade — soft-delete the facility's checklist, deactivate its tasks.
+    acc = (
+        await db.execute(select(Customer.account_no).where(Customer.id == facility.customer_id))
+    ).scalar_one_or_none()
     await cascade_delete_facility(db, facility.id)
     await db.commit()
     await record_audit(
-        action="delete", entity_type="facility", entity_id=facility.id,
+        action="delete", entity_type="facility", entity_id=facility.id, account_no=acc,
         detail=f"Deleted facility '{facility.name or facility.id}'",
         user=current_user, request=request, db=db,
     )

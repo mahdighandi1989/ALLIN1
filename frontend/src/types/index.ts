@@ -182,9 +182,12 @@ export interface AuditEntry {
   action: string
   entity_type: string | null
   entity_id: string | null
+  account_no: string | null
   detail: string | null
   ip_address: string | null
   created_at: string | null
+  customer_id: string | null
+  customer_name: string | null
 }
 
 export interface AuditList {
