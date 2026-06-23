@@ -110,6 +110,7 @@ export default function LetterPage() {
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
   const openPanel = (k: string) => { setSel(k); setEditing(k); setDesign(true) }
+  const exitEditing = () => { setEditing(null); setDesign(false); setSel(null) } // dbl-click empty area → back to normal
 
   const boxStyle = (k: string): React.CSSProperties => {
     const b = L[k]
@@ -131,7 +132,7 @@ export default function LetterPage() {
     const b = L[k]
     return (
       <div className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={boxStyle(k)}
-        onPointerDown={() => design && setSel(k)} onDoubleClick={() => openPanel(k)}>
+        onPointerDown={() => design && setSel(k)} onDoubleClick={(e) => { e.stopPropagation(); openPanel(k) }}>
         <div className="field-content">{children}</div>
         {design && <>
           <span className="bk-label">{k}</span>
@@ -251,7 +252,7 @@ export default function LetterPage() {
           </div>
         )}
 
-        <div className="canvas-wrap">
+        <div className="canvas-wrap" onDoubleClick={exitEditing}>
           <div id="ltr-page">
             <Box k="logo"><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></Box>
             <Box k="name"><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></Box>
