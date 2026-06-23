@@ -94,13 +94,13 @@ export default function LetterPage() {
         .recipient .r2 { display:flex; gap:5px; justify-content:flex-start; }
 
         .flow { margin:0 ${POS.margin}mm; }
-        .classification { text-align:left; font-weight:700; font-size:11pt; }
+        .classification { text-align:left; padding-left:10mm; font-weight:700; font-size:11pt; }
         .subject { font-size:12pt; font-family:'Titr','B Titr','B Nazanin',serif; text-align:justify; display:flex; gap:5px; align-items:flex-start; margin-top:3mm; }
         .subject .lbl { white-space:nowrap; }
         .seprow { display:flex; margin:1mm 0 3mm; }
         .sep { flex:0 0 56%; border-top:1px dashed #000; height:0; }
-        .sender { text-align:center; font-family:'B Titr','Titr','B Nazanin',serif; font-weight:700; font-size:13pt; margin:4mm 0; }
-        .body { font-size:13pt; text-align:justify; line-height:1.55; min-height:60mm; }
+        .sender { text-align:left; padding-left:12mm; font-family:'B Titr','Titr','B Nazanin',serif; font-weight:700; font-size:13pt; margin:4mm 0; }
+        .body { font-size:13pt; text-align:justify; line-height:1.55; min-height:135mm; }
         .closing { text-align:right; font-size:11pt; line-height:1.9; margin-top:4mm; }
         .closing .copyto, .closing .actionby { display:flex; gap:5px; justify-content:flex-start; align-items:center; flex-wrap:wrap; }
         .footer-img { position:absolute; left:${POS.margin}mm; right:${POS.margin}mm; bottom:8mm; }
