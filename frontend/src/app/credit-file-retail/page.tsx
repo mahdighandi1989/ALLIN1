@@ -231,20 +231,34 @@ export default function CreditFileRetailPage() {
     const el = sheetRef.current
     if (!el) return
     const MMpx = 96 / 25.4
-    const savedW = el.style.width
-    const savedZ = (el.style as any).zoom
-    el.style.width = '190mm'
-    ;(el.style as any).zoom = '1'
-    void el.offsetHeight
-    el.querySelectorAll('textarea.wrap-cell').forEach((t) => {
+    const PRINT_W = 186   // mm — printed width (fills A4 width, safe inside the margins)
+    const avail = 270     // mm — one-A4 height budget
+    const regrow = () => el.querySelectorAll('textarea.wrap-cell').forEach((t) => {
       const ta = t as HTMLTextAreaElement
       ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`
     })
+    const savedW = el.style.width
+    const savedZ = (el.style as any).zoom
+    el.style.width = `${PRINT_W}mm`
+    ;(el.style as any).zoom = '1'
+    void el.offsetHeight
+    regrow()
     const hMm = el.scrollHeight / MMpx
+    // Shrink to fit height, but render wider first so the printed width stays full
+    // (a plain zoom scales width+height together → narrow + tiny).
+    let z = 1, pw = PRINT_W
+    if (hMm > avail) {
+      z = Math.max(0.4, avail / hMm)
+      pw = PRINT_W / z
+      el.style.width = `${pw}mm`
+      void el.offsetHeight
+      regrow()
+    }
     el.style.width = savedW
     ;(el.style as any).zoom = savedZ
-    const avail = 270
-    const z = hMm > avail ? Math.max(0.35, avail / hMm) : 1
+    void el.offsetHeight
+    regrow()
+    el.style.setProperty('--pw', `${pw}mm`)
     el.style.setProperty('--pz', String(z))
   }, [])
   const printSheet = () => { fitSheet(); setTimeout(() => window.print(), 60) }
@@ -313,7 +327,7 @@ export default function CreditFileRetailPage() {
           .print-wrap { display: block !important; white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           /* Deterministic width (< printable 194mm) so the right border is never
              clipped, plus zoom auto-fit so added rows still fit ONE page. */
-          #cf-sheet { width: 190mm; max-width: 190mm; margin: 0 auto; zoom: var(--pz, 1); }
+          #cf-sheet { width: var(--pw, 190mm); max-width: none; margin: 0 auto; zoom: var(--pz, 1); }
           .cf-sheet { font-size: 9px; }
           table.cf td, table.cf th, table.cf input, table.cf textarea.wrap-cell, table.cf select { font-size: 8.5px !important; }
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
