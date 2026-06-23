@@ -1,14 +1,17 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, crmApi, facilitiesApi, parseApiError, downloadFile } from '@/lib/api'
+import { customersApi, crmApi, facilitiesApi, auditApi, parseApiError, downloadFile } from '@/lib/api'
+import { auditWhat, auditLink, auditActionLabel, ACTION_COLORS } from '@/lib/audit'
+import { AuditList } from '@/types'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
   CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote, Mail,
+  ScrollText, Search,
 } from 'lucide-react'
 import { CountryDataList } from '@/components/creditFileBits'
 const CHECKLIST_STEPS = [
@@ -33,6 +36,7 @@ function CustomerDetailInner() {
   const router = useRouter()
   const id = params.get('id')
   const facilityParam = params.get('facility')  // open a facility's detail inline
+  const tabParam = params.get('tab')            // deep-link straight to a tab (e.g. from the log)
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +70,24 @@ function CustomerDetailInner() {
   useEffect(() => {
     if (facilityParam) { setSelFac(facilityParam); setTab('facilities') }
   }, [facilityParam])
+  // Deep-link: ?tab=<id> jumps straight to a tab (used by the activity-log links).
+  useEffect(() => { if (tabParam) setTab(tabParam) }, [tabParam])
+
+  // --- Logs tab: this customer's full activity log (searchable, paginated) ---
+  const [logData, setLogData] = useState<AuditList | null>(null)
+  const [logPage, setLogPage] = useState(1)
+  const [logSearch, setLogSearch] = useState('')
+  const [logLoading, setLogLoading] = useState(false)
+  const LOG_PAGE_SIZE = 25
+  const logAcc = String(data?.customer?.account_no || '').trim()
+  const loadLogs = useCallback(async () => {
+    if (!logAcc) return
+    setLogLoading(true)
+    try { setLogData(await auditApi.listForCustomer(logAcc, { page: logPage, page_size: LOG_PAGE_SIZE, search: logSearch || undefined })) }
+    catch { setLogData(null) }
+    finally { setLogLoading(false) }
+  }, [logAcc, logPage, logSearch])
+  useEffect(() => { if (tab === 'logs') loadLogs() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, logPage, logAcc])
 
   // Fetch the selected facility's full detail (fields + linked collateral).
   useEffect(() => {
@@ -337,6 +359,7 @@ function CustomerDetailInner() {
     { id: 'notes', label: 'Notes', icon: StickyNote },
     { id: 'attachments', label: 'Attachments', icon: Paperclip },
     { id: 'activity', label: 'Activity', icon: Activity },
+    { id: 'logs', label: 'Logs (لاگ)', icon: ScrollText },
   ]
 
   return (
@@ -920,6 +943,58 @@ function CustomerDetailInner() {
           <SimpleTable head={['Date', 'Item', 'Action', 'Source', 'User', 'Status']}
             rows={journal.map((j: any) => [(j.date || '').slice(0, 10), j.item, j.action, j.source, j.user, done(j.status) ? '✓' : j.status])}
             empty="No activity" />
+        </Section>
+      )}
+
+      {tab === 'logs' && (
+        <Section title={`لاگِ کارها${logData ? ` (${logData.total})` : ''}`}>
+          <p className="text-xs text-gray-500 mb-3">هر کاری که روی این حساب انجام شده — ویرایشِ پروفایل، فرم‌ها، مدارک، نامه‌ها و … — این‌جا با تاریخ و کاربر ثبت می‌شود. روی هر ردیف بزنید تا به همان بخش بروید.</p>
+          <form onSubmit={(e) => { e.preventDefault(); if (logPage !== 1) setLogPage(1); else loadLogs() }} className="flex gap-2 mb-3">
+            <div className="relative flex-1">
+              <Search size={15} className="absolute right-2 top-2.5 text-gray-400" />
+              <input value={logSearch} onChange={(e) => setLogSearch(e.target.value)} placeholder="جستجو در شرح / نوع / کاربر…"
+                className="w-full pr-8 pl-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm">جستجو</button>
+          </form>
+          <div className="bg-white border rounded-lg overflow-hidden">
+            {logLoading ? (
+              <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+            ) : logData && logData.items.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500">
+                    <tr><th className="px-3 py-2 text-right">زمان</th><th className="px-3 py-2 text-right">کاربر</th><th className="px-3 py-2 text-right">عملیات</th><th className="px-3 py-2 text-right">مورد</th><th className="px-3 py-2 text-right">شرح</th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {logData.items.map((e) => {
+                      const link = auditLink(e)
+                      return (
+                        <tr key={e.id} className={`hover:bg-blue-50/40 ${link ? 'cursor-pointer' : ''}`} onClick={() => link && router.push(link)}>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-500">{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td>
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">{e.username || '—'}</td>
+                          <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded text-xs ${ACTION_COLORS[e.action] || 'bg-gray-100 text-gray-600'}`}>{auditActionLabel(e.action)}</span></td>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-700">{auditWhat(e)}</td>
+                          <td className="px-3 py-2 text-gray-600">{e.detail || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-10 text-center text-gray-500 text-sm">هنوز کاری برای این حساب ثبت نشده</div>
+            )}
+          </div>
+          {logData && logData.total > LOG_PAGE_SIZE && (
+            <div className="mt-3 flex justify-between items-center text-sm">
+              <span className="text-gray-500">{logData.total} مورد · صفحهٔ {logPage} از {Math.max(1, Math.ceil(logData.total / LOG_PAGE_SIZE))}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setLogPage((p) => Math.max(1, p - 1))} disabled={logPage === 1} className="px-3 py-1.5 border rounded-lg disabled:opacity-50">قبلی</button>
+                <button onClick={() => setLogPage((p) => p + 1)} disabled={logPage >= Math.ceil(logData.total / LOG_PAGE_SIZE)} className="px-3 py-1.5 border rounded-lg disabled:opacity-50">بعدی</button>
+              </div>
+            </div>
+          )}
         </Section>
       )}
 

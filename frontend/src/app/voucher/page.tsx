@@ -5,7 +5,7 @@ import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
-import { customersApi, crmApi, parseApiError } from '@/lib/api'
+import { customersApi, crmApi, auditApi, parseApiError } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 // Faithful re-implementation of the macro workbook
@@ -388,7 +388,7 @@ export default function VoucherPage() {
                 className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
                 {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
               </button>
-              <button onClick={() => window.print()} type="button"
+              <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'voucher', account_no: acNo || undefined, detail: `چاپِ سندِ انتظامی${chqNo ? ` — چک ${chqNo}` : ''}${acName ? ` — ${acName}` : ''}` }); window.print() }} type="button"
                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2">
                 <Printer size={18} /> چاپ (Print)
               </button>

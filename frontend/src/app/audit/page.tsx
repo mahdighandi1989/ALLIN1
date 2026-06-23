@@ -4,17 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { auditApi, parseApiError } from '@/lib/api'
+import { auditWhat, auditLink, auditActionLabel, ACTION_COLORS } from '@/lib/audit'
 import { useAuth } from '@/lib/auth'
 import { AuditList } from '@/types'
 import { ScrollText } from 'lucide-react'
 import toast from 'react-hot-toast'
-
-const ACTION_COLORS: Record<string, string> = {
-  create: 'bg-green-100 text-green-700',
-  update: 'bg-blue-100 text-blue-700',
-  delete: 'bg-red-100 text-red-700',
-  login: 'bg-purple-100 text-purple-700',
-}
 
 export default function AuditPage() {
   const router = useRouter()
@@ -71,13 +65,13 @@ export default function AuditPage() {
       <form onSubmit={onFilter} className="mb-6 flex flex-wrap gap-2">
         <select value={action} onChange={(e) => setAction(e.target.value)} className="px-3 py-2 border rounded-lg">
           <option value="">All actions</option>
-          {['create', 'update', 'delete', 'login'].map((a) => <option key={a} value={a}>{a}</option>)}
+          {['create', 'update', 'delete', 'upload', 'import', 'print', 'login', 'logout'].map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
         <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="px-3 py-2 border rounded-lg">
           <option value="">All entities</option>
-          {['customer', 'facility', 'offer_letter', 'user', 'auth'].map((e) => <option key={e} value={e}>{e}</option>)}
+          {['customer', 'profile', 'facility', 'guarantor', 'offer_letter', 'sanction', 'note', 'attachment', 'task', 'checklist', 'document', 'voucher', 'letter', 'user', 'auth'].map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search user / detail…"
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search user / account / detail…"
           className="flex-1 min-w-[200px] px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Filter</button>
       </form>
@@ -93,13 +87,16 @@ export default function AuditPage() {
                   <th className="px-4 py-3">When</th>
                   <th className="px-4 py-3">User</th>
                   <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Entity</th>
+                  <th className="px-4 py-3">What</th>
+                  <th className="px-4 py-3">Account</th>
                   <th className="px-4 py-3">Detail</th>
                   <th className="px-4 py-3">IP</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {data.items.map((e) => (
+                {data.items.map((e) => {
+                  const link = auditLink(e)
+                  return (
                   <tr key={e.id} className="hover:bg-gray-50">
                     <td className="px-4 py-2 whitespace-nowrap text-gray-500">
                       {e.created_at ? new Date(e.created_at).toLocaleString() : '-'}
@@ -107,16 +104,22 @@ export default function AuditPage() {
                     <td className="px-4 py-2 font-medium">{e.username || '-'}</td>
                     <td className="px-4 py-2">
                       <span className={`px-2 py-0.5 rounded text-xs ${ACTION_COLORS[e.action] || 'bg-gray-100 text-gray-600'}`}>
-                        {e.action}
+                        {auditActionLabel(e.action)}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {e.entity_type}{e.entity_id ? <span className="text-gray-400"> · {e.entity_id.slice(0, 10)}</span> : ''}
+                    <td className="px-4 py-2 text-gray-700 whitespace-nowrap">{auditWhat(e)}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {e.account_no ? (
+                        link
+                          ? <button onClick={() => router.push(link)} className="text-blue-600 hover:underline">{e.customer_name || e.account_no}</button>
+                          : <span className="text-gray-600">{e.customer_name || e.account_no}</span>
+                      ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-2 text-gray-700">{e.detail || '-'}</td>
                     <td className="px-4 py-2 text-gray-400">{e.ip_address || '-'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

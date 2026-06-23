@@ -25,9 +25,13 @@ class AuditLog(Base):
     user_id = Column(String(33), index=True)
     username = Column(String(50), index=True)
     # What happened.
-    action = Column(String(50), nullable=False, index=True)   # e.g. create/update/delete/login
+    action = Column(String(50), nullable=False, index=True)   # e.g. create/update/delete/login/print
     entity_type = Column(String(50), index=True)              # customer/facility/offer_letter/user/auth
     entity_id = Column(String(64), index=True)
+    # The customer account this action relates to (when applicable). Lets every
+    # action — profile edits, forms, documents, letters — be listed under that
+    # customer's profile and linked from the global log.
+    account_no = Column(String(50), index=True)
     detail = Column(Text)
     ip_address = Column(String(64))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

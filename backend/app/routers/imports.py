@@ -609,6 +609,19 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                 cp.data_json = _json.dumps(pdata, ensure_ascii=False)
 
     await db.commit()
+
+    # Log the import under each affected customer's profile (and the global log).
+    from types import SimpleNamespace
+    actor = SimpleNamespace(username=username, id="")
+    for r in saved:
+        nfields = r.get("fields_saved")
+        await record_audit(
+            action="import", entity_type="document", entity_id=r.get("customer_id"),
+            account_no=r.get("account_no"),
+            detail=f"استخراج از فایل «{fname}»" + (f" — {nfields} فیلد" if nfields else ""),
+            user=actor, request=None, db=db,
+        )
+
     return {
         "ok": True, "model": model_name, "filename": fname,
         "customers": results, "multi_customer": len(saved) > 1, "documents": documents,

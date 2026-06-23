@@ -70,3 +70,82 @@ class TestAuditLog:
         r = await client.get("/api/audit/?entity_type=user", headers=admin_headers)
         assert r.status_code == 200
         assert any(e["action"] == "create" for e in r.json()["items"])
+
+
+class TestCustomerActivityLog:
+    """Per-customer activity log (profile «Logs» tab) + the SPA activity hook."""
+
+    async def test_action_carries_account_and_resolved_customer(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        c = await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-1", "name": "Logged Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        assert c.status_code == 201
+        cid = c.json()["id"]
+        r = await client.get("/api/audit/?account_no=LOG-1", headers=admin_headers)
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert items and all(e["account_no"] == "LOG-1" for e in items)
+        # account_no is resolved to the owning customer for deep-linking.
+        e = items[0]
+        assert e["customer_name"] == "Logged Co"
+        assert e["customer_id"] == cid
+
+    async def test_customer_scoped_log_visible_to_regular_user(
+        self, client: AsyncClient, admin_headers: dict, auth_headers: dict
+    ):
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-2", "name": "Scoped Co", "account_type": "retail"},
+            headers=admin_headers,
+        )
+        # a NON-admin (who can see the profile) can read that customer's log
+        r = await client.get("/api/audit/customer/LOG-2", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["total"] >= 1
+        assert all(e["account_no"] == "LOG-2" for e in r.json()["items"])
+
+    async def test_profile_edit_is_logged_under_customer(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-3", "name": "Prof Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        u = await client.patch(
+            "/api/crm/profile/LOG-3", json={"passport_no": "P123"}, headers=admin_headers
+        )
+        assert u.status_code == 200
+        r = await client.get("/api/audit/customer/LOG-3", headers=admin_headers)
+        assert any(e["entity_type"] == "profile" for e in r.json()["items"])
+
+    async def test_activity_endpoint_logs_client_form(
+        self, client: AsyncClient, admin_headers: dict, auth_headers: dict
+    ):
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-4", "name": "Form Co", "account_type": "retail"},
+            headers=admin_headers,
+        )
+        p = await client.post(
+            "/api/audit/activity",
+            json={"action": "print", "entity_type": "voucher",
+                  "account_no": "LOG-4", "detail": "چاپِ سندِ ضمانتی"},
+            headers=auth_headers,
+        )
+        assert p.status_code == 200
+        # shows under the customer …
+        r = await client.get("/api/audit/customer/LOG-4", headers=auth_headers)
+        assert any(e["entity_type"] == "voucher" and e["action"] == "print" for e in r.json()["items"])
+        # … and in the global log with the customer resolved.
+        g = await client.get("/api/audit/?account_no=LOG-4", headers=admin_headers)
+        gi = next(e for e in g.json()["items"] if e["entity_type"] == "voucher")
+        assert gi["customer_name"] == "Form Co"
+
+    async def test_activity_requires_auth(self, client: AsyncClient):
+        r = await client.post("/api/audit/activity", json={"action": "print"})
+        assert r.status_code == 401
