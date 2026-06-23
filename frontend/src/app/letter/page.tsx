@@ -1,12 +1,14 @@
 'use client'
 
-// Official Bank Saderat (UAE — Regional Office) LETTER (نامه) template, laid out
-// to match the Word original: emblem top-LEFT, wordmark top-RIGHT, بسمه تعالی
-// centred; then a two-column band — شماره/تاریخ/پیوست STACKED on the left, the
-// recipient (bold) on the right; the classification (left), موضوع, a right-side
-// dashed separator, the free body, and finally the closing block (signatory
-// dropdown + رونوشت + اقدام کننده) which stays together on the last page. The
-// letterhead + footer banner repeat on every printed page and pages are numbered.
+// Official Bank Saderat (UAE — Regional Office) LETTER (نامه). Laid out to match
+// the Word original closely AND to render in the SAME fonts the Word uses — by
+// requesting the locally-installed Persian fonts (B Nazanin / IranNastaliq) that
+// the user's machine already has, so the on-screen and printed letter look the
+// same as the .docx. Layout: emblem top-left, wordmark top-right, بسمه تعالی
+// centred; شماره/تاریخ/پیوست stacked on the left and the recipient (bold) on the
+// right; classification (left), موضوع, a right-side dashed rule, the free body,
+// then the signatory (left, a dropdown) with signature space and رونوشت/اقدام on
+// the right. Letterhead + footer repeat per page; pages are numbered.
 import { useState, useRef, useEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser } from 'lucide-react'
@@ -20,8 +22,6 @@ function todayDMY() {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`
 }
 
-// Single-line field: input on screen, plain text in print. `ltr` keeps reference
-// numbers / dates reading left-to-right inside the RTL letter.
 function Fld({ value, onChange, placeholder, w, ltr, bold }: { value: string; onChange: (e: any) => void; placeholder?: string; w?: string; ltr?: boolean; bold?: boolean }) {
   const style: React.CSSProperties = {}
   if (w) style.width = w
@@ -35,8 +35,6 @@ function Fld({ value, onChange, placeholder, w, ltr, bold }: { value: string; on
   )
 }
 
-// Multi-line field: auto-growing textarea on screen, wrapping text that flows
-// across pages in print.
 function Area({ value, onChange, placeholder }: { value: string; onChange: (e: any) => void; placeholder?: string }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { const el = ref.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }, [value])
@@ -72,46 +70,48 @@ export default function LetterPage() {
         .ltr-btn.blue { background:#2563eb; } .ltr-btn.gray { background:#475569; }
         .ltr-hint { font-size:12px; color:#64748b; }
 
+        /* Use the SAME locally-installed Persian fonts the Word file uses, so the
+           letter looks identical on the user's machine. */
         #ltr-sheet { width:210mm; min-height:297mm; margin:0 auto; background:#fff; box-shadow:0 0 6px rgba(0,0,0,.12);
-                     padding:12mm 25mm 10mm; box-sizing:border-box; color:#000;
-                     font-family:Tahoma,'B Nazanin','Segoe UI',sans-serif; font-size:12pt; line-height:1.6; }
+                     padding:12mm 24mm 10mm; box-sizing:border-box; color:#000;
+                     font-family:'B Nazanin','BNazanin','Times New Roman',Tahoma,serif; font-size:14pt; line-height:1.55; }
 
-        /* Letterhead: emblem LEFT, wordmark RIGHT (LTR row so order is fixed) */
         .lh-row { display:flex; direction:ltr; justify-content:space-between; align-items:flex-start; }
-        .lh-logo { height:23mm; } .lh-name { height:16mm; margin-top:1mm; }
-        .bismillah { text-align:center; font-size:11pt; margin:1mm 0 4mm; }
+        .lh-logo { height:22mm; } .lh-name { height:15mm; margin-top:1mm; }
+        .bismillah { text-align:center; font-size:12pt; margin:1mm 0 3mm; }
 
-        /* Two-column band: recipient (right) + ref block (left) */
-        .top-band { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-top:1mm; }
-        .recipient { text-align:right; font-weight:700; font-size:12pt; line-height:2; padding-top:6mm; }
+        .top-band { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+        .recipient { text-align:right; font-weight:700; font-size:14pt; line-height:1.7; padding-top:5mm; }
         .recipient .r2 { display:flex; gap:6px; justify-content:flex-start; }
-        .refblock { text-align:right; font-size:11pt; line-height:2; white-space:nowrap; }
-        .refblock .lbl { display:inline-block; }
+        .refblock { text-align:right; font-size:13pt; line-height:1.7; white-space:nowrap; }
 
-        .classification { text-align:left; font-weight:700; font-size:12pt; margin:5mm 0 3mm; }
-        .subject { display:flex; gap:6px; font-size:12pt; text-align:justify; align-items:flex-start; }
-        .subject .lbl { white-space:nowrap; padding-top:2px; }
-        .sep { border:0; border-top:1.5px dashed #000; width:55%; margin:3mm 0 5mm auto; }
+        .classification { text-align:left; font-weight:700; font-size:13pt; font-family:'IranNastaliq','B Nazanin',serif; margin:4mm 0 2mm; }
+        .subject { display:flex; gap:6px; font-size:14pt; text-align:justify; align-items:flex-start; margin-bottom:1mm; }
+        .subject .lbl { white-space:nowrap; }
+        .seprow { display:flex; }
+        .sep { flex:0 0 55%; border-top:1px dashed #000; height:0; margin:2mm 0 4mm; }
 
-        .body { font-size:12pt; text-align:justify; line-height:1.9; min-height:55mm; }
+        .body { font-size:14pt; text-align:justify; line-height:1.9; min-height:50mm; }
 
         .bottom-block { margin-top:6mm; }
-        .sender { font-weight:700; font-size:13pt; text-align:center; margin:8mm 0; }
-        .closing { text-align:right; font-size:11pt; line-height:2; }
+        .sender { font-weight:700; font-size:15pt; text-align:left; margin:6mm 0; padding-left:10mm; }
+        .sign-space { height:18mm; }
+        .closing { text-align:right; font-size:13pt; line-height:1.8; }
         .closing .copyto, .closing .actionby { display:flex; gap:6px; justify-content:flex-start; align-items:center; flex-wrap:wrap; }
-        .lh-footer { width:100%; margin-top:8mm; }
+        .lh-footer { width:100%; margin-top:6mm; }
 
-        /* Inputs (screen only) */
-        #ltr-sheet input.fld, #ltr-sheet select { border:0; border-bottom:1px dotted #93c5fd; background:#eff6ff; font:inherit; color:#000; padding:0 3px; }
-        #ltr-sheet select { background:#eff6ff; border-bottom:1px solid #60a5fa; cursor:pointer; }
-        #ltr-sheet textarea.area { width:100%; border:1px dashed #cbd5e1; background:#f8fafc; font:inherit; color:#000; resize:none; overflow:hidden; padding:2px 4px; box-sizing:border-box; line-height:1.9; }
+        /* Subtle, letter-like field chrome (so the screen reads as a letter). */
+        #ltr-sheet input.fld, #ltr-sheet select { border:0; border-bottom:1px dotted #b6c7e6; background:transparent; font:inherit; color:#000; padding:0 2px; }
+        #ltr-sheet input.fld::placeholder { color:#aab4c5; }
+        #ltr-sheet select { border-bottom:1px solid #9db8e6; cursor:pointer; }
+        #ltr-sheet textarea.area { width:100%; border:0; border-bottom:1px dotted #cdd8ea; background:transparent; font:inherit; color:#000; resize:none; overflow:hidden; padding:1px 2px; box-sizing:border-box; line-height:1.9; }
         .print-only { display:none; }
         .print-text { white-space:pre-wrap; word-break:break-word; }
         .print-header, .print-footer { display:none; }
 
         @media print {
-          @page { size:A4; margin:40mm 25mm 30mm; }
-          @page { @bottom-center { content:"صفحه " counter(page) " از " counter(pages); font-family:Tahoma,sans-serif; font-size:9pt; color:#1d4ed8; } }
+          @page { size:A4; margin:40mm 24mm 30mm; }
+          @page { @bottom-center { content:"صفحه " counter(page) " از " counter(pages); font-family:'B Nazanin',Tahoma,sans-serif; font-size:10pt; color:#1d4ed8; } }
           html, body { margin:0 !important; padding:0 !important; background:#fff !important; }
           .no-print, .screen-only { display:none !important; }
           .print-only { display:block !important; }
@@ -130,15 +130,13 @@ export default function LetterPage() {
         <div className="ltr-controls no-print">
           <button onClick={() => window.print()} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={15} /> پاک‌کردنِ متغیرها</button>
-          <span className="ltr-hint">خانه‌های آبی/خط‌چین قابلِ ویرایش‌اند و در پرینت پاک می‌شوند. سربرگ و فوتر در هر صفحه تکرار می‌شوند؛ نامه می‌تواند چند صفحه شود.</span>
+          <span className="ltr-hint">فونت‌ها از روی فونت‌های نصب‌شدهٔ سیستمِ شما (B Nazanin / IranNastaliq) خوانده می‌شوند تا مثلِ نسخهٔ Word دربیاید. خانه‌های قابلِ‌ویرایش در پرینت پاک می‌شوند؛ نامه می‌تواند چند صفحه شود.</span>
         </div>
 
         <div id="ltr-sheet">
-          {/* Repeating print-only letterhead + footer */}
           <div className="print-header"><div className="ph-row"><img className="lh-logo" src={LH_LOGO} alt="" /><img className="lh-name" src={LH_NAME} alt="" /></div></div>
           <div className="print-footer"><img src={LH_FOOTER} alt="" /></div>
 
-          {/* On-screen letterhead: emblem left, wordmark right */}
           <div className="lh-row screen-only">
             <img className="lh-logo" src={LH_LOGO} alt="Regional Office" />
             <img className="lh-name" src={LH_NAME} alt="Bank Saderat Iran" />
@@ -147,20 +145,17 @@ export default function LetterPage() {
           <div className="bismillah">بسمه تعالی</div>
 
           <div className="top-band">
-            {/* recipient (right) */}
             <div className="recipient">
-              <div><Fld value={f.recipientName} onChange={set('recipientName')} placeholder="سرکار خانم / جناب آقای …" w="70mm" bold /></div>
+              <div><Fld value={f.recipientName} onChange={set('recipientName')} placeholder="سرکار خانم / جناب آقای …" w="68mm" bold /></div>
               <div className="r2">
-                <Fld value={f.recipientTitle} onChange={set('recipientTitle')} placeholder="رئیس محترم" w="26mm" bold />
-                <Fld value={f.recipientDept} onChange={set('recipientDept')} placeholder="ادارهٔ کل خارجه" w="60mm" bold />
+                <Fld value={f.recipientTitle} onChange={set('recipientTitle')} placeholder="رئیس محترم" w="24mm" bold />
+                <Fld value={f.recipientDept} onChange={set('recipientDept')} placeholder="ادارهٔ کل خارجه" w="58mm" bold />
               </div>
             </div>
-            {/* ref block (left) — stacked */}
             <div className="refblock">
-              <div><span className="lbl">شماره:</span> <Fld value={f.refNo} onChange={set('refNo')} placeholder="2026/----/4/182" w="40mm" ltr /></div>
-              <div><span className="lbl">تاریخ&nbsp;:</span> <Fld value={f.date} onChange={set('date')} placeholder="--/--/2026" w="30mm" ltr /></div>
-              <div>
-                <span className="lbl">پیوست:</span>{' '}
+              <div>شماره: <Fld value={f.refNo} onChange={set('refNo')} placeholder="2026/----/4/182" w="38mm" ltr /></div>
+              <div>تاریخ&nbsp;: <Fld value={f.date} onChange={set('date')} placeholder="--/--/2026" w="28mm" ltr /></div>
+              <div>پیوست:{' '}
                 <select value={f.attachment} onChange={set('attachment')} className="screen-only"><option value="دارد">دارد</option><option value="ندارد">ندارد</option></select>
                 <span className="print-only" style={{ display: 'inline' }}>{f.attachment}</span>
               </div>
@@ -173,11 +168,8 @@ export default function LetterPage() {
             <span className="print-only" style={{ display: 'inline' }}>{f.classification}</span>
           </div>
 
-          <div className="subject">
-            <span className="lbl">موضوع :</span>
-            <Area value={f.subject} onChange={set('subject')} placeholder="موضوعِ نامه…" />
-          </div>
-          <hr className="sep" />
+          <div className="subject"><span className="lbl">موضوع :</span><Area value={f.subject} onChange={set('subject')} placeholder="موضوعِ نامه…" /></div>
+          <div className="seprow"><div className="sep" /></div>
 
           <div className="body"><Area value={f.body} onChange={set('body')} placeholder="متنِ نامه را اینجا بنویسید… (می‌تواند چند صفحه شود)" /></div>
 
@@ -186,9 +178,10 @@ export default function LetterPage() {
               <select value={f.sender} onChange={set('sender')} className="screen-only">{SENDERS.map((s) => <option key={s} value={s}>{s}</option>)}</select>
               <span className="print-only" style={{ display: 'block' }}>{f.sender}</span>
             </div>
+            <div className="sign-space" />
             <div className="closing">
               <div className="copyto"><span style={{ whiteSpace: 'nowrap' }}>رونوشت :</span> <Area value={f.copyTo} onChange={set('copyTo')} placeholder="رونوشت به…" /></div>
-              <div className="actionby"><span>اقدام کننده :</span> <Fld value={f.actionName} onChange={set('actionName')} placeholder="نام" w="45mm" /> <span>/ داخلی</span> <Fld value={f.actionExt} onChange={set('actionExt')} placeholder="—" w="18mm" ltr /></div>
+              <div className="actionby"><span>اقدام کننده :</span> <Fld value={f.actionName} onChange={set('actionName')} placeholder="نام" w="42mm" /> <span>/ داخلی</span> <Fld value={f.actionExt} onChange={set('actionExt')} placeholder="—" w="16mm" ltr /></div>
             </div>
           </div>
 
