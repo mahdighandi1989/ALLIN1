@@ -23,6 +23,7 @@ import type {
   AdminUserForm,
   TrashList,
   AuditList,
+  StaffMember,
   NotificationList,
   ImportResult,
   SettingsResponse,
@@ -817,6 +818,31 @@ export const auditApi = {
   // Best-effort: never throws so it can't break the user's print/save flow.
   async logActivity(a: { action: string; entity_type?: string; entity_id?: string; account_no?: string; detail?: string }): Promise<void> {
     try { await api.post('/api/audit/activity', a) } catch { /* logging must not break the action */ }
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Staff directory (bank employees) — editable; names carry a Persian equivalent.
+// ---------------------------------------------------------------------------
+export const staffApi = {
+  async list(params: { q?: string; region?: string; department?: string } = {}): Promise<{ items: StaffMember[]; total: number }> {
+    const { data } = await api.get('/api/staff/', { params })
+    return data
+  },
+  async departments(region?: string): Promise<string[]> {
+    const { data } = await api.get('/api/staff/departments', { params: region ? { region } : {} })
+    return data
+  },
+  async create(payload: Partial<StaffMember>): Promise<StaffMember> {
+    const { data } = await api.post('/api/staff/', payload)
+    return data
+  },
+  async update(id: string, payload: Partial<StaffMember>): Promise<StaffMember> {
+    const { data } = await api.patch(`/api/staff/${id}`, payload)
+    return data
+  },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/api/staff/${id}`)
   },
 }
 
