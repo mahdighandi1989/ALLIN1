@@ -190,7 +190,7 @@ export default function LetterPage() {
 
   // ---- One printed/preview A4 page (read-only, real values) ----
   const Sheet = ({ pi, last }: { pi: number; last: boolean }) => (
-    <div className="psheet">
+    <div className="psheet" key={pi}>
       {/* header — repeats on every page */}
       <div style={boxStyle('logo')}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>
       <div style={boxStyle('name')}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>
@@ -331,41 +331,44 @@ export default function LetterPage() {
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
 
         {/* ---- EDITOR (single canvas; type + position) ---- */}
+        {/* NB: Box/Lbl/Sheet are invoked as FUNCTIONS (not <Box/>) on purpose —
+            rendering them as elements would remount the inputs on every keystroke
+            (they're defined in-component) and steal focus after the first letter. */}
         <div className={`canvas-wrap editor-wrap${preview ? ' hide' : ''}`}>
           <div id="ltr-page" onDoubleClick={exitEditing}>
-            <Box k="logo"><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></Box>
-            <Box k="name"><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></Box>
-            <Box k="footer"><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></Box>
+            {Box({ k: 'logo', children: <img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /> })}
+            {Box({ k: 'name', children: <img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /> })}
+            {Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> })}
 
-            <Box k="besmele"><Lbl k="besmele" /></Box>
+            {Box({ k: 'besmele', children: Lbl({ k: 'besmele' }) })}
 
-            <Box k="shomareh"><Lbl k="shomareh" /><span dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>182 / 4 / <AutoInput dir="ltr" value={f.serial} onChange={set('serial')} placeholder="----" style={{ textAlign: 'center' }} /> / <AutoInput dir="ltr" value={f.year} onChange={set('year')} placeholder="2026" style={{ textAlign: 'center' }} /></span>{txt(`182 / 4 / ${f.serial} / ${f.year}`, true)}</Box>
-            <Box k="tarikh"><Lbl k="tarikh" /><AutoInput dir="ltr" value={f.date} onChange={set('date')} placeholder="2026/--/--" style={{ textAlign: 'right' }} />{txt(f.date, true)}</Box>
-            <Box k="peyvast"><Lbl k="peyvast" /><select className="fld" value={f.attachment} onChange={set('attachment')}><option>دارد</option><option>ندارد</option></select>{txt(f.attachment)}</Box>
+            {Box({ k: 'shomareh', children: <>{Lbl({ k: 'shomareh' })}<span dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>182 / 4 / <AutoInput dir="ltr" value={f.serial} onChange={set('serial')} placeholder="----" style={{ textAlign: 'center' }} /> / <AutoInput dir="ltr" value={f.year} onChange={set('year')} placeholder="2026" style={{ textAlign: 'center' }} /></span>{txt(`182 / 4 / ${f.serial} / ${f.year}`, true)}</> })}
+            {Box({ k: 'tarikh', children: <>{Lbl({ k: 'tarikh' })}<AutoInput dir="ltr" value={f.date} onChange={set('date')} placeholder="2026/--/--" style={{ textAlign: 'right' }} />{txt(f.date, true)}</> })}
+            {Box({ k: 'peyvast', children: <>{Lbl({ k: 'peyvast' })}<select className="fld" value={f.attachment} onChange={set('attachment')}><option>دارد</option><option>ندارد</option></select>{txt(f.attachment)}</> })}
 
-            <Box k="recName"><AutoInput value={f.recipientName} onChange={set('recipientName')} placeholder="سرکار خانم / جناب آقای …" />{txt(f.recipientName)}</Box>
-            <Box k="recTitle"><AutoInput value={f.recipientTitle} onChange={set('recipientTitle')} placeholder="رئیس محترم" /> <AutoInput value={f.recipientDept} onChange={set('recipientDept')} placeholder="اداره کل خارجه" />{txt(`${f.recipientTitle} ${f.recipientDept}`)}</Box>
+            {Box({ k: 'recName', children: <><AutoInput value={f.recipientName} onChange={set('recipientName')} placeholder="سرکار خانم / جناب آقای …" />{txt(f.recipientName)}</> })}
+            {Box({ k: 'recTitle', children: <><AutoInput value={f.recipientTitle} onChange={set('recipientTitle')} placeholder="رئیس محترم" /> <AutoInput value={f.recipientDept} onChange={set('recipientDept')} placeholder="اداره کل خارجه" />{txt(`${f.recipientTitle} ${f.recipientDept}`)}</> })}
 
-            <Box k="classification"><Lbl k="classification" /><select className="fld" value={f.classification} onChange={set('classification')}>{CLASSES.map((c) => <option key={c}>{c}</option>)}</select>{txt(f.classification)}</Box>
+            {Box({ k: 'classification', children: <>{Lbl({ k: 'classification' })}<select className="fld" value={f.classification} onChange={set('classification')}>{CLASSES.map((c) => <option key={c}>{c}</option>)}</select>{txt(f.classification)}</> })}
 
-            <Box k="subject"><Lbl k="subject" /><AutoInput value={f.subject} onChange={set('subject')} placeholder="موضوعِ نامه…" />{txt(f.subject)}</Box>
+            {Box({ k: 'subject', children: <>{Lbl({ k: 'subject' })}<AutoInput value={f.subject} onChange={set('subject')} placeholder="موضوعِ نامه…" />{txt(f.subject)}</> })}
 
-            <Box k="separator"><div className="sep-line" /></Box>
+            {Box({ k: 'separator', children: <div className="sep-line" /> })}
 
-            <Box k="body"><textarea className="area" value={f.body} onChange={set('body')} onDoubleClick={(e) => e.stopPropagation()} placeholder="متنِ نامه… (اگر بلند شود خودکار به صفحاتِ بعد می‌رود)" /></Box>
+            {Box({ k: 'body', children: <textarea className="area" value={f.body} onChange={set('body')} onDoubleClick={(e) => e.stopPropagation()} placeholder="متنِ نامه… (اگر بلند شود خودکار به صفحاتِ بعد می‌رود)" /> })}
 
-            <Box k="sender"><select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select>{txt(f.sender)}</Box>
+            {Box({ k: 'sender', children: <><select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select>{txt(f.sender)}</> })}
 
-            <Box k="copyto"><Lbl k="copyto" /><AutoInput value={f.copyTo} onChange={set('copyTo')} placeholder="------" />{txt(f.copyTo)}</Box>
-            <Box k="action"><Lbl k="action" /><AutoInput value={f.actionName} onChange={set('actionName')} placeholder="----" /><span className="print-val">{f.actionName}</span><Lbl k="actionExt" /><AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /><span className="print-val" dir="ltr">{f.actionExt}</span></Box>
+            {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<AutoInput value={f.copyTo} onChange={set('copyTo')} placeholder="------" />{txt(f.copyTo)}</> })}
+            {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<AutoInput value={f.actionName} onChange={set('actionName')} placeholder="----" /><span className="print-val">{f.actionName}</span>{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /><span className="print-val" dir="ltr">{f.actionExt}</span></> })}
 
-            <Box k="pagenum">{`صفحه ۱ از ${fa(pages.length)}`}</Box>
+            {Box({ k: 'pagenum', children: `صفحه ۱ از ${fa(pages.length)}` })}
           </div>
         </div>
 
         {/* ---- PAGINATED PREVIEW / PRINT (real values, multi-page) ---- */}
         <div className={`canvas-wrap print-wrap${preview ? ' show' : ''}`}>
-          {pages.map((_, pi) => <Sheet key={pi} pi={pi} last={pi === pages.length - 1} />)}
+          {pages.map((_, pi) => Sheet({ pi, last: pi === pages.length - 1 }))}
         </div>
       </div>
     </Layout>
