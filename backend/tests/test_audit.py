@@ -149,3 +149,47 @@ class TestCustomerActivityLog:
     async def test_activity_requires_auth(self, client: AsyncClient):
         r = await client.post("/api/audit/activity", json={"action": "print"})
         assert r.status_code == 401
+
+    async def test_date_range_filter_and_csv_export(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        from datetime import date, timedelta
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-5", "name": "Dated Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        today = date.today().isoformat()
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        # today's entry is inside [today, …] but not [tomorrow, …]
+        r_in = await client.get(f"/api/audit/customer/LOG-5?date_from={today}", headers=admin_headers)
+        assert r_in.status_code == 200 and r_in.json()["total"] >= 1
+        r_out = await client.get(f"/api/audit/customer/LOG-5?date_from={tomorrow}", headers=admin_headers)
+        assert r_out.status_code == 200 and r_out.json()["total"] == 0
+        # CSV export
+        csv = await client.get("/api/audit/customer/LOG-5/export.csv", headers=admin_headers)
+        assert csv.status_code == 200
+        assert "text/csv" in csv.headers["content-type"]
+        assert "LOG-5" in csv.text and "Dated Co" in csv.text
+
+    async def test_property_add_and_delete_are_logged(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "LOG-6", "name": "Prop Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        a = await client.post(
+            "/api/crm/properties/LOG-6",
+            json={"property_type": "Villa", "location": "Dubai"},
+            headers=admin_headers,
+        )
+        assert a.status_code == 200
+        pid = a.json()["id"]
+        d = await client.delete(f"/api/crm/properties/{pid}", headers=admin_headers)
+        assert d.status_code == 200
+        r = await client.get("/api/audit/customer/LOG-6", headers=admin_headers)
+        pairs = {(e["action"], e["entity_type"]) for e in r.json()["items"]}
+        assert ("create", "property") in pairs
+        assert ("delete", "property") in pairs

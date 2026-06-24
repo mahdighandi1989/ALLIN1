@@ -8,6 +8,7 @@ const ENTITY_FA: Record<string, string> = {
   offer_letter: 'نامهٔ پیشنهادِ تسهیلات', offer_letter_data: 'دادهٔ نامهٔ پیشنهاد',
   sanction: 'مصوبهٔ کمیتهٔ اعتباری', note: 'یادداشت', attachment: 'مدرک', task: 'تسکِ پیگیری',
   checklist: 'چک‌لیست', document: 'استخراجِ سند', voucher: 'سندِ انتظامی', letter: 'نامهٔ رسمی',
+  property: 'ملکِ مرهونه', fixed_deposit: 'سپردهٔ ثابت', partner: 'شریک',
   user: 'کاربر', auth: 'ورود/خروج',
 }
 const VERB_FA: Record<string, string> = {
@@ -48,6 +49,7 @@ function tabFor(entity?: string | null): string {
     case 'task': return 'tasks'
     case 'checklist': return 'checklist'
     case 'profile': return 'kyc'
+    case 'property': case 'fixed_deposit': return 'collateral'
     default: return 'overview'
   }
 }

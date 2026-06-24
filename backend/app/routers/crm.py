@@ -160,6 +160,11 @@ async def update_task(
     if payload.is_active is not None:
         t.is_active = payload.is_active[:5]
     await db.commit()
+    deactivated = payload.is_active is not None and payload.is_active.strip() in ("0", "false", "")
+    completed = payload.status is not None and payload.status.strip().lower() in ("done", "completed", "✓")
+    await _audit(db, user, action="delete" if deactivated else "update", entity_type="task",
+                 account_no=t.account_no, entity_id=t.id,
+                 detail=("حذفِ تسک" if deactivated else ("تکمیلِ تسک" if completed else "به‌روزرسانیِ تسک")) + f": {t.task_name}")
     return _task_dict(t)
 
 
@@ -1266,6 +1271,12 @@ async def _add_child(db, model, prefix, account_no, data, allowed, user):
     _apply_child_fields(obj, data, allowed)
     db.add(obj)
     await db.commit()
+    ent = {MortgagedProperty: ("property", "ملکِ مرهونه"),
+           FixedDeposit: ("fixed_deposit", "سپردهٔ ثابت"),
+           Partner: ("partner", "شریک")}.get(model)
+    if ent:
+        await _audit(db, user, action="create", entity_type=ent[0], account_no=account_no,
+                     entity_id=obj.id, detail=f"افزودنِ {ent[1]}")
     return _child_dict(obj)
 
 
@@ -1278,12 +1289,16 @@ async def _update_child(db, model, item_id, data, allowed):
     return _child_dict(obj)
 
 
-async def _delete_child(db, model, item_id):
+async def _delete_child(db, model, item_id, user=None, entity_type=None, label=None):
     obj = (await db.execute(select(model).where(model.id == item_id))).scalar_one_or_none()
     if obj is None:
         raise HTTPException(status_code=404, detail="Record not found")
     obj.is_deleted = True
+    acc = getattr(obj, "account_no", None)
     await db.commit()
+    if entity_type:
+        await _audit(db, user, action="delete", entity_type=entity_type, account_no=acc,
+                     entity_id=item_id, detail=f"حذفِ {label or entity_type}")
     return {"ok": True, "id": item_id, "deleted": True}
 
 
@@ -1372,7 +1387,7 @@ async def delete_property(
     item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
 ):
     """Remove (soft-delete) a mortgaged property."""
-    return await _delete_child(db, MortgagedProperty, item_id)
+    return await _delete_child(db, MortgagedProperty, item_id, user, "property", "ملکِ مرهونه")
 
 
 # ---- Fixed deposits (A12) ----
@@ -1430,7 +1445,7 @@ async def delete_fixed_deposit(
     item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
 ):
     """Remove (soft-delete) a fixed deposit."""
-    return await _delete_child(db, FixedDeposit, item_id)
+    return await _delete_child(db, FixedDeposit, item_id, user, "fixed_deposit", "سپردهٔ ثابت")
 
 
 # ---- Partners / shareholders ----
@@ -1481,7 +1496,7 @@ async def delete_partner(
     item_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
 ):
     """Remove (soft-delete) a partner / shareholder."""
-    return await _delete_child(db, Partner, item_id)
+    return await _delete_child(db, Partner, item_id, user, "partner", "شریک")
 
 
 @router.get("/partner-names")
@@ -1679,8 +1694,12 @@ async def delete_attachment(
         except OSError:
             pass
 
+    acc = a.account_no
+    name = a.original_name or a.file_name or attachment_id
     await db.delete(a)
     await db.commit()
+    await _audit(db, user, action="delete", entity_type="attachment", account_no=acc,
+                 entity_id=attachment_id, detail=f"حذفِ مدرک: {name}")
     return {"ok": True, "id": attachment_id, "deleted": True}
 
 
