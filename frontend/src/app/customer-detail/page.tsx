@@ -10,7 +10,7 @@ import { AuditList } from '@/types'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
-  CreditCard, Paperclip, ListChecks, Activity, Users as UsersIcon, StickyNote, Mail,
+  CreditCard, Paperclip, ListChecks, Users as UsersIcon, StickyNote, Mail,
   ScrollText, Search,
 } from 'lucide-react'
 import { CountryDataList } from '@/components/creditFileBits'
@@ -77,17 +77,28 @@ function CustomerDetailInner() {
   const [logData, setLogData] = useState<AuditList | null>(null)
   const [logPage, setLogPage] = useState(1)
   const [logSearch, setLogSearch] = useState('')
+  const [logFrom, setLogFrom] = useState('')
+  const [logTo, setLogTo] = useState('')
   const [logLoading, setLogLoading] = useState(false)
   const LOG_PAGE_SIZE = 25
   const logAcc = String(data?.customer?.account_no || '').trim()
   const loadLogs = useCallback(async () => {
     if (!logAcc) return
     setLogLoading(true)
-    try { setLogData(await auditApi.listForCustomer(logAcc, { page: logPage, page_size: LOG_PAGE_SIZE, search: logSearch || undefined })) }
+    try { setLogData(await auditApi.listForCustomer(logAcc, { page: logPage, page_size: LOG_PAGE_SIZE, search: logSearch || undefined, date_from: logFrom || undefined, date_to: logTo || undefined })) }
     catch { setLogData(null) }
     finally { setLogLoading(false) }
-  }, [logAcc, logPage, logSearch])
+  }, [logAcc, logPage, logSearch, logFrom, logTo])
   useEffect(() => { if (tab === 'logs') loadLogs() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, logPage, logAcc])
+  const exportLogs = async () => {
+    if (!logAcc) return
+    const qs = new URLSearchParams()
+    if (logSearch) qs.set('search', logSearch)
+    if (logFrom) qs.set('date_from', logFrom)
+    if (logTo) qs.set('date_to', logTo)
+    try { await downloadFile(`/api/audit/customer/${encodeURIComponent(logAcc)}/export.csv?${qs.toString()}`, `activity-${logAcc}.csv`) }
+    catch (e) { toast.error(parseApiError(e)) }
+  }
 
   // Fetch the selected facility's full detail (fields + linked collateral).
   useEffect(() => {
@@ -358,7 +369,6 @@ function CustomerDetailInner() {
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
     { id: 'notes', label: 'Notes', icon: StickyNote },
     { id: 'attachments', label: 'Attachments', icon: Paperclip },
-    { id: 'activity', label: 'Activity', icon: Activity },
     { id: 'logs', label: 'Logs (لاگ)', icon: ScrollText },
   ]
 
@@ -938,24 +948,21 @@ function CustomerDetailInner() {
         </Section>
       )}
 
-      {tab === 'activity' && (
-        <Section title={`Activity Log (${journal.length})`}>
-          <SimpleTable head={['Date', 'Item', 'Action', 'Source', 'User', 'Status']}
-            rows={journal.map((j: any) => [(j.date || '').slice(0, 10), j.item, j.action, j.source, j.user, done(j.status) ? '✓' : j.status])}
-            empty="No activity" />
-        </Section>
-      )}
-
       {tab === 'logs' && (
         <Section title={`لاگِ کارها${logData ? ` (${logData.total})` : ''}`}>
-          <p className="text-xs text-gray-500 mb-3">هر کاری که روی این حساب انجام شده — ویرایشِ پروفایل، فرم‌ها، مدارک، نامه‌ها و … — این‌جا با تاریخ و کاربر ثبت می‌شود. روی هر ردیف بزنید تا به همان بخش بروید.</p>
-          <form onSubmit={(e) => { e.preventDefault(); if (logPage !== 1) setLogPage(1); else loadLogs() }} className="flex gap-2 mb-3">
-            <div className="relative flex-1">
+          <p className="text-xs text-gray-500 mb-3">هر کاری که روی این حساب انجام شده — ویرایشِ پروفایل، فرم‌ها، مدارک، نامه‌ها، حذف‌ها و … — این‌جا با تاریخ و کاربر ثبت می‌شود. روی هر ردیف بزنید تا به همان بخش بروید.</p>
+          <form onSubmit={(e) => { e.preventDefault(); if (logPage !== 1) setLogPage(1); else loadLogs() }} className="flex flex-wrap gap-2 mb-3 items-center">
+            <div className="relative flex-1 min-w-[180px]">
               <Search size={15} className="absolute right-2 top-2.5 text-gray-400" />
               <input value={logSearch} onChange={(e) => setLogSearch(e.target.value)} placeholder="جستجو در شرح / نوع / کاربر…"
                 className="w-full pr-8 pl-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
+            <label className="text-xs text-gray-500">از</label>
+            <input type="date" value={logFrom} onChange={(e) => setLogFrom(e.target.value)} className="px-2 py-2 border rounded-lg text-sm" />
+            <label className="text-xs text-gray-500">تا</label>
+            <input type="date" value={logTo} onChange={(e) => setLogTo(e.target.value)} className="px-2 py-2 border rounded-lg text-sm" />
             <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm">جستجو</button>
+            <button type="button" onClick={exportLogs} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm flex items-center gap-1.5"><FileText size={14} /> خروجی Excel</button>
           </form>
           <div className="bg-white border rounded-lg overflow-hidden">
             {logLoading ? (

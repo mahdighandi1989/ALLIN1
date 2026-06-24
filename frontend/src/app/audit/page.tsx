@@ -18,6 +18,8 @@ export default function AuditPage() {
   const [action, setAction] = useState('')
   const [entityType, setEntityType] = useState('')
   const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 50
 
@@ -34,6 +36,8 @@ export default function AuditPage() {
         action: action || undefined,
         entity_type: entityType || undefined,
         search: search || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
       }))
     } catch (e) {
       toast.error(parseApiError(e))
@@ -73,6 +77,10 @@ export default function AuditPage() {
         </select>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search user / account / detail…"
           className="flex-1 min-w-[200px] px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <label className="self-center text-sm text-gray-500">From</label>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="px-3 py-2 border rounded-lg" />
+        <label className="self-center text-sm text-gray-500">To</label>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="px-3 py-2 border rounded-lg" />
         <button type="submit" className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">Filter</button>
       </form>
 

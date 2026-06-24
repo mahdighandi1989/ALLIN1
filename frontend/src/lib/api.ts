@@ -790,7 +790,7 @@ export const notificationsApi = {
 // Audit log (admin)
 // ---------------------------------------------------------------------------
 export const auditApi = {
-  async list(filters: { page?: number; page_size?: number; action?: string; entity_type?: string; account_no?: string; search?: string } = {}): Promise<AuditList> {
+  async list(filters: { page?: number; page_size?: number; action?: string; entity_type?: string; account_no?: string; search?: string; date_from?: string; date_to?: string } = {}): Promise<AuditList> {
     const page = filters.page ?? 1
     const pageSize = filters.page_size ?? 50
     const params: Record<string, any> = { page, page_size: pageSize }
@@ -798,14 +798,18 @@ export const auditApi = {
     if (filters.entity_type) params.entity_type = filters.entity_type
     if (filters.account_no) params.account_no = filters.account_no
     if (filters.search) params.search = filters.search
+    if (filters.date_from) params.date_from = filters.date_from
+    if (filters.date_to) params.date_to = filters.date_to
     const { data } = await api.get('/api/audit/', { params })
     return data
   },
   // One customer's activity log (powers the profile «Logs» tab).
-  async listForCustomer(accountNo: string, filters: { page?: number; page_size?: number; action?: string; search?: string } = {}): Promise<AuditList> {
+  async listForCustomer(accountNo: string, filters: { page?: number; page_size?: number; action?: string; search?: string; date_from?: string; date_to?: string } = {}): Promise<AuditList> {
     const params: Record<string, any> = { page: filters.page ?? 1, page_size: filters.page_size ?? 25 }
     if (filters.action) params.action = filters.action
     if (filters.search) params.search = filters.search
+    if (filters.date_from) params.date_from = filters.date_from
+    if (filters.date_to) params.date_to = filters.date_to
     const { data } = await api.get(`/api/audit/customer/${encodeURIComponent(accountNo)}`, { params })
     return data
   },
