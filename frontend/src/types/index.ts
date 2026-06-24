@@ -190,6 +190,21 @@ export interface AuditEntry {
   customer_name: string | null
 }
 
+export interface StaffMember {
+  id: string
+  name: string
+  name_fa: string | null
+  department: string | null
+  title: string | null
+  telephone: string | null
+  ext: string | null
+  fax: string | null
+  email: string | null
+  mobile: string | null
+  region: string | null
+  notes: string | null
+}
+
 export interface AuditList {
   items: AuditEntry[]
   total: number

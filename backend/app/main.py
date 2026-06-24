@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.middleware import MetricsMiddleware
 # Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
@@ -54,6 +54,18 @@ async def lifespan(app: FastAPI):
             logger.info("Marked %d interrupted import job(s) as errored", n)
     except Exception as exc:  # best-effort; never blocks boot
         logger.error("Import-job reconcile failed: %s", exc)
+
+    # Seed the bundled Persian-Gulf staff directory on first run (idempotent).
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.staff_seed import seed_staff
+
+        async with AsyncSessionLocal() as session:
+            n = await seed_staff(session)
+            if n:
+                logger.info("Seeded %d staff members", n)
+    except Exception as exc:  # best-effort; never blocks boot
+        logger.error("Staff seed failed: %s", exc)
 
     # Materialise a stub customer profile for any collateral (properties/FDs/…)
     # whose account_no has no customer yet, so nothing is stranded as an "island".
@@ -240,6 +252,7 @@ app.include_router(google_auth.router, prefix="/api/auth/google", tags=["google-
 app.include_router(crm.router, prefix="/api/crm", tags=["crm"])
 app.include_router(general.router, prefix="/api/general", tags=["general"])
 app.include_router(personal.router, prefix="/api/personal", tags=["personal"])
+app.include_router(staff_router.router, prefix="/api/staff", tags=["staff"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(properties.router, prefix="/api/properties", tags=["properties"])

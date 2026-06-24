@@ -34,6 +34,7 @@ from app.models.guarantor import Guarantor  # noqa: F401  (register table for cr
 from app.models.security import Security  # noqa: F401  (register table for create_all)
 from app.models.credit_review import CreditReview  # noqa: F401  (register table for create_all)
 from app.models.import_job import ImportJob  # noqa: F401  (register table for create_all)
+from app.models.staff import StaffMember  # noqa: F401  (register table for create_all)
 from app.models.crm import (  # noqa: F401
     CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
 )
