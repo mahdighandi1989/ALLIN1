@@ -1,17 +1,18 @@
 'use client'
 
-// Official Bank Saderat LETTER (نامه) with a built-in DRAG & RESIZE layout editor.
-// In «چیدمان» (design mode): drag a field by its ✥ handle, resize with the bottom-right
-// circle, and quick-tune font (A−/A＋), letter-spacing (ف−/ف＋), body line-height (خ−/خ＋).
-// DOUBLE-CLICK any field to open a full properties panel (text/label, font, size, bold,
-// alignment, spacing, line-height, width/height, X/Y). Every text field AUTO-SIZES to its
-// content, so words sit naturally next to each other with no artificial gaps — like Word.
-// Coordinates are px on a fixed A4 canvas (794×1123 px = 210×297 mm @96dpi) → prints 1:1.
-// Template (positions + labels) is saved in the browser; «بازنشانی» restores defaults.
-// Fonts come from the locally-installed B Nazanin / Titr / B Titr.
+// Official Bank Saderat LETTER (نامه) with a built-in DRAG & RESIZE layout editor
+// AND multi-page output. In «چیدمان» (design mode): drag a field by its ✥ handle,
+// resize with the bottom-right circle, quick-tune font (A−/A＋), letter-spacing
+// (ف−/ف＋), body line-height (خ−/خ＋); double-click any field for the full panel.
+// «پیش‌نمایشِ صفحات» / printing paginate the body across as many A4 pages as needed:
+// the header (logo+name) and footer repeat on every page, each page is numbered just
+// above the footer, and the closing block (امضاکننده + رونوشت + اقدام) sits on the
+// LAST page. Coordinates are px on a fixed A4 canvas (794×1123 px = 210×297 mm @96dpi)
+// → prints 1:1. Template (positions + labels) is saved in the browser. Fonts come
+// from the locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw } from 'lucide-react'
+import { Printer, Eraser, Move, Check, RotateCcw, FileText, Pencil } from 'lucide-react'
 import { auditApi } from '@/lib/api'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 
@@ -23,6 +24,7 @@ const BTITR = "'B Titr','BTitr','Titr','B Nazanin',serif"
 const FONTS = [{ v: NAZ, n: 'B Nazanin' }, { v: TITR, n: 'Titr' }, { v: BTITR, n: 'B Titr' }]
 const MM = 96 / 25.4 // px per mm at 96dpi
 const m = (v: number) => Math.round(v * MM)
+const fa = (n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]) // western→persian digits
 
 // An input that shrinks/grows to exactly fit its text (so adjacent words don't leave gaps).
 function AutoInput({ value, onChange, placeholder = '', dir, style, cls = 'fld', readOnly = false }:
@@ -53,10 +55,11 @@ const DEFAULT_LAYOUT: Record<string, Boxn> = {
   classification: { x: m(16), y: m(66.8), w: m(54), size: 11, font: NAZ, bold: true, align: 'right' },
   subject: { x: m(28), y: m(78), w: m(162.5), size: 12, font: TITR, align: 'right' },
   separator: { x: m(133.8), y: m(107), w: m(56.7), h: 1, size: 0 },
-  sender: { x: m(35.5), y: m(141.7), w: m(55), size: 13, font: BTITR, bold: true, align: 'center' },
-  body: { x: m(25), y: m(149), w: m(160), h: m(95), size: 13, font: NAZ, align: 'right', lh: 1.7 },
+  body: { x: m(25), y: m(149), w: m(160), h: m(76), size: 13, font: NAZ, align: 'right', lh: 1.7 },
+  sender: { x: m(40), y: m(234), w: m(120), size: 13, font: BTITR, bold: true, align: 'center' },
   copyto: { x: m(124.7), y: m(250), w: m(60), size: 10, font: NAZ, align: 'right' },
   action: { x: m(93.8), y: m(264), w: m(90), size: 10, font: NAZ, align: 'right' },
+  pagenum: { x: m(85), y: m(270), w: m(40), size: 10, font: NAZ, align: 'center' },
 }
 // Editable label/prefix text for each field (the user can change these in the panel)
 const DEFAULT_LABELS: Record<string, string> = {
@@ -82,6 +85,7 @@ export default function LetterPage() {
   const [design, setDesign] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null) // field whose properties panel is open
+  const [preview, setPreview] = useState(false)                // show the paginated multi-page view
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L]) // always-fresh layout for drag/resize
 
   useEffect(() => {
@@ -123,6 +127,36 @@ export default function LetterPage() {
     }
   }
 
+  // ---- Pagination: split the body into per-page chunks by measuring ----
+  const measureRef = useRef<HTMLDivElement>(null)
+  const [pages, setPages] = useState<string[]>([''])
+  const contentTop = Math.max(L.logo.y + (L.logo.h || 0), L.name.y + (L.name.h || 0)) + m(6) // body top on pages 2+
+  useEffect(() => {
+    const el = measureRef.current
+    if (!el) return
+    const measure = (t: string) => { el.textContent = t || ' '; return el.offsetHeight }
+    const gap = m(4)
+    const pageNumLimit = (L.pagenum?.y ?? m(270)) - gap                              // body must end above the page number
+    const closingTop = Math.min(L.sender.y, L.copyto.y, L.action.y) - gap            // last page: above the closing block
+    const text = f.body || ''
+    const out: string[] = []
+    let rem = text, pi = 0
+    while (pi < 80) {
+      const top = pi === 0 ? L.body.y : contentTop
+      const availLast = Math.min(pageNumLimit, closingTop) - top                     // last page reserves the closing block
+      if (measure(rem) <= Math.max(40, availLast)) { out.push(rem); rem = ''; break }
+      const avail = Math.max(40, pageNumLimit - top)                                 // a full continuation page
+      let lo = 1, hi = rem.length, best = 1
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (measure(rem.slice(0, mid)) <= avail) { best = mid; lo = mid + 1 } else hi = mid - 1 }
+      let cut = best
+      if (cut < rem.length) { const b = Math.max(rem.lastIndexOf(' ', cut), rem.lastIndexOf('\n', cut)); if (b > 0) cut = b + 1 }
+      out.push(rem.slice(0, cut)); rem = rem.slice(cut); pi++
+      if (!rem) break
+    }
+    if (rem) out.push(rem)
+    setPages(out.length ? out : [''])
+  }, [f.body, L, contentTop])
+
   // editable label/prefix: real auto-sized text on screen & print, editable only in design mode
   const Lbl = ({ k }: { k: string }) => (<>
     <AutoInput cls="lbl-in" value={labels[k] ?? ''} readOnly={!design} onChange={(e) => setLabels((p) => ({ ...p, [k]: e.target.value }))} />
@@ -154,13 +188,44 @@ export default function LetterPage() {
   const txt = (v: string, ltr = false) => <span className="print-val" dir={ltr ? 'ltr' : undefined}>{v}</span>
   const eb = editing ? L[editing] : null
 
+  // ---- One printed/preview A4 page (read-only, real values) ----
+  const Sheet = ({ pi, last }: { pi: number; last: boolean }) => (
+    <div className="psheet">
+      {/* header — repeats on every page */}
+      <div style={boxStyle('logo')}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>
+      <div style={boxStyle('name')}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>
+      {pi === 0 && <>
+        <div style={boxStyle('besmele')}>{labels.besmele}</div>
+        <div style={boxStyle('shomareh')}>{labels.shomareh}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></div>
+        <div style={boxStyle('tarikh')}>{labels.tarikh}<span dir="ltr">{f.date}</span></div>
+        <div style={boxStyle('peyvast')}>{labels.peyvast}{f.attachment}</div>
+        <div style={boxStyle('recName')}>{f.recipientName}</div>
+        <div style={boxStyle('recTitle')}>{`${f.recipientTitle} ${f.recipientDept}`}</div>
+        <div style={boxStyle('classification')}>{labels.classification}{f.classification}</div>
+        <div style={boxStyle('subject')}>{labels.subject}{f.subject}</div>
+        <div style={boxStyle('separator')}><div className="sep-line" /></div>
+      </>}
+      {/* body chunk for this page */}
+      <div style={{ ...boxStyle('body'), top: pi === 0 ? L.body.y : contentTop, height: 'auto', whiteSpace: 'pre-wrap' }}>{pages[pi]}</div>
+      {/* closing block — only on the last page */}
+      {last && <>
+        <div style={boxStyle('sender')}>{f.sender}</div>
+        <div style={boxStyle('copyto')}>{labels.copyto}{f.copyTo}</div>
+        <div style={boxStyle('action')}>{labels.action}{f.actionName}{labels.actionExt}<span dir="ltr">{f.actionExt}</span></div>
+      </>}
+      {/* footer + page number — every page */}
+      <div style={boxStyle('footer')}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>
+      <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>
+    </div>
+  )
+
   return (
     <Layout>
       <div dir="rtl">
         <style>{`
         .ltr-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
         .ltr-btn { padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer; border:0; display:inline-flex; align-items:center; gap:6px; color:#fff; }
-        .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}
+        .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}.ltr-btn.teal{background:#0d9488}
         .ltr-hint{font-size:12px;color:#64748b}
         .canvas-wrap { overflow:auto; padding-bottom:20px; }
         #ltr-page { position:relative; width:794px; height:1123px; margin:0 auto; background:#fff; box-shadow:0 0 8px rgba(0,0,0,.18);
@@ -172,10 +237,16 @@ export default function LetterPage() {
         #ltr-page select{cursor:pointer;width:auto}
         #ltr-page input.fld::placeholder{color:#c7cfdb}
         #ltr-page input.fld:focus, #ltr-page textarea.area:focus, #ltr-page .lbl-in:focus{background:rgba(37,99,235,.08);border-radius:2px;outline:none}
-        #ltr-page textarea.area{width:100%;height:100%;border:0;background:transparent;font:inherit;color:#000;resize:none;overflow:hidden;padding:0;box-sizing:border-box;line-height:inherit}
+        #ltr-page textarea.area{width:100%;height:100%;border:0;background:transparent;font:inherit;color:#000;resize:none;overflow:auto;padding:0;box-sizing:border-box;line-height:inherit}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
         .sep-line{width:100%;border-top:1px dashed #000}
         .print-val{display:none}
+        .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
+        /* paginated (preview / print) pages */
+        .psheet{position:relative;width:794px;height:1123px;margin:0 auto 16px;background:#fff;box-shadow:0 0 8px rgba(0,0,0,.18);color:#000;font-family:${NAZ};line-height:1.25;overflow:hidden}
+        .print-wrap{display:none}
+        .print-wrap.show{display:block}
+        .editor-wrap.hide{display:none}
         /* design mode */
         .lbox.dz{outline:1px dashed #93c5fd}
         .lbox.seld{outline:2px solid #2563eb;background:rgba(37,99,235,.05)}
@@ -199,31 +270,34 @@ export default function LetterPage() {
         @media print {
           @page { size:A4; margin:0; }
           html,body{margin:0!important;padding:0!important;background:#fff!important}
-          .no-print,.bk-label,.mv,.rs,.fs-btns,.pp{display:none!important}
+          .no-print,.pp{display:none!important}
+          .editor-wrap{display:none!important}
+          .print-wrap{display:block!important}
           .canvas-wrap{overflow:visible}
-          #ltr-page{box-shadow:none;margin:0}
-          .lbox.dz,.lbox.seld{outline:0;background:transparent}
-          /* show typed values as text, hide the editor inputs, in print */
-          #ltr-page input,#ltr-page select,#ltr-page textarea{display:none!important}
-          .print-val{display:inline!important;white-space:pre-wrap}
-          #ltr-page .body .print-val{display:block!important}
+          .psheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}
+          .psheet:last-child{break-after:auto;page-break-after:auto}
         }
         `}</style>
 
         <div className="ltr-controls no-print">
-          {!design
+          {!preview && (!design
             ? <button onClick={() => setDesign(true)} className="ltr-btn amber"><Move size={15} /> چیدمان (جابه‌جایی فیلدها)</button>
-            : <button onClick={() => { setDesign(false); setEditing(null) }} className="ltr-btn green"><Check size={15} /> پایانِ چیدمان</button>}
-          {design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرهٔ چیدمان</button>}
-          {design && <button onClick={resetTemplate} className="ltr-btn gray"><RotateCcw size={14} /> بازنشانی</button>}
+            : <button onClick={() => { setDesign(false); setEditing(null) }} className="ltr-btn green"><Check size={15} /> پایانِ چیدمان</button>)}
+          {!preview && design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرهٔ چیدمان</button>}
+          {!preview && design && <button onClick={resetTemplate} className="ltr-btn gray"><RotateCcw size={14} /> بازنشانی</button>}
+          {!preview
+            ? <button onClick={() => { setDesign(false); setEditing(null); setPreview(true) }} className="ltr-btn teal"><FileText size={15} /> پیش‌نمایشِ صفحات</button>
+            : <button onClick={() => setPreview(false)} className="ltr-btn amber"><Pencil size={15} /> ویرایش</button>}
           <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${f.subject ? ` — موضوع: ${f.subject}` : ''}${f.recipientDept ? ` — به ${f.recipientDept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
-          <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
-          <span className="ltr-hint">{design
-            ? 'دستهٔ ✥ = جابه‌جایی · دایرهٔ گوشه = عرض/ارتفاع · A/ف/خ = فونت/فاصلهٔ حروف/فاصلهٔ خط · دبل‌کلیک روی هر فیلد = تنظیمِ کاملِ آن فیلد · بعد «ذخیرهٔ چیدمان».'
-            : 'برای جابه‌جایی/تنظیم روی «چیدمان» بزن، یا روی هر فیلد دبل‌کلیک کن. فونت‌ها از B Nazanin/Titr سیستم خوانده می‌شوند.'}</span>
+          {!preview && <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>}
+          <span className="ltr-hint">{preview
+            ? `پیش‌نمایشِ چاپ — ${fa(pages.length)} صفحه. سربرگ و فوتر در هر صفحه تکرار و صفحات شماره می‌خورند؛ بلوکِ امضا در صفحهٔ آخر است.`
+            : design
+              ? 'دستهٔ ✥ جابه‌جایی · گوشه اندازه · A/ف/خ فونت/فاصله · دبل‌کلیک = تنظیمِ کامل · «پیش‌نمایشِ صفحات» نتیجهٔ چند‌صفحه‌ای را نشان می‌دهد.'
+              : `متنِ نامه را بنویس؛ اگر بلند شد خودکار چند صفحه می‌شود (${fa(pages.length)} صفحه). برای جابه‌جایی فیلدها «چیدمان».`}</span>
         </div>
 
-        {editing && eb && (
+        {editing && eb && !preview && (
           <div className="pp no-print">
             <h4>تنظیمِ فیلد: {editing} <button className="x" onClick={() => setEditing(null)}>×</button></h4>
             {labels[editing] !== undefined && (
@@ -253,8 +327,12 @@ export default function LetterPage() {
           </div>
         )}
 
-        <div className="canvas-wrap" onDoubleClick={exitEditing}>
-          <div id="ltr-page">
+        {/* hidden measurer for body pagination — same width/font as the body box */}
+        <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
+
+        {/* ---- EDITOR (single canvas; type + position) ---- */}
+        <div className={`canvas-wrap editor-wrap${preview ? ' hide' : ''}`}>
+          <div id="ltr-page" onDoubleClick={exitEditing}>
             <Box k="logo"><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></Box>
             <Box k="name"><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></Box>
             <Box k="footer"><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></Box>
@@ -274,15 +352,20 @@ export default function LetterPage() {
 
             <Box k="separator"><div className="sep-line" /></Box>
 
-            <Box k="sender"><select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select>{txt(f.sender)}</Box>
+            <Box k="body"><textarea className="area" value={f.body} onChange={set('body')} onDoubleClick={(e) => e.stopPropagation()} placeholder="متنِ نامه… (اگر بلند شود خودکار به صفحاتِ بعد می‌رود)" /></Box>
 
-            <div className="body" style={{ display: 'contents' }}>
-              <Box k="body"><textarea className="area" value={f.body} onChange={set('body')} onDoubleClick={(e) => e.stopPropagation()} placeholder="متنِ نامه…" />{txt(f.body)}</Box>
-            </div>
+            <Box k="sender"><select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select>{txt(f.sender)}</Box>
 
             <Box k="copyto"><Lbl k="copyto" /><AutoInput value={f.copyTo} onChange={set('copyTo')} placeholder="------" />{txt(f.copyTo)}</Box>
             <Box k="action"><Lbl k="action" /><AutoInput value={f.actionName} onChange={set('actionName')} placeholder="----" /><span className="print-val">{f.actionName}</span><Lbl k="actionExt" /><AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /><span className="print-val" dir="ltr">{f.actionExt}</span></Box>
+
+            <Box k="pagenum">{`صفحه ۱ از ${fa(pages.length)}`}</Box>
           </div>
+        </div>
+
+        {/* ---- PAGINATED PREVIEW / PRINT (real values, multi-page) ---- */}
+        <div className={`canvas-wrap print-wrap${preview ? ' show' : ''}`}>
+          {pages.map((_, pi) => <Sheet key={pi} pi={pi} last={pi === pages.length - 1} />)}
         </div>
       </div>
     </Layout>
