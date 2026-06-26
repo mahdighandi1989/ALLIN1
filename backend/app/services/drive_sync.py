@@ -41,7 +41,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.services import google_drive
-from app.services.backup import build_backup_payload
 
 logger = logging.getLogger(__name__)
 
@@ -129,11 +128,24 @@ async def sync_database_snapshot(db: AsyncSession, *, reason: str = "manual") ->
         return {"ok": False, "skipped": True, "reason": "drive_sync_disabled"}
     await _prepare()
 
+    # Build the snapshot to a TEMP FILE on disk one page at a time (never hold the
+    # whole DB JSON in RAM — that previously OOM-killed the 512MB instance when the
+    # 24h scheduled snapshot fired on a large dataset), then stream it to Drive.
+    import os
+    import tempfile
+    from app.services.backup import stream_backup_to_file
+
+    tmp_path = None
     try:
-        payload = await build_backup_payload(db)
-        content = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="db-snapshot-")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            counts = await stream_backup_to_file(db, fh)
+        size = os.path.getsize(tmp_path)
     except Exception as exc:
         logger.error("Drive snapshot: building payload failed: %s", exc)
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
+            except OSError: pass
         return {"ok": False, "error": f"payload_build_failed: {exc}"}
 
     path_parts = ["backups", "database"]
@@ -145,7 +157,7 @@ async def sync_database_snapshot(db: AsyncSession, *, reason: str = "manual") ->
             google_drive.upload_file,
             path_parts=path_parts,
             filename=history_name,
-            data=content,
+            file_path=tmp_path,
             mimetype="application/json",
             update_existing=False,
         )
@@ -153,23 +165,27 @@ async def sync_database_snapshot(db: AsyncSession, *, reason: str = "manual") ->
             google_drive.upload_file,
             path_parts=path_parts,
             filename=latest_name,
-            data=content,
+            file_path=tmp_path,
             mimetype="application/json",
             update_existing=True,  # keep a single, always-current mirror
         )
     except google_drive.DriveError as exc:
         logger.error("Drive snapshot upload failed: %s", exc)
         return {"ok": False, "error": str(exc)}
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
+            except OSError: pass
 
     logger.info(
         "Drive snapshot synced (reason=%s): %s (%d bytes)",
-        reason, history.get("name"), len(content),
+        reason, history.get("name"), size,
     )
     return {
         "ok": True,
         "reason": reason,
-        "bytes": len(content),
-        "counts": payload.get("counts", {}),
+        "bytes": size,
+        "counts": counts,
         "history": history,
         "latest": latest,
     }

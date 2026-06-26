@@ -335,11 +335,16 @@ def upload_file(
     *,
     path_parts: list[str],
     filename: str,
-    data: bytes,
+    data: bytes | None = None,
+    file_path: str | None = None,
     mimetype: str = "application/octet-stream",
     update_existing: bool = False,
 ) -> dict:
     """Create (or update) ``filename`` inside the folder at ``path_parts``.
+
+    Pass either ``data`` (in-memory bytes) or ``file_path`` (stream the content
+    from disk — used for large DB snapshots so the whole file is never held in
+    RAM at once).
 
     When ``update_existing`` is True and a file of the same name already exists in
     that folder, its content is replaced in place (used for the stable "latest"
@@ -351,11 +356,15 @@ def upload_file(
     """
     if not is_configured():
         raise DriveError("Google Drive sync is not configured")
-    from googleapiclient.http import MediaInMemoryUpload  # deferred import
 
     service = _get_service()
     folder_id = ensure_folder_path(path_parts)
-    media = MediaInMemoryUpload(data, mimetype=mimetype, resumable=False)
+    if file_path is not None:
+        from googleapiclient.http import MediaFileUpload  # deferred import
+        media = MediaFileUpload(file_path, mimetype=mimetype, resumable=True)
+    else:
+        from googleapiclient.http import MediaInMemoryUpload  # deferred import
+        media = MediaInMemoryUpload(data or b"", mimetype=mimetype, resumable=False)
     try:
         existing_id = _find_file(service, folder_id, filename) if update_existing else None
         if existing_id:
