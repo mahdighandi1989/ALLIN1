@@ -1893,16 +1893,30 @@ async def daily_log(
 # ===========================================================================
 @router.get("/backup/export.json")
 async def backup_export(db: AsyncSession = Depends(get_db), user=Depends(require_admin)):
-    """Export all CRM business data (excludes users/personal notes) as JSON."""
-    import json as _json
-    from app.services.backup import build_backup_payload
+    """Export all CRM business data (excludes users/personal notes) as JSON.
 
-    payload = await build_backup_payload(db)
-    content = _json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    Streamed to a temp file one page at a time (then sent + deleted) so a large DB
+    never builds a full JSON blob in RAM and OOMs the instance."""
+    import os
+    import tempfile
+    from starlette.background import BackgroundTask
+    from app.services.backup import stream_backup_to_file
+
+    def _rm(p):
+        try: os.remove(p)
+        except OSError: pass
+
+    fd, tmp = tempfile.mkstemp(suffix=".json", prefix="allin1-backup-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            await stream_backup_to_file(db, fh)
+    except Exception:
+        _rm(tmp)
+        raise
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return Response(
-        content=content, media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="allin1-backup-{stamp}.json"'},
+    return FileResponse(
+        tmp, media_type="application/json", filename=f"allin1-backup-{stamp}.json",
+        background=BackgroundTask(_rm, tmp),
     )
 
 
