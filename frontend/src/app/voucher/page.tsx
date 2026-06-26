@@ -6,6 +6,7 @@ import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
 import { customersApi, crmApi, auditApi, parseApiError } from '@/lib/api'
+import { useFormDesign, Movable, DesignControls, DesignPanel, DesignState } from '@/lib/formDesign'
 import toast from 'react-hot-toast'
 
 // Faithful re-implementation of the macro workbook
@@ -38,11 +39,12 @@ type VProps = {
   acName: string
 }
 
-function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName }: VProps) {
+function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, d, prefix }: VProps & { d: DesignState; prefix: string }) {
+  const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
     <div className="vch" dir="ltr">
       <div className="vch-head">
-        <div className="vch-kind">{kind}</div>
+        <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-logo">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={BANK_LOGO} alt="Bank Saderat Iran" />
@@ -50,20 +52,20 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
         </div>
       </div>
 
-      <div className="vch-banner">{title}</div>
-      <div className="vch-daterow">DATE :&nbsp;&nbsp;{date}</div>
+      <div className="vch-banner">{M('title', title)}</div>
+      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
 
       <div className="vch-acrow">
-        <div><span className="vch-aclbl">A/c No. :</span><span className="vch-ac">{acNo}</span></div>
-        <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>
+        <div><span className="vch-aclbl">A/c No. :</span>{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
+        {M('amount', <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>, true)}
       </div>
 
       <div className="vch-ref">
         <div className="vch-ref-lbl">OUR REF :</div>
         <div className="vch-ref-body">
-          <div className="vch-ref-no">{ourRef}</div>
-          <div className="vch-ref-desc">{description}</div>
-          <div className="vch-ref-name">{acName}</div>
+          {M('refno', <div className="vch-ref-no">{ourRef}</div>, true)}
+          {M('refdesc', <div className="vch-ref-desc">{description}</div>, true)}
+          {M('refname', <div className="vch-ref-name">{acName}</div>, true)}
         </div>
       </div>
 
@@ -95,6 +97,7 @@ export default function VoucherPage() {
   const [saving, setSaving] = useState(false)
   const previewRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const d = useFormDesign('voucherLayout_v1')
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live customer count for the helper text (instead of the bundled 556).
@@ -394,17 +397,22 @@ export default function VoucherPage() {
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">در پنجرهٔ چاپ، Scale را روی «Default / 100%» و Margins را «Default» بگذارید تا دقیق فیت شود.</p>
+            <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
+              <DesignControls d={d} />
+              <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرهٔ چیدمان».' : 'برای جابه‌جایی/اندازهٔ فیلدهای سند روی «چیدمان» بزن.'}</span>
+            </div>
           </div>
 
           {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
           <div className="vch-wrap" ref={wrapRef}>
             <div id="voucher-print" ref={previewRef}>
-              <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
-              <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} />
+              <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="sec" />
+              <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="pc" />
             </div>
           </div>
         </div>
       </div>
+      <DesignPanel d={d} />
     </Layout>
   )
 }
