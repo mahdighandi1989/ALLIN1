@@ -41,7 +41,7 @@ function AutoInput({ value, onChange, placeholder = '', dir, style, cls = 'fld',
 }
 
 // Default layout (px) — measured from the bank's PDF. {x,y,w[,h],size,font,bold,align,ls,lh}
-type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number }
+type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number }
 const DEFAULT_LAYOUT: Record<string, Boxn> = {
   logo: { x: m(4.8), y: m(4), w: m(28.5), h: m(27.6), size: 0 },
   name: { x: m(138.8), y: m(6.3), w: m(65.8), h: m(20.4), size: 0 },
@@ -55,7 +55,7 @@ const DEFAULT_LAYOUT: Record<string, Boxn> = {
   classification: { x: m(16), y: m(66.8), w: m(54), size: 11, font: NAZ, bold: true, align: 'right' },
   subject: { x: m(28), y: m(78), w: m(162.5), size: 12, font: TITR, align: 'right' },
   separator: { x: m(133.8), y: m(107), w: m(56.7), h: 1, size: 0 },
-  body: { x: m(25), y: m(149), w: m(160), h: m(76), size: 13, font: NAZ, align: 'right', lh: 1.7 },
+  body: { x: m(25), y: m(149), w: m(160), h: m(76), size: 13, font: NAZ, align: 'right', lh: 1.7, dir: 'rtl', indent: 1.5 },
   sender: { x: m(40), y: m(234), w: m(120), size: 13, font: BTITR, bold: true, align: 'center' },
   copyto: { x: m(124.7), y: m(250), w: m(60), size: 10, font: NAZ, align: 'right' },
   action: { x: m(93.8), y: m(264), w: m(90), size: 10, font: NAZ, align: 'right' },
@@ -86,10 +86,19 @@ export default function LetterPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null) // field whose properties panel is open
   const [preview, setPreview] = useState(false)                // show the paginated multi-page view
+  const [bodyH, setBodyH] = useState(0)                         // measured full body height (editor auto-grow)
+  const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null) // separator length follows the subject
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L]) // always-fresh layout for drag/resize
 
   useEffect(() => {
-    try { const raw = localStorage.getItem(LS_KEY); if (raw) { const o = JSON.parse(raw); if (o.L) setL({ ...DEFAULT_LAYOUT, ...o.L }); if (o.labels) setLabels({ ...DEFAULT_LABELS, ...o.labels }) } } catch { /* ignore */ }
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (raw) {
+        const o = JSON.parse(raw)
+        if (o.L) { const merged: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.L) merged[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.L[k] }; setL(merged) }
+        if (o.labels) setLabels({ ...DEFAULT_LABELS, ...o.labels })
+      }
+    } catch { /* ignore */ }
   }, [])
   const saveTemplate = () => { try { localStorage.setItem(LS_KEY, JSON.stringify({ L, labels })); alert('چیدمان ذخیره شد') } catch { /* ignore */ } }
   const resetTemplate = () => { if (confirm('بازگشت به چیدمانِ پیش‌فرض؟')) { setL(DEFAULT_LAYOUT); setLabels(DEFAULT_LABELS); setEditing(null); localStorage.removeItem(LS_KEY) } }
@@ -119,16 +128,22 @@ export default function LetterPage() {
 
   const boxStyle = (k: string): React.CSSProperties => {
     const b = L[k]
+    let left = b.x, width = b.w, height = b.h
+    if (k === 'separator' && sepGeom) { left = sepGeom.x; width = sepGeom.w }  // length follows the subject
+    if (k === 'body') height = Math.max(b.h || 0, bodyH ? bodyH + 6 : 0) || undefined  // editor auto-grows (Sheet overrides to auto)
     return {
-      position: 'absolute', left: b.x, top: b.y, width: b.w, height: b.h,
+      position: 'absolute', left, top: b.y, width, height,
       fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined, fontWeight: b.bold ? 700 : undefined,
-      textAlign: b.align, letterSpacing: b.ls ? `${b.ls}px` : undefined, lineHeight: b.lh || undefined,
+      textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
+      textIndent: b.indent ? `${b.indent}em` : undefined,
+      letterSpacing: b.ls ? `${b.ls}px` : undefined, lineHeight: b.lh || undefined,
       whiteSpace: k === 'subject' || k === 'body' ? 'normal' : 'nowrap',
     }
   }
 
   // ---- Pagination: split the body into per-page chunks by measuring ----
   const measureRef = useRef<HTMLDivElement>(null)
+  const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
   const contentTop = Math.max(L.logo.y + (L.logo.h || 0), L.name.y + (L.name.h || 0)) + m(6) // body top on pages 2+
   useEffect(() => {
@@ -139,6 +154,7 @@ export default function LetterPage() {
     const pageNumLimit = (L.pagenum?.y ?? m(270)) - gap                              // body must end above the page number
     const closingTop = Math.min(L.sender.y, L.copyto.y, L.action.y) - gap            // last page: above the closing block
     const text = f.body || ''
+    setBodyH(measure(text || ' '))   // full body height → editor auto-grows to fit
     const out: string[] = []
     let rem = text, pi = 0
     while (pi < 80) {
@@ -157,6 +173,16 @@ export default function LetterPage() {
     setPages(out.length ? out : [''])
   }, [f.body, L, contentTop])
 
+  // ---- Subject separator length: follow the subject text (capped at one full line) ----
+  useEffect(() => {
+    const el = subjRef.current
+    if (!el) return
+    el.textContent = (labels.subject || '') + (f.subject || '')
+    const full = L.subject.w
+    const w = Math.max(m(15), Math.min(el.offsetWidth + 4, full))
+    setSepGeom({ x: (L.subject.x + L.subject.w) - w, w })  // right-aligned under the subject
+  }, [labels.subject, f.subject, L.subject])
+
   // editable label/prefix: real auto-sized text on screen & print, editable only in design mode
   const Lbl = ({ k }: { k: string }) => (<>
     <AutoInput cls="lbl-in" value={labels[k] ?? ''} readOnly={!design} onChange={(e) => setLabels((p) => ({ ...p, [k]: e.target.value }))} />
@@ -165,8 +191,9 @@ export default function LetterPage() {
 
   const Box = ({ k, children }: { k: string; children?: React.ReactNode }) => {
     const b = L[k]
+    const st = CLOSING.includes(k) ? { ...boxStyle(k), top: (b.y || 0) + closingShift } : boxStyle(k)
     return (
-      <div className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={boxStyle(k)}
+      <div className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={st}
         onPointerDown={() => design && setSel(k)} onDoubleClick={(e) => { e.stopPropagation(); openPanel(k) }}>
         <div className="field-content">{children}</div>
         {design && <>
@@ -188,6 +215,16 @@ export default function LetterPage() {
   const txt = (v: string, ltr = false) => <span className="print-val" dir={ltr ? 'ltr' : undefined}>{v}</span>
   const eb = editing ? L[editing] : null
 
+  // ---- Editor geometry: body auto-grows, the closing block follows the text,
+  //      the canvas grows and shows page-break guides (so a long letter visibly
+  //      flows onto the next page instead of scrolling). ----
+  const CLOSING = ['sender', 'copyto', 'action', 'pagenum', 'footer']
+  const eGap = m(4)
+  const bodyEditorH = Math.max(L.body.h || 0, bodyH ? bodyH + 6 : 0)
+  const closingShift = Math.max(0, (L.body.y + bodyEditorH + eGap) - L.sender.y)
+  const canvasH = Math.max(1123, L.footer.y + closingShift + (L.footer.h || 0) + m(4))
+  const pageCount = Math.max(1, Math.ceil(canvasH / 1123))
+
   // ---- One printed/preview A4 page (read-only, real values) ----
   const Sheet = ({ pi, last }: { pi: number; last: boolean }) => (
     <div className="psheet" key={pi}>
@@ -205,8 +242,10 @@ export default function LetterPage() {
         <div style={boxStyle('subject')}>{labels.subject}{f.subject}</div>
         <div style={boxStyle('separator')}><div className="sep-line" /></div>
       </>}
-      {/* body chunk for this page */}
-      <div style={{ ...boxStyle('body'), top: pi === 0 ? L.body.y : contentTop, height: 'auto', whiteSpace: 'pre-wrap' }}>{pages[pi]}</div>
+      {/* body chunk for this page — each paragraph keeps its first-line indent */}
+      <div style={{ ...boxStyle('body'), top: pi === 0 ? L.body.y : contentTop, height: 'auto', whiteSpace: 'normal', textIndent: undefined }}>
+        {(pages[pi] || '').split('\n').map((para, i) => <div key={i} style={{ textIndent: L.body.indent ? `${L.body.indent}em` : undefined }}>{para || ' '}</div>)}
+      </div>
       {/* closing block — only on the last page */}
       {last && <>
         <div style={boxStyle('sender')}>{f.sender}</div>
@@ -228,8 +267,10 @@ export default function LetterPage() {
         .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}.ltr-btn.teal{background:#0d9488}
         .ltr-hint{font-size:12px;color:#64748b}
         .canvas-wrap { overflow:auto; padding-bottom:20px; }
-        #ltr-page { position:relative; width:794px; height:1123px; margin:0 auto; background:#fff; box-shadow:0 0 8px rgba(0,0,0,.18);
+        #ltr-page { position:relative; width:794px; min-height:1123px; margin:0 auto; background:#fff; box-shadow:0 0 8px rgba(0,0,0,.18);
                     color:#000; font-family:${NAZ}; line-height:1.25; }
+        .pgbrk{position:absolute;left:0;right:0;border-top:2px dashed #cbd5e1;pointer-events:none;z-index:0}
+        .pgbrk span{position:absolute;right:10px;top:-9px;font-size:10px;color:#94a3b8;background:#fff;padding:0 5px;font-family:sans-serif}
         .lbox .field-content { width:100%; height:100%; }
         /* no underlines/borders on any field — clean like Word; fields auto-size to text */
         #ltr-page input.fld, #ltr-page select, #ltr-page .lbl-in { border:0; background:transparent; font:inherit; color:#000; padding:0; }
@@ -237,7 +278,7 @@ export default function LetterPage() {
         #ltr-page select{cursor:pointer;width:auto}
         #ltr-page input.fld::placeholder{color:#c7cfdb}
         #ltr-page input.fld:focus, #ltr-page textarea.area:focus, #ltr-page .lbl-in:focus{background:rgba(37,99,235,.08);border-radius:2px;outline:none}
-        #ltr-page textarea.area{width:100%;height:100%;border:0;background:transparent;font:inherit;color:#000;resize:none;overflow:auto;padding:0;box-sizing:border-box;line-height:inherit}
+        #ltr-page textarea.area{width:100%;height:100%;border:0;background:transparent;font:inherit;color:#000;resize:none;overflow:hidden;padding:0;box-sizing:border-box;line-height:inherit;text-align:inherit;direction:inherit;text-indent:inherit}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
         .sep-line{width:100%;border-top:1px dashed #000}
         .print-val{display:none}
@@ -309,11 +350,19 @@ export default function LetterPage() {
                 <div className="row"><label>اندازه</label><input type="number" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} /></div>
                 <div className="row"><label style={{ width: 'auto' }}>توپُر</label><input type="checkbox" checked={!!eb.bold} onChange={(e) => setBox(editing, { bold: e.target.checked })} /></div>
               </div>
-              <div className="row"><label>چینش</label><div className="seg">{(['right', 'center', 'left'] as const).map((a) => <button key={a} className={eb.align === a ? 'on' : ''} onClick={() => setBox(editing, { align: a })}>{a === 'right' ? 'راست' : a === 'center' ? 'وسط' : 'چپ'}</button>)}</div></div>
+              <div className="row"><label>چینش</label><div className="seg">
+                {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? 'راست' : a === 'center' ? 'وسط' : 'چپ'}</button>)}
+                <button className={eb.justify ? 'on' : ''} onClick={() => setBox(editing, { justify: true })}>هم‌تراز</button>
+              </div></div>
+              <div className="row"><label>جهت</label><div className="seg">
+                <button className={(eb.dir || 'rtl') === 'rtl' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'rtl' })}>راست→چپ</button>
+                <button className={eb.dir === 'ltr' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'ltr' })}>چپ→راست</button>
+              </div></div>
               <div className="two">
                 <div className="row"><label>فاصلهٔ حروف</label><input type="number" step="0.5" value={eb.ls || 0} onChange={(e) => setBox(editing, { ls: +e.target.value || 0 })} /></div>
                 <div className="row"><label>فاصلهٔ خط</label><input type="number" step="0.1" value={eb.lh || 1.25} onChange={(e) => setBox(editing, { lh: +e.target.value || undefined })} /></div>
               </div>
+              <div className="row"><label>تورفتگیِ بند</label><input type="number" step="0.5" value={eb.indent ?? 0} onChange={(e) => setBox(editing, { indent: +e.target.value || 0 })} /></div>
             </>}
             <div className="two">
               <div className="row"><label>عرض</label><input type="number" value={eb.w} onChange={(e) => setBox(editing, { w: +e.target.value || 0 })} /></div>
@@ -327,15 +376,19 @@ export default function LetterPage() {
           </div>
         )}
 
-        {/* hidden measurer for body pagination — same width/font as the body box */}
+        {/* hidden measurers — body height/pagination and subject width (for the separator) */}
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
+        <span ref={subjRef} aria-hidden className="measure" style={{ whiteSpace: 'nowrap', fontFamily: L.subject.font, fontSize: `${L.subject.size}pt` }} />
 
         {/* ---- EDITOR (single canvas; type + position) ---- */}
         {/* NB: Box/Lbl/Sheet are invoked as FUNCTIONS (not <Box/>) on purpose —
             rendering them as elements would remount the inputs on every keystroke
             (they're defined in-component) and steal focus after the first letter. */}
         <div className={`canvas-wrap editor-wrap${preview ? ' hide' : ''}`}>
-          <div id="ltr-page" onDoubleClick={exitEditing}>
+          <div id="ltr-page" style={{ height: canvasH }} onDoubleClick={exitEditing}>
+            {Array.from({ length: pageCount - 1 }, (_, i) => (
+              <div key={`pb${i}`} className="pgbrk" style={{ top: 1123 * (i + 1) }}><span>— صفحه {fa(i + 2)} —</span></div>
+            ))}
             {Box({ k: 'logo', children: <img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /> })}
             {Box({ k: 'name', children: <img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /> })}
             {Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> })}
