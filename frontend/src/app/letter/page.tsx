@@ -86,7 +86,7 @@ const DEFAULT_LAYOUT: Record<string, Boxn> = {
   classification: { x: m(16), y: m(66.8), w: m(54), size: 11, font: NAZ, bold: true, align: 'right' },
   subject: { x: m(28), y: m(78), w: m(162.5), size: 12, font: TITR, align: 'right' },
   separator: { x: m(133.8), y: m(107), w: m(56.7), h: 1, size: 0 },
-  body: { x: m(25), y: m(115), w: m(160), h: m(112), size: 13, font: NAZ, align: 'right', lh: 1.7, dir: 'rtl', indent: 1.5, contY: m(40) },
+  body: { x: m(25), y: m(118), w: m(160), h: m(148), size: 13, font: NAZ, align: 'right', lh: 1.7, dir: 'rtl', indent: 1.5, contY: m(40) },
   sender: { x: m(40), y: m(234), w: m(120), size: 13, font: BTITR, bold: true, align: 'center' },
   copyto: { x: m(124.7), y: m(250), w: m(60), size: 10, font: NAZ, align: 'right' },
   action: { x: m(93.8), y: m(264), w: m(90), size: 10, font: NAZ, align: 'right' },
@@ -121,10 +121,19 @@ export default function LetterPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY)
+      let raw = localStorage.getItem(LS_KEY)        // current (v4)
+      let fromOld = false
+      if (!raw) { raw = localStorage.getItem('letterTemplate_v3'); fromOld = true } // fall back to the previous arrangement
       if (raw) {
         const o = JSON.parse(raw)
-        if (o.L) { const merged: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.L) merged[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.L[k] }; setL(merged) }
+        if (o.L) {
+          const merged: Record<string, Boxn> = { ...DEFAULT_LAYOUT }
+          for (const k in o.L) {
+            if (fromOld && k === 'body') continue   // body geometry changed (now drives pagination) — keep the new default
+            merged[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.L[k] }
+          }
+          setL(merged)
+        }
         if (o.labels) setLabels({ ...DEFAULT_LABELS, ...o.labels })
       }
     } catch { /* ignore */ }
@@ -150,7 +159,7 @@ export default function LetterPage() {
     const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
-  const openPanel = (k: string) => { setSel(k); setEditing(k) }
+  const openPanel = (k: string) => { setSel(k); setEditing(k); setDesign(true) } // double-click → arrange (handles) + panel
   const exitEditing = () => { setEditing(null); setSel(null) }
 
   // contY = where the body continues on pages 2+ (just below the header; adjustable).
@@ -294,7 +303,9 @@ export default function LetterPage() {
         </>}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
-        <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>
+        {pi === 0
+          ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(pages.length)}` })
+          : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
       </div>
     )
   }
