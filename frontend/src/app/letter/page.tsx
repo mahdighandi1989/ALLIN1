@@ -159,8 +159,8 @@ export default function LetterPage() {
     const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
-  const openPanel = (k: string) => { setSel(k); setEditing(k); setDesign(true) } // double-click → arrange (handles) + panel
-  const exitEditing = () => { setEditing(null); setSel(null) }
+  const openPanel = (k: string) => { setSel(k); setEditing(k); setDesign(true) } // double-click a field → arrange (handles) + panel
+  const exitEditing = () => { setEditing(null); setSel(null); setDesign(false) } // double-click empty area → leave design/edit mode
 
   // contY = where the body continues on pages 2+ (just below the header; adjustable).
   const contY = L.body.contY ?? (Math.max(L.logo.y + (L.logo.h || 0), L.name.y + (L.name.h || 0)) + m(6))
