@@ -76,7 +76,12 @@ function BodyCell({ text, editable, indent, skipFirst, style, onChangeText }:
   )
 }
 
-type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number; contY?: number }
+type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; underline?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number; contY?: number; hidden?: boolean }
+const KEY_FA: Record<string, string> = {
+  logo: 'لوگو', name: 'نامِ بانک', footer: 'فوتر', besmele: 'بسمه تعالی', shomareh: 'شماره', tarikh: 'تاریخ',
+  peyvast: 'پیوست', recName: 'نامِ گیرنده', recTitle: 'سمت/ادارهٔ گیرنده', classification: 'طبقه‌بندی', subject: 'موضوع',
+  separator: 'خطِ جداکننده', body: 'متنِ نامه', sender: 'امضاکننده', copyto: 'رونوشت', action: 'اقدام‌کننده', pagenum: 'شمارهٔ صفحه',
+}
 const DEFAULT_LAYOUT: Record<string, Boxn> = {
   logo: { x: m(4.8), y: m(4), w: m(28.5), h: m(27.6), size: 0 },
   name: { x: m(138.8), y: m(6.3), w: m(65.8), h: m(20.4), size: 0 },
@@ -241,16 +246,19 @@ export default function LetterPage() {
       fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined, fontWeight: b.bold ? 700 : undefined,
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
       textIndent: b.indent ? `${b.indent}em` : undefined,
+      textDecoration: b.underline ? 'underline' : undefined,
       letterSpacing: b.ls ? `${b.ls}px` : undefined, lineHeight: b.lh || undefined,
       whiteSpace: k === 'subject' ? 'normal' : 'nowrap',
     }
   }
+  const isHidden = (k: string) => !!L[k]?.hidden  // field removed for this letter
   // body text styling shared by every page's editable cell
   const bodyTextStyle = (): React.CSSProperties => {
     const b = L.body
     return {
       fontFamily: b.font, fontSize: `${b.size}pt`, fontWeight: b.bold ? 700 : undefined,
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
+      textDecoration: b.underline ? 'underline' : undefined,
       lineHeight: b.lh || 1.7, letterSpacing: b.ls ? `${b.ls}px` : undefined,
     }
   }
@@ -301,6 +309,7 @@ export default function LetterPage() {
   // an editable, draggable field box (page-1 top block, body, last-page closing)
   const Box = ({ k, children, style }: { k: string; children?: React.ReactNode; style?: React.CSSProperties }) => {
     const b = L[k]
+    if (b.hidden) return null   // field removed for this letter
     return (
       <div className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={{ ...boxStyle(k), ...style }}
         onPointerDown={() => design && setSel(k)} onDoubleClick={(e) => { e.stopPropagation(); openPanel(k) }}>
@@ -322,7 +331,8 @@ export default function LetterPage() {
   }
 
   const eb = editing ? L[editing] : null
-  const repImg = (k: string, src: string) => <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%' }} /></div>
+  const repImg = (k: string, src: string) => isHidden(k) ? null : <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%' }} /></div>
+  const P = (k: string, node: React.ReactNode) => isHidden(k) ? null : <div style={boxStyle(k)}>{node}</div>  // print: positioned, hide-aware
 
   // one A4 page in the editable view
   const editorPage = (pi: number) => {
@@ -348,8 +358,8 @@ export default function LetterPage() {
         {/* body chunk for this page — page 1 box is draggable/resizable; others fill the region */}
         {pi === 0
           ? Box({ k: 'body', children: <BodyCell text={pages[0] || ''} editable={!design} indent={L.body.indent} skipFirst onChangeText={onBody(0)} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
-          : <BodyCell text={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeText={onBody(pi)}
-            style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, isLast) }} />}
+          : (isHidden('body') ? null : <BodyCell text={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeText={onBody(pi)}
+            style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, isLast) }} />)}
 
         {/* closing block — only on the last page */}
         {isLast && <>
@@ -361,7 +371,7 @@ export default function LetterPage() {
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
         {pi === 0
           ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(pages.length)}` })
-          : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
+          : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>)}
       </div>
     )
   }
@@ -373,26 +383,26 @@ export default function LetterPage() {
       <div className="psheet" key={pi}>
         {repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}
         {pi === 0 && <>
-          <div style={boxStyle('besmele')}>{labels.besmele}</div>
-          <div style={boxStyle('shomareh')}>{labels.shomareh}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></div>
-          <div style={boxStyle('tarikh')}>{labels.tarikh}<span dir="ltr">{f.date}</span></div>
-          <div style={boxStyle('peyvast')}>{labels.peyvast}{f.attachment}</div>
-          <div style={boxStyle('recName')}>{f.recipientName}</div>
-          <div style={boxStyle('recTitle')}>{`${f.recipientTitle} ${f.recipientDept}`}</div>
-          <div style={boxStyle('classification')}>{labels.classification}{f.classification}</div>
-          <div style={boxStyle('subject')}>{labels.subject}{f.subject}</div>
-          <div style={boxStyle('separator')}><div className="sep-line" /></div>
+          {P('besmele', labels.besmele)}
+          {P('shomareh', <>{labels.shomareh}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></>)}
+          {P('tarikh', <>{labels.tarikh}<span dir="ltr">{f.date}</span></>)}
+          {P('peyvast', <>{labels.peyvast}{f.attachment}</>)}
+          {P('recName', f.recipientName)}
+          {P('recTitle', `${f.recipientTitle} ${f.recipientDept}`)}
+          {P('classification', <>{labels.classification}{f.classification}</>)}
+          {P('subject', <>{labels.subject}{f.subject}</>)}
+          {P('separator', <div className="sep-line" />)}
         </>}
-        <div style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w }}>
+        {!isHidden('body') && <div style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w }}>
           {(pages[pi] || '').split('\n').map((para, i) => <div key={i} style={{ textIndent: (pi === 0 && i === 0) ? 0 : (L.body.indent ? `${L.body.indent}em` : undefined) }}>{para || ' '}</div>)}
-        </div>
+        </div>}
         {isLast && <>
-          <div style={boxStyle('sender')}>{f.sender}</div>
-          <div style={boxStyle('copyto')}>{labels.copyto}{f.copyTo}</div>
-          <div style={boxStyle('action')}>{labels.action}{f.actionName}{labels.actionExt}<span dir="ltr">{f.actionExt}</span></div>
+          {P('sender', f.sender)}
+          {P('copyto', <>{labels.copyto}{f.copyTo}</>)}
+          {P('action', <>{labels.action}{f.actionName}{labels.actionExt}<span dir="ltr">{f.actionExt}</span></>)}
         </>}
         {repImg('footer', LH_FOOTER)}
-        <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>
+        {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
       </div>
     )
   }
@@ -441,6 +451,8 @@ export default function LetterPage() {
         .pp .seg button.on{background:#2563eb;color:#fff;border-color:#2563eb}
         .pp .x{border:0;background:#ef4444;color:#fff;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:15px;line-height:1}
         .pp .two{display:flex;gap:8px}.pp .two .row{flex:1}
+        .pp .pp-del{width:100%;border:0;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:6px;cursor:pointer;font-size:12px;font-weight:600;margin-top:6px}
+        .pp .pp-del:hover{background:#fecaca}
         @media print {
           @page { size:A4; margin:0; }
           html,body{margin:0!important;padding:0!important;background:#fff!important}
@@ -459,6 +471,12 @@ export default function LetterPage() {
             : <button onClick={() => { setDesign(false); setEditing(null) }} className="ltr-btn green"><Check size={15} /> پایانِ چیدمان</button>}
           {design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرهٔ چیدمان</button>}
           {design && <button onClick={resetTemplate} className="ltr-btn gray"><RotateCcw size={14} /> بازنشانی</button>}
+          {design && Object.keys(L).some((k) => L[k].hidden) && (
+            <select value="" onChange={(e) => { if (e.target.value) setBox(e.target.value, { hidden: false }) }} className="meta-in" title="بازگرداندنِ فیلدِ حذف‌شده">
+              <option value="">بازگرداندنِ فیلدِ حذف‌شده…</option>
+              {Object.keys(L).filter((k) => L[k].hidden).map((k) => <option key={k} value={k}>{KEY_FA[k] || k}</option>)}
+            </select>
+          )}
           <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${f.subject ? ` — موضوع: ${f.subject}` : ''}${f.recipientDept ? ` — به ${f.recipientDept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
@@ -491,10 +509,11 @@ export default function LetterPage() {
             )}
             {eb.size > 0 && <>
               <div className="row"><label>فونت</label><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
-              <div className="two">
-                <div className="row"><label>اندازه</label><input type="number" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} /></div>
-                <div className="row"><label style={{ width: 'auto' }}>توپُر</label><input type="checkbox" checked={!!eb.bold} onChange={(e) => setBox(editing, { bold: e.target.checked })} /></div>
-              </div>
+              <div className="row"><label>اندازه</label><input type="number" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} /></div>
+              <div className="row"><label>سبک</label><div className="seg">
+                <button className={eb.bold ? 'on' : ''} style={{ fontWeight: 700 }} onClick={() => setBox(editing, { bold: !eb.bold })}>B</button>
+                <button className={eb.underline ? 'on' : ''} style={{ textDecoration: 'underline' }} onClick={() => setBox(editing, { underline: !eb.underline })}>U̲</button>
+              </div></div>
               <div className="row"><label>چینش</label><div className="seg">
                 {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? 'راست' : a === 'center' ? 'وسط' : 'چپ'}</button>)}
                 <button className={eb.justify ? 'on' : ''} onClick={() => setBox(editing, { justify: true })}>هم‌تراز</button>
@@ -518,6 +537,7 @@ export default function LetterPage() {
               <div className="row"><label>افقی X</label><input type="number" value={eb.x} onChange={(e) => setBox(editing, { x: +e.target.value || 0 })} /></div>
               <div className="row"><label>عمودی Y</label><input type="number" value={eb.y} onChange={(e) => setBox(editing, { y: +e.target.value || 0 })} /></div>
             </div>
+            <button className="pp-del" onClick={() => { setBox(editing, { hidden: true }); setEditing(null) }}>🗑 حذفِ این فیلد از نامه</button>
             <button className="ltr-btn blue" style={{ width: '100%', justifyContent: 'center', marginTop: 4 }} onClick={saveTemplate}>ذخیرهٔ چیدمان</button>
           </div>
         )}
