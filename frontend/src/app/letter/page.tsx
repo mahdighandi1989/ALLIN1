@@ -23,6 +23,9 @@ const NAZ = "'B Nazanin','BNazanin','Nazanin',serif"
 const TITR = "'Titr','B Titr','BTitr','B Nazanin',serif"
 const BTITR = "'B Titr','BTitr','Titr','B Nazanin',serif"
 const FONTS = [{ v: NAZ, n: 'B Nazanin' }, { v: TITR, n: 'Titr' }, { v: BTITR, n: 'B Titr' }]
+// Latin glyphs render in an English serif (Times), Persian glyphs fall back to the
+// chosen Persian font — automatic per-script font, via font-family ordering.
+const latin = (stack?: string) => stack ? `'Times New Roman','Times',${stack}` : stack
 const MM = 96 / 25.4 // px per mm at 96dpi
 const m = (v: number) => Math.round(v * MM)
 const fa =(n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
@@ -262,6 +265,24 @@ export default function LetterPage() {
     const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
+  // apply a DOM change to the current selection (in any rich field) and notify React
+  const applySel = (mutate: (r: Range) => void) => {
+    const sel = window.getSelection(); if (!sel || sel.isCollapsed || !sel.rangeCount) return
+    const range = sel.getRangeAt(0)
+    const cac = range.commonAncestorContainer
+    const node = cac.nodeType === 3 ? cac.parentElement : (cac as HTMLElement)
+    const host = node?.closest('.bcell, .rich') as HTMLElement | null
+    if (!host) return
+    mutate(range)
+    host.dispatchEvent(new Event('input', { bubbles: true }))  // → React onInput → save
+  }
+  const bumpSel = (factor: number) => applySel((range) => {
+    const span = document.createElement('span'); span.style.fontSize = `${factor}em`
+    try {
+      span.appendChild(range.extractContents()); range.insertNode(span)
+      const s = window.getSelection(); s?.removeAllRanges(); const r = document.createRange(); r.selectNodeContents(span); s?.addRange(r)
+    } catch { /* ignore */ }
+  })
   // show the floating bold/underline toolbar when text is selected inside the body
   useEffect(() => {
     const onSel = () => {
@@ -298,7 +319,7 @@ export default function LetterPage() {
     if (k === 'separator' && sepGeom) { left = sepGeom.x; width = sepGeom.w }
     return {
       position: 'absolute', left, top: b.y, width, height: b.h,
-      fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined,
+      fontFamily: latin(b.font), fontSize: b.size ? `${b.size}pt` : undefined,
       // No field-level bold/underline — emphasis is applied INLINE to selected words.
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
       textIndent: b.indent ? `${b.indent}em` : undefined,
@@ -313,7 +334,7 @@ export default function LetterPage() {
     // NB: no fontWeight / textDecoration here — body bold/underline is INLINE only
     // (selected words), never the whole field.
     return {
-      fontFamily: b.font, fontSize: `${b.size}pt`,
+      fontFamily: latin(b.font), fontSize: `${b.size}pt`,
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
       lineHeight: b.lh || 1.7, letterSpacing: b.ls ? `${b.ls}px` : undefined,
     }
@@ -491,7 +512,7 @@ export default function LetterPage() {
         .bcell > div,.bcell > p{text-indent:var(--ind,0)}
         .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
         /* inline rich fields (labels + values) — bold/underline per selected word */
-        #ltr-edit .rich{display:inline-block;min-width:6px;outline:none;vertical-align:baseline;text-align:inherit;letter-spacing:inherit}
+        #ltr-edit .rich{display:inline;outline:none;text-align:inherit;letter-spacing:inherit;white-space:normal;overflow-wrap:break-word}
         #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
         #ltr-edit .rich:focus{background:rgba(37,99,235,.07);border-radius:2px}
         /* Word-like floating format toolbar (shown on text selection) */
@@ -615,6 +636,8 @@ export default function LetterPage() {
           <div className="fmt-bar no-print" style={{ left: fmt.x, top: fmt.y }}>
             <button title="توپُر (Ctrl+B)" style={{ fontWeight: 700 }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold') }}>B</button>
             <button title="زیرخط (Ctrl+U)" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline') }}>U</button>
+            <button title="کوچک‌تر" onMouseDown={(e) => { e.preventDefault(); bumpSel(0.85) }}>A−</button>
+            <button title="بزرگ‌تر" onMouseDown={(e) => { e.preventDefault(); bumpSel(1.18) }}>A＋</button>
           </div>
         )}
 
