@@ -24,6 +24,9 @@ import type {
   TrashList,
   AuditList,
   StaffMember,
+  Department,
+  LetterSummary,
+  LetterFull,
   NotificationList,
   ImportResult,
   SettingsResponse,
@@ -844,6 +847,45 @@ export const staffApi = {
   async remove(id: string): Promise<void> {
     await api.delete(`/api/staff/${id}`)
   },
+}
+
+// ---------------------------------------------------------------------------
+// Recipient departments + managers (with manager history) — letter «گیرنده» fields.
+// ---------------------------------------------------------------------------
+export const departmentsApi = {
+  async list(q?: string): Promise<Department[]> {
+    const { data } = await api.get('/api/departments/', { params: q ? { q } : {} })
+    return data
+  },
+  async resolve(payload: { name: string; name_fa?: string; manager?: string; manager_fa?: string; manager_title?: string }): Promise<Department> {
+    const { data } = await api.post('/api/departments/resolve', payload)
+    return data
+  },
+  async update(id: string, payload: Partial<Department>): Promise<Department> {
+    const { data } = await api.patch(`/api/departments/${id}`, payload)
+    return data
+  },
+  async remove(id: string): Promise<void> { await api.delete(`/api/departments/${id}`) },
+}
+
+// ---------------------------------------------------------------------------
+// Saved letters — under an account (auto-creates the profile) or general.
+// ---------------------------------------------------------------------------
+export const lettersApi = {
+  async list(params: { account_no?: string; general?: boolean } = {}): Promise<LetterSummary[]> {
+    const { data } = await api.get('/api/letters/', { params })
+    return data
+  },
+  async get(id: string): Promise<LetterFull> {
+    const { data } = await api.get(`/api/letters/${id}`)
+    return data
+  },
+  async save(payload: { id?: string; account_no?: string; general?: boolean; title?: string; subject?: string; recipient_dept?: string; recipient_manager?: string; values?: any; layout?: any; labels?: any }): Promise<LetterFull> {
+    if (payload.id) { const { data } = await api.patch(`/api/letters/${payload.id}`, payload); return data }
+    const { data } = await api.post('/api/letters/', payload)
+    return data
+  },
+  async remove(id: string): Promise<void> { await api.delete(`/api/letters/${id}`) },
 }
 
 // ---------------------------------------------------------------------------

@@ -4,9 +4,9 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, crmApi, facilitiesApi, auditApi, parseApiError, downloadFile } from '@/lib/api'
+import { customersApi, crmApi, facilitiesApi, auditApi, lettersApi, parseApiError, downloadFile } from '@/lib/api'
 import { auditWhat, auditLink, auditActionLabel, ACTION_COLORS } from '@/lib/audit'
-import { AuditList } from '@/types'
+import { AuditList, LetterSummary } from '@/types'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Building, FileText, Wallet, Building2, ShieldCheck, ClipboardCheck,
@@ -90,6 +90,11 @@ function CustomerDetailInner() {
     finally { setLogLoading(false) }
   }, [logAcc, logPage, logSearch, logFrom, logTo])
   useEffect(() => { if (tab === 'logs') loadLogs() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, logPage, logAcc])
+  // --- Letters tab: this customer's saved letters ---
+  const [letters, setLetters] = useState<LetterSummary[]>([])
+  useEffect(() => {
+    if (tab === 'letters' && logAcc) lettersApi.list({ account_no: logAcc }).then(setLetters).catch(() => setLetters([]))
+  }, [tab, logAcc])
   const exportLogs = async () => {
     if (!logAcc) return
     const qs = new URLSearchParams()
@@ -369,6 +374,7 @@ function CustomerDetailInner() {
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
     { id: 'notes', label: 'Notes', icon: StickyNote },
     { id: 'attachments', label: 'Attachments', icon: Paperclip },
+    { id: 'letters', label: 'نامه‌ها', icon: Mail },
     { id: 'logs', label: 'Logs (لاگ)', icon: ScrollText },
   ]
 
@@ -945,6 +951,32 @@ function CustomerDetailInner() {
             </div>
           )}
           <p className="text-xs text-gray-400 mt-2">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همهٔ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
+        </Section>
+      )}
+
+      {tab === 'letters' && (
+        <Section title={`نامه‌ها (${letters.length})`}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-gray-500">نامه‌هایی که ذیلِ این حساب ذخیره شده‌اند. روی هر کدام بزنید تا در فرمِ نامه باز شود.</p>
+            <button onClick={() => router.push(`/letter?account=${encodeURIComponent(acc)}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm whitespace-nowrap"><Mail size={14} /> نامهٔ جدید برای این حساب</button>
+          </div>
+          <div className="bg-white border rounded-lg overflow-hidden">
+            {letters.length ? (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500"><tr><th className="px-3 py-2 text-right">عنوان</th><th className="px-3 py-2 text-right">موضوع</th><th className="px-3 py-2 text-right">گیرنده</th><th className="px-3 py-2 text-right">به‌روزرسانی</th></tr></thead>
+                <tbody className="divide-y">
+                  {letters.map((l) => (
+                    <tr key={l.id} className="hover:bg-blue-50/40 cursor-pointer" onClick={() => router.push(`/letter?id=${l.id}`)}>
+                      <td className="px-3 py-2 font-medium">{l.title || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{l.subject || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600">{[l.recipient_dept, l.recipient_manager].filter(Boolean).join(' — ') || '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-500">{l.updated_at ? new Date(l.updated_at).toLocaleString('en-GB') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="py-10 text-center text-gray-500 text-sm">هنوز نامه‌ای برای این حساب ذخیره نشده</div>}
+          </div>
         </Section>
       )}
 

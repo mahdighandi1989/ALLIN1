@@ -190,6 +190,35 @@ export interface AuditEntry {
   customer_name: string | null
 }
 
+export interface Department {
+  id: string
+  name: string
+  name_fa: string | null
+  current_manager: string | null
+  current_manager_fa: string | null
+  manager_title: string | null
+  previous_managers: { name: string; name_fa?: string; until?: string }[] | null
+  notes: string | null
+}
+
+export interface LetterSummary {
+  id: string
+  account_no: string | null
+  category: string
+  title: string | null
+  subject: string | null
+  recipient_dept: string | null
+  recipient_manager: string | null
+  updated_at: string | null
+  created_at: string | null
+}
+
+export interface LetterFull extends LetterSummary {
+  values: any
+  layout: any
+  labels: any
+}
+
 export interface StaffMember {
   id: string
   name: string

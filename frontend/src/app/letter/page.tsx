@@ -10,8 +10,11 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw } from 'lucide-react'
-import { auditApi } from '@/lib/api'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus } from 'lucide-react'
+import { auditApi, departmentsApi, lettersApi, parseApiError } from '@/lib/api'
+import { LetterSummary } from '@/types'
+import Combobox from '@/components/Combobox'
+import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 
 const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
@@ -117,7 +120,59 @@ export default function LetterPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
+  // --- saving the letter under an account (or general) ---
+  const [acct, setAcct] = useState('')
+  const [title, setTitle] = useState('')
+  const [general, setGeneral] = useState(false)
+  const [letterId, setLetterId] = useState<string | null>(null)
+  const [letterList, setLetterList] = useState<LetterSummary[]>([])
+  const [savingLetter, setSavingLetter] = useState(false)
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L])
+
+  const loadLetter = async (id: string) => {
+    try {
+      const o = await lettersApi.get(id)
+      if (o.values) setF((s) => ({ ...s, ...o.values }))
+      if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; setL(mm2) }
+      if (o.labels) setLabels((s) => ({ ...DEFAULT_LABELS, ...o.labels }))
+      setAcct(o.account_no || ''); setTitle(o.title || ''); setGeneral(o.category === 'general'); setLetterId(o.id)
+    } catch { toast.error('بارگذاریِ نامه ناموفق بود') }
+  }
+  // deep-link ?account=… / ?id=… and load the right letter list
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const a = q.get('account'); const id = q.get('id')
+    if (a) setAcct(a)
+    if (q.get('general') === '1') setGeneral(true)
+    if (id) loadLetter(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (general) lettersApi.list({ general: true }).then(setLetterList).catch(() => setLetterList([]))
+    else if (acct.trim()) lettersApi.list({ account_no: acct.trim() }).then(setLetterList).catch(() => setLetterList([]))
+    else setLetterList([])
+  }, [acct, general, letterId])
+
+  const newLetter = () => { setLetterId(null); setTitle(''); setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' })) }
+  const saveLetter = async () => {
+    if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
+    setSavingLetter(true)
+    try {
+      if (f.recipientDept.trim()) {
+        await departmentsApi.resolve({ name: f.recipientDept.trim(), manager: f.recipientName.trim() || undefined, manager_title: f.recipientTitle.trim() || undefined })
+      }
+      const saved = await lettersApi.save({
+        id: letterId || undefined, account_no: general ? undefined : acct.trim(), general,
+        title: title.trim() || f.subject || 'نامه', subject: f.subject,
+        recipient_dept: f.recipientDept, recipient_manager: f.recipientName,
+        values: f, layout: L, labels,
+      })
+      setLetterId(saved.id)
+      toast.success(general ? 'نامه در «نامه‌های عمومی» ذخیره شد' : `نامه ذیلِ حسابِ ${acct.trim()} ذخیره شد`)
+    } catch (e) { toast.error(parseApiError(e)) } finally { setSavingLetter(false) }
+  }
+  const fetchDepts = async (q: string) => (await departmentsApi.list(q)).map((d) => ({ value: d.name, label: d.name, sub: d.current_manager || '', data: d }))
+  const fetchMgrs = async (q: string) => (await departmentsApi.list(q)).filter((d) => d.current_manager).map((d) => ({ value: d.current_manager as string, label: d.current_manager as string, sub: d.name, data: d }))
 
   useEffect(() => {
     try {
@@ -349,6 +404,8 @@ export default function LetterPage() {
         .ltr-btn { padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer; border:0; display:inline-flex; align-items:center; gap:6px; color:#fff; }
         .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}
         .ltr-hint{font-size:12px;color:#64748b}
+        .meta-in{border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:13px;background:#fff;color:#0f172a}
+        .meta-in:focus{outline:none;border-color:#2563eb}
         .canvas-wrap { overflow:auto; padding-bottom:20px; }
         .lsheet,.psheet { position:relative; width:794px; height:1123px; margin:0 auto 18px; background:#fff; box-shadow:0 0 8px rgba(0,0,0,.18);
                           color:#000; font-family:${NAZ}; line-height:1.25; overflow:hidden; }
@@ -403,6 +460,25 @@ export default function LetterPage() {
           <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${f.subject ? ` — موضوع: ${f.subject}` : ''}${f.recipientDept ? ` — به ${f.recipientDept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
+        </div>
+
+        <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
+          <span className="ltr-hint" style={{ fontWeight: 600 }}>ذخیرهٔ نامه:</span>
+          <input value={acct} onChange={(e) => setAcct(e.target.value)} disabled={general} placeholder="شمارهٔ حساب" className="meta-in" style={{ width: 120 }} />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوانِ نامه (اختیاری)" className="meta-in" style={{ width: 160 }} />
+          <label className="ltr-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={general} onChange={(e) => setGeneral(e.target.checked)} /> نامهٔ عمومی</label>
+          <div style={{ width: 180 }}><Combobox value={f.recipientDept} placeholder="اداره/دایرهٔ گیرنده" fetch={fetchDepts}
+            onChange={(v) => setF((s) => ({ ...s, recipientDept: v }))}
+            onPick={(o) => setF((s) => ({ ...s, recipientDept: o.value, recipientName: o.data?.current_manager || s.recipientName, recipientTitle: o.data?.manager_title || s.recipientTitle }))} /></div>
+          <div style={{ width: 160 }}><Combobox value={f.recipientName} placeholder="مدیرِ دایره" fetch={fetchMgrs}
+            onChange={(v) => setF((s) => ({ ...s, recipientName: v }))}
+            onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || s.recipientDept, recipientTitle: o.data?.manager_title || s.recipientTitle }))} /></div>
+          <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
+          <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
+          {letterList.length > 0 && <select value="" onChange={(e) => e.target.value && loadLetter(e.target.value)} className="meta-in" style={{ width: 210 }}>
+            <option value="">باز‌کردنِ نامه‌های ذخیره‌شده…</option>
+            {letterList.map((l) => <option key={l.id} value={l.id}>{(l.title || l.subject || 'نامه') + (l.updated_at ? ` — ${new Date(l.updated_at).toLocaleDateString('en-GB')}` : '')}</option>)}
+          </select>}
         </div>
 
         {editing && eb && (
