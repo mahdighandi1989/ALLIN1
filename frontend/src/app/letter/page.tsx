@@ -55,19 +55,20 @@ function setCaret(el: HTMLElement, off: number) {
   while ((n = w.nextNode())) { last = n; const len = (n.textContent || '').length; if (len >= c) { const r = document.createRange(); r.setStart(n, c); r.collapse(true); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r); return } c -= len }
   if (last) { const r = document.createRange(); r.selectNodeContents(last); r.collapse(false); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) }
 }
-function BodyCell({ text, editable, indent, style, onChangeText }:
-  { text: string; editable: boolean; indent?: number; style?: React.CSSProperties; onChangeText: (t: string) => void }) {
+function BodyCell({ text, editable, indent, skipFirst, style, onChangeText }:
+  { text: string; editable: boolean; indent?: number; skipFirst?: boolean; style?: React.CSSProperties; onChangeText: (t: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useIso(() => {
     const el = ref.current; if (!el) return
-    const html = ((text || '').split('\n').map((p) => `<div class="bpar">${p ? escapeHtml(p) : '<br>'}</div>`).join('')) || '<div class="bpar"><br></div>'
+    // The very first paragraph (the greeting «باسلام») is NOT indented; the rest are.
+    const html = ((text || '').split('\n').map((p, i) => `<div class="bpar${skipFirst && i === 0 ? ' noind' : ''}">${p ? escapeHtml(p) : '<br>'}</div>`).join('')) || '<div class="bpar"><br></div>'
     if (el.innerHTML !== html) {
       const foc = document.activeElement === el
       const off = foc ? caretOffset(el) : null
       el.innerHTML = html
       if (off != null) setCaret(el, off)
     }
-  }, [text])
+  }, [text, skipFirst])
   return (
     <div ref={ref} className="bcell" contentEditable={editable} suppressContentEditableWarning
       onInput={() => { const el = ref.current; if (el) onChangeText(el.innerText.replace(/\n$/, '')) }}
@@ -346,7 +347,7 @@ export default function LetterPage() {
 
         {/* body chunk for this page — page 1 box is draggable/resizable; others fill the region */}
         {pi === 0
-          ? Box({ k: 'body', children: <BodyCell text={pages[0] || ''} editable={!design} indent={L.body.indent} onChangeText={onBody(0)} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
+          ? Box({ k: 'body', children: <BodyCell text={pages[0] || ''} editable={!design} indent={L.body.indent} skipFirst onChangeText={onBody(0)} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
           : <BodyCell text={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeText={onBody(pi)}
             style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, isLast) }} />}
 
@@ -383,7 +384,7 @@ export default function LetterPage() {
           <div style={boxStyle('separator')}><div className="sep-line" /></div>
         </>}
         <div style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w }}>
-          {(pages[pi] || '').split('\n').map((para, i) => <div key={i} style={{ textIndent: L.body.indent ? `${L.body.indent}em` : undefined }}>{para || ' '}</div>)}
+          {(pages[pi] || '').split('\n').map((para, i) => <div key={i} style={{ textIndent: (pi === 0 && i === 0) ? 0 : (L.body.indent ? `${L.body.indent}em` : undefined) }}>{para || ' '}</div>)}
         </div>
         {isLast && <>
           <div style={boxStyle('sender')}>{f.sender}</div>
@@ -417,6 +418,7 @@ export default function LetterPage() {
         #ltr-edit input.fld:focus,#ltr-edit .lbl-in:focus,#ltr-edit .bcell:focus{background:rgba(37,99,235,.06);border-radius:2px;outline:none}
         .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
         .bcell .bpar{text-indent:var(--ind,0)}
+        .bcell .bpar.noind{text-indent:0}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
         .sep-line{width:100%;border-top:1px dashed #000}
         .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
