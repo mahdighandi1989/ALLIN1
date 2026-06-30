@@ -50,6 +50,7 @@ function tabFor(entity?: string | null): string {
     case 'checklist': return 'checklist'
     case 'profile': return 'kyc'
     case 'property': case 'fixed_deposit': return 'collateral'
+    case 'letter': return 'letters'
     default: return 'overview'
   }
 }

@@ -63,6 +63,15 @@ const FORMS: FormDef[] = [
     category: 'Letters',
     ready: true,
   },
+  {
+    href: '/letter?general=1',
+    title: 'General Letters',
+    subtitle: 'نامه‌های عمومی (بدونِ حساب)',
+    description: 'نامه‌هایی که به حسابِ خاصی مربوط نیستند؛ این‌جا با عنوان ذخیره و مرور می‌شوند و نامه‌های بعدیِ مشابه هم به همین‌جا اضافه می‌شوند.',
+    icon: Mail,
+    category: 'Letters',
+    ready: true,
+  },
 ]
 
 export default function FormsPage() {
