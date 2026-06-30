@@ -84,6 +84,28 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml }:
   )
 }
 
+// Strip tags → plain text (for the departments DB, the letter title, comboboxes…).
+const plain = (h: string) => (h || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim()
+
+// An inline, auto-sizing, rich (contentEditable) field. Stores HTML so bold/underline
+// can be applied to SELECTED words only (via the floating toolbar). Caret-preserving.
+function RichSpan({ value, onChange, placeholder, dir, className, style }:
+  { value: string; onChange: (h: string) => void; placeholder?: string; dir?: 'ltr' | 'rtl'; className?: string; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useIso(() => {
+    const el = ref.current; if (!el) return
+    const want = value || ''
+    if (el.innerHTML !== want) {
+      const foc = document.activeElement === el
+      const off = foc ? caretOffset(el) : null
+      el.innerHTML = want
+      if (off != null) setCaret(el, off)
+    }
+  }, [value])
+  return <span ref={ref} className={`rich ${className || ''}`} contentEditable suppressContentEditableWarning dir={dir}
+    data-ph={placeholder || ''} onInput={() => { const el = ref.current; if (el) onChange(el.innerHTML) }} style={style} />
+}
+
 type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; underline?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number; contY?: number; hidden?: boolean }
 const KEY_FA: Record<string, string> = {
   logo: 'لوگو', name: 'نامِ بانک', footer: 'فوتر', besmele: 'بسمه تعالی', shomareh: 'شماره', tarikh: 'تاریخ',
@@ -174,13 +196,14 @@ export default function LetterPage() {
     if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
     try {
-      if (f.recipientDept.trim()) {
-        await departmentsApi.resolve({ name: f.recipientDept.trim(), manager: f.recipientName.trim() || undefined, manager_title: f.recipientTitle.trim() || undefined })
+      const pDept = plain(f.recipientDept), pMgr = plain(f.recipientName), pSubj = plain(f.subject)
+      if (pDept) {
+        await departmentsApi.resolve({ name: pDept, manager: pMgr || undefined, manager_title: plain(f.recipientTitle) || undefined })
       }
       const saved = await lettersApi.save({
         id: letterId || undefined, account_no: general ? undefined : acct.trim(), general,
-        title: title.trim() || f.subject || 'نامه', subject: f.subject,
-        recipient_dept: f.recipientDept, recipient_manager: f.recipientName,
+        title: title.trim() || pSubj || 'نامه', subject: pSubj,
+        recipient_dept: pDept, recipient_manager: pMgr,
         values: f, layout: L, labels,
       })
       setLetterId(saved.id)
@@ -246,7 +269,7 @@ export default function LetterPage() {
       if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
       const n = s.anchorNode
       const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
-      if (!el || !el.closest('.bcell')) { setFmt(null); return }
+      if (!el || !el.closest('.bcell, .rich')) { setFmt(null); return }
       const r = s.getRangeAt(0).getBoundingClientRect()
       if (!r || (r.width === 0 && r.height === 0)) { setFmt(null); return }
       setFmt({ x: r.left + r.width / 2, y: r.top })
@@ -276,10 +299,9 @@ export default function LetterPage() {
     return {
       position: 'absolute', left, top: b.y, width, height: b.h,
       fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined,
-      fontWeight: (k !== 'body' && b.bold) ? 700 : undefined,            // body bold is INLINE only
+      // No field-level bold/underline — emphasis is applied INLINE to selected words.
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
       textIndent: b.indent ? `${b.indent}em` : undefined,
-      textDecoration: (k !== 'body' && b.underline) ? 'underline' : undefined,
       letterSpacing: b.ls ? `${b.ls}px` : undefined, lineHeight: b.lh || undefined,
       whiteSpace: k === 'subject' ? 'normal' : 'nowrap',
     }
@@ -333,7 +355,7 @@ export default function LetterPage() {
   useEffect(() => {
     const el = subjRef.current
     if (!el) return
-    el.textContent = (labels.subject || '') + (f.subject || '')
+    el.textContent = plain(labels.subject) + plain(f.subject)
     const full = L.subject.w
     const w = Math.max(m(15), Math.min(el.offsetWidth + 4, full))
     setSepGeom({ x: (L.subject.x + L.subject.w) - w, w })
@@ -343,7 +365,7 @@ export default function LetterPage() {
   const onBody = (pi: number) => (val: string) => setF((s) => { const next = pages.slice(); next[pi] = val; return { ...s, body: next.join('') } })
 
   const Lbl = ({ k }: { k: string }) => (
-    <AutoInput cls="lbl-in" value={labels[k] ?? ''} readOnly={!design} onChange={(e) => setLabels((p) => ({ ...p, [k]: e.target.value }))} />
+    <RichSpan className="lbl-in" value={labels[k] ?? ''} onChange={(h) => setLabels((p) => ({ ...p, [k]: h }))} />
   )
 
   // an editable, draggable field box (page-1 top block, body, last-page closing)
@@ -373,6 +395,7 @@ export default function LetterPage() {
   const eb = editing ? L[editing] : null
   const repImg = (k: string, src: string) => isHidden(k) ? null : <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%' }} /></div>
   const P = (k: string, node: React.ReactNode) => isHidden(k) ? null : <div style={boxStyle(k)}>{node}</div>  // print: positioned, hide-aware
+  const H = (h: string) => <span dangerouslySetInnerHTML={{ __html: h || '' }} />  // render a rich (HTML) value
 
   // one A4 page in the editable view
   const editorPage = (pi: number) => {
@@ -388,10 +411,10 @@ export default function LetterPage() {
           {Box({ k: 'shomareh', children: <>{Lbl({ k: 'shomareh' })}<span dir="ltr" style={{ direction: 'ltr', unicodeBidi: 'isolate' }}>182 / 4 / <AutoInput dir="ltr" value={f.serial} onChange={set('serial')} placeholder="----" style={{ textAlign: 'center' }} /> / <AutoInput dir="ltr" value={f.year} onChange={set('year')} placeholder="2026" style={{ textAlign: 'center' }} /></span></> })}
           {Box({ k: 'tarikh', children: <>{Lbl({ k: 'tarikh' })}<AutoInput dir="ltr" value={f.date} onChange={set('date')} placeholder="2026/--/--" style={{ textAlign: 'right' }} /></> })}
           {Box({ k: 'peyvast', children: <>{Lbl({ k: 'peyvast' })}<select className="fld" value={f.attachment} onChange={set('attachment')}><option>دارد</option><option>ندارد</option></select></> })}
-          {Box({ k: 'recName', children: <AutoInput value={f.recipientName} onChange={set('recipientName')} placeholder="سرکار خانم / جناب آقای …" /> })}
-          {Box({ k: 'recTitle', children: <><AutoInput value={f.recipientTitle} onChange={set('recipientTitle')} placeholder="رئیس محترم" /> <AutoInput value={f.recipientDept} onChange={set('recipientDept')} placeholder="اداره کل خارجه" /></> })}
+          {Box({ k: 'recName', children: <RichSpan value={f.recipientName} onChange={(h) => setF((s) => ({ ...s, recipientName: h }))} placeholder="سرکار خانم / جناب آقای …" /> })}
+          {Box({ k: 'recTitle', children: <><RichSpan value={f.recipientTitle} onChange={(h) => setF((s) => ({ ...s, recipientTitle: h }))} placeholder="رئیس محترم" /> <RichSpan value={f.recipientDept} onChange={(h) => setF((s) => ({ ...s, recipientDept: h }))} placeholder="اداره کل خارجه" /></> })}
           {Box({ k: 'classification', children: <>{Lbl({ k: 'classification' })}<select className="fld" value={f.classification} onChange={set('classification')}>{CLASSES.map((c) => <option key={c}>{c}</option>)}</select></> })}
-          {Box({ k: 'subject', children: <>{Lbl({ k: 'subject' })}<AutoInput value={f.subject} onChange={set('subject')} placeholder="موضوعِ نامه…" /></> })}
+          {Box({ k: 'subject', children: <>{Lbl({ k: 'subject' })}<RichSpan value={f.subject} onChange={(h) => setF((s) => ({ ...s, subject: h }))} placeholder="موضوعِ نامه…" /></> })}
           {Box({ k: 'separator', children: <div className="sep-line" /> })}
         </>}
 
@@ -404,8 +427,8 @@ export default function LetterPage() {
         {/* closing block — only on the last page */}
         {isLast && <>
           {Box({ k: 'sender', children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<AutoInput value={f.copyTo} onChange={set('copyTo')} placeholder="------" /></> })}
-          {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<AutoInput value={f.actionName} onChange={set('actionName')} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
+          {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
+          {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </>}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
@@ -423,21 +446,21 @@ export default function LetterPage() {
       <div className="psheet" key={pi}>
         {repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}
         {pi === 0 && <>
-          {P('besmele', labels.besmele)}
-          {P('shomareh', <>{labels.shomareh}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></>)}
-          {P('tarikh', <>{labels.tarikh}<span dir="ltr">{f.date}</span></>)}
-          {P('peyvast', <>{labels.peyvast}{f.attachment}</>)}
-          {P('recName', f.recipientName)}
-          {P('recTitle', `${f.recipientTitle} ${f.recipientDept}`)}
-          {P('classification', <>{labels.classification}{f.classification}</>)}
-          {P('subject', <>{labels.subject}{f.subject}</>)}
+          {P('besmele', H(labels.besmele))}
+          {P('shomareh', <>{H(labels.shomareh)}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></>)}
+          {P('tarikh', <>{H(labels.tarikh)}<span dir="ltr">{f.date}</span></>)}
+          {P('peyvast', <>{H(labels.peyvast)}{f.attachment}</>)}
+          {P('recName', H(f.recipientName))}
+          {P('recTitle', <>{H(f.recipientTitle)} {H(f.recipientDept)}</>)}
+          {P('classification', <>{H(labels.classification)}{f.classification}</>)}
+          {P('subject', <>{H(labels.subject)}{H(f.subject)}</>)}
           {P('separator', <div className="sep-line" />)}
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
           {P('sender', f.sender)}
-          {P('copyto', <>{labels.copyto}{f.copyTo}</>)}
-          {P('action', <>{labels.action}{f.actionName}{labels.actionExt}<span dir="ltr">{f.actionExt}</span></>)}
+          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>)}
+          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>)}
         </>}
         {repImg('footer', LH_FOOTER)}
         {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
@@ -467,6 +490,10 @@ export default function LetterPage() {
         .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
         .bcell > div,.bcell > p{text-indent:var(--ind,0)}
         .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
+        /* inline rich fields (labels + values) — bold/underline per selected word */
+        #ltr-edit .rich{display:inline-block;min-width:6px;outline:none;vertical-align:baseline;text-align:inherit;letter-spacing:inherit}
+        #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
+        #ltr-edit .rich:focus{background:rgba(37,99,235,.07);border-radius:2px}
         /* Word-like floating format toolbar (shown on text selection) */
         .fmt-bar{position:fixed;transform:translate(-50%,-118%);z-index:120;display:flex;gap:2px;background:#1f2937;border-radius:7px;padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
         .fmt-bar button{border:0;background:transparent;color:#fff;width:28px;height:26px;border-radius:5px;cursor:pointer;font-size:14px}
@@ -522,7 +549,7 @@ export default function LetterPage() {
               {Object.keys(L).filter((k) => L[k].hidden).map((k) => <option key={k} value={k}>{KEY_FA[k] || k}</option>)}
             </select>
           )}
-          <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${f.subject ? ` — موضوع: ${f.subject}` : ''}${f.recipientDept ? ` — به ${f.recipientDept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
+          <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
         </div>
@@ -532,12 +559,12 @@ export default function LetterPage() {
           <input value={acct} onChange={(e) => setAcct(e.target.value)} disabled={general} placeholder="شمارهٔ حساب" className="meta-in" style={{ width: 120 }} />
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوانِ نامه (اختیاری)" className="meta-in" style={{ width: 160 }} />
           <label className="ltr-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={general} onChange={(e) => setGeneral(e.target.checked)} /> نامهٔ عمومی</label>
-          <div style={{ width: 180 }}><Combobox value={f.recipientDept} placeholder="اداره/دایرهٔ گیرنده" fetch={fetchDepts}
+          <div style={{ width: 180 }}><Combobox value={plain(f.recipientDept)} placeholder="اداره/دایرهٔ گیرنده" fetch={fetchDepts}
             onChange={(v) => setF((s) => ({ ...s, recipientDept: v }))}
-            onPick={(o) => setF((s) => ({ ...s, recipientDept: o.value, recipientName: o.data?.current_manager || s.recipientName, recipientTitle: o.data?.manager_title || s.recipientTitle }))} /></div>
-          <div style={{ width: 160 }}><Combobox value={f.recipientName} placeholder="مدیرِ دایره" fetch={fetchMgrs}
+            onPick={(o) => setF((s) => ({ ...s, recipientDept: o.value, recipientName: o.data?.current_manager || plain(s.recipientName), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
+          <div style={{ width: 160 }}><Combobox value={plain(f.recipientName)} placeholder="مدیرِ دایره" fetch={fetchMgrs}
             onChange={(v) => setF((s) => ({ ...s, recipientName: v }))}
-            onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || s.recipientDept, recipientTitle: o.data?.manager_title || s.recipientTitle }))} /></div>
+            onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || plain(s.recipientDept), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
           <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
           <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
           {letterList.length > 0 && <select value="" onChange={(e) => e.target.value && loadLetter(e.target.value)} className="meta-in" style={{ width: 210 }}>
@@ -556,9 +583,7 @@ export default function LetterPage() {
               <div className="selrow"><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
               <div className="pp-seg">
                 <input type="number" title="اندازهٔ فونت" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} />
-                {editing !== 'body' && <button title="توپُر" className={eb.bold ? 'on' : ''} style={{ fontWeight: 700 }} onClick={() => setBox(editing, { bold: !eb.bold })}>B</button>}
-                {editing !== 'body' && <button title="زیرخط" className={eb.underline ? 'on' : ''} style={{ textDecoration: 'underline' }} onClick={() => setBox(editing, { underline: !eb.underline })}>U</button>}
-                {editing === 'body' && <span style={{ flex: 1, fontSize: 9, color: '#94a3b8', alignSelf: 'center', textAlign: 'center' }}>بولد/زیرخطِ متن: انتخاب کن</span>}
+                <span style={{ flex: 1, fontSize: 9, color: '#94a3b8', alignSelf: 'center', textAlign: 'center' }}>بولد/زیرخط: کلمه را انتخاب کن</span>
               </div>
               <div className="pp-seg" title="چینش">
                 {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? '≡راست' : a === 'center' ? 'وسط' : 'چپ≡'}</button>)}
