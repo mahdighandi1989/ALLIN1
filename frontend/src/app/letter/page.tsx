@@ -55,23 +55,31 @@ function setCaret(el: HTMLElement, off: number) {
   while ((n = w.nextNode())) { last = n; const len = (n.textContent || '').length; if (len >= c) { const r = document.createRange(); r.setStart(n, c); r.collapse(true); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r); return } c -= len }
   if (last) { const r = document.createRange(); r.selectNodeContents(last); r.collapse(false); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) }
 }
-function BodyCell({ text, editable, indent, skipFirst, style, onChangeText }:
-  { text: string; editable: boolean; indent?: number; skipFirst?: boolean; style?: React.CSSProperties; onChangeText: (t: string) => void }) {
+// Plain text → paragraph HTML (legacy bodies are plain); rich bodies already carry tags.
+function normalizeBodyHtml(s: string): string {
+  if (!s) return ''
+  if (s.indexOf('<') === -1) return s.split('\n').map((line) => `<div>${escapeHtml(line) || '<br>'}</div>`).join('')
+  return s
+}
+// A rich (contentEditable) page-cell. The body stores HTML so bold/underline can be
+// applied to SELECTED words only (via the floating toolbar / execCommand). Caret is
+// preserved across re-flows.
+function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml }:
+  { html: string; editable: boolean; indent?: number; firstPage?: boolean; style?: React.CSSProperties; onChangeHtml: (h: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useIso(() => {
     const el = ref.current; if (!el) return
-    // The very first paragraph (the greeting «باسلام») is NOT indented; the rest are.
-    const html = ((text || '').split('\n').map((p, i) => `<div class="bpar${skipFirst && i === 0 ? ' noind' : ''}">${p ? escapeHtml(p) : '<br>'}</div>`).join('')) || '<div class="bpar"><br></div>'
-    if (el.innerHTML !== html) {
+    const want = html || '<div><br></div>'
+    if (el.innerHTML !== want) {
       const foc = document.activeElement === el
       const off = foc ? caretOffset(el) : null
-      el.innerHTML = html
+      el.innerHTML = want
       if (off != null) setCaret(el, off)
     }
-  }, [text, skipFirst])
+  }, [html])
   return (
-    <div ref={ref} className="bcell" contentEditable={editable} suppressContentEditableWarning
-      onInput={() => { const el = ref.current; if (el) onChangeText(el.innerText.replace(/\n$/, '')) }}
+    <div ref={ref} className={`bcell${firstPage ? ' firstpage' : ''}`} contentEditable={editable} suppressContentEditableWarning
+      onInput={() => { const el = ref.current; if (el) onChangeHtml(el.innerHTML) }}
       style={{ ...style, ['--ind' as any]: indent ? `${indent}em` : '0' }} />
   )
 }
@@ -126,6 +134,8 @@ export default function LetterPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
+  const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
+  const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
   const [acct, setAcct] = useState('')
   const [title, setTitle] = useState('')
@@ -222,6 +232,28 @@ export default function LetterPage() {
   }
   const openPanel = (k: string) => { setSel(k); setEditing(k); setDesign(true) } // double-click a field → arrange (handles) + panel
   const exitEditing = () => { setEditing(null); setSel(null); setDesign(false) } // double-click empty area → leave design/edit mode
+  const startPanelDrag = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const sx = e.clientX, sy = e.clientY, o = ppPos || { x: window.innerWidth - 16 - 212, y: 118 }
+    const mv = (ev: PointerEvent) => setPpPos({ x: o.x + (ev.clientX - sx), y: o.y + (ev.clientY - sy) })
+    const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+  // show the floating bold/underline toolbar when text is selected inside the body
+  useEffect(() => {
+    const onSel = () => {
+      const s = window.getSelection()
+      if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
+      const n = s.anchorNode
+      const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
+      if (!el || !el.closest('.bcell')) { setFmt(null); return }
+      const r = s.getRangeAt(0).getBoundingClientRect()
+      if (!r || (r.width === 0 && r.height === 0)) { setFmt(null); return }
+      setFmt({ x: r.left + r.width / 2, y: r.top })
+    }
+    document.addEventListener('selectionchange', onSel)
+    return () => document.removeEventListener('selectionchange', onSel)
+  }, [])
 
   // contY = where the body continues on pages 2+ (just below the header; adjustable).
   const contY = L.body.contY ?? (Math.max(L.logo.y + (L.logo.h || 0), L.name.y + (L.name.h || 0)) + m(6))
@@ -263,29 +295,35 @@ export default function LetterPage() {
     }
   }
 
-  // ---- Pagination: split the body into per-page chunks by measuring ----
+  // ---- Pagination: distribute whole PARAGRAPHS across pages (so inline bold/
+  //      underline tags are never sliced), reserving the closing block on the last page. ----
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
   useEffect(() => {
     const el = measureRef.current
     if (!el) return
-    const measure = (t: string) => { el.textContent = t || ' '; return el.offsetHeight }
-    const text = f.body || ''
-    const out: string[] = []
-    let rem = text, pi = 0
-    while (pi < 120) {
-      if (measure(rem) <= regionAvail(pi, true)) { out.push(rem); rem = ''; break }
-      const a = regionAvail(pi, false)
-      let lo = 1, hi = rem.length, best = 1
-      while (lo <= hi) { const mid = (lo + hi) >> 1; if (measure(rem.slice(0, mid)) <= a) { best = mid; lo = mid + 1 } else hi = mid - 1 }
-      let cut = best
-      if (cut < rem.length) { const b = Math.max(rem.lastIndexOf(' ', cut), rem.lastIndexOf('\n', cut)); if (b > 0) cut = b + 1 }
-      out.push(rem.slice(0, cut)); rem = rem.slice(cut); pi++
-      if (!rem) break
+    el.innerHTML = normalizeBodyHtml(f.body || '') || '<div><br></div>'
+    const paras = Array.from(el.children).map((c) => ({ html: (c as HTMLElement).outerHTML, h: (c as HTMLElement).offsetHeight }))
+    const pagesArr: { html: string; h: number }[][] = []
+    let cur: { html: string; h: number }[] = [], used = 0, pi = 0
+    for (const pd of paras) {
+      if (cur.length && used + pd.h > regionAvail(pi, false)) { pagesArr.push(cur); cur = []; used = 0; pi++ }
+      cur.push(pd); used += pd.h
     }
-    if (rem) out.push(rem)
-    setPages(out.length ? out : [''])
+    if (cur.length || !pagesArr.length) pagesArr.push(cur)
+    // push trailing paragraphs off the last page until the closing block fits
+    let guard = 0
+    while (guard++ < 80) {
+      const li = pagesArr.length - 1
+      const lastAvail = regionAvail(li, true)
+      let lastUsed = pagesArr[li].reduce((s, p) => s + p.h, 0)
+      if (lastUsed <= lastAvail || pagesArr[li].length <= 1) break
+      const moved: { html: string; h: number }[] = []
+      while (pagesArr[li].length > 1 && lastUsed > lastAvail) { const p = pagesArr[li].pop() as { html: string; h: number }; lastUsed -= p.h; moved.unshift(p) }
+      pagesArr.push(moved)
+    }
+    setPages(pagesArr.map((arr) => arr.map((p) => p.html).join('')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.body, L])
 
@@ -357,8 +395,8 @@ export default function LetterPage() {
 
         {/* body chunk for this page — page 1 box is draggable/resizable; others fill the region */}
         {pi === 0
-          ? Box({ k: 'body', children: <BodyCell text={pages[0] || ''} editable={!design} indent={L.body.indent} skipFirst onChangeText={onBody(0)} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
-          : (isHidden('body') ? null : <BodyCell text={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeText={onBody(pi)}
+          ? Box({ k: 'body', children: <BodyCell html={pages[0] || ''} editable={!design} indent={L.body.indent} firstPage onChangeHtml={onBody(0)} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
+          : (isHidden('body') ? null : <BodyCell html={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeHtml={onBody(pi)}
             style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, isLast) }} />)}
 
         {/* closing block — only on the last page */}
@@ -393,9 +431,7 @@ export default function LetterPage() {
           {P('subject', <>{labels.subject}{f.subject}</>)}
           {P('separator', <div className="sep-line" />)}
         </>}
-        {!isHidden('body') && <div style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w }}>
-          {(pages[pi] || '').split('\n').map((para, i) => <div key={i} style={{ textIndent: (pi === 0 && i === 0) ? 0 : (L.body.indent ? `${L.body.indent}em` : undefined) }}>{para || ' '}</div>)}
-        </div>}
+        {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
           {P('sender', f.sender)}
           {P('copyto', <>{labels.copyto}{f.copyTo}</>)}
@@ -427,8 +463,12 @@ export default function LetterPage() {
         #ltr-edit input.fld::placeholder{color:#c7cfdb}
         #ltr-edit input.fld:focus,#ltr-edit .lbl-in:focus,#ltr-edit .bcell:focus{background:rgba(37,99,235,.06);border-radius:2px;outline:none}
         .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
-        .bcell .bpar{text-indent:var(--ind,0)}
-        .bcell .bpar.noind{text-indent:0}
+        .bcell > div,.bcell > p{text-indent:var(--ind,0)}
+        .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
+        /* Word-like floating format toolbar (shown on text selection) */
+        .fmt-bar{position:fixed;transform:translate(-50%,-118%);z-index:120;display:flex;gap:2px;background:#1f2937;border-radius:7px;padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .fmt-bar button{border:0;background:transparent;color:#fff;width:28px;height:26px;border-radius:5px;cursor:pointer;font-size:14px}
+        .fmt-bar button:hover{background:#374151}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
         .sep-line{width:100%;border-top:1px dashed #000}
         .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
@@ -440,8 +480,8 @@ export default function LetterPage() {
         .rs{position:absolute;right:-5px;bottom:-5px;width:13px;height:13px;background:#2563eb;border:2px solid #fff;border-radius:50%;cursor:nwse-resize;z-index:6}
         .fs-btns{position:absolute;bottom:-17px;left:0;display:flex;gap:2px;z-index:7}
         .fs-btn{font-size:9px;font-family:sans-serif;border:0;background:#2563eb;color:#fff;border-radius:3px;cursor:pointer;padding:1px 4px}
-        .pp{position:fixed;top:118px;right:16px;z-index:60;width:250px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:12px;font-family:sans-serif}
-        .pp h4{font-size:13px;font-weight:700;margin:0 0 8px;color:#1e3a8a;display:flex;justify-content:space-between;align-items:center}
+        .pp{position:fixed;top:118px;right:16px;z-index:60;width:212px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:9px 10px;font-family:sans-serif}
+        .pp h4{font-size:12px;font-weight:700;margin:0 0 7px;color:#1e3a8a;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none}
         .pp .row{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12px;color:#334155}
         .pp .row>label{width:62px;flex:none;color:#64748b}
         .pp input,.pp select{flex:1;border:1px solid #cbd5e1;border-radius:5px;padding:3px 5px;font-size:12px;min-width:0;background:#fff;color:#0f172a}
@@ -502,18 +542,18 @@ export default function LetterPage() {
         </div>
 
         {editing && eb && (
-          <div className="pp no-print">
-            <h4>تنظیمِ فیلد: {editing} <button className="x" onClick={() => setEditing(null)}>×</button></h4>
+          <div className="pp no-print" style={ppPos ? { left: ppPos.x, top: ppPos.y, right: 'auto' } : undefined}>
+            <h4 onPointerDown={startPanelDrag}>⠿ {KEY_FA[editing] || editing} <button className="x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setEditing(null)}>×</button></h4>
             {labels[editing] !== undefined && (
               <div className="row"><label>متن/برچسب</label><input value={labels[editing]} onChange={(e) => setLabels((p) => ({ ...p, [editing]: e.target.value }))} /></div>
             )}
             {eb.size > 0 && <>
               <div className="row"><label>فونت</label><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
               <div className="row"><label>اندازه</label><input type="number" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} /></div>
-              <div className="row"><label>سبک</label><div className="seg">
+              {editing !== 'body' && <div className="row"><label>سبک</label><div className="seg">
                 <button className={eb.bold ? 'on' : ''} style={{ fontWeight: 700 }} onClick={() => setBox(editing, { bold: !eb.bold })}>B</button>
                 <button className={eb.underline ? 'on' : ''} style={{ textDecoration: 'underline' }} onClick={() => setBox(editing, { underline: !eb.underline })}>U̲</button>
-              </div></div>
+              </div></div>}
               <div className="row"><label>چینش</label><div className="seg">
                 {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? 'راست' : a === 'center' ? 'وسط' : 'چپ'}</button>)}
                 <button className={eb.justify ? 'on' : ''} onClick={() => setBox(editing, { justify: true })}>هم‌تراز</button>
@@ -539,6 +579,13 @@ export default function LetterPage() {
             </div>
             <button className="pp-del" onClick={() => { setBox(editing, { hidden: true }); setEditing(null) }}>🗑 حذفِ این فیلد از نامه</button>
             <button className="ltr-btn blue" style={{ width: '100%', justifyContent: 'center', marginTop: 4 }} onClick={saveTemplate}>ذخیرهٔ چیدمان</button>
+          </div>
+        )}
+
+        {fmt && (
+          <div className="fmt-bar no-print" style={{ left: fmt.x, top: fmt.y }}>
+            <button title="توپُر (Ctrl+B)" style={{ fontWeight: 700 }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold') }}>B</button>
+            <button title="زیرخط (Ctrl+U)" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline') }}>U</button>
           </div>
         )}
 
