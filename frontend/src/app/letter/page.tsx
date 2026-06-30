@@ -275,10 +275,11 @@ export default function LetterPage() {
     if (k === 'separator' && sepGeom) { left = sepGeom.x; width = sepGeom.w }
     return {
       position: 'absolute', left, top: b.y, width, height: b.h,
-      fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined, fontWeight: b.bold ? 700 : undefined,
+      fontFamily: b.font, fontSize: b.size ? `${b.size}pt` : undefined,
+      fontWeight: (k !== 'body' && b.bold) ? 700 : undefined,            // body bold is INLINE only
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
       textIndent: b.indent ? `${b.indent}em` : undefined,
-      textDecoration: b.underline ? 'underline' : undefined,
+      textDecoration: (k !== 'body' && b.underline) ? 'underline' : undefined,
       letterSpacing: b.ls ? `${b.ls}px` : undefined, lineHeight: b.lh || undefined,
       whiteSpace: k === 'subject' ? 'normal' : 'nowrap',
     }
@@ -287,10 +288,11 @@ export default function LetterPage() {
   // body text styling shared by every page's editable cell
   const bodyTextStyle = (): React.CSSProperties => {
     const b = L.body
+    // NB: no fontWeight / textDecoration here — body bold/underline is INLINE only
+    // (selected words), never the whole field.
     return {
-      fontFamily: b.font, fontSize: `${b.size}pt`, fontWeight: b.bold ? 700 : undefined,
+      fontFamily: b.font, fontSize: `${b.size}pt`,
       textAlign: b.justify ? 'justify' : b.align, direction: b.dir,
-      textDecoration: b.underline ? 'underline' : undefined,
       lineHeight: b.lh || 1.7, letterSpacing: b.ls ? `${b.ls}px` : undefined,
     }
   }
@@ -480,19 +482,22 @@ export default function LetterPage() {
         .rs{position:absolute;right:-5px;bottom:-5px;width:13px;height:13px;background:#2563eb;border:2px solid #fff;border-radius:50%;cursor:nwse-resize;z-index:6}
         .fs-btns{position:absolute;bottom:-17px;left:0;display:flex;gap:2px;z-index:7}
         .fs-btn{font-size:9px;font-family:sans-serif;border:0;background:#2563eb;color:#fff;border-radius:3px;cursor:pointer;padding:1px 4px}
-        .pp{position:fixed;top:118px;right:16px;z-index:60;width:212px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:9px 10px;font-family:sans-serif}
-        .pp h4{font-size:12px;font-weight:700;margin:0 0 7px;color:#1e3a8a;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none}
-        .pp .row{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12px;color:#334155}
-        .pp .row>label{width:62px;flex:none;color:#64748b}
-        .pp input,.pp select{flex:1;border:1px solid #cbd5e1;border-radius:5px;padding:3px 5px;font-size:12px;min-width:0;background:#fff;color:#0f172a}
-        .pp input[type=checkbox]{flex:none;width:16px;height:16px}
-        .pp .seg{display:flex;gap:3px;flex:1}
-        .pp .seg button{flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;padding:3px;cursor:pointer;font-size:11px;color:#334155}
-        .pp .seg button.on{background:#2563eb;color:#fff;border-color:#2563eb}
-        .pp .x{border:0;background:#ef4444;color:#fff;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:15px;line-height:1}
-        .pp .two{display:flex;gap:8px}.pp .two .row{flex:1}
-        .pp .pp-del{width:100%;border:0;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:6px;cursor:pointer;font-size:12px;font-weight:600;margin-top:6px}
+        .pp{position:fixed;top:108px;right:16px;z-index:60;width:194px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 10px 30px rgba(15,23,42,.22);padding:8px 9px 9px;font-family:sans-serif}
+        .pp h4{font-size:11px;font-weight:700;margin:-2px -3px 7px;padding:5px 7px;color:#fff;background:linear-gradient(90deg,#2563eb,#1e40af);border-radius:8px;display:flex;justify-content:space-between;align-items:center;cursor:move;user-select:none}
+        .pp .lblrow,.pp .selrow{margin-bottom:6px}
+        .pp .lblrow input,.pp .selrow select{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:4px 6px;font-size:12px;background:#fff;color:#0f172a}
+        .pp .pp-seg{display:flex;gap:3px;margin-bottom:6px}
+        .pp .pp-seg input{flex:0 0 44px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 4px;font-size:11px;text-align:center;min-width:0}
+        .pp .pp-seg button{flex:1;border:1px solid #cbd5e1;background:#f8fafc;border-radius:5px;padding:4px 0;cursor:pointer;font-size:11px;color:#334155;line-height:1}
+        .pp .pp-seg button.on{background:#2563eb;color:#fff;border-color:#2563eb}
+        .pp .pp-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 6px;margin-bottom:6px}
+        .pp .pp-f{display:flex;flex-direction:column;gap:1px}
+        .pp .pp-f>span{font-size:8.5px;color:#94a3b8;padding-right:2px}
+        .pp .pp-f input,.pp .pp-f select{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:5px;padding:3px 4px;font-size:11px;background:#fff;color:#0f172a}
+        .pp .x{border:0;background:rgba(255,255,255,.25);color:#fff;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:13px;line-height:1}
+        .pp .pp-del{width:100%;border:0;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:5px;cursor:pointer;font-size:11px;font-weight:600;margin-top:2px}
         .pp .pp-del:hover{background:#fecaca}
+        .pp .pp-save{width:100%;border:0;background:#2563eb;color:#fff;border-radius:6px;padding:6px;cursor:pointer;font-size:12px;font-weight:600;margin-top:5px}
         @media print {
           @page { size:A4; margin:0; }
           html,body{margin:0!important;padding:0!important;background:#fff!important}
@@ -543,42 +548,41 @@ export default function LetterPage() {
 
         {editing && eb && (
           <div className="pp no-print" style={ppPos ? { left: ppPos.x, top: ppPos.y, right: 'auto' } : undefined}>
-            <h4 onPointerDown={startPanelDrag}>⠿ {KEY_FA[editing] || editing} <button className="x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setEditing(null)}>×</button></h4>
+            <h4 onPointerDown={startPanelDrag}><span>⠿ {KEY_FA[editing] || editing}</span><button className="x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setEditing(null)}>×</button></h4>
             {labels[editing] !== undefined && (
-              <div className="row"><label>متن/برچسب</label><input value={labels[editing]} onChange={(e) => setLabels((p) => ({ ...p, [editing]: e.target.value }))} /></div>
+              <div className="lblrow"><input value={labels[editing]} placeholder="متن/برچسب" onChange={(e) => setLabels((p) => ({ ...p, [editing]: e.target.value }))} /></div>
             )}
             {eb.size > 0 && <>
-              <div className="row"><label>فونت</label><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
-              <div className="row"><label>اندازه</label><input type="number" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} /></div>
-              {editing !== 'body' && <div className="row"><label>سبک</label><div className="seg">
-                <button className={eb.bold ? 'on' : ''} style={{ fontWeight: 700 }} onClick={() => setBox(editing, { bold: !eb.bold })}>B</button>
-                <button className={eb.underline ? 'on' : ''} style={{ textDecoration: 'underline' }} onClick={() => setBox(editing, { underline: !eb.underline })}>U̲</button>
-              </div></div>}
-              <div className="row"><label>چینش</label><div className="seg">
-                {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? 'راست' : a === 'center' ? 'وسط' : 'چپ'}</button>)}
-                <button className={eb.justify ? 'on' : ''} onClick={() => setBox(editing, { justify: true })}>هم‌تراز</button>
-              </div></div>
-              <div className="row"><label>جهت</label><div className="seg">
-                <button className={(eb.dir || 'rtl') === 'rtl' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'rtl' })}>راست→چپ</button>
-                <button className={eb.dir === 'ltr' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'ltr' })}>چپ→راست</button>
-              </div></div>
-              <div className="two">
-                <div className="row"><label>فاصلهٔ حروف</label><input type="number" step="0.5" value={eb.ls || 0} onChange={(e) => setBox(editing, { ls: +e.target.value || 0 })} /></div>
-                <div className="row"><label>فاصلهٔ خط</label><input type="number" step="0.1" value={eb.lh || 1.25} onChange={(e) => setBox(editing, { lh: +e.target.value || undefined })} /></div>
+              <div className="selrow"><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
+              <div className="pp-seg">
+                <input type="number" title="اندازهٔ فونت" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} />
+                {editing !== 'body' && <button title="توپُر" className={eb.bold ? 'on' : ''} style={{ fontWeight: 700 }} onClick={() => setBox(editing, { bold: !eb.bold })}>B</button>}
+                {editing !== 'body' && <button title="زیرخط" className={eb.underline ? 'on' : ''} style={{ textDecoration: 'underline' }} onClick={() => setBox(editing, { underline: !eb.underline })}>U</button>}
+                {editing === 'body' && <span style={{ flex: 1, fontSize: 9, color: '#94a3b8', alignSelf: 'center', textAlign: 'center' }}>بولد/زیرخطِ متن: انتخاب کن</span>}
               </div>
-              <div className="row"><label>تورفتگیِ بند</label><input type="number" step="0.5" value={eb.indent ?? 0} onChange={(e) => setBox(editing, { indent: +e.target.value || 0 })} /></div>
-              {editing === 'body' && <div className="row"><label>شروعِ صفحاتِ بعد (Y)</label><input type="number" value={Math.round(contY)} onChange={(e) => setBox('body', { contY: +e.target.value || 0 })} /></div>}
+              <div className="pp-seg" title="چینش">
+                {(['right', 'center', 'left'] as const).map((a) => <button key={a} className={(!eb.justify && (eb.align || 'right') === a) ? 'on' : ''} onClick={() => setBox(editing, { align: a, justify: false })}>{a === 'right' ? '≡راست' : a === 'center' ? 'وسط' : 'چپ≡'}</button>)}
+                <button className={eb.justify ? 'on' : ''} onClick={() => setBox(editing, { justify: true })}>تراز</button>
+              </div>
+              <div className="pp-seg" title="جهتِ نوشتار">
+                <button className={(eb.dir || 'rtl') === 'rtl' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'rtl' })}>راست‑چپ</button>
+                <button className={eb.dir === 'ltr' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'ltr' })}>چپ‑راست</button>
+              </div>
+              <div className="pp-grid">
+                <label className="pp-f"><span>فاصلهٔ حروف</span><input type="number" step="0.5" value={eb.ls || 0} onChange={(e) => setBox(editing, { ls: +e.target.value || 0 })} /></label>
+                <label className="pp-f"><span>فاصلهٔ خط</span><input type="number" step="0.1" value={eb.lh || 1.25} onChange={(e) => setBox(editing, { lh: +e.target.value || undefined })} /></label>
+                <label className="pp-f"><span>تورفتگیِ بند</span><input type="number" step="0.5" value={eb.indent ?? 0} onChange={(e) => setBox(editing, { indent: +e.target.value || 0 })} /></label>
+                {editing === 'body' && <label className="pp-f"><span>Y صفحاتِ بعد</span><input type="number" value={Math.round(contY)} onChange={(e) => setBox('body', { contY: +e.target.value || 0 })} /></label>}
+              </div>
             </>}
-            <div className="two">
-              <div className="row"><label>عرض</label><input type="number" value={eb.w} onChange={(e) => setBox(editing, { w: +e.target.value || 0 })} /></div>
-              {eb.h != null && <div className="row"><label>ارتفاع</label><input type="number" value={eb.h} onChange={(e) => setBox(editing, { h: +e.target.value || 0 })} /></div>}
-            </div>
-            <div className="two">
-              <div className="row"><label>افقی X</label><input type="number" value={eb.x} onChange={(e) => setBox(editing, { x: +e.target.value || 0 })} /></div>
-              <div className="row"><label>عمودی Y</label><input type="number" value={eb.y} onChange={(e) => setBox(editing, { y: +e.target.value || 0 })} /></div>
+            <div className="pp-grid">
+              <label className="pp-f"><span>عرض</span><input type="number" value={eb.w} onChange={(e) => setBox(editing, { w: +e.target.value || 0 })} /></label>
+              {eb.h != null && <label className="pp-f"><span>ارتفاع</span><input type="number" value={eb.h} onChange={(e) => setBox(editing, { h: +e.target.value || 0 })} /></label>}
+              <label className="pp-f"><span>X افقی</span><input type="number" value={eb.x} onChange={(e) => setBox(editing, { x: +e.target.value || 0 })} /></label>
+              <label className="pp-f"><span>Y عمودی</span><input type="number" value={eb.y} onChange={(e) => setBox(editing, { y: +e.target.value || 0 })} /></label>
             </div>
             <button className="pp-del" onClick={() => { setBox(editing, { hidden: true }); setEditing(null) }}>🗑 حذفِ این فیلد از نامه</button>
-            <button className="ltr-btn blue" style={{ width: '100%', justifyContent: 'center', marginTop: 4 }} onClick={saveTemplate}>ذخیرهٔ چیدمان</button>
+            <button className="pp-save" onClick={saveTemplate}>ذخیرهٔ چیدمان</button>
           </div>
         )}
 
