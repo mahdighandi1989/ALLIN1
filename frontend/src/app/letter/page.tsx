@@ -381,15 +381,21 @@ export default function LetterPage() {
   // ---- Word-like TABLE editing. Structural edits run on the FULL body (the single
   //      source of truth), located by the caret cell's column and the row's stable id,
   //      then the body re-paginates automatically. ----
-  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'delTable') => {
+  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'mergeCells' | 'delTable') => {
     const s = window.getSelection(); if (!s || !s.rangeCount) return
-    const n = s.anchorNode
-    const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
-    const td = el?.closest('td,th') as HTMLTableCellElement | null
-    const trLive = el?.closest('tr') as HTMLTableRowElement | null
-    if (!td || !trLive) return
+    const cellOf = (node: Node | null) => { const e = node ? (node.nodeType === 3 ? node.parentElement : (node as HTMLElement)) : null; return (e?.closest('td,th') as HTMLTableCellElement | null) }
+    const td = cellOf(s.anchorNode) || cellOf(s.focusNode)
+    const trLive = td?.closest('tr') as HTMLTableRowElement | null
+    const liveTable = trLive?.closest('table') as HTMLTableElement | null
+    if (!td || !trLive || !liveTable) return
     const colIndex = td.cellIndex
     const rowUid = trLive.getAttribute('data-r') || ''
+    // every cell the selection touches → (row-id, column) keys (for multi-row/col & merge)
+    const range = s.getRangeAt(0)
+    const selLive = (Array.from(liveTable.querySelectorAll('td,th')) as HTMLTableCellElement[]).filter((c) => range.intersectsNode(c))
+    if (!selLive.includes(td)) selLive.push(td)
+    const selKeys = selLive.map((c) => ({ uid: c.closest('tr')?.getAttribute('data-r') || '', ci: c.cellIndex }))
+
     const scratch = document.createElement('div')
     scratch.innerHTML = normalizeBodyHtml(f.body)
     mergeAdjacentTables(scratch)
@@ -398,6 +404,8 @@ export default function LetterPage() {
     const table = tr?.closest('table') as HTMLTableElement | null
     if (!table || !tr) return
     const rows = Array.from(table.rows)
+    const rowByUid = (u: string) => scratch.querySelector(`tr[data-r="${cssEsc(u)}"]`) as HTMLTableRowElement | null
+    const clean = (h: string) => h.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
     const mkCell = (proto: HTMLTableCellElement | undefined, tag: 'td' | 'th') => {
       const c = document.createElement(tag); const st = proto?.getAttribute('style'); if (st) c.setAttribute('style', st)
       c.appendChild(document.createElement('br')); return c
@@ -410,13 +418,34 @@ export default function LetterPage() {
     }
     if (op === 'rowAbove') tr.parentElement!.insertBefore(newRow(), tr)
     else if (op === 'rowBelow') tr.parentElement!.insertBefore(newRow(), tr.nextSibling)
-    else if (op === 'delRow') { if (table.rows.length > 1) tr.remove(); else table.remove() }
-    else if (op === 'colLeft' || op === 'colRight') {
+    else if (op === 'delRow') {
+      const uids = Array.from(new Set(selKeys.map((k) => k.uid).filter(Boolean)))
+      const trs = (uids.length ? uids : [rowUid]).map(rowByUid).filter(Boolean) as HTMLTableRowElement[]
+      if (trs.length >= table.rows.length) table.remove()
+      else trs.forEach((x) => x.remove())
+    } else if (op === 'colLeft' || op === 'colRight') {
       const at = op === 'colLeft' ? colIndex : colIndex + 1
       rows.forEach((r) => { const proto = r.cells[Math.min(colIndex, r.cells.length - 1)]; const c = mkCell(proto, (proto?.tagName === 'TH' ? 'th' : 'td')); if (at >= r.cells.length) r.appendChild(c); else r.insertBefore(c, r.cells[at]) })
     } else if (op === 'delCol') {
-      rows.forEach((r) => { if (r.cells[colIndex] && r.cells.length > 1) r.deleteCell(colIndex) })
+      const cols = Array.from(new Set(selKeys.map((k) => k.ci))).sort((a, b) => b - a)  // high→low so indices stay valid
+      cols.forEach((ci) => rows.forEach((r) => { if (r.cells[ci] && r.cells.length > 1) r.deleteCell(ci) }))
       if (!table.rows[0] || table.rows[0].cells.length === 0) table.remove()
+    } else if (op === 'mergeCells') {
+      const mapped = selKeys.map((k) => { const srow = rowByUid(k.uid); const cell = srow?.cells[k.ci]; const rIdx = srow ? rows.indexOf(srow) : -1; return cell && rIdx >= 0 ? { cell, rIdx, ci: k.ci } : null }).filter(Boolean) as { cell: HTMLTableCellElement; rIdx: number; ci: number }[]
+      if (mapped.length >= 2) {
+        const minR = Math.min(...mapped.map((m) => m.rIdx)), maxR = Math.max(...mapped.map((m) => m.rIdx))
+        const minC = Math.min(...mapped.map((m) => m.ci)), maxC = Math.max(...mapped.map((m) => m.ci))
+        const target = table.rows[minR]?.cells[minC]
+        if (target) {
+          const removeList: HTMLTableCellElement[] = []
+          for (let r = minR; r <= maxR; r++) for (let c = minC; c <= maxC; c++) { const cell = table.rows[r]?.cells[c]; if (cell && cell !== target) removeList.push(cell) }
+          const parts = [target, ...removeList].map((c) => c.innerHTML).filter((h) => clean(h))
+          target.innerHTML = parts.join(' ') || '<br>'
+          if (maxC > minC) target.colSpan = maxC - minC + 1; else target.removeAttribute('colspan')
+          if (maxR > minR) target.rowSpan = maxR - minR + 1; else target.removeAttribute('rowspan')
+          removeList.forEach((c) => c.remove())
+        }
+      }
     } else if (op === 'delTable') table.remove()
     setF((prev) => ({ ...prev, body: scratch.innerHTML }))
     setTbl(null)
@@ -895,7 +924,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v6</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v7</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -980,12 +1009,13 @@ export default function LetterPage() {
           <div className="tbl-bar no-print" style={{ left: tbl.x, top: tbl.y }} onMouseDown={(e) => e.preventDefault()}>
             <button title="افزودنِ ردیف بالا" onClick={() => tableOp('rowAbove')}>▤↑</button>
             <button title="افزودنِ ردیف پایین" onClick={() => tableOp('rowBelow')}>▤↓</button>
-            <button title="حذفِ ردیف" className="del" onClick={() => tableOp('delRow')}>▤✕</button>
+            <button title="حذفِ ردیف‌های انتخاب‌شده" className="del" onClick={() => tableOp('delRow')}>▤✕</button>
             <span className="sep2" />
             <button title="افزودنِ ستون (راست)" onClick={() => tableOp('colRight')}>▥←</button>
             <button title="افزودنِ ستون (چپ)" onClick={() => tableOp('colLeft')}>▥→</button>
-            <button title="حذفِ ستون" className="del" onClick={() => tableOp('delCol')}>▥✕</button>
+            <button title="حذفِ ستون‌های انتخاب‌شده" className="del" onClick={() => tableOp('delCol')}>▥✕</button>
             <span className="sep2" />
+            <button title="ادغامِ خانه‌های انتخاب‌شده (Merge)" onClick={() => tableOp('mergeCells')}>⧉ ادغام</button>
             <button title="حذفِ کلِ جدول" className="del" onClick={() => tableOp('delTable')}>🗑</button>
           </div>
         )}
