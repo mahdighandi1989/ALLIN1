@@ -156,12 +156,16 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml, tran
   useIso(() => {
     const el = ref.current; if (!el) return
     const want = html || '<div><br></div>'
-    if (el.innerHTML !== want) {
-      const foc = document.activeElement === el
-      const off = foc ? caretOffset(el) : null
-      el.innerHTML = want
-      if (off != null) setCaret(el, off)
-    }
+    if (el.innerHTML === want) return
+    const foc = document.activeElement === el
+    // While actively typing, don't rewrite the cell's HTML just because pagination
+    // re-serialized the SAME text — rewriting + restoring the caret every keystroke
+    // races with fast input (and RTL bidi) and garbles it. Only re-sync when the actual
+    // TEXT changed (e.g. content flowed to another page).
+    if (foc) { const t = document.createElement('div'); t.innerHTML = want; if (t.textContent === el.textContent) return }
+    const off = foc ? caretOffset(el) : null
+    el.innerHTML = want
+    if (off != null) setCaret(el, off)
   }, [html])
   return (
     <div ref={ref} className={`bcell${firstPage ? ' firstpage' : ''}`} contentEditable={editable} suppressContentEditableWarning
@@ -231,7 +235,7 @@ function todayYMD() { const d = new Date(); const p = (n: number) => String(n).p
 
 export default function LetterPage() {
   const [f, setF] = useState({
-    classification: 'داخلی', serial: '----', year: String(new Date().getFullYear()),
+    classification: 'داخلی', serial: '', year: String(new Date().getFullYear()),
     date: todayYMD(), attachment: 'دارد',
     recipientName: '', recipientTitle: 'رئیس محترم', recipientDept: '', subject: '', body: '',
     sender: SENDERS[0], copyTo: '', actionName: '', actionExt: '',
@@ -377,11 +381,24 @@ export default function LetterPage() {
       const s = window.getSelection(); s?.removeAllRanges(); const r = document.createRange(); r.selectNodeContents(span); s?.addRange(r)
     } catch { /* ignore */ }
   })
+  // adjust line spacing of the paragraph(s) touched by the selection (± step)
+  const lineSpaceSel = (delta: number) => {
+    const s = window.getSelection(); if (!s || !s.rangeCount) return
+    const range = s.getRangeAt(0)
+    const a = range.commonAncestorContainer
+    const host = ((a.nodeType === 3 ? a.parentElement : (a as HTMLElement))?.closest('.bcell')) as HTMLElement | null
+    if (!host) return
+    let blocks = (Array.from(host.querySelectorAll('div,p,li')) as HTMLElement[]).filter((b) => range.intersectsNode(b))
+    if (!blocks.length) { const el = ((a.nodeType === 3 ? a.parentElement : (a as HTMLElement))?.closest('div,p,li')) as HTMLElement | null; if (el && host.contains(el)) blocks = [el] }
+    if (!blocks.length) blocks = [host]
+    blocks.forEach((b) => { const cur = parseFloat(b.style.lineHeight) || (L.body.lh || 1.7); b.style.lineHeight = String(Math.max(1, Math.round((cur + delta) * 10) / 10)) })
+    host.dispatchEvent(new Event('input', { bubbles: true }))
+  }
 
   // ---- Word-like TABLE editing. Structural edits run on the FULL body (the single
   //      source of truth), located by the caret cell's column and the row's stable id,
   //      then the body re-paginates automatically. ----
-  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'mergeCells' | 'delTable') => {
+  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'mergeCells' | 'valTop' | 'valMiddle' | 'valBottom' | 'delTable') => {
     const s = window.getSelection(); if (!s || !s.rangeCount) return
     const cellOf = (node: Node | null) => { const e = node ? (node.nodeType === 3 ? node.parentElement : (node as HTMLElement)) : null; return (e?.closest('td,th') as HTMLTableCellElement | null) }
     const td = cellOf(s.anchorNode) || cellOf(s.focusNode)
@@ -446,6 +463,10 @@ export default function LetterPage() {
           removeList.forEach((c) => c.remove())
         }
       }
+    } else if (op === 'valTop' || op === 'valMiddle' || op === 'valBottom') {
+      const va = op === 'valTop' ? 'top' : op === 'valMiddle' ? 'middle' : 'bottom'
+      const keys = selKeys.length ? selKeys : [{ uid: rowUid, ci: colIndex }]
+      keys.forEach((k) => { const srow = rowByUid(k.uid); const cell = srow?.cells[k.ci]; if (cell) cell.style.verticalAlign = va })
     } else if (op === 'delTable') table.remove()
     setF((prev) => ({ ...prev, body: scratch.innerHTML }))
     setTbl(null)
@@ -526,10 +547,12 @@ export default function LetterPage() {
       const s = window.getSelection()
       const n = s?.anchorNode
       const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
-      // table toolbar
+      // table toolbar — while the caret is in a cell we show ONE combined table bar
+      // (which includes the text-format buttons) and hide the standalone format bar so
+      // the two never overlap.
       const cell = (!designRef.current && el) ? (el.closest('.bcell td, .bcell th') as HTMLElement | null) : null
-      if (cell) { const t = cell.closest('table')!.getBoundingClientRect(); setTbl({ x: t.left + t.width / 2, y: t.top }) }
-      else setTbl(null)
+      if (cell) { const t = cell.closest('table')!.getBoundingClientRect(); setTbl({ x: t.left + t.width / 2, y: t.top }); setFmt(null); return }
+      setTbl(null)
       // selection format toolbar
       if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
       if (!el || !el.closest('.bcell, .rich')) { setFmt(null); return }
@@ -649,46 +672,45 @@ export default function LetterPage() {
       return [build(best), open + atoms.slice(best).join('').replace(/^\s+/, '') + close]
     }
     const pageH = (us: Unit[]) => { let h = 0; const seen = new Set<number>(); for (const u of us) { h += u.h; if (u.kind === 'trow' && !seen.has(u.tid)) { h += u.headerH; seen.add(u.tid) } } return h }
-    const pages: Unit[][] = []
-    let cur: Unit[] = [], used = 0, pi = 0
-    const seen = new Set<number>()
-    const pushPage = () => { pages.push(cur); cur = []; used = 0; pi++; seen.clear() }
-    // Flow the units across pages, SPLITTING any text block taller than the space left
-    // so long paragraphs continue on the next page (nothing overflows the sheet).
-    const queue: Unit[] = units.slice()
-    let dguard = 0
-    while (queue.length && dguard++ < 6000) {
-      const u = queue.shift() as Unit
-      if (u.kind === 'trow') {
-        const need = u.h + (!seen.has(u.tid) ? u.headerH : 0)
-        if (cur.length && used + need > regionAvail(pi, false)) { pushPage() }
-        used += u.h + (!seen.has(u.tid) ? u.headerH : 0); cur.push(u); seen.add(u.tid); continue
-      }
-      const avail = regionAvail(pi, false) - used
-      if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
-      if (avail < 48 && cur.length) { pushPage(); queue.unshift(u); continue }
-      const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
-      if (!fit) { if (cur.length) { pushPage(); queue.unshift(u); } else { cur.push(u); used += u.h } ; continue }
-      const hf = measure1(fit); cur.push({ kind: 'block', html: fit, h: hf }); used += hf
-      if (rest) { pushPage(); queue.unshift({ kind: 'block', html: rest, h: measure1(rest) }) }
-    }
-    if (cur.length || !pages.length) pages.push(cur)
-    // make room for the closing block on the last page — split the last text block (or
-    // move whole trailing units) until it fits with the closing reserved.
-    let guard = 0
-    while (guard++ < 400) {
-      const li = pages.length - 1, page = pages[li]
-      if (pageH(page) <= regionAvail(li, true)) break
-      const last = page[page.length - 1]
-      if (last && last.kind === 'block' && page.length >= 1) {
-        const avail = regionAvail(li, true) - (pageH(page) - last.h)
-        if (avail > 48) {
-          const [fit, rest] = splitBlock(last.html, avail)
-          if (fit && rest) { page[page.length - 1] = { kind: 'block', html: fit, h: measure1(fit) }; pages.push([{ kind: 'block', html: rest, h: measure1(rest) }]); continue }
+    // Flow the units across pages, packing each page to its FULL text region and SPLITTING
+    // any text block taller than the space left so long paragraphs continue on the next
+    // page. `lastIdx` marks the page that must leave room for the closing block; pass -1
+    // to reserve nothing (pack everything as tightly as possible → lines flow back when
+    // space frees). Wall-clock: every page filled to capacity, nothing wasted.
+    const distribute = (lastIdx: number): Unit[][] => {
+      const pgs: Unit[][] = []
+      let cur: Unit[] = [], used = 0, pi = 0
+      const seen = new Set<number>()
+      const push = () => { pgs.push(cur); cur = []; used = 0; pi++; seen.clear() }
+      const cap = () => regionAvail(pi, pi === lastIdx)
+      const q: Unit[] = units.slice()
+      let dg = 0
+      while (q.length && dg++ < 6000) {
+        const u = q.shift() as Unit
+        if (u.kind === 'trow') {
+          const need = u.h + (!seen.has(u.tid) ? u.headerH : 0)
+          if (cur.length && used + need > cap()) push()
+          used += u.h + (!seen.has(u.tid) ? u.headerH : 0); cur.push(u); seen.add(u.tid); continue
         }
+        const avail = cap() - used
+        if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
+        if (avail < 48 && cur.length) { push(); q.unshift(u); continue }
+        const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
+        if (!fit) { if (cur.length) { push(); q.unshift(u) } else { cur.push(u); used += u.h }; continue }
+        const hf = measure1(fit); cur.push({ kind: 'block', html: fit, h: hf }); used += hf
+        if (rest) { push(); q.unshift({ kind: 'block', html: rest, h: measure1(rest) }) }
       }
-      if (page.length > 1) { pages.push([page.pop() as Unit]) } else break
+      if (cur.length || !pgs.length) pgs.push(cur)
+      return pgs
     }
+    // Pack content tightly (no page reserves the closing block yet).
+    const pages = distribute(-1)
+    // The closing block sits at a fixed spot near the bottom of the LAST page. If the last
+    // content page reaches into that zone, give the closing its OWN trailing page instead
+    // of stealing space from the content (which used to leave earlier pages under-filled
+    // and stop lines flowing back). Otherwise the closing shares the last content page.
+    const li = pages.length - 1
+    if (pages.length && pageH(pages[li]) > regionAvail(li, true) && !isHidden('sender')) pages.push([])
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
@@ -865,7 +887,7 @@ export default function LetterPage() {
         .fmt-bar button:hover{background:#374151}
         .fmt-bar .sep2,.tbl-bar .sep2{width:1px;height:16px;background:rgba(255,255,255,.28);margin:0 2px;flex:0 0 auto}
         /* floating TABLE toolbar (shown when the caret is inside a cell) */
-        .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px);background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
         .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
         .tbl-bar button:hover{background:#115e59}
         .tbl-bar button.del:hover{background:#b91c1c}
@@ -924,7 +946,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v7</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v10</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -1002,11 +1024,24 @@ export default function LetterPage() {
             <span className="sep2" />
             <button title="فهرستِ نقطه‌ای" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList') }}>•</button>
             <button title="فهرستِ شماره‌دار" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList') }}>۱.</button>
+            <span className="sep2" />
+            <button title="کاهشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(-0.1) }}>خ−</button>
+            <button title="افزایشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(0.1) }}>خ＋</button>
           </div>
         )}
 
         {tbl && (
           <div className="tbl-bar no-print" style={{ left: tbl.x, top: tbl.y }} onMouseDown={(e) => e.preventDefault()}>
+            <button title="توپُر" style={{ fontWeight: 700 }} onClick={() => document.execCommand('bold')}>B</button>
+            <button title="کج" style={{ fontStyle: 'italic' }} onClick={() => document.execCommand('italic')}>I</button>
+            <button title="زیرخط" style={{ textDecoration: 'underline' }} onClick={() => document.execCommand('underline')}>U</button>
+            <button title="کوچک‌تر" onClick={() => bumpSel(0.85)}>A−</button>
+            <button title="بزرگ‌تر" onClick={() => bumpSel(1.18)}>A＋</button>
+            <span className="sep2" />
+            <button title="تراز عمودی: بالا" onClick={() => tableOp('valTop')}>⤒</button>
+            <button title="تراز عمودی: وسط" onClick={() => tableOp('valMiddle')}>⇳</button>
+            <button title="تراز عمودی: پایین" onClick={() => tableOp('valBottom')}>⤓</button>
+            <span className="sep2" />
             <button title="افزودنِ ردیف بالا" onClick={() => tableOp('rowAbove')}>▤↑</button>
             <button title="افزودنِ ردیف پایین" onClick={() => tableOp('rowBelow')}>▤↓</button>
             <button title="حذفِ ردیف‌های انتخاب‌شده" className="del" onClick={() => tableOp('delRow')}>▤✕</button>
@@ -1015,7 +1050,7 @@ export default function LetterPage() {
             <button title="افزودنِ ستون (چپ)" onClick={() => tableOp('colLeft')}>▥→</button>
             <button title="حذفِ ستون‌های انتخاب‌شده" className="del" onClick={() => tableOp('delCol')}>▥✕</button>
             <span className="sep2" />
-            <button title="ادغامِ خانه‌های انتخاب‌شده (Merge)" onClick={() => tableOp('mergeCells')}>⧉ ادغام</button>
+            <button title="ادغامِ خانه‌های انتخاب‌شده (Merge)" onClick={() => tableOp('mergeCells')}>⧉</button>
             <button title="حذفِ کلِ جدول" className="del" onClick={() => tableOp('delTable')}>🗑</button>
           </div>
         )}
