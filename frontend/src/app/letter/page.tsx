@@ -282,8 +282,9 @@ export default function LetterPage() {
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
-        // auto-fix line-broken bodies so they flow & justify like Word (no manual step)
-        if (v.body && looksLineBroken(v.body)) v.body = reflowBody(normalizeBodyHtml(v.body))
+        // auto-fix line-broken bodies so they flow & justify like Word (no manual step).
+        // normalize first so legacy plain-text (\n) bodies are detected too.
+        if (v.body) { const nb = normalizeBodyHtml(v.body); if (looksLineBroken(nb)) v.body = reflowBody(nb) }
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
