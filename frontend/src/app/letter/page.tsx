@@ -66,26 +66,6 @@ function normalizeBodyHtml(s: string): string {
   return s
 }
 
-// Heuristic: a body that arrived hard-wrapped (one paragraph PER VISUAL LINE — e.g. a
-// PDF/line-broken paste, or an older saved letter). Signature: several visual lines
-// (counting <br>-separated segments too, since one block can hold many <br> lines), few
-// of which end in a sentence terminator. Such bodies can't justify until reflowed.
-function looksLineBroken(html: string): boolean {
-  if (!html || html.indexOf('<') === -1) return false
-  const d = document.createElement('div'); d.innerHTML = html
-  let lines = 0, term = 0
-  for (const c of Array.from(d.children)) {
-    if (c.tagName === 'TABLE' || c.querySelector('table')) continue
-    for (const seg of (c as HTMLElement).innerHTML.split(/<br\s*\/?>/i)) {
-      const t = seg.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
-      if (!t) continue
-      lines++
-      if (/[.؟!]\s*$/.test(t)) term++
-    }
-  }
-  return lines >= 3 && term < lines * 0.6
-}
-
 // Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
 // and only bold/underline/size/align inline styles; strip Word's mso junk, classes,
 // colors and fixed widths/heights (so our CSS makes the table fit the box).
@@ -282,9 +262,10 @@ export default function LetterPage() {
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
-        // auto-fix line-broken bodies so they flow & justify like Word (no manual step).
-        // normalize first so legacy plain-text (\n) bodies are detected too.
-        if (v.body) { const nb = normalizeBodyHtml(v.body); if (looksLineBroken(nb)) v.body = reflowBody(nb) }
+        // ALWAYS reflow the loaded body into flowing, justified paragraphs (idempotent
+        // for already-well-formed text: a paragraph that ends in a terminator stays as
+        // one paragraph; only hard-wrapped visual lines get merged). No manual step.
+        if (v.body) v.body = reflowBody(normalizeBodyHtml(v.body))
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
@@ -471,7 +452,8 @@ export default function LetterPage() {
     const ends = (t: string) => /[.؟!:]\s*$/.test(t)
     for (const el of Array.from(doc.children)) {
       if (el.tagName === 'TABLE') { flush(); out.push(el.outerHTML); continue }
-      const segs = (el as HTMLElement).innerHTML.split(/<br\s*\/?>/i)
+      // split on <br> AND newlines (a pre-wrap block can hold \n line breaks too)
+      const segs = (el as HTMLElement).innerHTML.split(/<br\s*\/?>|\r?\n/i)
       for (const seg of segs) {
         const t = seg.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
         if (!t) { flush(); continue }                                   // blank line → paragraph break
@@ -854,6 +836,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v5</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
