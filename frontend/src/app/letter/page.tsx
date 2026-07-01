@@ -229,7 +229,7 @@ export default function LetterPage() {
   useEffect(() => {
     if (general) lettersApi.list({ general: true }).then(setLetterList).catch(() => setLetterList([]))
     else if (acct.trim()) lettersApi.list({ account_no: acct.trim() }).then(setLetterList).catch(() => setLetterList([]))
-    else setLetterList([])
+    else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
   const newLetter = () => { setLetterId(null); setTitle(''); setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' })) }
@@ -670,8 +670,8 @@ export default function LetterPage() {
           <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
           <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
           {letterList.length > 0 && <select value="" onChange={(e) => e.target.value && loadLetter(e.target.value)} className="meta-in" style={{ width: 210 }}>
-            <option value="">باز‌کردنِ نامه‌های ذخیره‌شده…</option>
-            {letterList.map((l) => <option key={l.id} value={l.id}>{(l.title || l.subject || 'نامه') + (l.updated_at ? ` — ${new Date(l.updated_at).toLocaleDateString('en-GB')}` : '')}</option>)}
+            <option value="">📂 بازکردنِ نامه‌های ذخیره‌شده…</option>
+            {letterList.map((l) => <option key={l.id} value={l.id}>{(l.title || l.subject || 'نامه') + ' — ' + (l.account_no || 'عمومی') + (l.updated_at ? ` — ${new Date(l.updated_at).toLocaleDateString('en-GB')}` : '')}</option>)}
           </select>}
         </div>
 
