@@ -111,6 +111,13 @@ function cleanPaste(html: string): string {
       if (keep.length) el.setAttribute('style', keep.join(';'))
     })
     normalizeTables(doc.body)
+    // let letter-body paragraphs inherit the box's justify (Word letters are justified):
+    // drop a paragraph's own right/left alignment (keep an explicit center/justify).
+    doc.body.querySelectorAll('p,div,li').forEach((el) => {
+      if ((el as HTMLElement).closest('table')) return
+      const ta = (el as HTMLElement).style.textAlign
+      if (ta === 'right' || ta === 'left' || ta === 'start' || ta === 'end') (el as HTMLElement).style.removeProperty('text-align')
+    })
     // collapse runs of blank lines Word inserts between paragraphs
     let prevBlank = false
     Array.from(doc.body.children).forEach((ch) => {
@@ -205,7 +212,7 @@ const DEFAULT_LAYOUT: Record<string, Boxn> = {
   classification: { x: m(16), y: m(66.8), w: m(54), size: 11, font: NAZ, bold: true, align: 'right' },
   subject: { x: m(28), y: m(78), w: m(162.5), size: 12, font: TITR, align: 'right' },
   separator: { x: m(133.8), y: m(107), w: m(56.7), h: 1, size: 0 },
-  body: { x: m(25), y: m(118), w: m(160), h: m(148), size: 13, font: NAZ, align: 'right', lh: 1.7, dir: 'rtl', indent: 1.5, contY: m(40) },
+  body: { x: m(25), y: m(118), w: m(160), h: m(148), size: 13, font: NAZ, align: 'right', justify: true, lh: 1.7, dir: 'rtl', indent: 1.5, contY: m(40) },
   sender: { x: m(40), y: m(234), w: m(120), size: 13, font: BTITR, bold: true, align: 'center' },
   copyto: { x: m(124.7), y: m(250), w: m(60), size: 10, font: NAZ, align: 'right' },
   action: { x: m(93.8), y: m(264), w: m(90), size: 10, font: NAZ, align: 'right' },
