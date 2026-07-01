@@ -49,16 +49,28 @@ function AutoInput({ value, onChange, placeholder = '', dir, style, cls = 'fld',
 // ---- contentEditable body cell: renders one page's chunk as indented paragraphs,
 //      editable, with caret preserved across re-flows. ----
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
-function caretOffset(el: HTMLElement): number | null {
+// Capture the current selection as text offsets within `el` (start & end, so a whole
+// selection — not just the caret — survives a re-render and stays highlighted; that lets
+// a floating-toolbar button be clicked repeatedly on the same selection).
+function selOffsets(el: HTMLElement): { start: number; end: number } | null {
   const s = window.getSelection(); if (!s || !s.rangeCount) return null
-  const r = s.getRangeAt(0); const pre = r.cloneRange(); pre.selectNodeContents(el); pre.setEnd(r.endContainer, r.endOffset)
-  return pre.toString().length
+  const r = s.getRangeAt(0); if (!el.contains(r.commonAncestorContainer)) return null
+  const pre = r.cloneRange(); pre.selectNodeContents(el); pre.setEnd(r.startContainer, r.startOffset)
+  const start = pre.toString().length
+  return { start, end: start + r.toString().length }
 }
-function setCaret(el: HTMLElement, off: number) {
+// Legacy caret offset (single point) — kept for callers that only need the caret.
+function caretOffset(el: HTMLElement): number | null { const o = selOffsets(el); return o ? o.end : null }
+function posAt(el: HTMLElement, off: number): { node: Node; off: number } {
   const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n: Node | null, c = off, last: Node | null = null
-  while ((n = w.nextNode())) { last = n; const len = (n.textContent || '').length; if (len >= c) { const r = document.createRange(); r.setStart(n, c); r.collapse(true); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r); return } c -= len }
-  if (last) { const r = document.createRange(); r.selectNodeContents(last); r.collapse(false); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) }
+  while ((n = w.nextNode())) { last = n; const len = (n.textContent || '').length; if (len >= c) return { node: n, off: c }; c -= len }
+  return last ? { node: last, off: (last.textContent || '').length } : { node: el, off: 0 }
 }
+function setSel(el: HTMLElement, start: number, end?: number) {
+  const a = posAt(el, start), b = end == null ? a : posAt(el, end)
+  try { const r = document.createRange(); r.setStart(a.node, a.off); r.setEnd(b.node, b.off); const s = window.getSelection(); s?.removeAllRanges(); s?.addRange(r) } catch { /* ignore */ }
+}
+function setCaret(el: HTMLElement, off: number) { setSel(el, off) }
 // Plain text → paragraph HTML (legacy bodies are plain); rich bodies already carry tags.
 function normalizeBodyHtml(s: string): string {
   if (!s) return ''
@@ -158,9 +170,9 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml, tran
     const want = html || '<div><br></div>'
     if (el.innerHTML !== want) {
       const foc = document.activeElement === el
-      const off = foc ? caretOffset(el) : null
+      const sel = foc ? selOffsets(el) : null
       el.innerHTML = want
-      if (off != null) setCaret(el, off)
+      if (sel) setSel(el, sel.start, sel.end)   // keep the whole selection (stays highlighted)
     }
   }, [html])
   return (
@@ -184,9 +196,9 @@ function RichSpan({ value, onChange, placeholder, dir, className, style }:
     const want = value || ''
     if (el.innerHTML !== want) {
       const foc = document.activeElement === el
-      const off = foc ? caretOffset(el) : null
+      const sel = foc ? selOffsets(el) : null
       el.innerHTML = want
-      if (off != null) setCaret(el, off)
+      if (sel) setSel(el, sel.start, sel.end)
     }
   }, [value])
   return <span ref={ref} className={`rich ${className || ''}`} contentEditable suppressContentEditableWarning dir={dir}
@@ -953,7 +965,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v12</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v13</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
