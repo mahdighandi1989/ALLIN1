@@ -65,6 +65,42 @@ function normalizeBodyHtml(s: string): string {
   if (s.indexOf('<') === -1) return s.split('\n').map((line) => `<div>${escapeHtml(line) || '<br>'}</div>`).join('')
   return s
 }
+
+// Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
+// and only bold/underline/size/align inline styles; strip Word's mso junk, classes,
+// colors and fixed widths (so our CSS makes the table fit the box).
+const STYLE_KEEP = new Set(['font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'font-size', 'text-align', 'vertical-align'])
+function cleanPaste(html: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    doc.querySelectorAll('style,meta,script,link,title,o\\:p,w\\:sdt').forEach((n) => n.remove())
+    doc.body.querySelectorAll('*').forEach((el) => {
+      const st = (el as HTMLElement).style, keep: string[] = []
+      for (let i = 0; i < st.length; i++) { const p = st[i]; if (STYLE_KEEP.has(p)) keep.push(`${p}:${st.getPropertyValue(p)}`) }
+      Array.from(el.attributes).forEach((a) => { const n = a.name.toLowerCase(); if (n !== 'colspan' && n !== 'rowspan') el.removeAttribute(a.name) })
+      if (keep.length) el.setAttribute('style', keep.join(';'))
+    })
+    return doc.body.innerHTML
+  } catch { return html }
+}
+
+// Re-merge tables that were split across pages (same header) so storage stays clean.
+function mergeAdjacentTables(container: HTMLElement) {
+  let node = container.firstElementChild
+  while (node) {
+    const next = node.nextElementSibling
+    if (node.tagName === 'TABLE' && next && next.tagName === 'TABLE') {
+      const h1 = node.querySelector('tr'), h2 = next.querySelector('tr')
+      if (h1 && h2 && (h1.textContent || '').trim() === (h2.textContent || '').trim()) {
+        const tb = node.querySelector('tbody') || node
+        Array.from(next.querySelectorAll('tr')).slice(1).forEach((r) => tb.appendChild(r))
+        next.remove()
+        continue // re-check the (now-extended) node against its new sibling
+      }
+    }
+    node = next
+  }
+}
 // A rich (contentEditable) page-cell. The body stores HTML so bold/underline can be
 // applied to SELECTED words only (via the floating toolbar / execCommand). Caret is
 // preserved across re-flows.
@@ -83,6 +119,7 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml }:
   }, [html])
   return (
     <div ref={ref} className={`bcell${firstPage ? ' firstpage' : ''}`} contentEditable={editable} suppressContentEditableWarning
+      onPaste={(e) => { const h = e.clipboardData.getData('text/html'); if (h) { e.preventDefault(); document.execCommand('insertHTML', false, cleanPaste(h)) } }}
       onInput={() => { const el = ref.current; if (el) onChangeHtml(el.innerHTML) }}
       style={{ ...style, ['--ind' as any]: indent ? `${indent}em` : '0' }} />
   )
@@ -350,26 +387,62 @@ export default function LetterPage() {
     const el = measureRef.current
     if (!el) return
     el.innerHTML = normalizeBodyHtml(f.body || '') || '<div><br></div>'
-    const paras = Array.from(el.children).map((c) => ({ html: (c as HTMLElement).outerHTML, h: (c as HTMLElement).offsetHeight }))
-    const pagesArr: { html: string; h: number }[][] = []
-    let cur: { html: string; h: number }[] = [], used = 0, pi = 0
-    for (const pd of paras) {
-      if (cur.length && used + pd.h > regionAvail(pi, false)) { pagesArr.push(cur); cur = []; used = 0; pi++ }
-      cur.push(pd); used += pd.h
+    mergeAdjacentTables(el)
+    // Flatten into atomic UNITS: plain blocks, and one unit per table body-row (so a
+    // tall table can split across pages, its header repeated on each page).
+    type Unit = { kind: 'block'; h: number; html: string } | { kind: 'trow'; h: number; tid: number; header: string; headerH: number; rowHtml: string }
+    const units: Unit[] = []
+    let tid = 0
+    // recurse into wrappers so a table nested in a paste-wrapper <div> is still split
+    const collect = (node: Element) => {
+      for (const child of Array.from(node.children)) {
+        const c = child as HTMLElement
+        if (c.tagName === 'TABLE') {
+          const rows = Array.from(c.querySelectorAll('tr'))
+          if (rows.length > 1) {
+            tid++
+            const header = (rows[0] as HTMLElement).outerHTML, headerH = (rows[0] as HTMLElement).offsetHeight
+            for (let i = 1; i < rows.length; i++) units.push({ kind: 'trow', tid, header, headerH, rowHtml: (rows[i] as HTMLElement).outerHTML, h: (rows[i] as HTMLElement).offsetHeight })
+          } else units.push({ kind: 'block', html: c.outerHTML, h: c.offsetHeight })
+        } else if (c.querySelector('table')) {
+          collect(c)   // unwrap: promote the nested table (+ its siblings) to top-level units
+        } else {
+          units.push({ kind: 'block', html: c.outerHTML, h: c.offsetHeight })
+        }
+      }
     }
-    if (cur.length || !pagesArr.length) pagesArr.push(cur)
-    // push trailing paragraphs off the last page until the closing block fits
+    collect(el)
+    const pageH = (us: Unit[]) => { let h = 0; const seen = new Set<number>(); for (const u of us) { h += u.h; if (u.kind === 'trow' && !seen.has(u.tid)) { h += u.headerH; seen.add(u.tid) } } return h }
+    const pages: Unit[][] = []
+    let cur: Unit[] = [], used = 0, pi = 0
+    const seen = new Set<number>()
+    for (const u of units) {
+      const need = u.h + ((u.kind === 'trow' && !seen.has(u.tid)) ? u.headerH : 0)
+      if (cur.length && used + need > regionAvail(pi, false)) { pages.push(cur); cur = []; used = 0; pi++; seen.clear() }
+      used += u.h + ((u.kind === 'trow' && !seen.has(u.tid)) ? u.headerH : 0)
+      cur.push(u); if (u.kind === 'trow') seen.add(u.tid)
+    }
+    if (cur.length || !pages.length) pages.push(cur)
+    // push trailing units off the last page until the closing block fits
     let guard = 0
-    while (guard++ < 80) {
-      const li = pagesArr.length - 1
-      const lastAvail = regionAvail(li, true)
-      let lastUsed = pagesArr[li].reduce((s, p) => s + p.h, 0)
-      if (lastUsed <= lastAvail || pagesArr[li].length <= 1) break
-      const moved: { html: string; h: number }[] = []
-      while (pagesArr[li].length > 1 && lastUsed > lastAvail) { const p = pagesArr[li].pop() as { html: string; h: number }; lastUsed -= p.h; moved.unshift(p) }
-      pagesArr.push(moved)
+    while (guard++ < 300) {
+      const li = pages.length - 1
+      if (pageH(pages[li]) <= regionAvail(li, true) || pages[li].length <= 1) break
+      const moved: Unit[] = []
+      while (pages[li].length > 1 && pageH(pages[li]) > regionAvail(li, true)) moved.unshift(pages[li].pop() as Unit)
+      pages.push(moved)
     }
-    setPages(pagesArr.map((arr) => arr.map((p) => p.html).join('')))
+    // re-group consecutive rows of the same table back into one <table> per page
+    const render = (us: Unit[]) => {
+      let out = '', i = 0
+      while (i < us.length) {
+        const u = us[i]
+        if (u.kind === 'block') { out += u.html; i++ }
+        else { const t = u.tid, hdr = u.header; let rr = ''; while (i < us.length && us[i].kind === 'trow' && (us[i] as any).tid === t) { rr += (us[i] as any).rowHtml; i++ } out += `<table>${hdr}${rr}</table>` }
+      }
+      return out
+    }
+    setPages(pages.length ? pages.map(render) : [''])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.body, L])
 
@@ -515,6 +588,10 @@ export default function LetterPage() {
         .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
         .bcell > div,.bcell > p{text-indent:var(--ind,0)}
         .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
+        /* pasted tables fit the box width, with borders, and wrap long cell text */
+        .bcell table,.psheet table,.measure table{width:100%!important;max-width:100%;border-collapse:collapse;margin:2px 0;font-size:inherit}
+        .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.5px solid #333;padding:1px 4px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;text-indent:0!important}
+        .bcell img,.psheet img{max-width:100%}
         /* inline rich fields (labels + values) — bold/underline per selected word */
         #ltr-edit .rich{display:inline;outline:none;text-align:inherit;letter-spacing:inherit;white-space:normal;overflow-wrap:break-word}
         #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
