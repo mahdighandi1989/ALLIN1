@@ -606,6 +606,7 @@ export default function LetterPage() {
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
+  const [closingShift, setClosingShift] = useState(0)   // vertical offset so the closing block flows right after the body
   useEffect(() => {
     // Use the rendered off-screen measurer; if it isn't attached yet (e.g. a letter
     // loaded during mount, before refs settle), fall back to a temporary one so
@@ -699,14 +700,24 @@ export default function LetterPage() {
       if (cur.length || !pgs.length) pgs.push(cur)
       return pgs
     }
-    // Pack content tightly (no page reserves the closing block yet).
+    // Pack content tightly (every page filled to its full text region).
     const pages = distribute(-1)
-    // The closing block sits at a fixed spot near the bottom of the LAST page. If the last
-    // content page reaches into that zone, give the closing its OWN trailing page instead
-    // of stealing space from the content (which used to leave earlier pages under-filled
-    // and stop lines flowing back). Otherwise the closing shares the last content page.
-    const li = pages.length - 1
-    if (pages.length && pageH(pages[li]) > regionAvail(li, true) && !isHidden('sender')) pages.push([])
+    // FLOW the closing block (امضاکننده/رونوشت/اقدام) right after the body content on the
+    // last page — so freeing space in the body automatically pulls the block up (Word-like)
+    // instead of pinning it at a fixed spot. If it doesn't fit under the content, it moves
+    // to its own trailing page at its normal position.
+    let shift = 0
+    if (!isHidden('sender')) {
+      const lastIdx = pages.length - 1
+      const contentEndY = regionTop(lastIdx) + pageH(pages[lastIdx])
+      const closeMin = Math.min(L.sender.y, L.copyto.y, L.action.y)
+      const closeMax = Math.max(L.sender.y, L.copyto.y, L.action.y)
+      const blockH = (closeMax - closeMin) + Math.max(L.sender.size, L.copyto.size, L.action.size, 10) * MM  // ~ height of the closing block (last field ≈ one line)
+      const startY = contentEndY + m(3)
+      if (startY + blockH <= L.footer.y) shift = startY - closeMin  // fits under the content on this page
+      else { pages.push([]); shift = 0 }                            // overflow → own page, default position
+    }
+    setClosingShift(shift)
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
@@ -765,7 +776,7 @@ export default function LetterPage() {
 
   const eb = editing ? L[editing] : null
   const repImg = (k: string, src: string) => isHidden(k) ? null : <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%' }} /></div>
-  const P = (k: string, node: React.ReactNode) => isHidden(k) ? null : <div style={boxStyle(k)}>{node}</div>  // print: positioned, hide-aware
+  const P = (k: string, node: React.ReactNode, extra?: React.CSSProperties) => isHidden(k) ? null : <div style={{ ...boxStyle(k), ...extra }}>{node}</div>  // print: positioned, hide-aware
   const H = (h: string) => <span dangerouslySetInnerHTML={{ __html: h || '' }} />  // render a rich (HTML) value
 
   // one A4 page in the editable view
@@ -793,13 +804,13 @@ export default function LetterPage() {
         {pi === 0
           ? Box({ k: 'body', children: <BodyCell html={pages[0] || ''} editable={!design} indent={L.body.indent} firstPage onChangeHtml={onBody(0)} transformPaste={reflowPaste} style={{ ...bodyTextStyle(), width: '100%', height: '100%' }} /> })
           : (isHidden('body') ? null : <BodyCell html={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeHtml={onBody(pi)} transformPaste={reflowPaste}
-            style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, isLast) }} />)}
+            style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, false) }} />)}
 
         {/* closing block — only on the last page */}
         {isLast && <>
-          {Box({ k: 'sender', children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
-          {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
+          {Box({ k: 'sender', style: { top: L.sender.y + closingShift }, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
+          {Box({ k: 'copyto', style: { top: L.copyto.y + closingShift }, children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
+          {Box({ k: 'action', style: { top: L.action.y + closingShift }, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </>}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
@@ -829,9 +840,9 @@ export default function LetterPage() {
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
-          {P('sender', f.sender)}
-          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>)}
-          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>)}
+          {P('sender', f.sender, { top: L.sender.y + closingShift })}
+          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>, { top: L.copyto.y + closingShift })}
+          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, { top: L.action.y + closingShift })}
         </>}
         {repImg('footer', LH_FOOTER)}
         {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
@@ -942,7 +953,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v11</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v12</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
