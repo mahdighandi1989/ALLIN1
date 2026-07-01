@@ -444,6 +444,19 @@ export default function LetterPage() {
     const doc = document.createElement('div'); doc.innerHTML = html
     // wrap stray top-level text nodes so the block loop below never drops them
     Array.from(doc.childNodes).forEach((n) => { if (n.nodeType === 3 && (n.textContent || '').trim()) { const d = document.createElement('div'); d.textContent = n.textContent!; doc.replaceChild(d, n) } })
+    // flatten paste-wrappers (Word wraps the whole letter in one <div>): promote a
+    // block whose children are themselves blocks/tables/lists to the top level, so
+    // paragraphs and tables become siblings we can treat individually.
+    let changed = true, guard = 0
+    while (changed && guard++ < 60) {
+      changed = false
+      for (const c of Array.from(doc.children)) {
+        if (/^(DIV|P)$/.test(c.tagName) && Array.from(c.children).some((g) => /^(DIV|P|TABLE|UL|OL)$/.test(g.tagName))) {
+          while (c.firstChild) doc.insertBefore(c.firstChild, c)
+          doc.removeChild(c); changed = true
+        }
+      }
+    }
     const out: string[] = []
     let group: string[] = []
     const flush = () => { if (group.length) { out.push(`<div>${group.join(' ')}</div>`); group = [] } }
@@ -451,7 +464,8 @@ export default function LetterPage() {
     const isGreet = (t: string) => /^با\s*سلام|^باسلام|سلام\s*و\s*احترام/.test(t)
     const ends = (t: string) => /[.؟!:]\s*$/.test(t)
     for (const el of Array.from(doc.children)) {
-      if (el.tagName === 'TABLE') { flush(); out.push(el.outerHTML); continue }
+      // never reflow structural blocks — keep tables & lists intact
+      if (/^(TABLE|UL|OL)$/.test(el.tagName) || el.querySelector('table,ul,ol')) { flush(); out.push(el.outerHTML); continue }
       // split on <br> AND newlines (a pre-wrap block can hold \n line breaks too)
       const segs = (el as HTMLElement).innerHTML.split(/<br\s*\/?>|\r?\n/i)
       for (const seg of segs) {
@@ -581,25 +595,70 @@ export default function LetterPage() {
       }
     }
     collect(el)
+    const M = el as HTMLElement
+    const measure1 = (h: string) => { M.innerHTML = h; return M.offsetHeight }
+    // Split ONE text block so its first part fits `availH`; returns [fits, remainder]
+    // (both keep the block's tag/style). Splits at word / inline-element boundaries so
+    // bold/underline spans are never sliced. Empty first = nothing fit.
+    const splitBlock = (blockHTML: string, availH: number): [string, string] => {
+      const tmp = document.createElement('div'); tmp.innerHTML = blockHTML
+      const block = tmp.firstElementChild as HTMLElement | null
+      if (!block) return [blockHTML, '']
+      const tag = block.tagName.toLowerCase(), st = block.getAttribute('style')
+      const open = `<${tag}${st ? ` style="${st}"` : ''}>`, close = `</${tag}>`
+      const atoms: string[] = []
+      block.childNodes.forEach((n) => {
+        if (n.nodeType === 3) (n.textContent || '').split(/(\s+)/).forEach((w) => { if (w) atoms.push(w) })
+        else if (n.nodeType === 1) atoms.push((n as HTMLElement).outerHTML)
+      })
+      if (atoms.length <= 1) return [blockHTML, '']
+      const build = (k: number) => open + atoms.slice(0, k).join('') + close
+      let lo = 1, hi = atoms.length, best = 0
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (measure1(build(mid)) <= availH) { best = mid; lo = mid + 1 } else hi = mid - 1 }
+      if (best <= 0) return ['', blockHTML]
+      if (best >= atoms.length) return [blockHTML, '']
+      return [build(best), open + atoms.slice(best).join('').replace(/^\s+/, '') + close]
+    }
     const pageH = (us: Unit[]) => { let h = 0; const seen = new Set<number>(); for (const u of us) { h += u.h; if (u.kind === 'trow' && !seen.has(u.tid)) { h += u.headerH; seen.add(u.tid) } } return h }
     const pages: Unit[][] = []
     let cur: Unit[] = [], used = 0, pi = 0
     const seen = new Set<number>()
-    for (const u of units) {
-      const need = u.h + ((u.kind === 'trow' && !seen.has(u.tid)) ? u.headerH : 0)
-      if (cur.length && used + need > regionAvail(pi, false)) { pages.push(cur); cur = []; used = 0; pi++; seen.clear() }
-      used += u.h + ((u.kind === 'trow' && !seen.has(u.tid)) ? u.headerH : 0)
-      cur.push(u); if (u.kind === 'trow') seen.add(u.tid)
+    const pushPage = () => { pages.push(cur); cur = []; used = 0; pi++; seen.clear() }
+    // Flow the units across pages, SPLITTING any text block taller than the space left
+    // so long paragraphs continue on the next page (nothing overflows the sheet).
+    const queue: Unit[] = units.slice()
+    let dguard = 0
+    while (queue.length && dguard++ < 6000) {
+      const u = queue.shift() as Unit
+      if (u.kind === 'trow') {
+        const need = u.h + (!seen.has(u.tid) ? u.headerH : 0)
+        if (cur.length && used + need > regionAvail(pi, false)) { pushPage() }
+        used += u.h + (!seen.has(u.tid) ? u.headerH : 0); cur.push(u); seen.add(u.tid); continue
+      }
+      const avail = regionAvail(pi, false) - used
+      if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
+      if (avail < 48 && cur.length) { pushPage(); queue.unshift(u); continue }
+      const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
+      if (!fit) { if (cur.length) { pushPage(); queue.unshift(u); } else { cur.push(u); used += u.h } ; continue }
+      const hf = measure1(fit); cur.push({ kind: 'block', html: fit, h: hf }); used += hf
+      if (rest) { pushPage(); queue.unshift({ kind: 'block', html: rest, h: measure1(rest) }) }
     }
     if (cur.length || !pages.length) pages.push(cur)
-    // push trailing units off the last page until the closing block fits
+    // make room for the closing block on the last page — split the last text block (or
+    // move whole trailing units) until it fits with the closing reserved.
     let guard = 0
-    while (guard++ < 300) {
-      const li = pages.length - 1
-      if (pageH(pages[li]) <= regionAvail(li, true) || pages[li].length <= 1) break
-      const moved: Unit[] = []
-      while (pages[li].length > 1 && pageH(pages[li]) > regionAvail(li, true)) moved.unshift(pages[li].pop() as Unit)
-      pages.push(moved)
+    while (guard++ < 400) {
+      const li = pages.length - 1, page = pages[li]
+      if (pageH(page) <= regionAvail(li, true)) break
+      const last = page[page.length - 1]
+      if (last && last.kind === 'block' && page.length >= 1) {
+        const avail = regionAvail(li, true) - (pageH(page) - last.h)
+        if (avail > 48) {
+          const [fit, rest] = splitBlock(last.html, avail)
+          if (fit && rest) { page[page.length - 1] = { kind: 'block', html: fit, h: measure1(fit) }; pages.push([{ kind: 'block', html: rest, h: measure1(rest) }]); continue }
+        }
+      }
+      if (page.length > 1) { pages.push([page.pop() as Unit]) } else break
     }
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
@@ -836,7 +895,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v5</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v6</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
