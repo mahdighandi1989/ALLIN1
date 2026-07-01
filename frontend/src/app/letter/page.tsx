@@ -433,13 +433,10 @@ export default function LetterPage() {
   //      already-wrapping paragraph (one long block) is left untouched; the greeting,
   //      dash separators and tables stay on their own. Inline bold/underline survive. ----
   const reflowBody = (html: string): string => {
-    const meas = lineMeasRef.current
-    if (!meas || !html || html.indexOf('<') === -1) return html
-    const boxW = L.body.w
+    if (!html || html.indexOf('<') === -1) return html
     const doc = document.createElement('div'); doc.innerHTML = html
     // wrap stray top-level text nodes so the block loop below never drops them
     Array.from(doc.childNodes).forEach((n) => { if (n.nodeType === 3 && (n.textContent || '').trim()) { const d = document.createElement('div'); d.textContent = n.textContent!; doc.replaceChild(d, n) } })
-    const measure = (h: string) => { meas.innerHTML = h; return meas.offsetWidth }
     const out: string[] = []
     let group: string[] = []
     const flush = () => { if (group.length) { out.push(`<div>${group.join(' ')}</div>`); group = [] } }
@@ -454,7 +451,6 @@ export default function LetterPage() {
         if (!t) { flush(); continue }                                   // blank line → paragraph break
         if (isDash(t)) { flush(); out.push(`<div>${seg}</div>`); continue }
         if (isGreet(t)) { flush(); out.push(`<div>${seg}</div>`); continue }
-        if (measure(seg) > boxW * 1.15) { flush(); out.push(`<div>${seg}</div>`); continue } // already a full paragraph
         group.push(seg)                                                 // a single visual line → merge…
         if (ends(t)) flush()                                            // …until a sentence terminator ends the paragraph
       }
@@ -539,7 +535,6 @@ export default function LetterPage() {
   //      underline tags are never sliced), reserving the closing block on the last page. ----
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
-  const lineMeasRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
   useEffect(() => {
     const el = measureRef.current
@@ -821,7 +816,7 @@ export default function LetterPage() {
             </select>
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
-          <button onClick={() => setF((s) => ({ ...s, body: reflowBody(normalizeBodyHtml(s.body || '')) }))} className="ltr-btn gray" title="خطوطِ شکسته را به پاراگرافِ روان تبدیل می‌کند تا جاستیفای شود (برای متنی که خط‌به‌خط پیست شده)"><AlignJustify size={14} /> بازچینش/جاستیفای</button>
+          <button onClick={() => { setBox('body', { justify: true }); setF((s) => ({ ...s, body: reflowBody(normalizeBodyHtml(s.body || '')) })) }} className="ltr-btn blue" title="خطوطِ شکسته را به پاراگرافِ روان تبدیل و متن را جاستیفای می‌کند (برای نامه‌های قبلی یا متنِ خط‌به‌خط پیست‌شده)"><AlignJustify size={14} /> بازچینش/جاستیفای</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
@@ -922,7 +917,6 @@ export default function LetterPage() {
         {/* hidden measurers — body height/pagination and subject width (for the separator) */}
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
         <span ref={subjRef} aria-hidden className="measure" style={{ whiteSpace: 'nowrap', fontFamily: L.subject.font, fontSize: `${L.subject.size}pt` }} />
-        <span ref={lineMeasRef} aria-hidden className="measure" style={{ whiteSpace: 'nowrap', fontFamily: latin(L.body.font), fontSize: `${L.body.size}pt`, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined }} />
 
         {/* ---- EDITABLE PAGINATED VIEW (screen) ---- */}
         <div id="ltr-edit" className="canvas-wrap" onDoubleClick={exitEditing}>
