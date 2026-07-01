@@ -156,16 +156,12 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml, tran
   useIso(() => {
     const el = ref.current; if (!el) return
     const want = html || '<div><br></div>'
-    if (el.innerHTML === want) return
-    const foc = document.activeElement === el
-    // While actively typing, don't rewrite the cell's HTML just because pagination
-    // re-serialized the SAME text — rewriting + restoring the caret every keystroke
-    // races with fast input (and RTL bidi) and garbles it. Only re-sync when the actual
-    // TEXT changed (e.g. content flowed to another page).
-    if (foc) { const t = document.createElement('div'); t.innerHTML = want; if (t.textContent === el.textContent) return }
-    const off = foc ? caretOffset(el) : null
-    el.innerHTML = want
-    if (off != null) setCaret(el, off)
+    if (el.innerHTML !== want) {
+      const foc = document.activeElement === el
+      const off = foc ? caretOffset(el) : null
+      el.innerHTML = want
+      if (off != null) setCaret(el, off)
+    }
   }, [html])
   return (
     <div ref={ref} className={`bcell${firstPage ? ' firstpage' : ''}`} contentEditable={editable} suppressContentEditableWarning
@@ -946,7 +942,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v10</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v11</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
