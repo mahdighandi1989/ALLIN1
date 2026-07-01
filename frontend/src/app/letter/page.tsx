@@ -206,6 +206,7 @@ export default function LetterPage() {
   const [letterId, setLetterId] = useState<string | null>(null)
   const [letterList, setLetterList] = useState<LetterSummary[]>([])
   const [savingLetter, setSavingLetter] = useState(false)
+  const [letterQuery, setLetterQuery] = useState('')
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L])
 
   const loadLetter = async (id: string) => {
@@ -669,10 +670,12 @@ export default function LetterPage() {
             onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || plain(s.recipientDept), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
           <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
           <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
-          {letterList.length > 0 && <select value="" onChange={(e) => e.target.value && loadLetter(e.target.value)} className="meta-in" style={{ width: 210 }}>
-            <option value="">📂 بازکردنِ نامه‌های ذخیره‌شده…</option>
-            {letterList.map((l) => <option key={l.id} value={l.id}>{(l.title || l.subject || 'نامه') + ' — ' + (l.account_no || 'عمومی') + (l.updated_at ? ` — ${new Date(l.updated_at).toLocaleDateString('en-GB')}` : '')}</option>)}
-          </select>}
+          {letterList.length > 0 && <div style={{ width: 230 }}>
+            <Combobox value={letterQuery} placeholder="📂 بازکردنِ نامهٔ ذخیره‌شده…"
+              fetch={async (q) => { const s = q.trim().toLowerCase(); return letterList.filter((l) => !s || `${l.title || ''} ${l.subject || ''} ${l.account_no || ''}`.toLowerCase().includes(s)).slice(0, 200).map((l) => ({ value: l.id, label: l.title || l.subject || 'نامه', sub: `${l.account_no || 'عمومی'}${l.updated_at ? ' — ' + new Date(l.updated_at).toLocaleDateString('en-GB') : ''}`, data: l })) }}
+              onChange={setLetterQuery}
+              onPick={(o) => { loadLetter(o.value); setLetterQuery('') }} />
+          </div>}
         </div>
 
         {editing && eb && (
