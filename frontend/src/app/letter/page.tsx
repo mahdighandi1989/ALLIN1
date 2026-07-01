@@ -23,9 +23,10 @@ const NAZ = "'B Nazanin','BNazanin','Nazanin',serif"
 const TITR = "'Titr','B Titr','BTitr','B Nazanin',serif"
 const BTITR = "'B Titr','BTitr','Titr','B Nazanin',serif"
 const FONTS = [{ v: NAZ, n: 'B Nazanin' }, { v: TITR, n: 'Titr' }, { v: BTITR, n: 'B Titr' }]
-// Latin glyphs render in an English serif (Times), Persian glyphs fall back to the
-// chosen Persian font — automatic per-script font, via font-family ordering.
-const latin = (stack?: string) => stack ? `'Times New Roman','Times',${stack}` : stack
+// Only LATIN LETTERS (a-z/A-Z) render in an English serif; Persian letters, ALL digits
+// and punctuation stay in the chosen Persian font. This uses the 'LtrMix' @font-face
+// (unicode-range limited to Latin letters) defined in the page's <style>.
+const latin = (stack?: string) => stack ? `'LtrMix',${stack}` : stack
 const MM = 96 / 25.4 // px per mm at 96dpi
 const m = (v: number) => Math.round(v * MM)
 const fa =(n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
@@ -493,6 +494,9 @@ export default function LetterPage() {
     <Layout>
       <div dir="rtl">
         <style>{`
+        /* English serif for LATIN LETTERS ONLY — Persian letters, digits (both ۰-۹ and
+           0-9) and punctuation keep the chosen Persian font. */
+        @font-face{font-family:'LtrMix';src:local('Times New Roman'),local('Times New Roman Regular'),local('Times');unicode-range:U+0041-005A,U+0061-007A,U+00C0-024F}
         .ltr-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
         .ltr-btn { padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer; border:0; display:inline-flex; align-items:center; gap:6px; color:#fff; }
         .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}
