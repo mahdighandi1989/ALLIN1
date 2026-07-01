@@ -1,4 +1,9 @@
-"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[357],{2071:function(t,e,h){h.d(e,{Z:function(){return n}});/**
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[750],{7802:function(t,e,h){h.d(e,{Z:function(){return n}});/**
+ * @license lucide-react v0.312.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */let n=(0,h(7461).Z)("AlignJustify",[["line",{x1:"3",x2:"21",y1:"6",y2:"6",key:"4m8b97"}],["line",{x1:"3",x2:"21",y1:"12",y2:"12",key:"10d38w"}],["line",{x1:"3",x2:"21",y1:"18",y2:"18",key:"kwyyxn"}]])},2071:function(t,e,h){h.d(e,{Z:function(){return n}});/**
  * @license lucide-react v0.312.0 - ISC
  *
  * This source code is licensed under the ISC license.
