@@ -668,46 +668,45 @@ export default function LetterPage() {
       return [build(best), open + atoms.slice(best).join('').replace(/^\s+/, '') + close]
     }
     const pageH = (us: Unit[]) => { let h = 0; const seen = new Set<number>(); for (const u of us) { h += u.h; if (u.kind === 'trow' && !seen.has(u.tid)) { h += u.headerH; seen.add(u.tid) } } return h }
-    const pages: Unit[][] = []
-    let cur: Unit[] = [], used = 0, pi = 0
-    const seen = new Set<number>()
-    const pushPage = () => { pages.push(cur); cur = []; used = 0; pi++; seen.clear() }
-    // Flow the units across pages, SPLITTING any text block taller than the space left
-    // so long paragraphs continue on the next page (nothing overflows the sheet).
-    const queue: Unit[] = units.slice()
-    let dguard = 0
-    while (queue.length && dguard++ < 6000) {
-      const u = queue.shift() as Unit
-      if (u.kind === 'trow') {
-        const need = u.h + (!seen.has(u.tid) ? u.headerH : 0)
-        if (cur.length && used + need > regionAvail(pi, false)) { pushPage() }
-        used += u.h + (!seen.has(u.tid) ? u.headerH : 0); cur.push(u); seen.add(u.tid); continue
-      }
-      const avail = regionAvail(pi, false) - used
-      if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
-      if (avail < 48 && cur.length) { pushPage(); queue.unshift(u); continue }
-      const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
-      if (!fit) { if (cur.length) { pushPage(); queue.unshift(u); } else { cur.push(u); used += u.h } ; continue }
-      const hf = measure1(fit); cur.push({ kind: 'block', html: fit, h: hf }); used += hf
-      if (rest) { pushPage(); queue.unshift({ kind: 'block', html: rest, h: measure1(rest) }) }
-    }
-    if (cur.length || !pages.length) pages.push(cur)
-    // make room for the closing block on the last page — split the last text block (or
-    // move whole trailing units) until it fits with the closing reserved.
-    let guard = 0
-    while (guard++ < 400) {
-      const li = pages.length - 1, page = pages[li]
-      if (pageH(page) <= regionAvail(li, true)) break
-      const last = page[page.length - 1]
-      if (last && last.kind === 'block' && page.length >= 1) {
-        const avail = regionAvail(li, true) - (pageH(page) - last.h)
-        if (avail > 48) {
-          const [fit, rest] = splitBlock(last.html, avail)
-          if (fit && rest) { page[page.length - 1] = { kind: 'block', html: fit, h: measure1(fit) }; pages.push([{ kind: 'block', html: rest, h: measure1(rest) }]); continue }
+    // Flow the units across pages, packing each page to its FULL text region and SPLITTING
+    // any text block taller than the space left so long paragraphs continue on the next
+    // page. `lastIdx` marks the page that must leave room for the closing block; pass -1
+    // to reserve nothing (pack everything as tightly as possible → lines flow back when
+    // space frees). Wall-clock: every page filled to capacity, nothing wasted.
+    const distribute = (lastIdx: number): Unit[][] => {
+      const pgs: Unit[][] = []
+      let cur: Unit[] = [], used = 0, pi = 0
+      const seen = new Set<number>()
+      const push = () => { pgs.push(cur); cur = []; used = 0; pi++; seen.clear() }
+      const cap = () => regionAvail(pi, pi === lastIdx)
+      const q: Unit[] = units.slice()
+      let dg = 0
+      while (q.length && dg++ < 6000) {
+        const u = q.shift() as Unit
+        if (u.kind === 'trow') {
+          const need = u.h + (!seen.has(u.tid) ? u.headerH : 0)
+          if (cur.length && used + need > cap()) push()
+          used += u.h + (!seen.has(u.tid) ? u.headerH : 0); cur.push(u); seen.add(u.tid); continue
         }
+        const avail = cap() - used
+        if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
+        if (avail < 48 && cur.length) { push(); q.unshift(u); continue }
+        const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
+        if (!fit) { if (cur.length) { push(); q.unshift(u) } else { cur.push(u); used += u.h }; continue }
+        const hf = measure1(fit); cur.push({ kind: 'block', html: fit, h: hf }); used += hf
+        if (rest) { push(); q.unshift({ kind: 'block', html: rest, h: measure1(rest) }) }
       }
-      if (page.length > 1) { pages.push([page.pop() as Unit]) } else break
+      if (cur.length || !pgs.length) pgs.push(cur)
+      return pgs
     }
+    // Pack content tightly (no page reserves the closing block yet).
+    const pages = distribute(-1)
+    // The closing block sits at a fixed spot near the bottom of the LAST page. If the last
+    // content page reaches into that zone, give the closing its OWN trailing page instead
+    // of stealing space from the content (which used to leave earlier pages under-filled
+    // and stop lines flowing back). Otherwise the closing shares the last content page.
+    const li = pages.length - 1
+    if (pages.length && pageH(pages[li]) > regionAvail(li, true) && !isHidden('sender')) pages.push([])
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
@@ -943,7 +942,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v8</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v9</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
