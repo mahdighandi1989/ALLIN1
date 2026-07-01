@@ -10,7 +10,7 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, AlignJustify } from 'lucide-react'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table } from 'lucide-react'
 import { auditApi, departmentsApi, lettersApi, parseApiError } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
@@ -64,6 +64,19 @@ function normalizeBodyHtml(s: string): string {
   if (!s) return ''
   if (s.indexOf('<') === -1) return s.split('\n').map((line) => `<div>${escapeHtml(line) || '<br>'}</div>`).join('')
   return s
+}
+
+// Heuristic: a body that arrived hard-wrapped (one paragraph PER VISUAL LINE — e.g. a
+// PDF/line-broken paste, or an older saved letter). Signature: several block lines, few
+// of which end in a sentence terminator. Such bodies can't justify until reflowed.
+function looksLineBroken(html: string): boolean {
+  if (!html || html.indexOf('<') === -1) return false
+  const d = document.createElement('div'); d.innerHTML = html
+  const blocks = Array.from(d.children).filter((c) => /^(DIV|P)$/.test(c.tagName) && !c.querySelector('table'))
+  if (blocks.length < 3) return false
+  let term = 0
+  for (const b of blocks) { if (/[.؟!]\s*$/.test((b.textContent || '').trim())) term++ }
+  return term < blocks.length * 0.6
 }
 
 // Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
@@ -260,8 +273,13 @@ export default function LetterPage() {
   const loadLetter = async (id: string) => {
     try {
       const o = await lettersApi.get(id)
-      if (o.values) setF((s) => ({ ...s, ...o.values }))
-      if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; setL(mm2) }
+      if (o.values) {
+        const v: any = { ...o.values }
+        // auto-fix line-broken bodies so they flow & justify like Word (no manual step)
+        if (v.body && looksLineBroken(v.body)) v.body = reflowBody(normalizeBodyHtml(v.body))
+        setF((s) => ({ ...s, ...v }))
+      }
+      if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
       if (o.labels) setLabels((s) => ({ ...DEFAULT_LABELS, ...o.labels }))
       setAcct(o.account_no || ''); setTitle(o.title || ''); setGeneral(o.category === 'general'); setLetterId(o.id)
     } catch { toast.error('بارگذاریِ نامه ناموفق بود') }
@@ -537,8 +555,16 @@ export default function LetterPage() {
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
   useEffect(() => {
-    const el = measureRef.current
-    if (!el) return
+    // Use the rendered off-screen measurer; if it isn't attached yet (e.g. a letter
+    // loaded during mount, before refs settle), fall back to a temporary one so
+    // pagination never silently no-ops and leaves the body blank.
+    let el = measureRef.current
+    const temp = !el
+    if (!el) {
+      el = document.createElement('div'); el.className = 'measure'
+      el.style.cssText = `position:absolute;left:-99999px;top:0;visibility:hidden;white-space:pre-wrap;width:${L.body.w}px;font-size:${L.body.size}pt;line-height:${L.body.lh || 1.7}${L.body.font ? `;font-family:${L.body.font}` : ''}${L.body.ls ? `;letter-spacing:${L.body.ls}px` : ''}`
+      document.body.appendChild(el)
+    }
     el.innerHTML = normalizeBodyHtml(f.body || '') || '<div><br></div>'
     mergeAdjacentTables(el)
     // Flatten into atomic UNITS: plain blocks, and one unit per table body-row (so a
@@ -596,6 +622,7 @@ export default function LetterPage() {
       return out
     }
     setPages(pages.length ? pages.map(render) : [''])
+    if (temp && el.parentNode) el.parentNode.removeChild(el)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.body, L])
 
@@ -816,7 +843,6 @@ export default function LetterPage() {
             </select>
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
-          <button onClick={() => { setBox('body', { justify: true }); setF((s) => ({ ...s, body: reflowBody(normalizeBodyHtml(s.body || '')) })) }} className="ltr-btn blue" title="خطوطِ شکسته را به پاراگرافِ روان تبدیل و متن را جاستیفای می‌کند (برای نامه‌های قبلی یا متنِ خط‌به‌خط پیست‌شده)"><AlignJustify size={14} /> بازچینش/جاستیفای</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
