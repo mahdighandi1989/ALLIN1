@@ -10,7 +10,7 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus } from 'lucide-react'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table } from 'lucide-react'
 import { auditApi, departmentsApi, lettersApi, parseApiError } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
@@ -68,8 +68,38 @@ function normalizeBodyHtml(s: string): string {
 
 // Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
 // and only bold/underline/size/align inline styles; strip Word's mso junk, classes,
-// colors and fixed widths (so our CSS makes the table fit the box).
-const STYLE_KEEP = new Set(['font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'font-size', 'text-align', 'vertical-align'])
+// colors and fixed widths/heights (so our CSS makes the table fit the box).
+const STYLE_KEEP = new Set(['font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'font-size', 'text-align'])
+let _uid = 0
+// A stable per-row id so the table toolbar can locate this exact row inside the body.
+const uid = () => `r${(_uid++).toString(36)}${(typeof performance !== 'undefined' ? Math.floor(performance.now()) : 0).toString(36)}`
+
+// Tidy pasted tables so they stay COMPACT and editable: drop Word's blank filler
+// paragraphs (which make rows huge and empty), unwrap a cell's lone <p>/<div> (so no
+// block margins bloat the row), keep a placeholder <br> in truly empty cells, and give
+// every row a stable id for the toolbar. Heights/widths are already gone (not in
+// STYLE_KEEP), so cells shrink to their real content.
+function normalizeTables(root: HTMLElement) {
+  root.querySelectorAll('table').forEach((tbl) => {
+    tbl.querySelectorAll('td,th').forEach((cell) => {
+      Array.from(cell.children).forEach((ch) => {
+        if (/^(P|DIV)$/.test(ch.tagName) && !ch.querySelector('img,table,br') && !(ch.textContent || '').replace(/ /g, '').trim()) ch.remove()
+      })
+      while (cell.children.length === 1 && /^(P|DIV)$/.test(cell.children[0].tagName) && !cell.children[0].querySelector('table')) {
+        const only = cell.children[0]
+        while (only.firstChild) cell.insertBefore(only.firstChild, only)
+        only.remove()
+      }
+      // trim trailing <br>/blank nodes Word pads cell bottoms with (→ huge empty rows)
+      let last = cell.lastChild
+      while (cell.childNodes.length > 1 && last && ((last.nodeType === 1 && (last as HTMLElement).tagName === 'BR') || (last.nodeType === 3 && !(last.textContent || '').replace(/ /g, '').trim()))) {
+        const prev = last.previousSibling; cell.removeChild(last); last = prev
+      }
+      if (!(cell.textContent || '').trim() && !cell.querySelector('img,br')) cell.appendChild(document.createElement('br'))
+    })
+    tbl.querySelectorAll('tr').forEach((tr) => { if (!tr.getAttribute('data-r')) tr.setAttribute('data-r', uid()) })
+  })
+}
 function cleanPaste(html: string): string {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -80,9 +110,18 @@ function cleanPaste(html: string): string {
       Array.from(el.attributes).forEach((a) => { const n = a.name.toLowerCase(); if (n !== 'colspan' && n !== 'rowspan') el.removeAttribute(a.name) })
       if (keep.length) el.setAttribute('style', keep.join(';'))
     })
+    normalizeTables(doc.body)
+    // collapse runs of blank lines Word inserts between paragraphs
+    let prevBlank = false
+    Array.from(doc.body.children).forEach((ch) => {
+      const blank = /^(P|DIV)$/.test(ch.tagName) && !ch.querySelector('img,table') && !(ch.textContent || '').replace(/ /g, '').trim()
+      if (blank && prevBlank) ch.remove(); else prevBlank = blank
+    })
     return doc.body.innerHTML
   } catch { return html }
 }
+// A row-selector safe for querySelector (CSS.escape where available).
+const cssEsc = (v: string) => (typeof CSS !== 'undefined' && (CSS as any).escape ? (CSS as any).escape(v) : v.replace(/[^\w-]/g, '\\$&'))
 
 // Re-merge tables that were split across pages (same header) so storage stays clean.
 function mergeAdjacentTables(container: HTMLElement) {
@@ -198,6 +237,7 @@ export default function LetterPage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
+  const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
   const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
   const [acct, setAcct] = useState('')
@@ -206,7 +246,9 @@ export default function LetterPage() {
   const [letterId, setLetterId] = useState<string | null>(null)
   const [letterList, setLetterList] = useState<LetterSummary[]>([])
   const [savingLetter, setSavingLetter] = useState(false)
+  const [letterQuery, setLetterQuery] = useState('')
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L])
+  const designRef = useRef(design); useEffect(() => { designRef.current = design }, [design])
 
   const loadLetter = async (id: string) => {
     try {
@@ -321,13 +363,85 @@ export default function LetterPage() {
       const s = window.getSelection(); s?.removeAllRanges(); const r = document.createRange(); r.selectNodeContents(span); s?.addRange(r)
     } catch { /* ignore */ }
   })
-  // show the floating bold/underline toolbar when text is selected inside the body
+
+  // ---- Word-like TABLE editing. Structural edits run on the FULL body (the single
+  //      source of truth), located by the caret cell's column and the row's stable id,
+  //      then the body re-paginates automatically. ----
+  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'delTable') => {
+    const s = window.getSelection(); if (!s || !s.rangeCount) return
+    const n = s.anchorNode
+    const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
+    const td = el?.closest('td,th') as HTMLTableCellElement | null
+    const trLive = el?.closest('tr') as HTMLTableRowElement | null
+    if (!td || !trLive) return
+    const colIndex = td.cellIndex
+    const rowUid = trLive.getAttribute('data-r') || ''
+    const scratch = document.createElement('div')
+    scratch.innerHTML = normalizeBodyHtml(f.body)
+    mergeAdjacentTables(scratch)
+    normalizeTables(scratch)
+    const tr = rowUid ? (scratch.querySelector(`tr[data-r="${cssEsc(rowUid)}"]`) as HTMLTableRowElement | null) : null
+    const table = tr?.closest('table') as HTMLTableElement | null
+    if (!table || !tr) return
+    const rows = Array.from(table.rows)
+    const mkCell = (proto: HTMLTableCellElement | undefined, tag: 'td' | 'th') => {
+      const c = document.createElement(tag); const st = proto?.getAttribute('style'); if (st) c.setAttribute('style', st)
+      c.appendChild(document.createElement('br')); return c
+    }
+    const newRow = () => {
+      const r = document.createElement('tr'); r.setAttribute('data-r', uid())
+      const cols = table.rows[0].cells.length
+      for (let i = 0; i < cols; i++) r.appendChild(mkCell(table.rows[0].cells[i], 'td'))
+      return r
+    }
+    if (op === 'rowAbove') tr.parentElement!.insertBefore(newRow(), tr)
+    else if (op === 'rowBelow') tr.parentElement!.insertBefore(newRow(), tr.nextSibling)
+    else if (op === 'delRow') { if (table.rows.length > 1) tr.remove(); else table.remove() }
+    else if (op === 'colLeft' || op === 'colRight') {
+      const at = op === 'colLeft' ? colIndex : colIndex + 1
+      rows.forEach((r) => { const proto = r.cells[Math.min(colIndex, r.cells.length - 1)]; const c = mkCell(proto, (proto?.tagName === 'TH' ? 'th' : 'td')); if (at >= r.cells.length) r.appendChild(c); else r.insertBefore(c, r.cells[at]) })
+    } else if (op === 'delCol') {
+      rows.forEach((r) => { if (r.cells[colIndex] && r.cells.length > 1) r.deleteCell(colIndex) })
+      if (!table.rows[0] || table.rows[0].cells.length === 0) table.remove()
+    } else if (op === 'delTable') table.remove()
+    setF((prev) => ({ ...prev, body: scratch.innerHTML }))
+    setTbl(null)
+  }
+  // insert a fresh R×C table at the caret (or append to the body)
+  const insertTable = () => {
+    const R = parseInt(prompt('چند ردیف؟ (rows)', '3') || '0', 10)
+    const C = parseInt(prompt('چند ستون؟ (columns)', '3') || '0', 10)
+    if (!R || !C || R > 200 || C > 30) return
+    let html = '<table>'
+    for (let r = 0; r < R; r++) { html += `<tr data-r="${uid()}">`; for (let c = 0; c < C; c++) html += '<td><br></td>'; html += '</tr>' }
+    html += '</table><div><br></div>'
+    const sn = window.getSelection()?.anchorNode
+    const host = sn ? ((sn.nodeType === 3 ? (sn as any).parentElement : (sn as HTMLElement)) as HTMLElement | null)?.closest?.('.bcell') as HTMLElement | null : null
+    if (host) { host.focus(); document.execCommand('insertHTML', false, html) }
+    else setF((prev) => ({ ...prev, body: (prev.body || '') + html }))
+  }
+  // one-time: make sure every table row in the body has a stable id (older saved letters
+  // & fresh manual edits) so the table toolbar can find rows reliably.
+  useEffect(() => {
+    if (!f.body || f.body.indexOf('<table') === -1) return
+    if (!/<tr(?![^>]*data-r)/i.test(f.body)) return
+    const d = document.createElement('div'); d.innerHTML = f.body; normalizeTables(d)
+    setF((s) => ({ ...s, body: d.innerHTML }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.body])
+  // show the floating format toolbar (on text selection) and the table toolbar (whenever
+  // the caret sits inside a body table cell — even with nothing selected).
   useEffect(() => {
     const onSel = () => {
       const s = window.getSelection()
-      if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
-      const n = s.anchorNode
+      const n = s?.anchorNode
       const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
+      // table toolbar
+      const cell = (!designRef.current && el) ? (el.closest('.bcell td, .bcell th') as HTMLElement | null) : null
+      if (cell) { const t = cell.closest('table')!.getBoundingClientRect(); setTbl({ x: t.left + t.width / 2, y: t.top }) }
+      else setTbl(null)
+      // selection format toolbar
+      if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
       if (!el || !el.closest('.bcell, .rich')) { setFmt(null); return }
       const r = s.getRangeAt(0).getBoundingClientRect()
       if (!r || (r.width === 0 && r.height === 0)) { setFmt(null); return }
@@ -588,18 +702,29 @@ export default function LetterPage() {
         .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
         .bcell > div,.bcell > p{text-indent:var(--ind,0)}
         .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
-        /* pasted tables fit the box width, with borders, and wrap long cell text */
-        .bcell table,.psheet table,.measure table{width:100%!important;max-width:100%;border-collapse:collapse;margin:2px 0;font-size:inherit}
-        .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.5px solid #333;padding:1px 4px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;text-indent:0!important}
+        /* pasted paragraphs shouldn't carry Word's big block margins (huge line gaps) */
+        .bcell p,.psheet p,.measure p{margin:0}
+        /* pasted tables fit the box width, stay COMPACT (content-height rows), with
+           borders and sensible wrapping (no character-by-character breaking) */
+        .bcell table,.psheet table,.measure table{width:100%!important;max-width:100%;border-collapse:collapse;margin:3px 0;font-size:inherit;table-layout:auto}
+        .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.6px solid #222;padding:2px 5px;vertical-align:top;white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.35;text-indent:0!important}
+        .bcell td *,.bcell th *,.psheet td *,.psheet th *,.measure td *,.measure th *{text-indent:0!important;margin:0}
+        .bcell th,.psheet th,.measure th{font-weight:700;text-align:center;background:#f3f4f6}
         .bcell img,.psheet img{max-width:100%}
         /* inline rich fields (labels + values) — bold/underline per selected word */
         #ltr-edit .rich{display:inline;outline:none;text-align:inherit;letter-spacing:inherit;white-space:normal;overflow-wrap:break-word}
         #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
         #ltr-edit .rich:focus{background:rgba(37,99,235,.07);border-radius:2px}
         /* Word-like floating format toolbar (shown on text selection) */
-        .fmt-bar{position:fixed;transform:translate(-50%,-118%);z-index:120;display:flex;gap:2px;background:#1f2937;border-radius:7px;padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
-        .fmt-bar button{border:0;background:transparent;color:#fff;width:28px;height:26px;border-radius:5px;cursor:pointer;font-size:14px}
+        .fmt-bar{position:fixed;transform:translate(-50%,-118%);z-index:120;display:flex;gap:2px;align-items:center;background:#1f2937;border-radius:7px;padding:3px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .fmt-bar button{border:0;background:transparent;color:#fff;min-width:26px;height:26px;padding:0 4px;border-radius:5px;cursor:pointer;font-size:14px}
         .fmt-bar button:hover{background:#374151}
+        .fmt-bar .sep2,.tbl-bar .sep2{width:1px;height:16px;background:rgba(255,255,255,.28);margin:0 2px;flex:0 0 auto}
+        /* floating TABLE toolbar (shown when the caret is inside a cell) */
+        .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
+        .tbl-bar button:hover{background:#115e59}
+        .tbl-bar button.del:hover{background:#b91c1c}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
         .sep-line{width:100%;border-top:1px dashed #000}
         .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
@@ -652,6 +777,7 @@ export default function LetterPage() {
             </select>
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
+          <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
         </div>
@@ -669,10 +795,12 @@ export default function LetterPage() {
             onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || plain(s.recipientDept), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
           <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
           <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
-          {letterList.length > 0 && <select value="" onChange={(e) => e.target.value && loadLetter(e.target.value)} className="meta-in" style={{ width: 210 }}>
-            <option value="">📂 بازکردنِ نامه‌های ذخیره‌شده…</option>
-            {letterList.map((l) => <option key={l.id} value={l.id}>{(l.title || l.subject || 'نامه') + ' — ' + (l.account_no || 'عمومی') + (l.updated_at ? ` — ${new Date(l.updated_at).toLocaleDateString('en-GB')}` : '')}</option>)}
-          </select>}
+          {letterList.length > 0 && <div style={{ width: 230 }}>
+            <Combobox value={letterQuery} placeholder="📂 بازکردنِ نامهٔ ذخیره‌شده…"
+              fetch={async (q) => { const s = q.trim().toLowerCase(); return letterList.filter((l) => !s || `${l.title || ''} ${l.subject || ''} ${l.account_no || ''}`.toLowerCase().includes(s)).slice(0, 200).map((l) => ({ value: l.id, label: l.title || l.subject || 'نامه', sub: `${l.account_no || 'عمومی'}${l.updated_at ? ' — ' + new Date(l.updated_at).toLocaleDateString('en-GB') : ''}`, data: l })) }}
+              onChange={setLetterQuery}
+              onPick={(o) => { loadLetter(o.value); setLetterQuery('') }} />
+          </div>}
         </div>
 
         {editing && eb && (
@@ -716,9 +844,33 @@ export default function LetterPage() {
         {fmt && (
           <div className="fmt-bar no-print" style={{ left: fmt.x, top: fmt.y }}>
             <button title="توپُر (Ctrl+B)" style={{ fontWeight: 700 }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('bold') }}>B</button>
+            <button title="کج (Ctrl+I)" style={{ fontStyle: 'italic' }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('italic') }}>I</button>
             <button title="زیرخط (Ctrl+U)" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); document.execCommand('underline') }}>U</button>
+            <span className="sep2" />
             <button title="کوچک‌تر" onMouseDown={(e) => { e.preventDefault(); bumpSel(0.85) }}>A−</button>
             <button title="بزرگ‌تر" onMouseDown={(e) => { e.preventDefault(); bumpSel(1.18) }}>A＋</button>
+            <span className="sep2" />
+            <button title="راست‌چین" onMouseDown={(e) => { e.preventDefault(); document.execCommand('justifyRight') }}>▷</button>
+            <button title="وسط‌چین" onMouseDown={(e) => { e.preventDefault(); document.execCommand('justifyCenter') }}>▽</button>
+            <button title="چپ‌چین" onMouseDown={(e) => { e.preventDefault(); document.execCommand('justifyLeft') }}>◁</button>
+            <button title="ترازِ دوطرفه (Justify)" onMouseDown={(e) => { e.preventDefault(); document.execCommand('justifyFull') }}>≣</button>
+            <span className="sep2" />
+            <button title="فهرستِ نقطه‌ای" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList') }}>•</button>
+            <button title="فهرستِ شماره‌دار" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList') }}>۱.</button>
+          </div>
+        )}
+
+        {tbl && (
+          <div className="tbl-bar no-print" style={{ left: tbl.x, top: tbl.y }} onMouseDown={(e) => e.preventDefault()}>
+            <button title="افزودنِ ردیف بالا" onClick={() => tableOp('rowAbove')}>▤↑</button>
+            <button title="افزودنِ ردیف پایین" onClick={() => tableOp('rowBelow')}>▤↓</button>
+            <button title="حذفِ ردیف" className="del" onClick={() => tableOp('delRow')}>▤✕</button>
+            <span className="sep2" />
+            <button title="افزودنِ ستون (راست)" onClick={() => tableOp('colRight')}>▥←</button>
+            <button title="افزودنِ ستون (چپ)" onClick={() => tableOp('colLeft')}>▥→</button>
+            <button title="حذفِ ستون" className="del" onClick={() => tableOp('delCol')}>▥✕</button>
+            <span className="sep2" />
+            <button title="حذفِ کلِ جدول" className="del" onClick={() => tableOp('delTable')}>🗑</button>
           </div>
         )}
 
