@@ -67,16 +67,23 @@ function normalizeBodyHtml(s: string): string {
 }
 
 // Heuristic: a body that arrived hard-wrapped (one paragraph PER VISUAL LINE — e.g. a
-// PDF/line-broken paste, or an older saved letter). Signature: several block lines, few
+// PDF/line-broken paste, or an older saved letter). Signature: several visual lines
+// (counting <br>-separated segments too, since one block can hold many <br> lines), few
 // of which end in a sentence terminator. Such bodies can't justify until reflowed.
 function looksLineBroken(html: string): boolean {
   if (!html || html.indexOf('<') === -1) return false
   const d = document.createElement('div'); d.innerHTML = html
-  const blocks = Array.from(d.children).filter((c) => /^(DIV|P)$/.test(c.tagName) && !c.querySelector('table'))
-  if (blocks.length < 3) return false
-  let term = 0
-  for (const b of blocks) { if (/[.؟!]\s*$/.test((b.textContent || '').trim())) term++ }
-  return term < blocks.length * 0.6
+  let lines = 0, term = 0
+  for (const c of Array.from(d.children)) {
+    if (c.tagName === 'TABLE' || c.querySelector('table')) continue
+    for (const seg of (c as HTMLElement).innerHTML.split(/<br\s*\/?>/i)) {
+      const t = seg.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
+      if (!t) continue
+      lines++
+      if (/[.؟!]\s*$/.test(t)) term++
+    }
+  }
+  return lines >= 3 && term < lines * 0.6
 }
 
 // Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
@@ -275,8 +282,9 @@ export default function LetterPage() {
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
-        // auto-fix line-broken bodies so they flow & justify like Word (no manual step)
-        if (v.body && looksLineBroken(v.body)) v.body = reflowBody(normalizeBodyHtml(v.body))
+        // auto-fix line-broken bodies so they flow & justify like Word (no manual step).
+        // normalize first so legacy plain-text (\n) bodies are detected too.
+        if (v.body) { const nb = normalizeBodyHtml(v.body); if (looksLineBroken(nb)) v.body = reflowBody(nb) }
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
