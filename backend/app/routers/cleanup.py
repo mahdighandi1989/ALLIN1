@@ -54,15 +54,17 @@ async def scan(request: Request, db: AsyncSession = Depends(get_db), actor=Depen
 
 
 class ApplyBody(BaseModel):
-    only: list[str] | None = None   # limit to specific entity keys, or None = all
+    only: list[str] | None = None          # limit to specific entity keys, or None = all
+    confirm_ids: list[str] | None = None   # 'probable' removals the admin/AI confirmed
 
 
 @router.post("/apply")
 async def apply(body: ApplyBody, request: Request, db: AsyncSession = Depends(get_db), actor=Depends(require_admin)):
-    """Soft-delete the duplicate records (reversible via Recycle Bin), logging each
+    """Soft-delete duplicate records (reversible via Recycle Bin), logging each
     removal under its customer's Logs tab. Re-scans first so it applies exactly the
-    current, deterministic result."""
-    result = await db_cleanup.apply(db, actor, only=body.only)
+    current result. Only 'certain' duplicates are removed unless a 'probable' row's
+    id is passed in ``confirm_ids`` (confirmed by a human or the AI adjudicator)."""
+    result = await db_cleanup.apply(db, actor, only=body.only, confirm_ids=body.confirm_ids)
     await _save_run(db, "apply", "manual", getattr(actor, "username", "?"), result["removed"],
                     detail=f"حذفِ {result['removed'].get('total', 0)} رکوردِ تکراری")
     await record_audit(action="delete", entity_type="cleanup", entity_id="apply",
@@ -128,8 +130,15 @@ async def put_config(body: ConfigBody, request: Request, db: AsyncSession = Depe
 
 @router.post("/ai-review")
 async def ai_review(request: Request, db: AsyncSession = Depends(get_db), actor=Depends(require_admin)):
-    """Optional AI «second opinion»: ask the active model to flag near-duplicate
-    records the deterministic rules did NOT merge. Best-effort — returns
-    ``{available:false}`` if no model/network. Suggestions are advisory only
-    (never auto-applied)."""
-    return await db_cleanup.ai_second_opinion(db)
+    """AI adjudication of the ambiguous 'probable' groups: for each, the active
+    model decides (seeing every field) whether a candidate is the SAME record whose
+    data was updated over time, or a genuinely distinct record. Best-effort —
+    returns ``{available:false}`` with no model/network. Nothing is auto-deleted;
+    confirmed ids are returned for a one-click apply."""
+    result = await db_cleanup.ai_adjudicate(db)
+    await _save_run(db, "ai_review", "manual", getattr(actor, "username", "?"),
+                    {"available": result.get("available"), "calls": result.get("calls", 0),
+                     "confirmed": len(result.get("confirmed_ids") or [])},
+                    detail="داوریِ هوش مصنوعیِ مواردِ نیازمندِ بررسی")
+    await db.commit()
+    return result

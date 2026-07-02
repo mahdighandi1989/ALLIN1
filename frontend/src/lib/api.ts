@@ -912,6 +912,7 @@ export interface CleanupGroup {
   removals: CleanupRef[]
   conflict_fields: string[]
   reason: string
+  confidence: 'certain' | 'probable'
 }
 export interface CleanupFacilityReview {
   account_no: string
@@ -952,19 +953,28 @@ export interface CleanupConfig {
   active_model: string | null
   ai_available: boolean
 }
-export interface CleanupAISuggestion {
+export interface CleanupAIVerdictItem {
+  id: string
+  same: boolean
+  confidence: number
+  reason: string
+}
+export interface CleanupAIGroupVerdict {
   entity: string
   label: string
   account_no: string
-  ids: string[]
-  items: Array<{ id: string; info: string }>
+  customer_name: string
+  keeper: CleanupRef
+  verdicts: CleanupAIVerdictItem[]
 }
 export interface CleanupAIReview {
   available: boolean
   reason?: string
   note?: string
   model?: string
-  suggestions?: CleanupAISuggestion[]
+  verdicts?: CleanupAIGroupVerdict[]
+  confirmed_ids?: string[]
+  calls?: number
 }
 
 export const cleanupApi = {
@@ -972,8 +982,9 @@ export const cleanupApi = {
     const { data } = await api.post<CleanupReport>('/api/cleanup/scan')
     return data
   },
-  async apply(only?: string[]): Promise<CleanupApplyResult> {
-    const { data } = await api.post<CleanupApplyResult>('/api/cleanup/apply', { only: only ?? null })
+  async apply(only?: string[], confirmIds?: string[]): Promise<CleanupApplyResult> {
+    const { data } = await api.post<CleanupApplyResult>('/api/cleanup/apply',
+      { only: only ?? null, confirm_ids: confirmIds ?? null })
     return data
   },
   async history(limit = 30): Promise<{ runs: CleanupRun[] }> {
