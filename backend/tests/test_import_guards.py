@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.facility import Facility
+from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty
 from app.models.audit_log import AuditLog
 
@@ -64,6 +65,30 @@ async def test_add_distinct_property_not_merged(client, auth_headers, test_custo
         select(MortgagedProperty).where(MortgagedProperty.account_no == acc,
                                         MortgagedProperty.is_deleted == False))).scalars().all()  # noqa: E712
     assert len(props) == 2
+
+
+@pytest.mark.asyncio
+async def test_add_guarantor_guard_merges_same_person(client, auth_headers, test_customer, db_session):
+    """Adding the same guarantor (person + amount) without a cheque_no merges into
+    the existing record — the full _guar_match rule — and never blanks the
+    existing cheque number."""
+    acc = test_customer.account_no
+    r1 = await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
+                           json={"guarantor_name": "Ali Hammadi", "cheque_no": "CH1", "cheque_amount": 5000})
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["created"] is True
+    # same person + same amount, NO cheque_no → must MERGE (not duplicate)
+    r2 = await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
+                           json={"guarantor_name": "Ali Hammadi", "cheque_amount": 5000, "issuing_bank": "ADCB"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["created"] is False
+
+    guars = (await db_session.execute(
+        select(Guarantor).where(Guarantor.account_no == acc,
+                                Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
+    assert len(guars) == 1                    # NOT duplicated
+    assert guars[0].cheque_no == "CH1"        # existing cheque number preserved
+    assert guars[0].issuing_bank == "ADCB"    # new field applied
 
 
 @pytest.mark.asyncio
