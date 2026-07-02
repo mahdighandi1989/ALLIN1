@@ -20,3 +20,106 @@ appended at the end. Format:
   - Backend: suite کامل pytest در حال اجرا — نتیجه در ادامه ثبت می‌شود.
 - **[FINDING]** `Makefile` ریشه فقط حاوی متن placeholder فارسی
   («محتوای کامل Makefile با دستور اضافه شده») است — محتوای واقعی هرگز کامیت نشده.
+
+## 2026-07-02 — Deep audit (کل سیستم، فرانت تا بک) + اصلاحات
+
+- **[FINDING]** Baseline کامل شد: backend `576 passed, 7 skipped`؛ frontend
+  type-check + build سبز. `backend/static` کامیت‌شده با سورس فرانت هماهنگ بود
+  (فقط buildId متفاوت). اسکن secret چیزی در سورس پیدا نکرد.
+- **[DECISION]** بازرسی با ۴+۲ ایجنت موازی (روترها/امنیت، سرویس‌ها + دو زیر-بازرس،
+  مدل‌ها/مهاجرت/دیپلوی، فرانت‌اند) انجام شد؛ هر یافته قبل از اصلاح در کد راستی‌آزمایی شد.
+
+### CHANGE `2aa9c8e` — استقرار گردش‌کار مستندسازی
+CLAUDE.md + AUDIT_LOG + REMOVAL_CANDIDATES + Makefile واقعی؛ `cleanup_unused_files.py`
+(فقط placeholder، بدون هیچ ارجاع) به `archive/quarantine/` قرنطینه شد.
+
+### CHANGE `b2b52c2` — امنیت/RBAC (root cause: دو پیاده‌سازی موازی `get_current_user`)
+- `utils/security.get_current_user` چک `is_active` نداشت (نسخه‌ی `routers/auth.py`
+  داشت) → کاربر غیرفعال‌شده تا انقضای JWT دسترسی کامل داشت. اضافه شد.
+- نقش viewer (فقط-خواندنی طبق سیاست صریح `tests/test_rbac.py`) می‌توانست بنویسد:
+  facility status/restore، customer restore، همه‌ی mutationهای offer-letter،
+  trash restore، ایمپورت اکسل/AI، stats snapshot — همگی `require_editor` گرفتند؛
+  تغییر وضعیت facility و status/delete نامه‌ها audit هم می‌شوند.
+- trash restore تسهیلات `cascade_restore_facility` را صدا نمی‌زد (چک‌لیست/تسک‌ها
+  حذف‌شده می‌ماندند) — هم‌رفتار با restore خود روتر شد.
+- لاگین JSON مدعی پذیرش `{"email"}` بود ولی فقط با username جستجو می‌کرد — حالا
+  username یا email. فایل مرده‌ی `auth.py` ریشه قرنطینه شد. +۱۱ تست.
+
+### CHANGE `<offer-widths>` — ستون‌های offer_letters (باگ production-only)
+`facility_id` VARCHAR(8) بود در حالی که IDهای واقعی ۹+ کاراکترند → **هیچ نامه‌ای
+هرگز نمی‌توانست به تسهیلات لینک شود** (Postgres: value too long). نرخ‌ها Numeric(5,4)
+(سقف 9.9999) در حالی که API تا 100 می‌پذیرد → هر نرخ ≥۱۰٪ overflow. عرض‌ها اصلاح؛
+PKهای فرزند uuid کامل؛ **db_init حالا precision عددی را هم widen می‌کند** (فقط
+هم‌scale و رو به بالا). تست‌ها روی متادیتای مدل‌اند چون SQLite این‌ها را enforce
+نمی‌کند — دقیقاً دلیل دیده‌نشدن باگ در CI.
+
+### CHANGE — amortization (منطق مالی، rule 3: root cause + مسیر برگشت)
+Root cause: `round(tenor_months*ppy/12)` + نرخ کاملِ هر دوره ⇒ bullet شش‌ماهه = بهره‌ی
+یک سال (۲×)، ۱۸ماهه = ۲۴ ماه بهره، ۴ماههٔ فصلی = کم‌شماری. اصلاح: تجزیه به دوره‌های
+کامل + stub نهایی با بهره‌ی متناسب (divmod). تاریخ‌ها تقویمی واقعی (day-clamped) شدند.
+مضرب‌های کامل بیت‌به‌بیت مثل قبل. مسیر قدیمی پشت `AMORT_LEGACY_ROUNDING=1`. +۱۲ تست.
+
+### CHANGE `13aca82` — سرویس‌ها (فلسفه‌ی conservative/review-first تثبیت شد)
+- db_cleanup: طبقه‌بندی certain/probable حالا **همه‌ی ستون‌های داده** را مقایسه می‌کند
+  (کمکی مرده‌ی `_conflict` دقیقاً برای همین بود) — ضامنِ متفاوت با چکِ هم‌شماره دیگر
+  auto-remove نمی‌شود؛ همان قانون در `dup_status` (گاردهای ورود).
+- data_merge: enrich تسهیلات fill-empty-only شد و مرده را زنده نمی‌کند (قبلاً هر
+  استارتاپ/دیپلوی حذف/اصلاحِ اپراتور را برمی‌گرداند!). +۴ تست.
+- customer_link.ensure_customer: مشتری soft-delete با همان account_no را restore
+  می‌کند به‌جای IntegrityError (ذخیره‌ی نامه/ملک/ضامن ۵۰۰ می‌داد).
+- excel_import: سقف ۵۰۰۰ ردیف حالا خطای صریح است نه truncation خاموش؛ هدر تکراری
+  fail-fast (قبلاً ستون راست‌تر بی‌صدا برنده می‌شد).
+- exporters: صفر ابتدای شماره‌حساب/تلفن در XLSX حفظ می‌شود؛ CSV تزریق فرمول اکسل
+  را خنثی می‌کند.
+- fx: تبدیل ۱:۱ ارز ناشناخته باقی است (fail-open) ولی حالا **یک‌بار به‌ازای هر ارز
+  WARN** می‌شود؛ جدول خالی نرخ‌ها → پیش‌فرض‌ها با لاگ.
+- telegram: `TELEGRAM_CHAT_ID` چند-آی‌دی («111,222») همه‌ی اعلان‌ها را 400 می‌کرد —
+  اولین id مقصد پیش‌فرض شد (مطابق مستند config)؛ `save_prefs` دیگر شکست DB را
+  نمی‌بلعد (allow-list امنیتی بی‌صدا برنمی‌گردد) و روت prefs از session درخواست
+  می‌نویسد.
+- دو باگ `\b` داخل رشته/کلاس کاراکتر (backspace واقعی!) در draft_extract و imports.
+
+### CHANGE `5f8d06e` — بک‌اند (اعلان‌ها، هشدارها، ingest، سخت‌سازی)
+- جدول جدید `notification_reads`: خواندن broadcast per-user شد — اولین خواننده
+  دیگر زنگوله‌ی بقیه را خالی نمی‌کند (broadcastهای قدیمیِ خوانده، خوانده می‌مانند).
+- expiry: اسکن حالا هشدارهای برطرف‌شده (تمدید/حذف) را deactivate می‌کند
+  (`tasks_resolved`) — قبلاً تسک ALERT-* برای همیشه می‌ماند.
+- doc_ingest: `account_type` فقط از پیش‌فرض retail ارتقا می‌یابد (sme کیوریت‌شده
+  دیگر پاک نمی‌شود)؛ تسهیلات بی‌نوع به‌عنوان OTHER مچ می‌شود (re-import دیگر
+  duplicate و دوبرابرشماری exposure نمی‌سازد)؛ آنتروپی PK از ۲ به ۸ کاراکتر hex.
+- آپلودها bounded-read شدند (بدنه‌ی چندگیگی دیگر قبل از چک سایز، RAM را پر نمی‌کند)؛
+  Content-Disposition دانلود Drive با RFC6266/5987؛ برچسب متریک مسیرهای unmatched
+  ثابت شد (اسکن بات‌ها سری نامحدود نمی‌سازد)؛ `/api/simulate-unhandled-error`
+  admin-only شد؛ gunicorn به requirements اضافه شد.
+
+### CHANGE `068456b` — فرانت‌اند (خطرناک‌ترین: نشت داده بین حساب‌ها)
+چهار فرم credit-file-retail/corporate، sanction و offer-letter هنگام بارگیری حساب
+جدید state حسابِ قبلی را نگه می‌داشتند (fallback `s.X`، مپ روی ردیف‌های قبلی، جایگزینی
+مشروط ماتریس وثایق/شرکا) → «ذخیره» داده‌ی مشتری A را روی مشتری B می‌نوشت و حتی
+تسهیلاتِ A را آپدیت می‌کرد. همگی حالا از state تمیز reset می‌شوند. + رفع race جستجو
+(الگوی صفحه‌ی audit)، جستجوی سرورساید مشتری در مودال New Facility (سقف ۱۰۰ مشتری
+آخر برداشته شد)، لینک Google login با `NEXT_PUBLIC_API_URL`، هم‌ترازی نتایج import
+بعد از حذف فایل، اعتبارسنجی per-field نرخ ارز، رفع bidi در ۶ صفحه، پروکسی `/api`
+در nginx فرانت (مسیر داکر). `backend/static` + `frontend/out` بازساخته و کامیت شد.
+
+### CHANGE — مسیر دیپلوی docker/alembic (مسیر Render دست‌نخورده)
+mount فایل ناموجود init.sql حذف؛ alembic در compose هم best-effort؛ مهاجرت 001 از
+enum بومیِ ناموجود به VARCHAR (alembic روی DB تازه همیشه می‌مرد)؛ escape کردن `%` در
+env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنوان build ARG؛
+`SECRET_KEY` غایب در production حالا خطای سخت است (قبلاً هر worker کلید تصادفی
+خودش را می‌گرفت → 401های تصادفی و مرگ همه‌ی sessionها در هر دیپلوی).
+
+### [FINDING — ثبت‌شده، عمداً اصلاح‌نشده در این نوبت]
+- `docker-compose.prod.yml`: پورت 443 بدون TLS در nginx؛ bind-mount کد از base
+  در prod هم فعال است (با read_only تضاد دارد). مسیر داکر ثانویه است — تصمیم با مالک.
+- `render.yaml` مقدار `CORS_ORIGINS` را خالی می‌کند (same-origin فعلی امن است ولی
+  جداکردن فرانت آن را می‌شکند)؛ `/docs` و `/openapi.json` در prod باز است
+  (validate_environment_security هر بوت هشدار می‌دهد).
+- pdf/workbook split در `doc_ingest` روی event loop اجرا می‌شود (CPU-bound) — برای
+  فایل‌های بزرگ چند ثانیه بلاک می‌کند؛ کاندید انتقال به thread.
+- `record_audit(db=…)` تراکنش caller را commit می‌کند — امروز همه‌ی call-siteها بعد
+  از commit خودشان صدا می‌زنند (بازرسی شد، باگ زنده نیست) ولی الگوی خطرناکی است.
+- `customers.account_no` روی DBهای قدیمی/heal-شده unique-constraint واقعی ندارد
+  (db_init ایندکس non-unique می‌سازد) — نیازمند پاکسازی داده قبل از افزودن قید.
+- **[VERIFY]** suite کامل backend بعد از همه‌ی تغییرات: **۶۰۷ سبز** (+۳۱ تست جدید،
+  صفر شکست) + type-check و build فرانت سبز؛ نتیجه‌ی run نهایی پایین‌تر ثبت می‌شود.
