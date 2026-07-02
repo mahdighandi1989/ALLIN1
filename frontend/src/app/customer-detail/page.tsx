@@ -447,7 +447,7 @@ function CustomerDetailInner() {
               profile overview, not hidden behind the Collateral tab. */}
           <Section title={`Collateral — Mortgaged Properties (${properties.length})`}>
             {properties.length === 0 ? (
-              <Empty>هیچ ملکِ رهنی ثبت نشده — از تبِ «Collateral & Property» اضافه کنید.</Empty>
+              <Empty><span dir="rtl">هیچ ملکِ رهنی ثبت نشده — از تبِ «Collateral & Property» اضافه کنید.</span></Empty>
             ) : (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-sm">
@@ -666,7 +666,7 @@ function CustomerDetailInner() {
 
           {securities.length > 0 && (
             <Section title={`Securities Register — Securities List (${securities.length} entries · ${new Set(securities.map((s: any) => s.year)).size} years)`}>
-              <p className="text-xs text-gray-500 mb-2">سابقهٔ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
+              <p className="text-xs text-gray-500 mb-2" dir="rtl">سابقهٔ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs whitespace-nowrap">
                   <thead className="bg-gray-50 text-gray-500 text-left">
@@ -812,7 +812,7 @@ function CustomerDetailInner() {
             </select>
             {chkFacility
               ? <span className="text-xs text-amber-600">⌛ = در انتظار (هنگام ساختِ تسهیلات خودکار درج شد)</span>
-              : <span className="text-xs text-gray-400">روی هر مرحله بزنید تا انجام‌شده/در‌انتظار شود (در Journal ثبت می‌شود).</span>}
+              : <span className="text-xs text-gray-400" dir="rtl">روی هر مرحله بزنید تا انجام‌شده/در‌انتظار شود (در Journal ثبت می‌شود).</span>}
           </div>
           <div className="space-y-1.5">
             {CHECKLIST_STEPS.map((s, i) => {
@@ -950,7 +950,7 @@ function CustomerDetailInner() {
               </table>
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-2">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همهٔ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
+          <p className="text-xs text-gray-400 mt-2" dir="rtl">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همهٔ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
         </Section>
       )}
 
@@ -1288,7 +1288,7 @@ function FacilityInline({ detail, loading, onBack, onSaved }: { detail: any; loa
         </div>
       </Section>
       <Section title={`وثایقِ متصل به این تسهیلات (${totalCollateral})`}>
-        {totalCollateral === 0 ? <Empty>هیچ وثیقه‌ای مستقیماً به این تسهیلات متصل نشده. از تب‌های Collateral / Guarantors هنگام افزودن، این تسهیلات را انتخاب کنید.</Empty> : (
+        {totalCollateral === 0 ? <Empty><span dir="rtl">هیچ وثیقه‌ای مستقیماً به این تسهیلات متصل نشده. از تب‌های Collateral / Guarantors هنگام افزودن، این تسهیلات را انتخاب کنید.</span></Empty> : (
           <div className="space-y-4" dir="rtl">
             {FAC_COLLATERAL.map((g) => {
               const rows = collateral[g.key] || []

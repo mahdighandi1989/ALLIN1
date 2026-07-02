@@ -137,9 +137,20 @@ export default function SettingsPage() {
     try {
       const base = fx?.base_currency
       const rates: Record<string, number> = {}
+      const bad: string[] = []
       Object.entries(fxForm).forEach(([cur, val]) => {
-        if (cur !== base) rates[cur] = parseFloat(val) || 0
+        if (cur === base) return
+        const n = parseFloat(val)
+        if (!Number.isFinite(n) || n <= 0) bad.push(cur)
+        else rates[cur] = n
       })
+      if (bad.length) {
+        // Point at the offending field(s) — sending 0 made the backend reject
+        // the WHOLE batch with an error that named no field.
+        toast.error(`نرخ نامعتبر برای: ${bad.join('، ')} — عدد مثبت وارد کنید`)
+        setSavingFx(false)
+        return
+      }
       await fxApi.update(rates)
       toast.success('Exchange rates saved')
       load()
@@ -293,7 +304,7 @@ export default function SettingsPage() {
         {isAdmin && (
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Legacy data merge</h3>
-            <p className="text-sm text-gray-500 mb-3">داده‌های سیستمِ اکسلِ قبلی (ضامن‌ها، تسهیلات، KYC، …) را در دیتابیسِ پنل ادغام/به‌روزرسانی می‌کند. خودکار در هر startup اجرا می‌شود؛ این دکمه برای اجرای دستی و بررسی است.</p>
+            <p className="text-sm text-gray-500 mb-3" dir="rtl">داده‌های سیستمِ اکسلِ قبلی (ضامن‌ها، تسهیلات، KYC، …) را در دیتابیسِ پنل ادغام/به‌روزرسانی می‌کند. خودکار در هر startup اجرا می‌شود؛ این دکمه برای اجرای دستی و بررسی است.</p>
             {mergeInfo && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
                 {Object.entries(mergeInfo).map(([k, v]) => (
@@ -315,7 +326,7 @@ export default function SettingsPage() {
         {isAdmin && (
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="font-medium flex items-center gap-2 mb-1"><RefreshCw size={16} /> Expiry alert scan</h3>
-            <p className="text-sm text-gray-500 mb-3">تسهیلات و مدارکی که ظرفِ «Expiry warning window» منقضی می‌شوند را به‌صورتِ تسکِ هشدار (اولویت High) در لیستِ کارهای همان مشتری ثبت می‌کند. خودکار در startup اجرا می‌شود؛ این دکمه برای اجرای دستی است.</p>
+            <p className="text-sm text-gray-500 mb-3" dir="rtl">تسهیلات و مدارکی که ظرفِ «Expiry warning window» منقضی می‌شوند را به‌صورتِ تسکِ هشدار (اولویت High) در لیستِ کارهای همان مشتری ثبت می‌کند. خودکار در startup اجرا می‌شود؛ این دکمه برای اجرای دستی است.</p>
             {scanInfo && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm mb-3">
                 {Object.entries(scanInfo).map(([k, v]) => (
@@ -337,7 +348,7 @@ export default function SettingsPage() {
         {isAdmin && (
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Backup export</h3>
-            <p className="text-sm text-gray-500 mb-3">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON روی دستگاهِ خودت دانلود می‌کند (دستی و محلی، بدونِ ارتباط با Google Drive).</p>
+            <p className="text-sm text-gray-500 mb-3" dir="rtl">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON روی دستگاهِ خودت دانلود می‌کند (دستی و محلی، بدونِ ارتباط با Google Drive).</p>
             <button onClick={downloadBackup} type="button"
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900">
               <Database size={16} /> Download backup (JSON)
@@ -386,10 +397,10 @@ export default function SettingsPage() {
               <p className="text-sm text-red-600 mb-3 break-all">خطا: {driveStatus.error}</p>
             )}
             {driveStatus && !driveStatus.enabled && (
-              <p className="text-sm text-amber-600 mb-3">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> را تنظیم کنید (روش پیش‌فرض OAuth است و فقط به <code dir="ltr">GOOGLE_CLIENT_ID/SECRET</code> نیاز دارد).</p>
+              <p className="text-sm text-amber-600 mb-3" dir="rtl">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> را تنظیم کنید (روش پیش‌فرض OAuth است و فقط به <code dir="ltr">GOOGLE_CLIENT_ID/SECRET</code> نیاز دارد).</p>
             )}
             {driveStatus && driveStatus.enabled && driveStatus.mode === 'oauth' && !driveStatus.connected && (
-              <p className="text-sm text-blue-700 mb-3">برای اتصال، دکمهٔ «اتصال Google Drive» را بزن و با حساب گوگلِ خودت اجازه بده. فایل‌ها در فضای ۱۵ گیگابایتیِ خودت ذخیره می‌شوند.</p>
+              <p className="text-sm text-blue-700 mb-3" dir="rtl">برای اتصال، دکمهٔ «اتصال Google Drive» را بزن و با حساب گوگلِ خودت اجازه بده. فایل‌ها در فضای ۱۵ گیگابایتیِ خودت ذخیره می‌شوند.</p>
             )}
 
             <div className="flex flex-wrap gap-2">

@@ -147,7 +147,10 @@ export default function CreditFileCorporatePage() {
       const acct = customer?.account_no || q
       setFacilities(facs)
       const uf = String(profile?.undertaking_from || '')
-      setA((s) => ({
+      // Reset from ACCT0, not the previous account's state — leftover values
+      // must not leak into (and then be saved onto) the new customer.
+      const s = { ...ACCT0 } as Acct
+      setA(() => ({
         ...s, accountNumber: acct, customerName: customer?.name || '',
         branchCode: customer?.branch_code || customer?.branch || '', branchName: customer?.branch || '',
         businessType: profile?.business_type || pdata.business_type || '', rating: profile?.rating || '',
@@ -165,27 +168,29 @@ export default function CreditFileCorporatePage() {
       }))
       // Security/collateral matrix (data_json) → fill the base rows, append extras.
       const sd: any[] = Array.isArray(pdata.security_details) ? pdata.security_details : []
-      if (sd.length) {
-        setSecRows(() => {
-          const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
-          sd.forEach((e: any) => {
-            const t = String(e?.type || '').trim()
-            const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
-            const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
-            if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
-            else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
-          })
-          return [...base, ...extra]
+      // ALWAYS reset from the pristine base: keeping the previous account's
+      // matrix/partners on screen (then saving) wrote customer A's data into
+      // customer B's records.
+      setSecRows(() => {
+        const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
+        sd.forEach((e: any) => {
+          const t = String(e?.type || '').trim()
+          const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
+          const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
+          if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
+          else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
         })
-      }
-      if (parts.length) {
-        setPartners(parts.map((p: any) => ({ uid: uid(), dbId: p.id, name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' })))
-      }
+        return [...base, ...extra]
+      })
+      setPartners(parts.length
+        ? parts.map((p: any) => ({ uid: uid(), dbId: p.id, name: p.partner_name || p.name || '', nationality: p.nationality || '', share: String(p.share || p.share_pct || ''), remarks: p.remarks || '' }))
+        : partnersBase())
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
       // Bind predefined rows to facilities, then AUTO-ADD a row for every extra
       // facility so nothing in the DB is left off the form.
-      setFacRows((rows) => {
+      setFacRows(() => {
+        const rows = facBase()
         const used = new Set<string>()
         const mapped = rows.map((r) => {
           if (!r.matchKey) return r

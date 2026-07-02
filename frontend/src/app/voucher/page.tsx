@@ -309,8 +309,8 @@ export default function VoucherPage() {
         <div className="flex items-center gap-2 mb-1 no-print">
           <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
-            <p className="text-gray-500 text-xs">با وارد کردن شماره حساب، نام از دیتابیس ({(accountCount ?? ACCOUNT_COUNT).toLocaleString()} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
+            <h1 className="text-lg font-bold text-gray-900" dir="rtl">سند انتظامی چک ضمانتی (Securities / Per‑Contra)</h1>
+            <p className="text-gray-500 text-xs" dir="rtl">با وارد کردن شماره حساب، نام از دیتابیس ({(accountCount ?? ACCOUNT_COUNT).toLocaleString()} حساب) پر می‌شود. دو سند روی یک A4 — با نصف‌کردن، هر کدام یک A5.</p>
           </div>
         </div>
 

@@ -59,8 +59,11 @@ export default function CustomersPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    setPage(1)
-    loadCustomers()
+    // Same guard as the audit page: when page > 1, ONLY reset the page and
+    // let the [page] effect fetch — calling loadCustomers() here too fired a
+    // second request with the stale page whose late response could win.
+    if (page === 1) loadCustomers()
+    else setPage(1)
   }
 
   const handleDelete = async (customer: Customer) => {
