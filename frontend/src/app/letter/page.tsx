@@ -257,6 +257,7 @@ export default function LetterPage() {
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
   const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
+  const [colRz, setColRz] = useState<{ top: number; height: number; hdrUid: string; bounds: { x: number; i: number }[] } | null>(null) // column-resize handles
   const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
   const [acct, setAcct] = useState('')
@@ -479,6 +480,48 @@ export default function LetterPage() {
     setF((prev) => ({ ...prev, body: scratch.innerHTML }))
     setTbl(null)
   }
+
+  // ---- Drag a table gridline to resize columns. Live-updates the cell widths in the DOM
+  //      while dragging (all fragments of a split table), then persists the % widths onto
+  //      every cell of the two affected columns in the full body. ----
+  const liveTablesFor = (hdrUid: string) => (Array.from(document.querySelectorAll('#ltr-edit .bcell table')) as HTMLTableElement[]).filter((t) => t.rows[0]?.getAttribute('data-r') === hdrUid)
+  const recomputeColRz = (hdrUid: string) => {
+    const t = liveTablesFor(hdrUid)[0]
+    if (!t || !t.rows[0] || t.rows[0].cells.length < 2) { setColRz(null); return }
+    const tr = t.getBoundingClientRect(); const bounds: { x: number; i: number }[] = []
+    for (let i = 0; i < t.rows[0].cells.length - 1; i++) bounds.push({ x: t.rows[0].cells[i].getBoundingClientRect().left, i })
+    setColRz({ top: tr.top, height: tr.height, hdrUid, bounds })
+  }
+  const startColResize = (e: React.PointerEvent, i: number) => {
+    e.preventDefault(); e.stopPropagation()
+    if (!colRz) return
+    const hdrUid = colRz.hdrUid
+    const tables = liveTablesFor(hdrUid); if (!tables.length) return
+    const t0 = tables[0]
+    const startX = e.clientX
+    const w0 = t0.rows[0].cells[i].getBoundingClientRect().width
+    const w1 = t0.rows[0].cells[i + 1].getBoundingClientRect().width
+    const tableW = t0.getBoundingClientRect().width || 1
+    const mv = (ev: PointerEvent) => {
+      const d = startX - ev.clientX                                  // RTL: drag left → col i widens
+      const nw0 = Math.max(24, w0 + d), nw1 = Math.max(24, w1 - d)
+      const p0 = `${(nw0 / tableW * 100).toFixed(2)}%`, p1 = `${(nw1 / tableW * 100).toFixed(2)}%`
+      tables.forEach((t) => Array.from(t.rows).forEach((r) => { if (r.cells[i]) r.cells[i].style.width = p0; if (r.cells[i + 1]) r.cells[i + 1].style.width = p1 }))
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      // persist the resulting column widths onto the full body
+      const live = liveTablesFor(hdrUid)[0]; if (!live) return
+      const widths = Array.from(live.rows[0].cells).map((c) => (c as HTMLElement).style.width)
+      const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(f.body)
+      mergeAdjacentTables(scratch); normalizeTables(scratch)
+      const tr = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
+      const table = tr?.closest('table') as HTMLTableElement | null
+      if (table) { Array.from(table.rows).forEach((r) => widths.forEach((w, ci) => { if (w && r.cells[ci]) (r.cells[ci] as HTMLElement).style.width = w })); setF((prev) => ({ ...prev, body: scratch.innerHTML })) }
+      requestAnimationFrame(() => recomputeColRz(hdrUid))   // realign the handles to the re-rendered table
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
   // insert a fresh R×C table at the caret (or append to the body)
   const insertTable = () => {
     const R = parseInt(prompt('چند ردیف؟ (rows)', '3') || '0', 10)
@@ -559,8 +602,13 @@ export default function LetterPage() {
       // (which includes the text-format buttons) and hide the standalone format bar so
       // the two never overlap.
       const cell = (!designRef.current && el) ? (el.closest('.bcell td, .bcell th') as HTMLElement | null) : null
-      if (cell) { const t = cell.closest('table')!.getBoundingClientRect(); setTbl({ x: t.left + t.width / 2, y: t.top }); setFmt(null); return }
-      setTbl(null)
+      if (cell) {
+        const table = cell.closest('table') as HTMLTableElement
+        const t = table.getBoundingClientRect(); setTbl({ x: t.left + t.width / 2, y: t.top }); setFmt(null)
+        recomputeColRz(table.rows[0]?.getAttribute('data-r') || '')   // column-resize handles at the table's borders
+        return
+      }
+      setTbl(null); setColRz(null)
       // selection format toolbar
       if (!s || s.isCollapsed || !s.rangeCount) { setFmt(null); return }
       if (!el || !el.closest('.bcell, .rich')) { setFmt(null); return }
@@ -570,6 +618,15 @@ export default function LetterPage() {
     }
     document.addEventListener('selectionchange', onSel)
     return () => document.removeEventListener('selectionchange', onSel)
+  }, [])
+  // keep the column-resize handles aligned with the table while scrolling (they're fixed)
+  const colRzRef = useRef(colRz); useEffect(() => { colRzRef.current = colRz }, [colRz])
+  useEffect(() => {
+    let raf = 0
+    const onScroll = () => { const c = colRzRef.current; if (!c) return; cancelAnimationFrame(raf); raf = requestAnimationFrame(() => recomputeColRz(c.hdrUid)) }
+    window.addEventListener('scroll', onScroll, true)
+    return () => { window.removeEventListener('scroll', onScroll, true); cancelAnimationFrame(raf) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // contY = where the body continues on pages 2+ (just below the header; adjustable).
@@ -907,6 +964,8 @@ export default function LetterPage() {
         .fmt-bar .sep2,.tbl-bar .sep2{width:1px;height:16px;background:rgba(255,255,255,.28);margin:0 2px;flex:0 0 auto}
         /* floating TABLE toolbar (shown when the caret is inside a cell) */
         .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px);background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .col-rz{position:fixed;width:6px;z-index:122;cursor:col-resize;background:transparent}
+        .col-rz:hover{background:rgba(15,118,110,.45)}
         .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
         .tbl-bar button:hover{background:#115e59}
         .tbl-bar button.del:hover{background:#b91c1c}
@@ -965,7 +1024,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v13</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v14</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -1073,6 +1132,12 @@ export default function LetterPage() {
             <button title="حذفِ کلِ جدول" className="del" onClick={() => tableOp('delTable')}>🗑</button>
           </div>
         )}
+
+        {/* draggable gridlines to resize table columns (shown while the caret is in a table) */}
+        {colRz && !design && colRz.bounds.map((b) => (
+          <div key={b.i} className="col-rz no-print" style={{ left: b.x - 3, top: colRz.top, height: colRz.height }}
+            title="کشیدن برای تغییرِ عرضِ ستون" onPointerDown={(e) => startColResize(e, b.i)} />
+        ))}
 
         {/* hidden measurers — body height/pagination and subject width (for the separator) */}
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
