@@ -121,5 +121,8 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   از commit خودشان صدا می‌زنند (بازرسی شد، باگ زنده نیست) ولی الگوی خطرناکی است.
 - `customers.account_no` روی DBهای قدیمی/heal-شده unique-constraint واقعی ندارد
   (db_init ایندکس non-unique می‌سازد) — نیازمند پاکسازی داده قبل از افزودن قید.
-- **[VERIFY]** suite کامل backend بعد از همه‌ی تغییرات: **۶۰۷ سبز** (+۳۱ تست جدید،
-  صفر شکست) + type-check و build فرانت سبز؛ نتیجه‌ی run نهایی پایین‌تر ثبت می‌شود.
+- **[VERIFY — نهایی، قبل از مرج به main]** backend: `607 passed, 7 skipped`
+  (baseline: 576 → +۳۱ تست جدید، صفر شکست)؛ frontend: `npm run type-check` +
+  `npm run build` سبز؛ `backend/static` از build تازه سینک و کامیت شده.
+  طبق دستور دائمی مالک، مرج مستقیم به `main` (بدون PR) انجام شد — Render
+  خودکار دیپلوی می‌کند.
