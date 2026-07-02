@@ -13,7 +13,9 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # NOTE: no init.sql — the app self-heals its schema at startup
+      # (app/db_init.py). Mounting a nonexistent file made Docker create a
+      # DIRECTORY named init.sql and the postgres entrypoint aborted on it.
     networks:
       - allin1_network
     healthcheck:
@@ -48,8 +50,11 @@ services:
         condition: service_healthy
     networks:
       - allin1_network
+    # Migrations are best-effort (same contract as render.yaml): the schema
+    # self-heals at startup, so a failed alembic step must not crash-loop the
+    # container.
     command: >
-      sh -c "alembic upgrade head &&
+      sh -c "(alembic upgrade head || echo 'alembic skipped; schema self-heals at startup') &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     restart: unless-stopped
 

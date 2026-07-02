@@ -24,7 +24,9 @@ from app.models.facility import Facility
 config = context.config
 
 # Override sqlalchemy.url with the app's DATABASE_URL from environment
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# configparser interpolates '%' — a DB password containing % would raise
+# InterpolationSyntaxError on every upgrade; escape it.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
