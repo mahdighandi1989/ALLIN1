@@ -301,7 +301,7 @@ export default function LetterPage() {
     else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
-  const newLetter = () => { setLetterId(null); setTitle(''); setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' })) }
+  const newLetter = () => { setLetterId(null); setTitle(''); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
     if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
@@ -1001,9 +1001,13 @@ export default function LetterPage() {
           html,body{margin:0!important;padding:0!important;background:#fff!important}
           .no-print,.pp{display:none!important}
           #ltr-edit{display:none!important}
-          .print-wrap{display:block!important}
-          .canvas-wrap{overflow:visible}
-          .psheet{box-shadow:none;margin:0;break-after:page;page-break-after:always}
+          .print-wrap{display:block!important;padding:0!important;margin:0!important}
+          /* drop the on-screen bottom padding — sheet + 20px padding pushed past A4 onto a
+             blank extra page */
+          .canvas-wrap{overflow:visible;padding:0!important;margin:0!important}
+          /* keep each sheet strictly UNDER A4 height (1123px≈297.1mm overflowed); clip any
+             sub-pixel overflow so one sheet = exactly one printed page */
+          .psheet{box-shadow:none;margin:0!important;height:296mm;overflow:hidden;break-after:page;page-break-after:always}
           .psheet:last-child{break-after:auto;page-break-after:auto}
         }
         `}</style>
@@ -1024,7 +1028,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v14</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v15</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
