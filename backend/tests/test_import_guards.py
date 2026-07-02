@@ -55,6 +55,28 @@ async def test_add_property_guard_merges_duplicate(client, auth_headers, test_cu
 
 
 @pytest.mark.asyncio
+async def test_add_property_probable_inserts_and_flags(client, auth_headers, test_customer, db_session):
+    """Same deed with a DIFFERENT valuation is a 'probable' case: it is inserted
+    (no data loss, no false merge) and FLAGGED for review — not silently merged."""
+    acc = test_customer.account_no
+    r1 = await client.post(f"/api/crm/properties/{acc}", headers=auth_headers,
+                           json={"mortgage_deed_no": "77/9", "valuation": 1000000})
+    assert r1.status_code == 200, r1.text
+    r2 = await client.post(f"/api/crm/properties/{acc}", headers=auth_headers,
+                           json={"mortgage_deed_no": "77/9", "valuation": 1050000})
+    assert r2.status_code == 200, r2.text
+    assert r2.json().get("needs_review") is True
+    assert r2.json().get("deduped") is not True
+    props = (await db_session.execute(
+        select(MortgagedProperty).where(MortgagedProperty.account_no == acc,
+                                        MortgagedProperty.is_deleted == False))).scalars().all()  # noqa: E712
+    assert len(props) == 2   # inserted, not merged
+    logs = (await db_session.execute(
+        select(AuditLog).where(AuditLog.account_no == acc, AuditLog.action == "review"))).scalars().all()
+    assert len(logs) >= 1
+
+
+@pytest.mark.asyncio
 async def test_add_distinct_property_not_merged(client, auth_headers, test_customer, db_session):
     """A genuinely different property is still added (guard is not over-eager)."""
     acc = test_customer.account_no

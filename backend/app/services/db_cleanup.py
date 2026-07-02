@@ -54,17 +54,29 @@ def _age_key(row):
     return getattr(row, "created_at", None) or datetime.max.replace(tzinfo=None)
 
 
-# ---- pairwise duplicate tests — CONSERVATIVE (safe for automatic deletion) ----
-# Two records are the SAME only when they share a STRONG, unique identifier (the
-# registered deed / plate / cheque no. / FD no.) AND no distinguishing field
-# CONFLICTS (both populated but different). This is deliberately stricter than the
-# fuzzy import matcher: two flats on the same building plan but with different
-# deeds, two different security cheques from one guarantor, or two units of one
-# deed with different valuations are DISTINCT and must never be merged/deleted.
+# ---- two-layer duplicate detection ---------------------------------------
+# Layer 1 — CANDIDATE: two records are the same real-world entity when they share
+#   a STRONG unique identifier (registered deed / plate / cheque no. / FD no.;
+#   exact normalized name for partners). Ids are compared *normalized* (separators
+#   and spacing ignored) so "36/235/1485" and "36-235-1485" match.
+# Layer 2 — CONFIDENCE: among candidates, a pair is
+#   • "certain"  when their key value fields agree (only empty↔filled differences),
+#   • "probable" when a key value differs (valuation/amount/date/…): almost always
+#     the SAME record whose data was UPDATED over time, but occasionally a distinct
+#     sub-entity (e.g. two units of one deed). These are NEVER auto-removed — they
+#     are surfaced for review and are exactly what the AI adjudicates, weighing all
+#     fields (values, dates, cheques, securities) rather than one hard rule.
 def _eq(a, b) -> bool:
     a = (str(a).strip().lower() if a not in (None, "") else "")
     b = (str(b).strip().lower() if b not in (None, "") else "")
     return bool(a) and a == b
+
+
+def _eq_id(a, b) -> bool:
+    """Strong-id equality, tolerant of separator/spacing/case differences."""
+    na = re.sub(r"[^a-z0-9]", "", str(a or "").lower())
+    nb = re.sub(r"[^a-z0-9]", "", str(b or "").lower())
+    return bool(na) and na == nb
 
 
 def _values_conflict(va, vb) -> bool:
@@ -77,52 +89,54 @@ def _values_conflict(va, vb) -> bool:
         return str(va).strip().lower() != str(vb).strip().lower()
 
 
-def _no_conflict(a, b, fields) -> bool:
-    """True when NONE of ``fields`` conflicts between a and b."""
-    return not any(_values_conflict(getattr(a, f, None), getattr(b, f, None)) for f in fields)
-
-
 def _norm_name(s) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", str(s or "").lower())).strip()
 
 
-# If any distinguishing field differs (both populated), the rows are NOT the same
-# record, even when a strong id matches — this is what stops distinct-but-similar
-# records (different deeds/units/cheques) from being wrongly merged.
-_PROP_DISTINGUISH = ("mortgage_deed_no", "plate_no", "valuation", "mortgage_amount", "address")
-_GUAR_DISTINGUISH = ("cheque_amount", "guarantor_name")
-_FD_DISTINGUISH = ("amount", "maturity_date")
-_PARTNER_DISTINGUISH = ("share",)
+# Key value fields per entity — a difference here (both populated) makes a pair
+# "probable" (an update or a distinct sub-entity) rather than "certain".
+_DISTINGUISH_BY_KEY = {
+    "properties": ("valuation", "mortgage_amount", "address", "land_area", "insurance_expiry"),
+    "guarantors": ("cheque_amount", "issuing_bank", "pim_ref"),
+    "fixed_deposits": ("amount", "maturity_date", "open_date", "rate"),
+    "partners": ("share", "nationality"),
+}
 
 
+# ---- Layer 1 candidate matchers (strong id / exact name only) ----
 def _props_match(a, b) -> bool:
-    strong = _eq(a.mortgage_deed_no, b.mortgage_deed_no) or _eq(a.plate_no, b.plate_no)
-    return strong and _no_conflict(a, b, _PROP_DISTINGUISH)
+    return _eq_id(a.mortgage_deed_no, b.mortgage_deed_no) or _eq_id(a.plate_no, b.plate_no)
 
 
 def _guar_match(a, b) -> bool:
-    return _eq(a.cheque_no, b.cheque_no) and _no_conflict(a, b, _GUAR_DISTINGUISH)
+    return _eq_id(a.cheque_no, b.cheque_no)
 
 
 def _fd_match(a, b) -> bool:
-    return _eq(a.fd_number, b.fd_number) and _no_conflict(a, b, _FD_DISTINGUISH)
+    return _eq_id(a.fd_number, b.fd_number)
 
 
 def _partner_match(a, b) -> bool:
     na, nb = _norm_name(a.name), _norm_name(b.name)
-    return bool(na) and na == nb and _no_conflict(a, b, _PARTNER_DISTINGUISH)
+    return bool(na) and na == nb
+
+
+# ---- Layer 2 confidence ----
+def _pair_conflicts(a, b, fields) -> list[str]:
+    """Key value fields that differ (both populated) between a and b."""
+    return [f for f in fields if _values_conflict(getattr(a, f, None), getattr(b, f, None))]
 
 
 def _match_reason(a, b) -> str:
     """Short Persian explanation of WHY two rows are treated as the same record —
     surfaced in the report so a reviewer can trust (or challenge) each grouping."""
-    if _eq(getattr(a, "mortgage_deed_no", None), getattr(b, "mortgage_deed_no", None)):
+    if _eq_id(getattr(a, "mortgage_deed_no", None), getattr(b, "mortgage_deed_no", None)):
         return "سندِ رهنیِ یکسان"
-    if _eq(getattr(a, "plate_no", None), getattr(b, "plate_no", None)):
+    if _eq_id(getattr(a, "plate_no", None), getattr(b, "plate_no", None)):
         return "پلاکِ یکسان"
-    if _eq(getattr(a, "cheque_no", None), getattr(b, "cheque_no", None)):
+    if _eq_id(getattr(a, "cheque_no", None), getattr(b, "cheque_no", None)):
         return "شمارهٔ چکِ یکسان"
-    if _eq(getattr(a, "fd_number", None), getattr(b, "fd_number", None)):
+    if _eq_id(getattr(a, "fd_number", None), getattr(b, "fd_number", None)):
         return "شمارهٔ سپردهٔ یکسان"
     if _norm_name(getattr(a, "name", None)) and _norm_name(getattr(a, "name", None)) == _norm_name(getattr(b, "name", None)):
         return "نامِ کاملاً یکسان"
@@ -223,9 +237,11 @@ async def scan(db: AsyncSession) -> dict:
     groups: dict[str, list] = {}
     counts: dict[str, int] = {}
     total_removals = 0
+    total_review = 0
 
     for key, model, acc_attr, _audit, label, match, summ in _ENTITIES:
         cols = _data_cols(model)
+        distinguish = _DISTINGUISH_BY_KEY.get(key, ())
         rows = list((await db.execute(
             select(model).where(model.is_deleted == False))).scalars().all())  # noqa: E712
         by_acc: dict[str, list] = {}
@@ -236,17 +252,32 @@ async def scan(db: AsyncSession) -> dict:
             if not acc or len(arows) < 2:
                 continue
             for keeper, removals in _group_dupes(arows, match, cols):
-                ent_groups.append({
+                # split the candidate group by confidence: identical (certain) vs
+                # value-conflicting (probable — an update or a distinct sub-entity).
+                certain, probable = [], []
+                for r in removals:
+                    cf = _pair_conflicts(keeper, r, distinguish)
+                    (probable if cf else certain).append((r, cf))
+                base = {
                     "account_no": acc,
                     "customer_name": name_by_acc.get(acc, ""),
                     "keeper": {"id": keeper.id, "summary": summ(keeper)},
-                    "removals": [{"id": r.id, "summary": summ(r)} for r in removals],
-                    "conflict_fields": _conflict(keeper, removals, cols),
                     "reason": _match_reason(keeper, removals[0]) if removals else "",
-                })
-                total_removals += len(removals)
+                }
+                if certain:
+                    ent_groups.append({**base, "confidence": "certain",
+                                       "conflict_fields": [],
+                                       "removals": [{"id": r.id, "summary": summ(r)} for r, _ in certain]})
+                    total_removals += len(certain)
+                if probable:
+                    fields = sorted({f for _, cf in probable for f in cf})
+                    ent_groups.append({**base, "confidence": "probable",
+                                       "conflict_fields": fields,
+                                       "removals": [{"id": r.id, "summary": summ(r)} for r, _ in probable]})
+                    total_review += len(probable)
         groups[key] = ent_groups
-        counts[key] = sum(len(g["removals"]) for g in ent_groups)
+        counts[key] = sum(len(g["removals"]) for g in ent_groups if g["confidence"] == "certain")
+        counts[key + "_review"] = sum(len(g["removals"]) for g in ent_groups if g["confidence"] == "probable")
 
     # Facilities — REVIEW ONLY (never auto-removed).
     fac_rows = list((await db.execute(
@@ -268,7 +299,8 @@ async def scan(db: AsyncSession) -> dict:
             })
 
     counts["facilities_review"] = sum(len(g["rows"]) for g in fac_review)
-    counts["total_removals"] = total_removals
+    counts["total_removals"] = total_removals          # certain, safe to apply
+    counts["total_review"] = total_review + counts["facilities_review"]  # needs judgment
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "groups": groups,
@@ -299,6 +331,30 @@ _MATCH_BY_MODEL = {
 def matcher_for(model):
     """The duplicate-matcher callable for a model, or None if it has no rule."""
     return _MATCH_BY_MODEL.get(model)
+
+
+_KEY_BY_MODEL = {m: k for (k, m, _a, _audit, _label, _mt, _s) in _ENTITIES}
+
+
+def dup_status(existing, candidate, model=None):
+    """Classify a candidate against an existing row for entry-time guards:
+      • 'certain'  — same record; safe to enrich in place.
+      • 'probable' — same strong id but a KEY value differs (an update to the
+                     record, OR a distinct sub-entity like another unit): needs a
+                     smarter decision (AI adjudication, or flag for review).
+      • None       — not a duplicate.
+    """
+    model = model or type(candidate)
+    match = matcher_for(model)
+    if not match:
+        return None
+    try:
+        if not match(existing, candidate):
+            return None
+    except Exception:
+        return None
+    fields = _DISTINGUISH_BY_KEY.get(_KEY_BY_MODEL.get(model), ())
+    return "probable" if _pair_conflicts(existing, candidate, fields) else "certain"
 
 
 def find_duplicate(candidate, existing_rows, model=None, match=None):
@@ -334,33 +390,44 @@ def merge_fill(existing, incoming, model=None) -> list[str]:
     return filled
 
 
-async def apply(db: AsyncSession, user, only: list[str] | None = None) -> dict:
-    """Re-scan (deterministic) and SOFT-DELETE the duplicate removals, logging each
-    per-customer. ``only`` optionally limits which entity keys are applied."""
+async def apply(db: AsyncSession, user, only: list[str] | None = None,
+                confirm_ids: list[str] | None = None) -> dict:
+    """Re-scan and SOFT-DELETE duplicate removals, logging each per-customer.
+
+    By default only 'certain' (identical) duplicates are removed. 'probable' rows —
+    same strong id but a differing value, i.e. an update OR a distinct sub-entity —
+    are removed ONLY when their id is explicitly listed in ``confirm_ids`` (a human
+    or the AI confirmed them). ``only`` optionally limits which entity keys apply."""
     from app.services.audit import record_audit
 
+    confirm = set(confirm_ids or [])
     report = await scan(db)
     removed: dict[str, int] = {}
     for key, ent_groups in report["groups"].items():
         if only and key not in only:
             continue
         model, audit_type, label = _MODEL_BY_KEY[key]
-        ids = [rm["id"] for g in ent_groups for rm in g["removals"]]
-        id_to_group = {rm["id"]: g for g in ent_groups for rm in g["removals"]}
-        if not ids:
+        # certain removals always; probable removals only when explicitly confirmed.
+        wanted: dict[str, dict] = {}
+        for g in ent_groups:
+            for rm in g["removals"]:
+                if g.get("confidence") == "certain" or rm["id"] in confirm:
+                    wanted[rm["id"]] = g
+        if not wanted:
             continue
-        rows = list((await db.execute(select(model).where(model.id.in_(ids)))).scalars().all())
+        rows = list((await db.execute(select(model).where(model.id.in_(list(wanted.keys()))))).scalars().all())
         cnt = 0
         for r in rows:
             if getattr(r, "is_deleted", False):
                 continue
             r.is_deleted = True
             cnt += 1
-            g = id_to_group.get(r.id, {})
+            g = wanted.get(r.id, {})
+            kind = "به‌روزشده/تکراری" if g.get("confidence") == "probable" else "تکراری"
             await record_audit(
                 action="delete", entity_type=audit_type, entity_id=r.id,
                 account_no=g.get("account_no"),
-                detail=f"پاک‌سازیِ خودکار — حذفِ {label}ِ تکراری (نگه‌داشته‌شده: {g.get('keeper', {}).get('id', '')})",
+                detail=f"پاک‌سازی — حذفِ {label}ِ {kind} (نگه‌داشته‌شده: {g.get('keeper', {}).get('id', '')})",
                 user=user, db=db,
             )
         removed[key] = cnt
@@ -369,25 +436,49 @@ async def apply(db: AsyncSession, user, only: list[str] | None = None) -> dict:
     return {"applied_at": datetime.now(timezone.utc).isoformat(), "removed": removed}
 
 
-# ---- optional AI «second opinion» (advisory only) ----
-def _parse_groups(text: str, valid: set[str]) -> list[list[str]]:
-    """Pull {"groups": [[id,id],...]} out of a model reply, keeping only known ids."""
+# ---- AI adjudication — judges the ambiguous 'probable' groups holistically ----
+def _full_record(r, model) -> dict:
+    """Every populated data field of a row. The AI weighs ALL of them (valuation,
+    dates, amounts, cheque/securities numbers, …) — not one hard-coded rule."""
+    out = {"id": r.id}
+    for c in _data_cols(model):
+        v = getattr(r, c, None)
+        if _nz(v):
+            out[c] = str(getattr(v, "value", v))
+    return out
+
+
+def _parse_verdicts(text: str, valid: set[str]) -> list[dict]:
+    """Parse {"verdicts":[{"id","same","confidence","reason"}]}, keeping known ids."""
     try:
         m = re.search(r"\{.*\}", text or "", re.S)
         data = json.loads(m.group() if m else text)
         out = []
-        for g in (data.get("groups") or []):
-            ids = [str(x) for x in g if str(x) in valid]
-            if len(ids) >= 2:
-                out.append(sorted(set(ids)))
+        for v in (data.get("verdicts") or []):
+            rid = str(v.get("id"))
+            if rid not in valid:
+                continue
+            try:
+                conf = float(v.get("confidence"))
+            except (TypeError, ValueError):
+                conf = 1.0
+            out.append({"id": rid, "same": bool(v.get("same")), "confidence": conf,
+                        "reason": str(v.get("reason") or "")[:300]})
         return out
     except Exception:
         return []
 
 
-async def ai_second_opinion(db: AsyncSession, max_accounts: int = 15) -> dict:
-    """Ask the active model to flag near-duplicates the rules didn't merge. Advisory
-    only (never auto-applied). Best-effort: ``{available:False}`` if no model/network."""
+async def ai_adjudicate(db: AsyncSession, report: dict | None = None, max_calls: int = 25) -> dict:
+    """Ask the active model to JUDGE each 'probable' group: for every candidate, is
+    it the SAME real-world entity as the keeper whose data was updated over time
+    (``same=true``) or a genuinely DISTINCT record — another unit of the same deed,
+    a different cheque — that must be kept (``same=false``)? The model sees EVERY
+    populated field of both records, so the decision is holistic, not a hard rule.
+
+    Best-effort & advisory: ``{available:false}`` when no model/network. Candidates
+    judged ``same`` with sufficient confidence are returned in ``confirmed_ids`` so
+    an admin can apply exactly those in one click (nothing is auto-deleted)."""
     from app.ai.inference import complete
 
     probe = await complete(db, "reply exactly: ok", task="data_validation", max_tokens=5)
@@ -395,35 +486,54 @@ async def ai_second_opinion(db: AsyncSession, max_accounts: int = 15) -> dict:
         return {"available": False, "reason": probe.get("error", "no_model"),
                 "note": "هیچ مدلِ هوش مصنوعیِ فعالی در دسترس نیست (یا شبکه مسدود است)."}
 
-    specs = [("properties", MortgagedProperty, "املاک", _prop_summary),
-             ("partners", Partner, "شرکا", _partner_summary),
-             ("guarantors", Guarantor, "ضامن‌ها", _guar_summary)]
-    suggestions, calls = [], 0
-    for key, model, label, summ in specs:
-        rows = list((await db.execute(select(model).where(model.is_deleted == False))).scalars().all())  # noqa: E712
-        by_acc: dict[str, list] = {}
-        for r in rows:
-            by_acc.setdefault((r.account_no or "").strip(), []).append(r)
-        for acc, arows in by_acc.items():
-            if calls >= max_accounts:
-                break
-            if not acc or len(arows) < 2:
+    report = report or await scan(db)
+    model_by_key = {k: m for (k, m, *_rest) in _ENTITIES}
+    label_by_key = {k: lbl for (k, _m, _a, _au, lbl, _mt, _s) in _ENTITIES}
+    verdicts, confirmed_ids, calls = [], [], 0
+
+    for key, ent_groups in report["groups"].items():
+        model = model_by_key.get(key)
+        if model is None:
+            continue
+        for g in ent_groups:
+            if g.get("confidence") != "probable" or calls >= max_calls:
                 continue
-            items = [{"id": r.id, "info": summ(r)} for r in arows]
-            prompt = (f"این فهرستِ رکوردهای «{label}» برای یک حساب بانکی است. کدام رکوردها در واقع یک مورد هستند (تکراری)؟ "
-                      "فقط و فقط JSON برگردان: {\"groups\": [[\"id1\",\"id2\"]]} — هر گروه شناسه‌هایِ تکراری. اگر تکراری نبود: {\"groups\": []}.\n"
-                      + json.dumps(items, ensure_ascii=False))
+            ids = [g["keeper"]["id"], *[r["id"] for r in g["removals"]]]
+            rows = {r.id: r for r in (await db.execute(select(model).where(model.id.in_(ids)))).scalars().all()}
+            keeper = rows.get(g["keeper"]["id"])
+            rem_rows = [rows[r["id"]] for r in g["removals"] if r["id"] in rows]
+            if keeper is None or not rem_rows:
+                continue
+            payload = {"keeper": _full_record(keeper, model),
+                       "candidates": [_full_record(r, model) for r in rem_rows]}
+            prompt = (
+                f"چند رکوردِ «{label_by_key.get(key, key)}» برای یک حسابِ بانکی داریم که شناسهٔ اصلی‌شان (سند/پلاک/چک/سپرده) یکی است. "
+                "برای هر رکوردِ candidate تصمیم بگیر: آیا همان موجودیتِ keeper است که داده‌هایش در طولِ زمان به‌روز/اصلاح شده "
+                "(same=true) یا موردی کاملاً جداگانه است (مثلاً واحدِ دیگری از همان سند، یا چکِ دیگر) که نباید حذف شود (same=false)؟ "
+                "همهٔ فیلدها (ارزش، مبالغ، تاریخ‌ها، شماره‌ها، آدرس/واحد) را با هم بسنج. "
+                "فقط و فقط JSON برگردان: {\"verdicts\":[{\"id\":\"...\",\"same\":true|false,\"confidence\":0..1,\"reason\":\"...\"}]}\n"
+                + json.dumps(payload, ensure_ascii=False)
+            )
             calls += 1
-            res = await complete(db, prompt, task="data_validation", max_tokens=500)
+            res = await complete(db, prompt, task="data_validation", max_tokens=700)
             if not res.get("ok"):
                 continue
-            for g in _parse_groups(res.get("text", ""), {r.id for r in arows}):
-                suggestions.append({"entity": key, "label": label, "account_no": acc,
-                                    "ids": g, "items": [i for i in items if i["id"] in g]})
-        if calls >= max_accounts:
-            break
-    return {"available": True, "model": probe.get("model"), "suggestions": suggestions,
-            "note": "پیشنهادِ هوش مصنوعی — فقط برای بازبینی؛ چیزی خودکار حذف نمی‌شود."}
+            vs = _parse_verdicts(res.get("text", ""), {r.id for r in rem_rows})
+            if not vs:
+                continue
+            verdicts.append({"entity": key, "label": label_by_key.get(key, key),
+                             "account_no": g["account_no"], "customer_name": g.get("customer_name", ""),
+                             "keeper": g["keeper"], "verdicts": vs})
+            confirmed_ids.extend(v["id"] for v in vs if v["same"] and v["confidence"] >= 0.7)
+
+    return {"available": True, "model": probe.get("model"), "verdicts": verdicts,
+            "confirmed_ids": confirmed_ids, "calls": calls,
+            "note": "داوریِ هوش مصنوعی — same یعنی همان رکوردِ به‌روزشده، false یعنی موردِ جدا. "
+                    "موارد تأییدشده را می‌توانید یک‌جا اعمال کنید؛ چیزی خودکار حذف نمی‌شود."}
+
+
+# Backwards-compatible alias (older callers / the /ai-review route).
+ai_second_opinion = ai_adjudicate
 
 
 # ---------------------------------------------------------------------------
@@ -504,23 +614,23 @@ async def run_once_scheduled(db: AsyncSession) -> dict | None:
 
     report = await scan(db)
     counts = report["counts"]
-    total = counts.get("total_removals", 0)
-    fac = counts.get("facilities_review", 0)
+    total = counts.get("total_removals", 0)      # certain duplicates
+    review = counts.get("total_review", 0)       # probable + facilities (need judgment)
 
     db.add(CleanupRun(
         kind="scheduled", trigger="schedule", username="system",
         counts_json=json.dumps(counts, ensure_ascii=False),
-        detail=f"اسکنِ زمان‌بندی‌شده ({schedule}) — {total} رکوردِ تکراری برای بازبینی",
+        detail=f"اسکنِ زمان‌بندی‌شده ({schedule}) — {total} تکراریِ قطعی، {review} نیازمندِ بررسی",
     ))
     await _write_setting(db, "cleanup_last_run", now.isoformat())
     await db.commit()
 
-    if total or fac:
+    if total or review:
         await _notify_admins(
             db,
             title="پاک‌سازیِ دیتابیس: مواردی برای بازبینی پیدا شد",
-            message=(f"اسکنِ زمان‌بندی‌شدهٔ دیتابیس {total} رکوردِ تکراری و {fac} تسهیلاتِ "
-                     "نیازمندِ بررسی یافت. برای تأیید و حذف به صفحهٔ «پاک‌سازیِ دیتابیس» بروید."),
+            message=(f"اسکنِ زمان‌بندی‌شدهٔ دیتابیس {total} تکراریِ قطعی و {review} موردِ "
+                     "نیازمندِ داوری (به‌روزرسانی/تسهیلات) یافت. برای تأیید به صفحهٔ «پاک‌سازیِ دیتابیس» بروید."),
             level="warning",
         )
     logger.info("Scheduled cleanup scan complete (%s): %s", schedule, counts)

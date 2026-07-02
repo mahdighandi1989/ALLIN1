@@ -93,9 +93,37 @@ async def test_scan_does_not_flag_distinct_records(db_session):
     await db_session.commit()
 
     report = await db_cleanup.scan(db_session)
+    # nothing is auto-removable (certain) — the core safety guarantee
     assert report["counts"]["properties"] == 0
     assert report["counts"]["guarantors"] == 0
     assert report["counts"]["total_removals"] == 0
+    # different DEEDS / different CHEQUES are not even candidates (no group at all)
+    prop_ids = {i for g in report["groups"]["properties"] for i in [g["keeper"]["id"], *[r["id"] for r in g["removals"]]]}
+    assert {"D1", "D2", "D3"}.isdisjoint(prop_ids)
+    guar_ids = {i for g in report["groups"]["guarantors"] for i in [g["keeper"]["id"], *[r["id"] for r in g["removals"]]]}
+    assert {"Q1", "Q2"}.isdisjoint(guar_ids)
+    # same deed, different unit/valuation → surfaced as 'probable' (needs judgment), never auto-removed
+    assert report["counts"]["properties_review"] == 1
+    probable = [g for g in report["groups"]["properties"] if g["confidence"] == "probable"]
+    assert probable and "valuation" in probable[0]["conflict_fields"]
+
+
+@pytest.mark.asyncio
+async def test_scan_classifies_updated_value_as_probable(db_session):
+    """The user's key case: the same deed re-entered later with an UPDATED valuation
+    is surfaced as 'probable' (same record, needs judgment) — NOT treated as a
+    distinct property and NOT auto-deleted."""
+    acc = "600400"
+    db_session.add(Customer(id="C600400", account_no=acc, name="Update Co"))
+    db_session.add(MortgagedProperty(id="V1", account_no=acc, mortgage_deed_no="77/9", valuation=1000000))
+    db_session.add(MortgagedProperty(id="V2", account_no=acc, mortgage_deed_no="77/9", valuation=1050000))
+    await db_session.commit()
+
+    report = await db_cleanup.scan(db_session)
+    assert report["counts"]["properties"] == 0          # not auto-removable
+    assert report["counts"]["properties_review"] == 1   # surfaced for judgment
+    probable = [g for g in report["groups"]["properties"] if g["confidence"] == "probable"]
+    assert probable and "valuation" in probable[0]["conflict_fields"]
 
 
 @pytest.mark.asyncio

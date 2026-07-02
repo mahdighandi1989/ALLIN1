@@ -1273,36 +1273,49 @@ async def _add_child(db, model, prefix, account_no, data, allowed, user):
            FixedDeposit: ("fixed_deposit", "سپردهٔ ثابت"),
            Partner: ("partner", "شریک")}.get(model)
 
-    # Entry guard: never create a duplicate of an existing live record for this
-    # account. If the incoming row matches one (SAME rules as the cleanup engine),
-    # enrich the existing record with any new empty→filled fields instead of
-    # inserting a duplicate — so duplicates are stopped at the point of entry
-    # (import, manual add, OR AI-entered data), not merely cleaned up later.
+    # Entry guard (SAME rules as the cleanup engine), tiered so it never loses data
+    # nor wrongly merges distinct records:
+    #   • CERTAIN duplicate (same strong id, identical key values) → enrich the
+    #     existing record in place; no duplicate is created.
+    #   • PROBABLE (same strong id but a key value differs — an update OR a distinct
+    #     sub-entity like another unit) → insert it, but FLAG it for review so the
+    #     scan + AI adjudicator can decide. Applies to import, manual add & AI adds.
     from app.services import db_cleanup
 
+    probable_of = None
     if db_cleanup.matcher_for(model) is not None:
         existing_rows = list((await db.execute(
             select(model).where(model.account_no == account_no,
                                 model.is_deleted == False))).scalars().all())  # noqa: E712
         dup = db_cleanup.find_duplicate(obj, existing_rows, model=model)
         if dup is not None:
-            filled = db_cleanup.merge_fill(dup, obj, model=model)
-            await db.commit()
-            if ent:
-                extra = f" (فیلدها: {'، '.join(filled)})" if filled else ""
-                await _audit(db, user, action="update", entity_type=ent[0], account_no=account_no,
-                             entity_id=dup.id,
-                             detail=f"گاردِ دیتابیس: به‌جای ایجادِ {ent[1]}ِ تکراری، رکوردِ موجود تکمیل شد{extra}")
-            result = _child_dict(dup)
-            result["deduped"] = True
-            return result
+            if db_cleanup.dup_status(dup, obj, model=model) == "certain":
+                filled = db_cleanup.merge_fill(dup, obj, model=model)
+                await db.commit()
+                if ent:
+                    extra = f" (فیلدها: {'، '.join(filled)})" if filled else ""
+                    await _audit(db, user, action="update", entity_type=ent[0], account_no=account_no,
+                                 entity_id=dup.id,
+                                 detail=f"گاردِ دیتابیس: به‌جای ایجادِ {ent[1]}ِ تکراری، رکوردِ موجود تکمیل شد{extra}")
+                result = _child_dict(dup)
+                result["deduped"] = True
+                return result
+            probable_of = dup.id   # same id, differing value → insert + flag below
 
     db.add(obj)
     await db.commit()
     if ent:
         await _audit(db, user, action="create", entity_type=ent[0], account_no=account_no,
                      entity_id=obj.id, detail=f"افزودنِ {ent[1]}")
-    return _child_dict(obj)
+        if probable_of:
+            await _audit(db, user, action="review", entity_type=ent[0], account_no=account_no,
+                         entity_id=obj.id,
+                         detail=f"احتمالِ تکرار/به‌روزرسانیِ {ent[1]} با رکوردِ {probable_of} "
+                                "(همان شناسه، مقادیرِ متفاوت) — برای داوری به «پاک‌سازیِ دیتابیس» مراجعه شود")
+    result = _child_dict(obj)
+    if probable_of:
+        result["needs_review"] = True
+    return result
 
 
 async def _update_child(db, model, item_id, data, allowed):
