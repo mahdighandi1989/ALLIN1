@@ -902,6 +902,98 @@ export const trashApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Database cleanup / de-duplication (admin) — REVIEW FIRST
+// ---------------------------------------------------------------------------
+export interface CleanupRef { id: string; summary: string }
+export interface CleanupGroup {
+  account_no: string
+  customer_name: string
+  keeper: CleanupRef
+  removals: CleanupRef[]
+  conflict_fields: string[]
+}
+export interface CleanupFacilityReview {
+  account_no: string
+  customer_name: string
+  rows: CleanupRef[]
+}
+export interface CleanupReport {
+  generated_at: string
+  groups: Record<string, CleanupGroup[]>
+  review: { facilities: CleanupFacilityReview[] }
+  counts: Record<string, number>
+}
+export interface CleanupApplyResult {
+  applied_at: string
+  removed: Record<string, number>
+}
+export interface CleanupRun {
+  id: string
+  kind: string
+  trigger: string
+  username: string
+  counts: Record<string, number>
+  detail: string
+  created_at: string | null
+}
+export interface CleanupModel {
+  id: number
+  name: string
+  provider?: string
+  priority?: number
+}
+export interface CleanupConfig {
+  schedule: string
+  ai_review: string
+  last_run: string
+  schedules: string[]
+  models: CleanupModel[]
+  active_model: string | null
+  ai_available: boolean
+}
+export interface CleanupAISuggestion {
+  entity: string
+  label: string
+  account_no: string
+  ids: string[]
+  items: Array<{ id: string; info: string }>
+}
+export interface CleanupAIReview {
+  available: boolean
+  reason?: string
+  note?: string
+  model?: string
+  suggestions?: CleanupAISuggestion[]
+}
+
+export const cleanupApi = {
+  async scan(): Promise<CleanupReport> {
+    const { data } = await api.post<CleanupReport>('/api/cleanup/scan')
+    return data
+  },
+  async apply(only?: string[]): Promise<CleanupApplyResult> {
+    const { data } = await api.post<CleanupApplyResult>('/api/cleanup/apply', { only: only ?? null })
+    return data
+  },
+  async history(limit = 30): Promise<{ runs: CleanupRun[] }> {
+    const { data } = await api.get<{ runs: CleanupRun[] }>('/api/cleanup/history', { params: { limit } })
+    return data
+  },
+  async getConfig(): Promise<CleanupConfig> {
+    const { data } = await api.get<CleanupConfig>('/api/cleanup/config')
+    return data
+  },
+  async updateConfig(body: { schedule?: string; ai_review?: string }): Promise<CleanupConfig> {
+    const { data } = await api.put<CleanupConfig>('/api/cleanup/config', body)
+    return data
+  },
+  async aiReview(): Promise<CleanupAIReview> {
+    const { data } = await api.post<CleanupAIReview>('/api/cleanup/ai-review')
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // File download helper (authenticated): fetches a binary endpoint as a blob and
 // triggers a browser download with the server-provided filename.
 // ---------------------------------------------------------------------------

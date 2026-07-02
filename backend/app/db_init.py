@@ -50,6 +50,7 @@ from app.models.personal import PersonalNote  # noqa: F401  (register table for 
 from app.models.ai_config import (  # noqa: F401  (register tables for create_all)
     AIProvider, AIModel, AITaskRoute,
 )
+from app.models.cleanup_run import CleanupRun  # noqa: F401  (register table for create_all)
 
 logger = logging.getLogger(__name__)
 

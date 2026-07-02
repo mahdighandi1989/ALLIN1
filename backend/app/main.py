@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router, cleanup as cleanup_router
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.middleware import MetricsMiddleware
 # Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
@@ -101,14 +101,26 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # never let an optional feature break boot
         logger.error("Could not start Google Drive sync: %s", exc)
 
+    # Start the review-first database-cleanup scheduler. It checks the configured
+    # schedule (cleanup_schedule setting) and runs a de-dup SCAN when due — it
+    # notifies admins but never auto-deletes. Cancelled cleanly on shutdown.
+    cleanup_task = None
+    try:
+        from app.services import db_cleanup
+
+        cleanup_task = asyncio.create_task(db_cleanup.run_cleanup_scheduler())
+    except Exception as exc:  # never let an optional feature break boot
+        logger.error("Could not start database-cleanup scheduler: %s", exc)
+
     yield
 
-    if drive_task is not None:
-        drive_task.cancel()
-        try:
-            await drive_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown best-effort
-            pass
+    for _bg_task in (drive_task, cleanup_task):
+        if _bg_task is not None:
+            _bg_task.cancel()
+            try:
+                await _bg_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown best-effort
+                pass
 
 
 app = FastAPI(
@@ -270,6 +282,7 @@ app.include_router(settings_router.router, prefix="/api/settings", tags=["settin
 app.include_router(fx.router, prefix="/api/fx", tags=["fx"])
 app.include_router(ai_router.router, prefix="/api/ai", tags=["ai"])
 app.include_router(telegram_router.router, prefix="/api/telegram", tags=["telegram"])
+app.include_router(cleanup_router.router, tags=["cleanup"])  # router carries its own /api/cleanup prefix
 
 
 @app.get("/health")

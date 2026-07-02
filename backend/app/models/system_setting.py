@@ -33,4 +33,9 @@ EDITABLE_SETTINGS = {
     "personal_notes_email": {"default": "", "label": "Personal notes — email to", "type": "text"},
     "personal_notes_key": {"default": "", "label": "Personal notes — email key", "type": "text"},
     "personal_notes_signature": {"default": "", "label": "Personal notes — email signature", "type": "text"},
+    # Database-cleanup (de-dup) schedule. The scheduled run is REVIEW-FIRST: it
+    # produces a report + notifies admins; it never auto-deletes.
+    "cleanup_schedule": {"default": "off", "label": "Auto database-cleanup schedule", "type": "text"},  # off|daily|weekly|monthly
+    "cleanup_last_run": {"default": "", "label": "Last cleanup scan (auto)", "type": "text"},
+    "cleanup_ai_review": {"default": "off", "label": "AI second-opinion on cleanup", "type": "text"},   # off|on
 }

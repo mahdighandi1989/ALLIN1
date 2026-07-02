@@ -227,10 +227,16 @@ async def import_facilities(
 
     created = 0
     errors = []
+    skipped = []          # exact-duplicate facilities not re-created (entry guard)
     to_add = []
 
-    # Cache account_no -> customer id lookups.
+    # Entry-time de-dup guard: reuse the exact rules the cleanup engine uses so a
+    # re-import never creates duplicate facilities for a customer.
+    from app.services import db_cleanup
+
+    # Cache account_no -> customer id, and customer_id -> existing live facilities.
     cust_cache: dict = {}
+    fac_cache: dict = {}
 
     for idx, row in enumerate(rows, start=2):
         account_no = cell_str(row.get("account_no"))
@@ -277,14 +283,24 @@ async def import_facilities(
                 errors.append({"row": idx, "error": f"interest_rate: {exc}"})
                 continue
 
-        to_add.append(
-            Facility(
-                customer_id=customer_id, name=cell_str(row.get("name")) or None,
-                facility_type=ftype, amount=amount,
-                currency=(cell_str(row.get("currency")) or "AED")[:3].upper(),
-                interest_rate=rate, status=st, risk_rating="low",
-            )
+        candidate = Facility(
+            customer_id=customer_id, name=cell_str(row.get("name")) or None,
+            facility_type=ftype, amount=amount,
+            currency=(cell_str(row.get("currency")) or "AED")[:3].upper(),
+            interest_rate=rate, status=st, risk_rating="low",
         )
+        # Compare against existing live facilities AND the ones queued earlier in
+        # this same file, so neither a re-import nor repeated rows create dupes.
+        if customer_id not in fac_cache:
+            fac_cache[customer_id] = list((await db.execute(
+                select(Facility).where(Facility.customer_id == customer_id,
+                                       Facility.is_deleted == False))).scalars().all())  # noqa: E712
+        if db_cleanup.find_duplicate(candidate, fac_cache[customer_id], model=Facility) is not None:
+            skipped.append({"row": idx, "account_no": account_no,
+                            "error": "تسهیلاتِ تکراری (همان نوع و مبلغ) — نادیده گرفته شد"})
+            continue
+        fac_cache[customer_id].append(candidate)
+        to_add.append(candidate)
         created += 1
 
     if not dry_run and to_add:
@@ -292,15 +308,30 @@ async def import_facilities(
         await db.commit()
         await record_audit(
             action="create", entity_type="facility", entity_id=f"import:{created}",
-            detail=f"Imported {created} facilities from '{file.filename}'",
+            detail=f"Imported {created} facilities from '{file.filename}'"
+                   + (f" (skipped {len(skipped)} duplicate(s))" if skipped else ""),
             user=current_user, request=request, db=db,
         )
+
+    # Log each skipped duplicate under its own customer so the entry-guard's
+    # decisions show in that customer's Logs tab (as traceable as the cleanup
+    # engine's). record_audit persists independently, so this runs even when every
+    # row was a duplicate (to_add empty).
+    if not dry_run and skipped:
+        for s in skipped:
+            await record_audit(
+                action="skip", entity_type="facility", entity_id=f"import-dup:{s['row']}",
+                account_no=s["account_no"],
+                detail="گاردِ ورودی: تسهیلاتِ تکراری هنگامِ ایمپورت نادیده گرفته شد (همان نوع و مبلغ)",
+                user=current_user, request=request, db=db,
+            )
 
     return {
         "dry_run": dry_run,
         "total_rows": len(rows),
         "created": 0 if dry_run else created,
         "would_create": created,
+        "skipped_existing": len(skipped),
         "errors": errors,
     }
 
