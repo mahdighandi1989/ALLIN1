@@ -20,7 +20,7 @@ from app.services.excel_import import (
 )
 from app.services.exporters import rows_to_csv
 from app.services.audit import record_audit
-from app.routers.auth import get_current_active_user
+from app.routers.auth import get_current_active_user, require_editor
 from fastapi import Response
 
 logger = logging.getLogger("app.imports")
@@ -127,7 +127,7 @@ async def import_customers(
     file: UploadFile = File(...),
     dry_run: bool = Query(False, description="Validate only; do not write"),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_editor),
 ):
     """Import customers from an Excel file.
 
@@ -211,7 +211,7 @@ async def import_facilities(
     file: UploadFile = File(...),
     dry_run: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_editor),
 ):
     """Import facilities from an Excel file.
 
@@ -767,7 +767,7 @@ async def analyze_document(
     file: UploadFile = File(...),
     model_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_active_user),
+    user=Depends(require_editor),
 ):
     """Start an extraction job and return its id immediately (poll /jobs/{id})."""
     data = await file.read()

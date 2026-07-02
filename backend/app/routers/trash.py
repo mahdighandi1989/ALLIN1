@@ -15,6 +15,8 @@ from app.models.customer import Customer, CustomerStatus
 from app.models.facility import Facility, FacilityStatus
 from app.models.offer_letter import OfferLetter
 from app.utils.security import get_current_user
+from app.routers.auth import require_editor
+from app.services.checklist import cascade_restore_facility
 
 router = APIRouter(tags=["trash"], dependencies=[Depends(get_current_user)])
 
@@ -66,7 +68,12 @@ async def list_trash(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{entity}/{item_id}/restore")
-async def restore_item(entity: str, item_id: str, db: AsyncSession = Depends(get_db)):
+async def restore_item(
+    entity: str,
+    item_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """Restore a single soft-deleted item by entity type + id."""
     if entity in ("customer", "customers"):
         obj = (
@@ -86,6 +93,9 @@ async def restore_item(entity: str, item_id: str, db: AsyncSession = Depends(get
         if obj:
             obj.is_deleted = False
             obj.status = FacilityStatus.ACTIVE
+            # Same behavior as facilities.py restore: bring the facility's
+            # checklist/tasks back too, or credit-file workflow state is lost.
+            await cascade_restore_facility(db, obj.id)
     elif entity in ("offer_letter", "offer_letters", "offer-letters"):
         obj = (
             await db.execute(

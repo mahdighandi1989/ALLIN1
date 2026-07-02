@@ -428,6 +428,14 @@ async def get_current_user(
 
     if user is None:
         raise credentials_exception
+    # A deactivated account must lose access immediately, not at token expiry.
+    # Mirrors app.routers.auth.get_current_user, which already enforces this —
+    # both dependencies must make the same decision.
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user",
+        )
     # Access gate: a signed-in user with no granted role yet ('pending') is
     # blocked from data endpoints until an admin approves them. Their identity is
     # still valid — /api/auth/me uses a different dependency so the SPA can show a

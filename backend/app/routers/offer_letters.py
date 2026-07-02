@@ -19,7 +19,7 @@ from app.schemas.offer_letter import (
 from app.services.amortization import generate_schedule, schedule_totals
 from app.services.exporters import rows_to_csv, build_pdf
 from app.utils.security import get_current_user
-from app.routers.auth import get_current_active_user
+from app.routers.auth import get_current_active_user, require_editor
 
 
 def _ext_for(media_type: str) -> str:
@@ -208,7 +208,10 @@ async def create_offer(
 
 @router.put("/{offer_id}", response_model=OfferLetterResponse)
 async def update_offer(
-    offer_id: str, payload: OfferLetterUpdate, db: AsyncSession = Depends(get_db)
+    offer_id: str,
+    payload: OfferLetterUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
 ):
     offer = await _get_offer(offer_id, db)
     data = payload.model_dump(exclude_unset=True)
@@ -223,7 +226,11 @@ async def update_offer(
 
 
 @router.post("/{offer_id}/generate-schedule", response_model=OfferLetterDetailResponse)
-async def generate_offer_schedule(offer_id: str, db: AsyncSession = Depends(get_db)):
+async def generate_offer_schedule(
+    offer_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """(Re)generate and persist the amortisation schedule for an offer."""
     offer = await _get_offer(offer_id, db)
 
@@ -267,26 +274,52 @@ async def generate_offer_schedule(offer_id: str, db: AsyncSession = Depends(get_
 @router.post("/{offer_id}/status", response_model=OfferLetterResponse)
 async def set_offer_status(
     offer_id: str,
+    request: Request,
     new_status: OfferStatus = Query(..., description="New offer status"),
     db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
 ):
     offer = await _get_offer(offer_id, db)
+    old_status = getattr(offer.status, "value", offer.status)
     offer.status = new_status
     await db.commit()
     await db.refresh(offer)
+    from app.services.audit import record_audit
+
+    await record_audit(
+        action="update", entity_type="offer_letter", entity_id=offer.id,
+        detail=f"Status changed {old_status} -> {new_status.value}",
+        user=current_user, request=request, db=db,
+    )
     return offer
 
 
 @router.delete("/{offer_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_offer(
+    offer_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     offer = await _get_offer(offer_id, db)
     offer.is_deleted = True
     await db.commit()
+    from app.services.audit import record_audit
+
+    await record_audit(
+        action="delete", entity_type="offer_letter", entity_id=offer.id,
+        detail=f"Deleted offer letter {offer.id}",
+        user=current_user, request=request, db=db,
+    )
     return None
 
 
 @router.post("/{offer_id}/restore", response_model=OfferLetterResponse)
-async def restore_offer(offer_id: str, db: AsyncSession = Depends(get_db)):
+async def restore_offer(
+    offer_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """Restore a soft-deleted offer letter."""
     result = await db.execute(
         select(OfferLetter).where(
