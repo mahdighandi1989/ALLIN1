@@ -247,21 +247,6 @@ async def add_guarantor(
                 )
             )
         ).scalar_one_or_none()
-    # Broader entry guard — the SAME rules the cleanup engine uses: with no id or
-    # cheque match, still avoid creating a duplicate of the same guarantor on this
-    # account (matched by person + shared account/amount). The enrichment below
-    # never blanks a populated field, so this cannot introduce a contradiction.
-    matched_fuzzy = False
-    if g is None:
-        from app.services import db_cleanup
-        existing_g = list((await db.execute(select(Guarantor).where(
-            Guarantor.account_no == account_no, Guarantor.is_deleted == False))).scalars().all())  # noqa: E712
-        candidate = Guarantor(
-            account_no=account_no, guarantor_name=payload.guarantor_name,
-            cheque_no=(payload.cheque_no or ""), guarantor_account=(payload.guarantor_account or ""),
-            cheque_amount=payload.cheque_amount)
-        g = db_cleanup.find_duplicate(candidate, existing_g, model=Guarantor)
-        matched_fuzzy = g is not None
     created = g is None
     if g is None:
         gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
@@ -273,9 +258,7 @@ async def add_guarantor(
 
     # Apply the submitted values (blank optional fields keep the existing value).
     g.guarantor_name = payload.guarantor_name[:200]
-    # Never let a fuzzy (name-based) match blank an existing cheque number.
-    if (payload.cheque_no or "").strip() or not matched_fuzzy:
-        g.cheque_no = (payload.cheque_no or "")[:50]
+    g.cheque_no = (payload.cheque_no or "")[:50]
     if payload.cheque_amount is not None:
         g.cheque_amount = payload.cheque_amount
     g.issuing_bank = (payload.issuing_bank or "BSI")[:50]

@@ -911,6 +911,7 @@ export interface CleanupGroup {
   keeper: CleanupRef
   removals: CleanupRef[]
   conflict_fields: string[]
+  reason: string
 }
 export interface CleanupFacilityReview {
   account_no: string

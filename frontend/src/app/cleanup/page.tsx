@@ -297,9 +297,14 @@ export default function CleanupPage() {
                 <div className="divide-y">
                   {groups.map((g, gi) => (
                     <div key={gi} className="px-4 py-3">
-                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-1">
                         <span>حساب: <b className="text-gray-700">{g.account_no}</b></span>
                         {g.customer_name && <span>— {g.customer_name}</span>}
+                        {g.reason && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                            دلیلِ تشخیص: {g.reason}
+                          </span>
+                        )}
                         {g.conflict_fields.length > 0 && (
                           <span className="inline-flex items-center gap-1 text-orange-600">
                             <AlertTriangle size={12} /> مغایرت: {g.conflict_fields.join('، ')}
