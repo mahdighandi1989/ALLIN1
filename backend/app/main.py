@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -249,11 +249,13 @@ async def metrics():
 
 
 @app.get("/api/simulate-unhandled-error")
-async def simulate_unhandled_error():
+async def simulate_unhandled_error(_admin=Depends(auth.require_admin)):
     """Diagnostic endpoint that deliberately raises to exercise error monitoring.
 
-    Hitting it returns the standard 500 error envelope ({error_id, message}) and
-    produces a correlated server-side log entry.
+    Admin-only: unauthenticated access would let anyone inflate the
+    unhandled-error counter and flood ERROR logs/alerting on the live system.
+    Returns the standard 500 envelope ({error_id, message}) with a correlated
+    server-side log entry.
     """
     raise RuntimeError("Simulated unhandled error for monitoring verification")
 

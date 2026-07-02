@@ -3,12 +3,12 @@ from typing import Optional, List
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func, or_, update
+from sqlalchemy import select, func, and_, exists, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ConfigDict
 
 from app.database import get_db
-from app.models.notification import Notification
+from app.models.notification import Notification, NotificationRead
 from app.models.user import User
 from app.utils.security import get_current_user
 
@@ -42,6 +42,32 @@ def _visible_to(user: User):
     return or_(Notification.user_id == uid, Notification.user_id.is_(None))
 
 
+def _read_marker_exists(user: User):
+    """EXISTS: this user marked the (broadcast) notification read."""
+    uid = str(getattr(user, "id", "")) or None
+    return exists().where(
+        NotificationRead.notification_id == Notification.id,
+        NotificationRead.user_id == uid,
+    )
+
+
+def _unread_for(user: User):
+    """Unread condition that is PER-USER for broadcasts.
+
+    Own rows: is_read == False. Broadcasts: no read marker for this user AND
+    is_read == False (a broadcast with is_read=True predates the per-user
+    markers and is treated as read-for-all so it does not reappear).
+    """
+    uid = str(getattr(user, "id", "")) or None
+    own_unread = and_(Notification.user_id == uid, Notification.is_read == False)  # noqa: E712
+    broadcast_unread = and_(
+        Notification.user_id.is_(None),
+        Notification.is_read == False,  # noqa: E712
+        ~_read_marker_exists(user),
+    )
+    return or_(own_unread, broadcast_unread)
+
+
 @router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
     db: AsyncSession = Depends(get_db),
@@ -53,7 +79,7 @@ async def list_notifications(
     cond = _visible_to(current_user)
     base = select(Notification).where(cond)
     if unread_only:
-        base = base.where(Notification.is_read == False)
+        base = base.where(_unread_for(current_user))
 
     total = (
         await db.execute(select(func.count()).select_from(base.subquery()))
@@ -61,9 +87,7 @@ async def list_notifications(
     unread = (
         await db.execute(
             select(func.count()).select_from(
-                select(Notification)
-                .where(cond, Notification.is_read == False)
-                .subquery()
+                select(Notification).where(cond, _unread_for(current_user)).subquery()
             )
         )
     ).scalar() or 0
@@ -75,8 +99,30 @@ async def list_notifications(
             .limit(page_size)
         )
     ).scalars().all()
+
+    # Broadcast rows share one is_read flag; reflect THIS user's read state.
+    uid = str(getattr(current_user, "id", "")) or None
+    broadcast_ids = [n.id for n in rows if n.user_id is None]
+    read_ids = set()
+    if broadcast_ids:
+        read_ids = set(
+            (
+                await db.execute(
+                    select(NotificationRead.notification_id).where(
+                        NotificationRead.notification_id.in_(broadcast_ids),
+                        NotificationRead.user_id == uid,
+                    )
+                )
+            ).scalars().all()
+        )
+    items = []
+    for n in rows:
+        item = NotificationResponse.model_validate(n)
+        if n.user_id is None:
+            item.is_read = bool(n.is_read) or (n.id in read_ids)
+        items.append(item)
     return NotificationListResponse(
-        items=rows, total=total, unread=unread, page=page, page_size=page_size
+        items=items, total=total, unread=unread, page=page, page_size=page_size
     )
 
 
@@ -89,7 +135,7 @@ async def unread_count(
         await db.execute(
             select(func.count()).select_from(
                 select(Notification)
-                .where(_visible_to(current_user), Notification.is_read == False)
+                .where(_visible_to(current_user), _unread_for(current_user))
                 .subquery()
             )
         )
@@ -111,7 +157,15 @@ async def mark_read(
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    note.is_read = True
+    if note.user_id is None:
+        # Broadcast: record a per-user marker instead of flipping the shared
+        # flag (which hid the notification from every other user).
+        uid = str(getattr(current_user, "id", "")) or None
+        marker = await db.get(NotificationRead, (note.id, uid))
+        if marker is None:
+            db.add(NotificationRead(notification_id=note.id, user_id=uid))
+    else:
+        note.is_read = True
     await db.commit()
     return {"ok": True}
 
@@ -121,10 +175,24 @@ async def mark_all_read(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    uid = str(getattr(current_user, "id", "")) or None
+    # Own rows: flip the flag as before.
     await db.execute(
         update(Notification)
-        .where(_visible_to(current_user), Notification.is_read == False)
+        .where(Notification.user_id == uid, Notification.is_read == False)  # noqa: E712
         .values(is_read=True)
     )
+    # Broadcasts: add per-user read markers for everything still unread.
+    unread_broadcasts = (
+        await db.execute(
+            select(Notification.id).where(
+                Notification.user_id.is_(None),
+                Notification.is_read == False,  # noqa: E712
+                ~_read_marker_exists(current_user),
+            )
+        )
+    ).scalars().all()
+    for nid in unread_broadcasts:
+        db.add(NotificationRead(notification_id=nid, user_id=uid))
     await db.commit()
     return {"ok": True}

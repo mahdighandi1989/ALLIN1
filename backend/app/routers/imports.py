@@ -66,7 +66,10 @@ async def _read_upload(file: UploadFile) -> bytes:
         raise HTTPException(
             status_code=400, detail="Please upload an .xlsx, .xlsm or .xls file"
         )
-    content = await file.read()
+    # Bounded read: never buffer more than the limit + 1 byte, so an
+    # accidental/malicious multi-GB upload cannot OOM the 512 MB instance
+    # before the size check runs.
+    content = await file.read(_MAX_BYTES + 1)
     if len(content) > _MAX_BYTES:
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
     if not content:
@@ -771,7 +774,9 @@ async def analyze_document(
     user=Depends(require_editor),
 ):
     """Start an extraction job and return its id immediately (poll /jobs/{id})."""
-    data = await file.read()
+    # Bounded read (largest allowed class + 1): the per-type limit is checked
+    # below, but nothing bigger than the ceiling may ever be buffered in RAM.
+    data = await file.read(_PDF_MAX_BYTES + 1)
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
     fname = file.filename or "document"

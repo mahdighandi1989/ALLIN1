@@ -91,3 +91,45 @@ def test_run_scan_task_verifies_and_notifies(captured):
     assert result.ok is True or result.ok is False  # never raises
     # An empty scan triggers a verify_failed notification.
     assert any("verify_failed" in m for m in captured)
+
+
+@pytest.mark.asyncio
+async def test_broadcast_read_is_per_user(client, db_session):
+    """First reader of a broadcast must NOT hide it from other users."""
+    from app.models.user import User as U
+    from app.models.notification import Notification
+    from app.utils.security import hash_password, create_access_token
+
+    async def mk(username):
+        u = U(username=username, email=f"{username}@x.ae",
+              hashed_password=hash_password("Passw0rd1"), full_name=username,
+              is_active=True, role="editor")
+        db_session.add(u)
+        await db_session.commit()
+        await db_session.refresh(u)
+        tok = create_access_token(data={"user_id": u.id, "username": u.username})
+        return {"Authorization": f"Bearer {tok}"}
+
+    h_a, h_b = await mk("bcast_a"), await mk("bcast_b")
+    db_session.add(Notification(title="Broadcast!", user_id=None))
+    await db_session.commit()
+
+    # Both see 1 unread.
+    assert (await client.get("/api/notifications/unread-count", headers=h_a)).json()["unread"] == 1
+    assert (await client.get("/api/notifications/unread-count", headers=h_b)).json()["unread"] == 1
+
+    # A marks all read -> A sees 0, B STILL sees 1.
+    assert (await client.post("/api/notifications/read-all", headers=h_a)).status_code == 200
+    assert (await client.get("/api/notifications/unread-count", headers=h_a)).json()["unread"] == 0
+    assert (await client.get("/api/notifications/unread-count", headers=h_b)).json()["unread"] == 1
+
+    # B's list shows the broadcast as unread; A's as read.
+    la = (await client.get("/api/notifications/", headers=h_a)).json()["items"]
+    lb = (await client.get("/api/notifications/", headers=h_b)).json()["items"]
+    assert [i for i in la if i["title"] == "Broadcast!"][0]["is_read"] is True
+    assert [i for i in lb if i["title"] == "Broadcast!"][0]["is_read"] is False
+
+    # B marks the single broadcast read via /read.
+    nid = [i for i in lb if i["title"] == "Broadcast!"][0]["id"]
+    assert (await client.post(f"/api/notifications/{nid}/read", headers=h_b)).status_code == 200
+    assert (await client.get("/api/notifications/unread-count", headers=h_b)).json()["unread"] == 0
