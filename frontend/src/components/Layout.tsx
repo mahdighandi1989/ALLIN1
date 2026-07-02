@@ -8,7 +8,7 @@ import NotificationBell from '@/components/NotificationBell'
 import {
   LayoutDashboard, Users, Building, BarChart3, ShieldCheck, Trash2,
   ScrollText, FileSpreadsheet, Settings, LogOut, BookOpen, Building2,
-  LayoutGrid, Clock, ListChecks, StickyNote, ClipboardList, Contact,
+  LayoutGrid, Clock, ListChecks, StickyNote, ClipboardList, Contact, Sparkles,
 } from 'lucide-react'
 import { BANK_LOGO } from '@/app/voucher/logo'
 
@@ -52,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/users', label: 'Users', icon: ShieldCheck },
       { href: '/audit', label: 'Audit Log', icon: ScrollText },
+      { href: '/cleanup', label: 'Database Cleanup', icon: Sparkles },
       { href: '/settings', label: 'Settings', icon: Settings },
       { href: '/trash', label: 'Recycle Bin', icon: Trash2 },
     ],

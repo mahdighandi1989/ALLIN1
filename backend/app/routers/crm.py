@@ -1269,11 +1269,36 @@ async def _add_child(db, model, prefix, account_no, data, allowed, user):
     if "customer_name" in model.__table__.columns and not data.get("customer_name") and customer is not None:
         obj.customer_name = (customer.name or "")[:200]
     _apply_child_fields(obj, data, allowed)
-    db.add(obj)
-    await db.commit()
     ent = {MortgagedProperty: ("property", "ملکِ مرهونه"),
            FixedDeposit: ("fixed_deposit", "سپردهٔ ثابت"),
            Partner: ("partner", "شریک")}.get(model)
+
+    # Entry guard: never create a duplicate of an existing live record for this
+    # account. If the incoming row matches one (SAME rules as the cleanup engine),
+    # enrich the existing record with any new empty→filled fields instead of
+    # inserting a duplicate — so duplicates are stopped at the point of entry
+    # (import, manual add, OR AI-entered data), not merely cleaned up later.
+    from app.services import db_cleanup
+
+    if db_cleanup.matcher_for(model) is not None:
+        existing_rows = list((await db.execute(
+            select(model).where(model.account_no == account_no,
+                                model.is_deleted == False))).scalars().all())  # noqa: E712
+        dup = db_cleanup.find_duplicate(obj, existing_rows, model=model)
+        if dup is not None:
+            filled = db_cleanup.merge_fill(dup, obj, model=model)
+            await db.commit()
+            if ent:
+                extra = f" (فیلدها: {'، '.join(filled)})" if filled else ""
+                await _audit(db, user, action="update", entity_type=ent[0], account_no=account_no,
+                             entity_id=dup.id,
+                             detail=f"گاردِ دیتابیس: به‌جای ایجادِ {ent[1]}ِ تکراری، رکوردِ موجود تکمیل شد{extra}")
+            result = _child_dict(dup)
+            result["deduped"] = True
+            return result
+
+    db.add(obj)
+    await db.commit()
     if ent:
         await _audit(db, user, action="create", entity_type=ent[0], account_no=account_no,
                      entity_id=obj.id, detail=f"افزودنِ {ent[1]}")
