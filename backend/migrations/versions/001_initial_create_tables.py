@@ -18,6 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Enum-like columns are plain VARCHAR: the models use native_enum=False,
+    # so the native PG enum types this migration used to reference
+    # (create_type=False) never existed and 'alembic upgrade head' failed on
+    # every fresh database.
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
@@ -46,8 +50,8 @@ def upgrade() -> None:
             sa.Column('account_no', sa.String(50), unique=True, nullable=False, index=True),
             sa.Column('name', sa.String(200), nullable=False),
             sa.Column('name_ar', sa.String(200)),
-            sa.Column('account_type', sa.Enum('retail', 'corporate', 'sme', name='accounttype', create_type=False), default='retail'),
-            sa.Column('status', sa.Enum('active', 'inactive', 'suspended', name='customerstatus', create_type=False), default='active'),
+            sa.Column('account_type', sa.String(20), default='retail'),
+            sa.Column('status', sa.String(20), default='active'),
             sa.Column('email', sa.String(100)),
             sa.Column('phone', sa.String(50)),
             sa.Column('mobile', sa.String(50)),
@@ -65,9 +69,9 @@ def upgrade() -> None:
             'facilities',
             sa.Column('id', sa.String(), primary_key=True),
             sa.Column('customer_id', sa.String(), sa.ForeignKey('customers.id'), nullable=False, index=True),
-            sa.Column('facility_type', sa.Enum('loan', 'overdraft', 'lc', 'lg', 'other', name='facilitytype', create_type=False), nullable=False),
+            sa.Column('facility_type', sa.String(20), nullable=False),
             sa.Column('name', sa.String(200)),
-            sa.Column('status', sa.Enum('active', 'pending', 'closed', 'defaulted', name='facilitystatus', create_type=False), default='active'),
+            sa.Column('status', sa.String(20), default='active'),
             sa.Column('amount', sa.Numeric(15, 2), nullable=False),
             sa.Column('outstanding', sa.Numeric(15, 2), default=0),
             sa.Column('currency', sa.String(10), default='AED'),

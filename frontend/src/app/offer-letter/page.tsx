@@ -134,7 +134,10 @@ export default function OfferLetterPage() {
       const saved = (d.Saved && typeof d.Saved === 'object') ? d.Saved : {}
       setIsCorporate(corp)
       const withSlash = (v: any) => (v ? `${v}/-` : '')
-      setF((s) => ({
+      // Reset from INITIAL — the previous account's values (`s.X` fallbacks)
+      // otherwise stayed on the sheet and were saved into the new customer.
+      const s = { ...INITIAL } as Fields
+      setF(() => ({
         ...s,
         Prefix: saved.Prefix || d.Salutation || (corp ? 'M/S.' : 'Mr.'),
         CompanyName: saved.CompanyName || d.CompanyName || s.CompanyName,
@@ -161,9 +164,11 @@ export default function OfferLetterPage() {
         AcceptanceDate: saved.AcceptanceDate || s.AcceptanceDate,
         Remarks: saved.Remarks || s.Remarks,
       }))
-      if (Array.isArray(saved.securitiesChecked) && saved.securitiesChecked.length === PL.securities.length) {
-        setChecks(saved.securitiesChecked)
-      }
+      setChecks(
+        Array.isArray(saved.securitiesChecked) && saved.securitiesChecked.length === PL.securities.length
+          ? saved.securitiesChecked
+          : PL.securities.map(() => true)
+      )
       if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
@@ -203,7 +208,10 @@ export default function OfferLetterPage() {
       if (o.AccountType) setIsCorporate(corp)
       if (!acc && r.account_no) setAcc(r.account_no)
       const withSlash = (v: any) => (v ? `${v}/-` : '')
-      setF((s) => ({
+      // Reset from INITIAL — the previous account's values (`s.X` fallbacks)
+      // otherwise stayed on the sheet and were saved into the new customer.
+      const s = { ...INITIAL } as Fields
+      setF(() => ({
         ...s,
         CompanyName: o.CompanyName || s.CompanyName,
         AccountNumber: o.AccountNumber || s.AccountNumber,
@@ -437,8 +445,8 @@ export default function OfferLetterPage() {
           <div className="flex items-center gap-2 mb-3">
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Offer Letter — نامهٔ پیشنهادِ تسهیلات</h1>
-              <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ قالب بر اساس نوع حساب×تسهیلات خودکار انتخاب می‌شود (شخصی‌وام → دوزبانه، بقیه → English). داده‌ها از پروندهٔ مشتری خوانده و هنگام ذخیره/چاپ به آن برمی‌گردد.</p>
+              <h1 className="text-lg font-bold text-gray-900" dir="rtl">Offer Letter — نامهٔ پیشنهادِ تسهیلات</h1>
+              <p className="text-gray-500 text-xs" dir="rtl">شماره‌حساب را وارد کن؛ قالب بر اساس نوع حساب×تسهیلات خودکار انتخاب می‌شود (شخصی‌وام → دوزبانه، بقیه → English). داده‌ها از پروندهٔ مشتری خوانده و هنگام ذخیره/چاپ به آن برمی‌گردد.</p>
             </div>
           </div>
 

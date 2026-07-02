@@ -406,7 +406,11 @@ async def delete_facility(
 
 
 @router.post("/{facility_id}/restore", response_model=FacilityResponse)
-async def restore_facility(facility_id: str, db: AsyncSession = Depends(get_db)):
+async def restore_facility(
+    facility_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """Restore a previously soft-deleted facility and re-activate it."""
     result = await db.execute(
         select(Facility).where(
@@ -431,14 +435,22 @@ async def restore_facility(facility_id: str, db: AsyncSession = Depends(get_db))
 @router.patch("/{facility_id}/status")
 async def update_facility_status(
     facility_id: str,
+    request: Request,
     new_status: FacilityStatus = Query(..., description="New facility status"),
     db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
 ):
     """Update only the status of a facility."""
     facility = await _get_active_facility(facility_id, db)
+    old_status = getattr(facility.status, "value", facility.status)
     facility.status = new_status
     await db.commit()
     await db.refresh(facility)
+    await record_audit(
+        action="update", entity_type="facility", entity_id=facility.id,
+        detail=f"Status changed {old_status} -> {new_status.value}",
+        user=current_user, request=request, db=db,
+    )
     return {
         "message": f"Facility status updated to {new_status.value}",
         "id": facility.id,

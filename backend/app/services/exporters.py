@@ -29,13 +29,26 @@ except Exception:  # pragma: no cover - exercised only when reportlab absent
 
 
 # --- CSV --------------------------------------------------------------------
+def _csv_safe(v: Any) -> Any:
+    """Neutralize spreadsheet formula injection in user-entered text.
+
+    The BOM below makes Excel the expected consumer, and Excel executes cells
+    starting with = + - @ (e.g. a customer name imported as
+    '=HYPERLINK(...)'). Prefix a single quote so Excel treats it as text.
+    Numbers and other non-strings pass through untouched.
+    """
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
+        return "'" + v
+    return v
+
+
 def rows_to_csv(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> bytes:
     """Render a header + rows into UTF-8 CSV bytes (Excel-friendly BOM)."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(list(headers))
     for row in rows:
-        writer.writerow(["" if v is None else v for v in row])
+        writer.writerow(["" if v is None else _csv_safe(v) for v in row])
     # Prepend a BOM so Excel opens UTF-8 (e.g. Arabic names) correctly.
     return ("﻿" + buf.getvalue()).encode("utf-8")
 
@@ -209,8 +222,17 @@ def _coerce_number(v: Any):
         parts = s.split()
         if len(parts) == 2 and not parts[0].replace(".", "").isdigit():
             s = parts[1]
+        # Identifiers must survive the round trip to Excel as TEXT:
+        # a leading zero (account "012345", phone "0501234567") would be
+        # destroyed by int coercion, and very long digit runs render as
+        # float/scientific notation. Only coerce values that read back
+        # identically as numbers.
+        if s.startswith("0") and s != "0" and not s.startswith("0."):
+            return None
         try:
             if s and (s.lstrip("-").isdigit()):
+                if len(s.lstrip("-")) > 15:  # beyond exact float/display range
+                    return None
                 return int(s)
             f = float(s)
             return f

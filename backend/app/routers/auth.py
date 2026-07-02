@@ -8,7 +8,7 @@ from fastapi.security import (
     HTTPAuthorizationCredentials,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
 from pydantic import BaseModel, EmailStr, Field, validator
 
 from ..database import get_db
@@ -385,9 +385,17 @@ async def login(
             headers={"Retry-After": "60"},
         )
 
-    # Find user by username
-    result = await db.execute(select(User).where(User.username == username.lower()))
-    user = result.scalar_one_or_none()
+    # Find user by username OR email — the JSON body explicitly advertises
+    # {"username" | "email"} as the identifier, so both must actually match.
+    result = await db.execute(
+        select(User).where(
+            or_(
+                User.username == username.lower(),
+                func.lower(User.email) == username.lower(),
+            )
+        )
+    )
+    user = result.scalars().first()
 
     if user is None or not verify_password(password, user.hashed_password):
         # Record the failure for brute-force accounting (never log the password).

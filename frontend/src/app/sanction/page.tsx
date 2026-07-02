@@ -103,7 +103,11 @@ export default function SanctionPage() {
       const pd = (d.ProfileData && typeof d.ProfileData === 'object') ? d.ProfileData : {}
       const sv = (pd.sanction && typeof pd.sanction === 'object') ? pd.sanction : {}
       setIsCorp(corp)
-      setF((s) => ({
+      // Reset from INITIAL — falling back to the PREVIOUS account's values
+      // (`s.X`) persisted customer A's guarantors/banks/purpose into
+      // customer B's sanction on save.
+      const s = { ...INITIAL } as Fields
+      setF(() => ({
         ...s,
         CustomerName: sv.CustomerName || d.CompanyName || s.CustomerName,
         AccountNumber: sv.AccountNumber || d.AccountNumber || a,
@@ -131,10 +135,10 @@ export default function SanctionPage() {
       }))
       if (Array.isArray(sv.limits)) setLimits(sv.limits)
       else setLimits(corp ? LIMITS_CORP.map((r) => ({ ...r })) : LIMITS_RETAIL.map((r) => ({ ...r })))
-      if (Array.isArray(sv.recip)) setRecip(sv.recip)
-      if (Array.isArray(sv.fin)) setFin(sv.fin)
-      if (Array.isArray(sv.guars)) setGuars(sv.guars)
-      if (Array.isArray(sv.banks)) setBanks(sv.banks)
+      setRecip(Array.isArray(sv.recip) ? sv.recip : RECIP_ROWS.map((l) => ({ label: l, y1: '', y2: '' })))
+      setFin(Array.isArray(sv.fin) ? sv.fin : FIN_ROWS.map((l) => ({ label: l, y1: '', y2: '', y3: '' })))
+      setGuars(Array.isArray(sv.guars) ? sv.guars : [{ desc: '', branch: '', account: '', direct: '', indirect: '' }])
+      setBanks(Array.isArray(sv.banks) ? sv.banks : [{ bank: '', facility: '', amount: '', outstanding: '', security: '' }])
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'}${Object.keys(sv).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setLoading(false) }
@@ -221,7 +225,7 @@ export default function SanctionPage() {
           <div className="flex items-center gap-2 mb-3">
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">Credit Approval — مصوبه / پیش‌نویس مصوبه</h1>
+              <h1 className="text-lg font-bold text-gray-900" dir="rtl">Credit Approval — مصوبه / پیش‌نویس مصوبه</h1>
               <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ فرم بر اساس نوع حساب (حقیقی/حقوقی) ساخته می‌شود، از دیتابیس پر و هنگام ذخیره/چاپ در پروندهٔ مشتری به‌روزرسانی می‌شود.</p>
             </div>
           </div>
@@ -234,7 +238,7 @@ export default function SanctionPage() {
             <button onClick={loadAccount} disabled={loading} type="button" className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Search size={15} /> {loading ? '...' : 'بارگیری'}
             </button>
-            <span className="text-xs text-gray-500">نوع: <b>{isCorp ? 'حقوقی (Corporate)' : 'حقیقی (Retail)'}</b></span>
+            <span className="text-xs text-gray-500" dir="rtl">نوع: <b>{isCorp ? 'حقوقی (Corporate)' : 'حقیقی (Retail)'}</b></span>
             <button onClick={() => saveForm()} disabled={saving} type="button" className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Save size={15} /> {saving ? '...' : 'ذخیره'}
             </button>

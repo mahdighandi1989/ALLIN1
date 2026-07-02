@@ -20,6 +20,7 @@ from app.schemas.stats import (
     ExpiringFacilityItem,
 )
 from app.utils.security import get_current_user
+from app.routers.auth import require_editor
 
 # Authentication is required for every stats endpoint.
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -425,7 +426,10 @@ async def _expiring_facilities(db: AsyncSession, today, horizon, limit: int = 10
 
 
 @router.post("/snapshot")
-async def capture_snapshot_now(db: AsyncSession = Depends(get_db)):
+async def capture_snapshot_now(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """Capture (upsert) this month's exposure snapshot from current data.
 
     Useful to call from a scheduler (e.g. monthly cron) to build the trend over

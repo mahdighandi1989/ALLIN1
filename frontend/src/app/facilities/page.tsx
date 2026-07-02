@@ -82,8 +82,11 @@ export default function FacilitiesPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    setPage(1)
-    loadFacilities()
+    // Same guard as the audit page: when page > 1, ONLY reset the page and
+    // let the [page] effect fetch — calling loadFacilities() here too fired a
+    // second request with the stale page whose late response could win.
+    if (page === 1) loadFacilities()
+    else setPage(1)
   }
 
   const handleDelete = async (facility: Facility) => {
@@ -354,6 +357,7 @@ function FacilityFormModal({
   onSaved: () => void
 }) {
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [customerQuery, setCustomerQuery] = useState('')
   const [form, setForm] = useState<FacilityFormData>({
     customer_id: facility?.customer_id || '',
     facility_type: (facility?.facility_type as FacilityFormData['facility_type']) || 'loan',
@@ -366,12 +370,18 @@ function FacilityFormModal({
   })
   const [saving, setSaving] = useState(false)
 
+  // Server-side customer lookup: the base is tens of thousands of customers,
+  // so a fixed newest-100 list made most customers impossible to select.
+  // The search box filters by name/account via the API (debounced).
   useEffect(() => {
-    customersApi
-      .list({ page: 1, page_size: 100 })
-      .then((res) => setCustomers(res.items))
-      .catch(() => setCustomers([]))
-  }, [])
+    const t = setTimeout(() => {
+      customersApi
+        .list({ page: 1, page_size: 100, search: customerQuery.trim() || undefined })
+        .then((res) => setCustomers(res.items))
+        .catch(() => setCustomers([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [customerQuery])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -418,6 +428,16 @@ function FacilityFormModal({
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Customer *</label>
+            {!facility && (
+              <input
+                type="text"
+                value={customerQuery}
+                onChange={(e) => setCustomerQuery(e.target.value)}
+                placeholder="Search by name or account no…"
+                className="w-full px-3 py-2 border rounded-lg mb-2"
+                data-testid="facility-form-customer-search"
+              />
+            )}
             <select
               value={form.customer_id}
               onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
@@ -427,6 +447,9 @@ function FacilityFormModal({
               disabled={!!facility}
             >
               <option value="">Select a customer…</option>
+              {facility && form.customer_id && !customers.some((c) => c.id === form.customer_id) && (
+                <option value={form.customer_id}>{facility.customer_name || form.customer_id}</option>
+              )}
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.account_no})

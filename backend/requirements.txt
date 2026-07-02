@@ -46,3 +46,7 @@ reportlab==4.1.0
 # error before any test runs. Kept here so any environment that installs the
 # backend deps can run the suite (CI installs it explicitly too).
 aiosqlite==0.19.0
+
+# Production WSGI/ASGI process manager (backend/Dockerfile + docker-compose.prod
+# run gunicorn; Render uses uvicorn directly)
+gunicorn==21.2.0

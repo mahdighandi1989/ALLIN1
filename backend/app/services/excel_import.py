@@ -77,14 +77,36 @@ def _rows_to_records(
         for i, h in enumerate(header)
     ]
 
+    # Duplicate header names would silently collapse columns (the right-most
+    # wins in the dict below) — a copy-pasted second "amount" column would
+    # import the wrong values into every row. Fail fast instead.
+    seen: Dict = {}
+    dupes = []
+    for h in headers:
+        seen[h] = seen.get(h, 0) + 1
+        if seen[h] == 2:
+            dupes.append(h)
+    if dupes:
+        raise ExcelParseError(
+            f"duplicate column name(s): {', '.join(sorted(dupes))} — "
+            "rename or remove the repeated column(s) and re-upload",
+            kind="duplicate_columns",
+        )
+
     records: List[Dict] = []
     for row in rows_iter:
         if row is None or all(c is None for c in row):
             continue
+        if len(records) >= max_rows:
+            # Never truncate silently: the operator would see "5000 rows
+            # imported, 0 errors" and believe the whole file is in.
+            raise ExcelParseError(
+                f"the sheet has more than {max_rows} data rows; split the "
+                f"file and import it in parts (limit per upload: {max_rows})",
+                kind="too_many_rows",
+            )
         rec = {key: (row[i] if i < len(row) else None) for i, key in enumerate(headers)}
         records.append(rec)
-        if len(records) >= max_rows:
-            break
     return headers, records
 
 

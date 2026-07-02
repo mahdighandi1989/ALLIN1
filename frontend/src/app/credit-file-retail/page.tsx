@@ -133,7 +133,10 @@ export default function CreditFileRetailPage() {
       const pdata = (profile && profile.data) || {}
       const acct = customer?.account_no || q
       setFacilities(facs)
-      setA((s) => ({
+      // Reset from ACCT0, not the previous account's state — leftover values
+      // (status/grade/guarantor flags) must not leak into the new sheet.
+      const s = { ...ACCT0 } as Acct
+      setA(() => ({
         ...s, accountNumber: acct, customerName: customer?.name || '',
         branchCode: customer?.branch_code || customer?.branch || '', branchName: customer?.branch || '',
         rating: profile?.rating || '', customerStatus: profile?.customer_status || s.customerStatus,
@@ -146,25 +149,29 @@ export default function CreditFileRetailPage() {
         guarantor3Name: guarantors?.[2]?.guarantor_name || '', guarantorAvailable: (guarantors?.length || 0) > 0 ? true : s.guarantorAvailable,
       }))
       // Security/collateral matrix (data_json) → fill the base rows, append extras.
+      // ALWAYS reset from the pristine base: keeping the previous account's
+      // matrix on screen (and then saving it) wrote customer A's collateral
+      // into customer B's profile.
       const sd: any[] = Array.isArray(pdata.security_details) ? pdata.security_details : []
-      if (sd.length) {
-        setSecRows(() => {
-          const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
-          sd.forEach((e: any) => {
-            const t = String(e?.type || '').trim()
-            const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
-            const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
-            if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
-            else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
-          })
-          return [...base, ...extra]
+      setSecRows(() => {
+        const base = secBase(); const used = new Set<number>(); const extra: SecRow[] = []
+        sd.forEach((e: any) => {
+          const t = String(e?.type || '').trim()
+          const row = { facilityTag: e?.for_facility || '', aed: e?.aed || '', usd: e?.usd || '', irr: e?.irr || '', other: e?.other || '' }
+          const idx = base.findIndex((b, i) => !used.has(i) && b.label.toLowerCase() === t.toLowerCase())
+          if (idx >= 0) { used.add(idx); base[idx] = { ...base[idx], ...row } }
+          else if (t) extra.push({ uid: uid(), label: t, custom: true, ...row })
         })
-      }
+        return [...base, ...extra]
+      })
       // Two-way sync: properties already in the customer's املاک list fill the rows.
       setProps(Array.isArray(propList) && propList.length ? propList.map(propFromRecord) : [emptyProp()])
       // Bind predefined rows, then AUTO-ADD a row for every extra facility so
-      // nothing in the DB is left off the form.
-      setFacRows((rows) => {
+      // nothing in the DB is left off the form. Start from the pristine base
+      // — mapping over the PREVIOUS account's rows kept its facilityIds and
+      // amounts, and «ذخیره» then updated the previous customer's facilities.
+      setFacRows(() => {
+        const rows = facBase()
         const used = new Set<string>()
         const mapped = rows.map((r) => {
           if (!r.matchKey) return r

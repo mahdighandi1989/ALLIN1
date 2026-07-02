@@ -9,15 +9,30 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.routers import auth as auth_router
 
 
 @pytest.fixture
 async def error_client():
     """Client that returns the 500 *response* (as a real HTTP client would)
-    rather than re-raising the server-side exception."""
+    rather than re-raising the server-side exception. The diagnostic endpoint
+    is admin-only in production, so the admin gate is overridden here — the
+    subject under test is the global exception handler, not auth."""
+    app.dependency_overrides[auth_router.require_admin] = lambda: object()
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.pop(auth_router.require_admin, None)
+
+
+async def test_simulate_endpoint_requires_auth():
+    """Unauthenticated callers cannot use the 500-generator (log-flood guard)."""
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+        resp = await ac.get("/api/simulate-unhandled-error")
+    assert resp.status_code == 401
 
 
 async def test_unhandled_exception_logs_correctly(error_client, caplog):

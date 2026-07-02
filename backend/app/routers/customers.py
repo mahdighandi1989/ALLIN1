@@ -502,7 +502,11 @@ async def delete_customer(
 
 
 @router.post("/{customer_id}/restore", response_model=CustomerResponse)
-async def restore_customer(customer_id: str, db: AsyncSession = Depends(get_db)):
+async def restore_customer(
+    customer_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_editor),
+):
     """Restore a soft-deleted customer and re-activate it."""
     result = await db.execute(
         select(Customer).where(

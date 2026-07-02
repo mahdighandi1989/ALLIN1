@@ -13,8 +13,19 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# NEXT_PUBLIC_API_URL must be present AT BUILD TIME (Next.js inlines it into
+# the static bundle) — a runtime env var on the nginx container does nothing.
+ARG NEXT_PUBLIC_API_URL=""
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # Build the application (tsc --noEmit && next build → produces out/)
 RUN npm run build
+
+# Dev stage (docker-compose.dev.yml targets this): source is bind-mounted and
+# `npm run dev` is the compose command — the image just needs node + deps.
+FROM builder AS development
+EXPOSE 3000
+CMD ["npm", "run", "dev"]
 
 # Stage 2: Serve static files with nginx
 FROM nginx:alpine AS production

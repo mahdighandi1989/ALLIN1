@@ -35,6 +35,25 @@ from app.routers.auth import require_editor, require_admin, get_current_active_u
 router = APIRouter(tags=["crm"])
 
 
+def _content_disposition(kind: str, filename: str) -> str:
+    """RFC 6266 header with the user-supplied name made header-safe.
+
+    The stored original_name is uploader-controlled: a double quote breaks out
+    of the quoted parameter and a CR/LF aborts the whole response at the ASGI
+    layer. ASCII-quote-escape for the legacy parameter + RFC 5987 UTF-8
+    filename* so non-Latin (Persian/Arabic) names survive.
+    """
+    from urllib.parse import quote
+
+    safe = (filename or "document").replace("\r", " ").replace("\n", " ")
+    ascii_fallback = safe.encode("ascii", "replace").decode("ascii").replace('"', "'")
+    return (
+        f'{kind}; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(safe, safe='')}"
+    )
+
+
+
 async def _audit(db, user, *, action, entity_type, account_no, entity_id=None, detail=None):
     """Record a customer-scoped action in the activity/audit log (best-effort)."""
     from app.services.audit import record_audit
@@ -1666,7 +1685,7 @@ async def download_attachment(
         mime = mimetypes.guess_type(download_name)[0] or "application/octet-stream"
         return Response(
             content=data, media_type=mime,
-            headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+            headers={"Content-Disposition": _content_disposition("attachment", download_name)},
         )
 
     # Legacy / disk-stored file.
@@ -1698,7 +1717,7 @@ async def view_attachment(
         except google_drive.DriveError as exc:
             raise HTTPException(status_code=502, detail=f"Drive download failed: {exc}")
         return Response(content=data, media_type=mime,
-                        headers={"Content-Disposition": f'inline; filename="{name}"'})
+                        headers={"Content-Disposition": _content_disposition("inline", name)})
     path = attachments_store.resolve(a.file_path or "")
     if path is None:
         raise HTTPException(status_code=404, detail="File not found on disk")

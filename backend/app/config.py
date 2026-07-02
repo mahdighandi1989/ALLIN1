@@ -38,9 +38,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field(default="development")
 
     # Security settings - Critical security configurations
+    # Default is EMPTY so the validator below can tell "not configured" apart
+    # from a real key: in production an absent key is a hard startup error
+    # (a silent per-process random key gives each gunicorn worker a different
+    # signing key -> random 401s, and kills every session on redeploy); in
+    # development/test a secure ephemeral key is generated.
     SECRET_KEY: str = Field(
-        default_factory=lambda: secrets.token_urlsafe(64),
-        min_length=32,
+        default="",
         validation_alias=AliasChoices("SECRET_KEY", "JWT_SECRET_KEY"),
         description="JWT signing key - must be cryptographically secure "
                     "(read from env SECRET_KEY or JWT_SECRET_KEY)"

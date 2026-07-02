@@ -88,6 +88,10 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
     today = date.today()
     wd = warning_days if warning_days is not None else await _warning_days(db)
     created = updated = fac_alerts = doc_alerts = 0
+    # Every alert id that is still justified THIS scan; anything active outside
+    # this set (renewed licence, extended facility, deleted facility) is
+    # deactivated at the end — stale alerts otherwise lived forever.
+    active_ids: set = set()
 
     rows = (
         await db.execute(
@@ -106,6 +110,7 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
         fac_alerts += 1
         state = "expired" if days_left < 0 else f"expires in {days_left}d"
         name = fac.name or (getattr(fac.facility_type, "value", fac.facility_type) or "facility")
+        active_ids.add(_alert_id("alert", f"fac|{fac.id}"))
         is_new = await _upsert_alert(
             db, key=f"fac|{fac.id}", account_no=acc or "", facility_id=fac.id,
             task_name=f"⚠ Facility '{name}' {state} ({exp.isoformat()})",
@@ -144,6 +149,7 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
                 continue
             doc_alerts += 1
             state = "expired" if days_left < 0 else f"expires in {days_left}d"
+            active_ids.add(_alert_id("alert", f"doc|{acc}|{attr}"))
             is_new = await _upsert_alert(
                 db, key=f"doc|{acc}|{attr}", account_no=acc or "", facility_id="",
                 task_name=f"⚠ {label} {state} ({exp.isoformat()})",
@@ -152,6 +158,25 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
             )
             created += int(is_new)
             updated += int(not is_new)
+
+    # Resolve stale alerts: an expiry that moved out of the window (renewal),
+    # a facility that was deleted, or a profile that no longer matches keeps
+    # its task row (audit trail) but goes inactive so staff stop seeing it.
+    resolved = 0
+    stale = (
+        await db.execute(
+            select(CustomTask).where(
+                CustomTask.id.like("ALERT-%"),
+                CustomTask.is_active == "1",
+                CustomTask.created_by == "system",
+            )
+        )
+    ).scalars().all()
+    for t in stale:
+        if t.id not in active_ids:
+            t.is_active = "0"
+            t.completed_date = today.isoformat()
+            resolved += 1
 
     total = fac_alerts + doc_alerts
     if total:
@@ -188,5 +213,6 @@ async def run_expiry_scan(db, warning_days: int | None = None) -> dict:
     await db.commit()
     return {
         "warning_days": wd, "facilities": fac_alerts, "documents": doc_alerts,
-        "tasks_created": created, "tasks_updated": updated, "total": total,
+        "tasks_created": created, "tasks_updated": updated,
+        "tasks_resolved": resolved, "total": total,
     }

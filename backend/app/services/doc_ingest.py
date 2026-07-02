@@ -309,7 +309,14 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     customer = await ensure_customer(db, acc, name)
     at = str(cust.get("account_type") or "").lower()
     if customer is not None and at in ("retail", "corporate", "sme"):
-        customer.account_type = AccountType(at)
+        # Upgrade-from-default only (guarded like name/branch below): the
+        # extraction prompt only offers retail|corporate, so an unguarded
+        # write clobbered an officer's curated 'sme' on every re-import.
+        # RETAIL is the model default (= "never curated"), so only a
+        # default-retail customer may be reclassified by the extractor.
+        current = str(getattr(customer.account_type, "value", customer.account_type) or "").lower()
+        if (not current or current == "retail") and at != "retail":
+            customer.account_type = AccountType(at)
     if customer is not None and name and (not customer.name or customer.name.strip() in ("", acc)):
         customer.name = name[:200]
     branch = (cust.get("branch") or "").strip()
@@ -371,7 +378,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if row is None:
             import uuid
             from datetime import datetime
-            row = Guarantor(id=f"G-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
+            row = Guarantor(id=f"G-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
                             account_no=acc, date_added=date.today().isoformat(), created_by=username)
             db.add(row)
             existing_g.append(row)
@@ -403,7 +410,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if prow is None:
             import uuid
             from datetime import datetime
-            prow = Partner(id=f"PT-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
+            prow = Partner(id=f"PT-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
                            account_no=acc, date_added=date.today().isoformat(), created_by=username)
             db.add(prow)
             existing_partners.append(prow)
@@ -437,7 +444,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         if prow is None:
             import uuid
             from datetime import datetime
-            prow = MortgagedProperty(id=f"PROP-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}",
+            prow = MortgagedProperty(id=f"PROP-{acc}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
                                      account_no=acc, date_added=date.today().isoformat(), created_by=username)
             db.add(prow)
             existing_props.append(prow)
@@ -479,15 +486,18 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             ft = ft_raw if ft_raw in valid_ft else ("other" if ft_raw else "")
             amt = _num_bounded(fc.get("amount"), 1e13)        # Numeric(15,2)
             rate = _num_bounded(fc.get("interest_rate"), 1e3)  # Numeric(5,2) → < 1000
-            frow = None
-            if ft:
-                frow = next((r for r in existing_facs
-                             if str(getattr(r.facility_type, "value", r.facility_type) or "") == ft), None)
+            # A typeless extraction is persisted as OTHER, so it must also be
+            # MATCHED as OTHER — otherwise every re-import of the same
+            # document created another ACTIVE facility with the same amount
+            # (dedupe skipped, row created) and exposure double-counted.
+            match_ft = ft or "other"
+            frow = next((r for r in existing_facs
+                         if str(getattr(r.facility_type, "value", r.facility_type) or "") == match_ft), None)
             if frow is None:
                 if amt is None:
                     continue  # no amount → nothing to anchor a new facility on
                 frow = Facility(customer_id=customer.id,
-                                facility_type=FacilityType(ft) if ft else FacilityType.OTHER,
+                                facility_type=FacilityType(match_ft),
                                 amount=amt, currency=(fc.get("currency") or "AED")[:3].upper(),
                                 status=FacilityStatus.ACTIVE)
                 db.add(frow)

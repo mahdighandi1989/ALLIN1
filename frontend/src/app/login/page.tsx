@@ -194,7 +194,7 @@ export default function LoginPage() {
         </div>
 
         <a
-          href="/api/auth/google/login"
+          href={`${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/auth/google/login`}
           data-testid="btn-google-login"
           className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
         >

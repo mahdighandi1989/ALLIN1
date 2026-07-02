@@ -39,7 +39,12 @@ export default function ImportPage() {
     setFiles((prev) => [...prev, ...arr])
     setResults([])
   }
-  const removeFile = (i: number) => setFiles((prev) => prev.filter((_, idx) => idx !== i))
+  const removeFile = (i: number) => {
+    setFiles((prev) => prev.filter((_, idx) => idx !== i))
+    // Results are index-aligned with the file list; keep them in sync or the
+    // remaining files show the wrong success/failure icons.
+    setResults((prev) => (prev.length ? prev.filter((_, idx) => idx !== i) : prev))
+  }
 
   const analyzeAll = async () => {
     if (!files.length) { toast.error('ابتدا فایل انتخاب کن'); return }

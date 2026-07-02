@@ -249,6 +249,40 @@ def _add_missing_columns(sync_conn) -> None:
         #    ``::text`` losslessly converts a number/timestamp to the string form the
         #    String model column expects, and TEXT accepts the model's varchar binds.
         db_by_name = {c["name"]: c for c in db_columns}
+
+        # 3a) Widen NUMERIC precision when the model grew (never shrink). A
+        #     numeric(5,4) column caps at 9.9999 — offer-letter rate fields hit
+        #     this at 10% — and create_all never ALTERs an existing column, so
+        #     the live precision must be reconciled here just like varchar
+        #     widths below. Widening numeric(p,s) -> numeric(P,s) with P > p is
+        #     lossless; scale changes are NOT touched (they can round data).
+        for col in table.columns:
+            db_col = db_by_name.get(col.name)
+            if db_col is None or not isinstance(col.type, sa.Numeric) or isinstance(col.type, sa.Float):
+                continue
+            db_type = db_col.get("type")
+            if not isinstance(db_type, sa.Numeric) or isinstance(db_type, sa.Float):
+                continue
+            m_prec, m_scale = getattr(col.type, "precision", None), getattr(col.type, "scale", None)
+            d_prec, d_scale = getattr(db_type, "precision", None), getattr(db_type, "scale", None)
+            if None in (m_prec, m_scale, d_prec, d_scale):
+                continue
+            if m_scale == d_scale and m_prec > d_prec:
+                try:
+                    logger.info(
+                        "schema-sync: widening numeric %s.%s (%s,%s) -> (%s,%s)",
+                        table.name, col.name, d_prec, d_scale, m_prec, m_scale,
+                    )
+                    sync_conn.execute(text(
+                        f'ALTER TABLE "{table.name}" ALTER COLUMN "{col.name}" '
+                        f"TYPE numeric({m_prec},{m_scale})"
+                    ))
+                except Exception as exc:  # pragma: no cover - depends on live DB
+                    logger.warning(
+                        "schema-sync: could not widen numeric %s.%s: %s",
+                        table.name, col.name, exc,
+                    )
+
         for col in table.columns:
             db_col = db_by_name.get(col.name)
             if db_col is None or not isinstance(col.type, sa.String):

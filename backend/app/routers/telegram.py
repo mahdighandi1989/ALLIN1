@@ -11,6 +11,8 @@ the bot); failures are logged instead.
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+
+from app.database import get_db
 from pydantic import BaseModel
 
 from app.config import settings
@@ -67,7 +69,12 @@ async def get_status(_: object = Depends(get_current_active_user)):
 
 
 @router.put("/prefs")
-async def update_prefs(payload: PrefsUpdate, request: Request, actor=Depends(require_admin)):
+async def update_prefs(
+    payload: PrefsUpdate,
+    request: Request,
+    actor=Depends(require_admin),
+    db=Depends(get_db),
+):
     partial: Dict[str, Any] = {}
     if payload.events is not None:
         partial["events"] = payload.events
@@ -86,7 +93,9 @@ async def update_prefs(payload: PrefsUpdate, request: Request, actor=Depends(req
     if payload.allowed_chat_ids is not None:
         partial["allowed_chat_ids"] = [str(c).strip() for c in payload.allowed_chat_ids if str(c).strip()]
 
-    updated = await tg.update_prefs(partial)
+    # Persist through the request's session; a failed write is now a real
+    # error (500), not a silent success that reverts on restart.
+    updated = await tg.update_prefs(partial, db=db)
     await record_audit(
         action="update", entity_type="telegram_prefs", entity_id="prefs",
         detail=f"Updated Telegram prefs: {sorted(partial.keys())}", user=actor, request=request,

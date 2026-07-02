@@ -93,14 +93,13 @@ def _norm_name(s) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", str(s or "").lower())).strip()
 
 
-# Key value fields per entity — a difference here (both populated) makes a pair
-# "probable" (an update or a distinct sub-entity) rather than "certain".
-_DISTINGUISH_BY_KEY = {
-    "properties": ("valuation", "mortgage_amount", "address", "land_area", "insurance_expiry"),
-    "guarantors": ("cheque_amount", "issuing_bank", "pim_ref"),
-    "fixed_deposits": ("amount", "maturity_date", "open_date", "rate"),
-    "partners": ("share", "nationality"),
-}
+# Confidence uses EVERY data column (see _data_cols — metadata like
+# created_by/date_added is already excluded): a pair is "certain" only when NO
+# populated field disagrees. Restricting the check to a short per-entity field
+# list was the bug it replaced — two guarantors sharing a re-used cheque_no
+# but with DIFFERENT names were classified "certain" and one real guarantor
+# was auto-removed. Any populated-field disagreement now demotes the pair to
+# "probable" (review/AI adjudication), per the conservative review-first rule.
 
 
 # ---- Layer 1 candidate matchers (strong id / exact name only) ----
@@ -217,17 +216,6 @@ def _group_dupes(rows, match, cols):
     return out
 
 
-def _conflict(keeper, removals, cols) -> list[str]:
-    """Data columns where members disagree (both non-empty but different) — these
-    duplicates carry contradictory data worth a human glance."""
-    bad = []
-    for c in cols:
-        vals = {str(getattr(r, c)).strip() for r in [keeper, *removals] if _nz(getattr(r, c, None))}
-        if len(vals) > 1:
-            bad.append(c)
-    return bad
-
-
 async def scan(db: AsyncSession) -> dict:
     """Build the full de-dup report (changes NOTHING)."""
     # account_no → customer name (for the report)
@@ -241,7 +229,6 @@ async def scan(db: AsyncSession) -> dict:
 
     for key, model, acc_attr, _audit, label, match, summ in _ENTITIES:
         cols = _data_cols(model)
-        distinguish = _DISTINGUISH_BY_KEY.get(key, ())
         rows = list((await db.execute(
             select(model).where(model.is_deleted == False))).scalars().all())  # noqa: E712
         by_acc: dict[str, list] = {}
@@ -256,7 +243,7 @@ async def scan(db: AsyncSession) -> dict:
                 # value-conflicting (probable — an update or a distinct sub-entity).
                 certain, probable = [], []
                 for r in removals:
-                    cf = _pair_conflicts(keeper, r, distinguish)
+                    cf = _pair_conflicts(keeper, r, cols)
                     (probable if cf else certain).append((r, cf))
                 base = {
                     "account_no": acc,
@@ -353,8 +340,9 @@ def dup_status(existing, candidate, model=None):
             return None
     except Exception:
         return None
-    fields = _DISTINGUISH_BY_KEY.get(_KEY_BY_MODEL.get(model), ())
-    return "probable" if _pair_conflicts(existing, candidate, fields) else "certain"
+    # Same rule as the scan: ANY populated data column that disagrees makes
+    # the pair 'probable' (review), never 'certain' (auto-merge/enrich).
+    return "probable" if _pair_conflicts(existing, candidate, _data_cols(model)) else "certain"
 
 
 def find_duplicate(candidate, existing_rows, model=None, match=None):

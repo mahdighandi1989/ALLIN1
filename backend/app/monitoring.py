@@ -161,8 +161,16 @@ def log_interaction(
 
 
 def route_label(request) -> str:
-    """A low-cardinality label for the request (route template when available)."""
+    """A low-cardinality label for the request (route template when available).
+
+    Unmatched paths must NOT feed the label with the raw URL: every bot scan
+    (/wp-login.php, random UUIDs, …) would mint a new Prometheus series and
+    grow /metrics + memory without bound on the long-lived process.
+    """
     route = request.scope.get("route")
     if route is not None and getattr(route, "path", None):
         return route.path
-    return request.url.path
+    path = request.url.path
+    if path.startswith("/api"):
+        return "/api/(unmatched)"
+    return "/(static)"

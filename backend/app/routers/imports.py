@@ -1,4 +1,5 @@
 """Excel/CSV import endpoints. Wired at /api/imports."""
+import re
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import List
@@ -20,7 +21,7 @@ from app.services.excel_import import (
 )
 from app.services.exporters import rows_to_csv
 from app.services.audit import record_audit
-from app.routers.auth import get_current_active_user
+from app.routers.auth import get_current_active_user, require_editor
 from fastapi import Response
 
 logger = logging.getLogger("app.imports")
@@ -65,7 +66,10 @@ async def _read_upload(file: UploadFile) -> bytes:
         raise HTTPException(
             status_code=400, detail="Please upload an .xlsx, .xlsm or .xls file"
         )
-    content = await file.read()
+    # Bounded read: never buffer more than the limit + 1 byte, so an
+    # accidental/malicious multi-GB upload cannot OOM the 512 MB instance
+    # before the size check runs.
+    content = await file.read(_MAX_BYTES + 1)
     if len(content) > _MAX_BYTES:
         raise HTTPException(status_code=400, detail="File too large (max 10 MB)")
     if not content:
@@ -127,7 +131,7 @@ async def import_customers(
     file: UploadFile = File(...),
     dry_run: bool = Query(False, description="Validate only; do not write"),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_editor),
 ):
     """Import customers from an Excel file.
 
@@ -211,7 +215,7 @@ async def import_facilities(
     file: UploadFile = File(...),
     dry_run: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user=Depends(require_editor),
 ):
     """Import facilities from an Excel file.
 
@@ -400,7 +404,7 @@ async def _match_facility(db: AsyncSession, customer_id, hint: str) -> str:
         want = "overdraft"
     elif "loan" in h:
         want = "loan"
-    elif "guarantee" in h or "\blg\b" in h or "log" in h:
+    elif "guarantee" in h or re.search(r"\blg\b", h) or "log" in h:
         want = "lg"
     elif "lc" in h or ("letter" in h and "credit" in h):
         want = "lc"
@@ -767,10 +771,12 @@ async def analyze_document(
     file: UploadFile = File(...),
     model_id: Optional[int] = Form(None),
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_active_user),
+    user=Depends(require_editor),
 ):
     """Start an extraction job and return its id immediately (poll /jobs/{id})."""
-    data = await file.read()
+    # Bounded read (largest allowed class + 1): the per-type limit is checked
+    # below, but nothing bigger than the ceiling may ever be buffered in RAM.
+    data = await file.read(_PDF_MAX_BYTES + 1)
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
     fname = file.filename or "document"

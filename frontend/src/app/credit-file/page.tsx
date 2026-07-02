@@ -84,7 +84,7 @@ export default function CreditFilePage() {
 
           {choose && (
             <div className="mt-5 border-t border-gray-100 pt-4">
-              <p className="text-sm text-gray-700 mb-3">
+              <p className="text-sm text-gray-700 mb-3" dir="rtl">
                 نوعِ حسابِ «<span className="font-semibold">{choose.name}</span>» (شمارهٔ {choose.accountNo}) در دیتابیس ثبت نشده.
                 این حساب از کدام دسته است؟ انتخابتان ذخیره می‌شود.
               </p>
@@ -112,8 +112,8 @@ export default function CreditFilePage() {
           )}
         </div>
 
-        <p className="text-xs text-gray-400 mt-4">
-          تشخیص بر اساس فیلدِ <code>account_type</code> مشتری انجام می‌شود: retail → فرم Retail؛ corporate/sme → فرم Corporate.
+        <p className="text-xs text-gray-400 mt-4" dir="rtl">
+          تشخیص بر اساس فیلدِ <code dir="ltr">account_type</code> مشتری انجام می‌شود: retail → فرم Retail؛ corporate/sme → فرم Corporate.
         </p>
       </div>
     </Layout>
