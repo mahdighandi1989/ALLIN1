@@ -159,7 +159,7 @@ def extract_from_docx(data: bytes) -> dict:
         facility = f"{mf.group(1).title()} Loan"
     elif re.search(r"\bPIM\b|personal loan", full, re.I):
         facility = "Personal Loan"
-    elif re.search(r"commercial loan|\bCL[\b-]", full, re.I):
+    elif re.search(r"commercial loan|\bCL\b", full, re.I):
         facility = "Commercial Loan"
     else:
         facility = ""

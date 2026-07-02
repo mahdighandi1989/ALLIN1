@@ -127,15 +127,29 @@ async def _merge_facilities(session) -> int:
         cur = (r.get("currency") or "AED")[:3] or "AED"
         fac = existing.get(fid)
         if fac is not None:
-            # Fill the real data onto the existing (placeholder) facility.
-            fac.facility_type = ftype
-            if name:
+            # Fill-EMPTY-only, honoring the module contract: the merge must
+            # never clobber operator edits, and must never resurrect a
+            # facility an operator soft-deleted (this runs on EVERY startup —
+            # unconditional writes silently reverted panel changes on each
+            # deploy). A soft-deleted facility is left exactly as it is.
+            if fac.is_deleted:
+                continue
+            changed = False
+            if not fac.facility_type or getattr(fac.facility_type, "value", fac.facility_type) == "other":
+                if ftype and fac.facility_type != ftype:
+                    fac.facility_type = ftype
+                    changed = True
+            if name and not fac.name:
                 fac.name = name
-            fac.currency = cur
-            fac.is_deleted = False
-            if amt is not None:
+                changed = True
+            if cur and not fac.currency:
+                fac.currency = cur
+                changed = True
+            if amt is not None and not fac.amount:
                 fac.amount = amt
-            touched += 1
+                changed = True
+            if changed:
+                touched += 1
         else:
             cid = cmap.get(str(r.get("account_no")))
             if not cid or amt is None:

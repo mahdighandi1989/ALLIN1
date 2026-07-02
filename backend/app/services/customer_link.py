@@ -53,6 +53,24 @@ async def ensure_customer(
     existing = await find_customer_by_account(db, acc)
     if existing:
         return existing
+    # account_no is UNIQUE, so a soft-deleted profile with this account would
+    # make the INSERT below fail with IntegrityError and blow up the caller's
+    # whole transaction (letter/property/guarantor save → 500). Reuse and
+    # restore the deleted profile instead — new child data proves the account
+    # is live again, and the operator keeps the old profile's fields.
+    deleted = (
+        await db.execute(
+            sa.select(Customer).where(
+                Customer.account_no == acc, Customer.is_deleted == True  # noqa: E712
+            )
+        )
+    ).scalars().first()
+    if deleted is not None:
+        deleted.is_deleted = False
+        logger.info(
+            "Restored soft-deleted customer for account_no=%s (new linked record)", acc
+        )
+        return deleted
     name = (name_hint or "").strip() or f"(نامشخص) {acc}"
     stub = Customer(account_no=acc, name=name[:200], notes=STUB_NOTE)
     db.add(stub)

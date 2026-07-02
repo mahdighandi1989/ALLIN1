@@ -1,4 +1,5 @@
 """Excel/CSV import endpoints. Wired at /api/imports."""
+import re
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import List
@@ -400,7 +401,7 @@ async def _match_facility(db: AsyncSession, customer_id, hint: str) -> str:
         want = "overdraft"
     elif "loan" in h:
         want = "loan"
-    elif "guarantee" in h or "\blg\b" in h or "log" in h:
+    elif "guarantee" in h or re.search(r"\blg\b", h) or "log" in h:
         want = "lg"
     elif "lc" in h or ("letter" in h and "credit" in h):
         want = "lc"

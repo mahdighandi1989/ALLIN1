@@ -313,15 +313,22 @@ async def load_prefs(db=None) -> Dict[str, Any]:
 
 
 async def save_prefs(prefs: Dict[str, Any], db=None) -> Dict[str, Any]:
-    """Persist prefs to the DB and refresh the cache."""
+    """Persist prefs to the DB and refresh the cache.
+
+    Raises on a failed DB write: prefs include the security allow-list
+    (``allowed_chat_ids``), and a swallowed failure would report success while
+    the change silently reverts on the next restart (a revoked chat id would
+    regain bot access). The in-memory cache is updated only AFTER the write
+    succeeds.
+    """
     global _PREFS_CACHE
-    _PREFS_CACHE = _merge_into_defaults(prefs)
+    merged = _merge_into_defaults(prefs)
     try:
         from sqlalchemy import select
         from app.models.system_setting import SystemSetting
         from app.database import AsyncSessionLocal
 
-        payload = json.dumps(_PREFS_CACHE, ensure_ascii=False)
+        payload = json.dumps(merged, ensure_ascii=False)
 
         async def _write(session) -> None:
             row = (
@@ -341,7 +348,9 @@ async def save_prefs(prefs: Dict[str, Any], db=None) -> Dict[str, Any]:
             async with AsyncSessionLocal() as session:
                 await _write(session)
     except Exception as exc:
-        logger.warning("telegram: save prefs failed: %s", exc)
+        logger.error("telegram: save prefs failed (change NOT persisted): %s", exc)
+        raise
+    _PREFS_CACHE = merged
     return _PREFS_CACHE
 
 
@@ -411,9 +420,18 @@ class TelegramChannel:
 
     def __init__(self, bot_token: Optional[str], chat_id: Optional[str]):
         self.bot_token = (bot_token or "").strip() or None
-        # The default *outbound* chat: first env chat id (notifications go here).
-        ids = _env_chat_ids()
-        self.chat_id = (chat_id or (ids[0] if ids else "")).strip() or None
+        # The default *outbound* chat: FIRST id only. The setting is documented
+        # as comma-separated ("111,222"), and passing the raw multi-id string
+        # to sendMessage makes Telegram 400 on every notification — so any
+        # comma/space-separated value must be reduced to its first id here.
+        raw = (chat_id or "").strip()
+        if raw and ("," in raw or " " in raw):
+            parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
+            raw = parts[0] if parts else ""
+        if not raw:
+            ids = _env_chat_ids()
+            raw = ids[0] if ids else ""
+        self.chat_id = raw or None
 
     def is_configured(self) -> bool:
         return bool(self.bot_token and self.chat_id)

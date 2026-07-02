@@ -17,6 +17,10 @@ from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY, DEFAULT_RATES
 
 logger = logging.getLogger(__name__)
 
+# Currencies already warned about this process — one loud line per currency,
+# not one per converted amount (to_base runs inside aggregation loops).
+_WARNED_UNKNOWN: set = set()
+
 
 async def load_rates(db=None) -> Dict[str, float]:
     """Return {currency: rate_to_base}. Falls back to DEFAULT_RATES on any error.
@@ -35,6 +39,13 @@ async def load_rates(db=None) -> Dict[str, float]:
                 rates[r.currency.upper()] = float(r.rate_to_base)
             except (TypeError, ValueError):
                 continue
+        if len(rates) <= 1:
+            # Reachable-but-empty table: without this, every foreign-currency
+            # amount would silently convert 1:1 below. Use the defaults and
+            # say so.
+            logger.warning("FX rate table is empty; falling back to DEFAULT_RATES")
+            for k, v in DEFAULT_RATES.items():
+                rates.setdefault(k, float(v))
     except Exception as exc:  # pragma: no cover - depends on live DB
         logger.warning("FX rate load failed, using defaults: %s", exc)
         for k, v in DEFAULT_RATES.items():
@@ -54,7 +65,16 @@ def to_base(amount, currency: str, rates: Dict[str, float]) -> float:
     cur = (currency or BASE_CURRENCY).upper()
     rate = rates.get(cur)
     if rate is None:
-        # Unknown currency: assume it is already base (1:1) rather than dropping it.
+        # Unknown currency: assume it is already base (1:1) rather than
+        # dropping it — but NEVER silently: a missing USD rate misstates
+        # exposure ~3.67x on the dashboard. Warn once per currency.
+        if cur not in _WARNED_UNKNOWN:
+            _WARNED_UNKNOWN.add(cur)
+            logger.warning(
+                "FX: no rate for currency %r — converting 1:1 to %s. "
+                "Add the rate in Settings to fix exposure figures.",
+                cur, BASE_CURRENCY,
+            )
         rate = 1.0
     return amt * rate
 

@@ -243,3 +243,28 @@ async def test_scheduled_run_reviews_but_never_deletes(db_session, admin_user):
     # …but NOTHING was deleted (review-first).
     live = (await db_session.execute(select(MortgagedProperty).where(MortgagedProperty.is_deleted == False))).scalars().all()  # noqa: E712
     assert len(live) == 3
+
+
+@pytest.mark.asyncio
+async def test_distinct_guarantor_sharing_cheque_no_needs_review(db_session):
+    """A re-used/typo'd cheque_no must NOT auto-remove a DIFFERENT guarantor.
+
+    Confidence now compares every populated data column: two guarantors with
+    the same cheque_no but different names are 'probable' (review), never
+    'certain' (auto-remove). This is the conservative review-first rule.
+    """
+    acc = "500200"
+    db_session.add(Customer(id="C500200", account_no=acc, name="Review Co"))
+    db_session.add(Guarantor(id="GX1", account_no=acc, guarantor_name="Ali Hammadi", cheque_no="CH77"))
+    db_session.add(Guarantor(id="GX2", account_no=acc, guarantor_name="Sara Alnuaimi", cheque_no="CH77"))
+    await db_session.commit()
+
+    report = await db_cleanup.scan(db_session)
+    groups = [g for g in report["groups"]["guarantors"] if g["account_no"] == acc]
+    assert groups, "the shared cheque_no pair must still be surfaced"
+    assert all(g["confidence"] == "probable" for g in groups)
+    assert any("guarantor_name" in g["conflict_fields"] for g in groups)
+    assert report["counts"]["guarantors"] == 0 or all(
+        g["account_no"] != acc
+        for g in report["groups"]["guarantors"] if g["confidence"] == "certain"
+    )
