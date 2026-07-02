@@ -31,7 +31,6 @@ from app.models.customer import Customer
 from app.models.facility import Facility
 from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
-from app.services.doc_ingest import _same_person, _prop_token
 
 # columns that are bookkeeping, not "data completeness"
 _SKIP_COLS = {"id", "account_no", "is_deleted", "created_at", "created_by",
@@ -55,48 +54,79 @@ def _age_key(row):
     return getattr(row, "created_at", None) or datetime.max.replace(tzinfo=None)
 
 
-# ---- pairwise duplicate tests (mirror doc_ingest's matching) ----
+# ---- pairwise duplicate tests — CONSERVATIVE (safe for automatic deletion) ----
+# Two records are the SAME only when they share a STRONG, unique identifier (the
+# registered deed / plate / cheque no. / FD no.) AND no distinguishing field
+# CONFLICTS (both populated but different). This is deliberately stricter than the
+# fuzzy import matcher: two flats on the same building plan but with different
+# deeds, two different security cheques from one guarantor, or two units of one
+# deed with different valuations are DISTINCT and must never be merged/deleted.
 def _eq(a, b) -> bool:
     a = (str(a).strip().lower() if a not in (None, "") else "")
     b = (str(b).strip().lower() if b not in (None, "") else "")
     return bool(a) and a == b
 
 
+def _values_conflict(va, vb) -> bool:
+    """True when both values are present but genuinely different (numeric-aware)."""
+    if not (_nz(va) and _nz(vb)):
+        return False
+    try:
+        return abs(float(va) - float(vb)) > 1e-9
+    except (TypeError, ValueError):
+        return str(va).strip().lower() != str(vb).strip().lower()
+
+
+def _no_conflict(a, b, fields) -> bool:
+    """True when NONE of ``fields`` conflicts between a and b."""
+    return not any(_values_conflict(getattr(a, f, None), getattr(b, f, None)) for f in fields)
+
+
+def _norm_name(s) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", str(s or "").lower())).strip()
+
+
+# If any distinguishing field differs (both populated), the rows are NOT the same
+# record, even when a strong id matches — this is what stops distinct-but-similar
+# records (different deeds/units/cheques) from being wrongly merged.
+_PROP_DISTINGUISH = ("mortgage_deed_no", "plate_no", "valuation", "mortgage_amount", "address")
+_GUAR_DISTINGUISH = ("cheque_amount", "guarantor_name")
+_FD_DISTINGUISH = ("amount", "maturity_date")
+_PARTNER_DISTINGUISH = ("share",)
+
+
 def _props_match(a, b) -> bool:
-    if _eq(a.plate_no, b.plate_no):
-        return True
-    if _eq(a.mortgage_deed_no, b.mortgage_deed_no):
-        return True
-    ta = _prop_token(a.mortgage_deed_no, a.plate_no, a.address)
-    tb = _prop_token(b.mortgage_deed_no, b.plate_no, b.address)
-    if ta and ta == tb:
-        return True
-    if _eq(a.address, b.address) and (a.address or "").strip():
-        return True
-    return False
+    strong = _eq(a.mortgage_deed_no, b.mortgage_deed_no) or _eq(a.plate_no, b.plate_no)
+    return strong and _no_conflict(a, b, _PROP_DISTINGUISH)
 
 
 def _guar_match(a, b) -> bool:
-    if _eq(a.cheque_no, b.cheque_no):
-        return True
-    if _same_person(a.guarantor_name, b.guarantor_name):
-        if _eq(a.guarantor_account, b.guarantor_account):
-            return True
-        if a.cheque_amount is not None and a.cheque_amount == b.cheque_amount:
-            return True
-    return False
+    return _eq(a.cheque_no, b.cheque_no) and _no_conflict(a, b, _GUAR_DISTINGUISH)
 
 
 def _fd_match(a, b) -> bool:
-    if _eq(a.fd_number, b.fd_number):
-        return True
-    if a.amount is not None and a.amount == b.amount and _eq(a.maturity_date, b.maturity_date):
-        return True
-    return False
+    return _eq(a.fd_number, b.fd_number) and _no_conflict(a, b, _FD_DISTINGUISH)
 
 
 def _partner_match(a, b) -> bool:
-    return _same_person(a.name, b.name)
+    na, nb = _norm_name(a.name), _norm_name(b.name)
+    return bool(na) and na == nb and _no_conflict(a, b, _PARTNER_DISTINGUISH)
+
+
+def _match_reason(a, b) -> str:
+    """Short Persian explanation of WHY two rows are treated as the same record —
+    surfaced in the report so a reviewer can trust (or challenge) each grouping."""
+    if _eq(getattr(a, "mortgage_deed_no", None), getattr(b, "mortgage_deed_no", None)):
+        return "سندِ رهنیِ یکسان"
+    if _eq(getattr(a, "plate_no", None), getattr(b, "plate_no", None)):
+        return "پلاکِ یکسان"
+    if _eq(getattr(a, "cheque_no", None), getattr(b, "cheque_no", None)):
+        return "شمارهٔ چکِ یکسان"
+    if _eq(getattr(a, "fd_number", None), getattr(b, "fd_number", None)):
+        return "شمارهٔ سپردهٔ یکسان"
+    if _norm_name(getattr(a, "name", None)) and _norm_name(getattr(a, "name", None)) == _norm_name(getattr(b, "name", None)):
+        return "نامِ کاملاً یکسان"
+    return "شناسهٔ یکسان"
 
 
 def _fac_match(a, b) -> bool:
@@ -147,28 +177,29 @@ _ENTITIES = [
 
 
 def _group_dupes(rows, match, cols):
-    """Cluster ``rows`` (all same account) into duplicate sets. Returns a list of
-    (keeper, removals) — keeper is the most complete (tie: oldest)."""
+    """Cluster ``rows`` (all same account) into duplicate sets. CONSERVATIVE: every
+    removal must match the KEEPER directly — no transitive chains — so a near-match
+    can never drag an unrelated record into a group and get it deleted. The keeper
+    is the most complete row (tie: oldest), chosen first so it anchors the group."""
     n = len(rows)
     used = [False] * n
+    # Most-complete (then oldest) first, so the best row becomes each group's keeper.
+    order = sorted(range(n), key=lambda i: (-_completeness(rows[i], cols), _age_key(rows[i])))
     out = []
-    for i in range(n):
+    for i in order:
         if used[i]:
             continue
-        grp = [rows[i]]
         used[i] = True
-        # transitive: a row joins the group if it matches ANY member
-        changed = True
-        while changed:
-            changed = False
-            for j in range(n):
-                if used[j]:
-                    continue
-                if any(match(g, rows[j]) for g in grp):
-                    grp.append(rows[j]); used[j] = True; changed = True
-        if len(grp) > 1:
-            grp.sort(key=lambda r: (-_completeness(r, cols), _age_key(r)))
-            out.append((grp[0], grp[1:]))
+        keeper = rows[i]
+        removals = []
+        for j in order:
+            if used[j]:
+                continue
+            if match(keeper, rows[j]):   # must be a duplicate of the KEEPER itself
+                used[j] = True
+                removals.append(rows[j])
+        if removals:
+            out.append((keeper, removals))
     return out
 
 
@@ -211,6 +242,7 @@ async def scan(db: AsyncSession) -> dict:
                     "keeper": {"id": keeper.id, "summary": summ(keeper)},
                     "removals": [{"id": r.id, "summary": summ(r)} for r in removals],
                     "conflict_fields": _conflict(keeper, removals, cols),
+                    "reason": _match_reason(keeper, removals[0]) if removals else "",
                 })
                 total_removals += len(removals)
         groups[key] = ent_groups

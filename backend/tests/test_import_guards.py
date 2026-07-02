@@ -68,27 +68,39 @@ async def test_add_distinct_property_not_merged(client, auth_headers, test_custo
 
 
 @pytest.mark.asyncio
-async def test_add_guarantor_guard_merges_same_person(client, auth_headers, test_customer, db_session):
-    """Adding the same guarantor (person + amount) without a cheque_no merges into
-    the existing record — the full _guar_match rule — and never blanks the
-    existing cheque number."""
+async def test_add_guarantor_same_cheque_upserts(client, auth_headers, test_customer, db_session):
+    """Same security-cheque number → one record (the proven cheque_no upsert)."""
     acc = test_customer.account_no
     r1 = await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
                            json={"guarantor_name": "Ali Hammadi", "cheque_no": "CH1", "cheque_amount": 5000})
     assert r1.status_code == 200, r1.text
     assert r1.json()["created"] is True
-    # same person + same amount, NO cheque_no → must MERGE (not duplicate)
     r2 = await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
-                           json={"guarantor_name": "Ali Hammadi", "cheque_amount": 5000, "issuing_bank": "ADCB"})
+                           json={"guarantor_name": "Ali Hammadi", "cheque_no": "CH1", "issuing_bank": "ADCB"})
     assert r2.status_code == 200, r2.text
     assert r2.json()["created"] is False
-
     guars = (await db_session.execute(
         select(Guarantor).where(Guarantor.account_no == acc,
                                 Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
-    assert len(guars) == 1                    # NOT duplicated
-    assert guars[0].cheque_no == "CH1"        # existing cheque number preserved
-    assert guars[0].issuing_bank == "ADCB"    # new field applied
+    assert len(guars) == 1
+    assert guars[0].issuing_bank == "ADCB"
+
+
+@pytest.mark.asyncio
+async def test_add_guarantor_different_cheque_stays_separate(client, auth_headers, test_customer, db_session):
+    """Two DIFFERENT security cheques from the same guarantor are DISTINCT records —
+    the conservative rule (no false merge, matching the real-data feedback)."""
+    acc = test_customer.account_no
+    await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
+                      json={"guarantor_name": "ABU AMIR", "cheque_no": "99221", "cheque_amount": 480000})
+    r = await client.post(f"/api/crm/guarantors/{acc}", headers=auth_headers,
+                          json={"guarantor_name": "ABU AMIR", "cheque_no": "99220", "cheque_amount": 360000})
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] is True        # different cheque → NOT merged
+    guars = (await db_session.execute(
+        select(Guarantor).where(Guarantor.account_no == acc,
+                                Guarantor.is_deleted == False))).scalars().all()  # noqa: E712
+    assert len(guars) == 2
 
 
 @pytest.mark.asyncio

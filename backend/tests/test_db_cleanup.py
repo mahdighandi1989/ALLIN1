@@ -25,9 +25,9 @@ async def _seed(db):
     db.add(Guarantor(id="G1", account_no=acc, guarantor_name="Ali Hammadi", cheque_no="CH1"))
     db.add(Guarantor(id="G2", account_no=acc, guarantor_name="Ali Hammadi", cheque_no="CH1", issuing_bank="ADCB"))  # keeper
     db.add(Guarantor(id="G3", account_no=acc, guarantor_name="Sara", cheque_no="CH9"))  # unique
-    # partners: same person by name (dup)
+    # partners: identical (normalized) name = a real duplicate
     db.add(Partner(id="PT1", account_no=acc, name="Yousef Alhammadi"))
-    db.add(Partner(id="PT2", account_no=acc, name="Yousef Mohamed Alhammadi", nationality="UAE"))  # keeper (subset match)
+    db.add(Partner(id="PT2", account_no=acc, name="Yousef Alhammadi", nationality="UAE"))  # keeper (more complete)
     # fixed deposit: unique (no dup)
     db.add(FixedDeposit(id="FD1", account_no=acc, fd_number="FD-777"))
     await db.commit()
@@ -71,6 +71,51 @@ async def test_apply_soft_deletes_dupes_keeps_keeper_and_uniques(db_session, adm
     # every removal is logged under the customer's account (shows in the Logs tab)
     logs = (await db_session.execute(select(AuditLog).where(AuditLog.account_no == "500100", AuditLog.action == "delete"))).scalars().all()
     assert len(logs) == 3
+
+
+@pytest.mark.asyncio
+async def test_scan_does_not_flag_distinct_records(db_session):
+    """Regression for the real-data false positives: records that merely LOOK
+    similar — different registered deeds, different units of one deed, different
+    security cheques — must NOT be flagged. The engine is conservative."""
+    acc = "600200"
+    db_session.add(Customer(id="C600200", account_no=acc, name="Distinct Co"))
+    # same building plan but DIFFERENT deeds + values → three DISTINCT flats
+    db_session.add(MortgagedProperty(id="D1", account_no=acc, prop_type="FLAT", mortgage_deed_no="36/235/1485", valuation=2030000))
+    db_session.add(MortgagedProperty(id="D2", account_no=acc, prop_type="FLAT", mortgage_deed_no="36/235/1486", valuation=1290000))
+    db_session.add(MortgagedProperty(id="D3", account_no=acc, prop_type="FLAT", mortgage_deed_no="36/235/1487", valuation=1330000))
+    # same deed, DIFFERENT units/valuations → DISTINCT
+    db_session.add(MortgagedProperty(id="U2", account_no=acc, mortgage_deed_no="6933/25933", address="UNIT2", valuation=6176000))
+    db_session.add(MortgagedProperty(id="U3", account_no=acc, mortgage_deed_no="6933/25933", address="UNIT3", valuation=6163000))
+    # same guarantor, DIFFERENT security cheques → DISTINCT
+    db_session.add(Guarantor(id="Q1", account_no=acc, guarantor_name="ABU AMIR", cheque_no="99221", cheque_amount=480000))
+    db_session.add(Guarantor(id="Q2", account_no=acc, guarantor_name="ABU AMIR", cheque_no="99220", cheque_amount=360000))
+    await db_session.commit()
+
+    report = await db_cleanup.scan(db_session)
+    assert report["counts"]["properties"] == 0
+    assert report["counts"]["guarantors"] == 0
+    assert report["counts"]["total_removals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scan_still_catches_true_duplicates(db_session):
+    """The conservative engine still flags REAL duplicates (identical strong id,
+    no conflicting field) and explains why."""
+    acc = "600300"
+    db_session.add(Customer(id="C600300", account_no=acc, name="Dup Co"))
+    # identical deed + plate + valuation → real duplicate
+    db_session.add(MortgagedProperty(id="R1", account_no=acc, mortgage_deed_no="99/1", plate_no="P9", valuation=500000))
+    db_session.add(MortgagedProperty(id="R2", account_no=acc, mortgage_deed_no="99/1", plate_no="P9", valuation=500000, owner="Owner"))
+    # same cheque number entered twice → real duplicate
+    db_session.add(Guarantor(id="K1", account_no=acc, guarantor_name="X Co", cheque_no="555"))
+    db_session.add(Guarantor(id="K2", account_no=acc, guarantor_name="X Co", cheque_no="555", issuing_bank="ADCB"))
+    await db_session.commit()
+
+    report = await db_cleanup.scan(db_session)
+    assert report["counts"]["properties"] == 1
+    assert report["counts"]["guarantors"] == 1
+    assert report["groups"]["properties"][0]["reason"]   # non-empty explanation
 
 
 @pytest.mark.asyncio
