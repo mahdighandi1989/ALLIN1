@@ -675,7 +675,6 @@ export default function LetterPage() {
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
-  const [closingShift, setClosingShift] = useState(0)   // vertical offset so the closing block flows right after the body
   useEffect(() => {
     // Use the rendered off-screen measurer; if it isn't attached yet (e.g. a letter
     // loaded during mount, before refs settle), fall back to a temporary one so
@@ -771,22 +770,12 @@ export default function LetterPage() {
     }
     // Pack content tightly (every page filled to its full text region).
     const pages = distribute(-1)
-    // FLOW the closing block (امضاکننده/رونوشت/اقدام) right after the body content on the
-    // last page — so freeing space in the body automatically pulls the block up (Word-like)
-    // instead of pinning it at a fixed spot. If it doesn't fit under the content, it moves
-    // to its own trailing page at its normal position.
-    let shift = 0
-    if (!isHidden('sender')) {
-      const lastIdx = pages.length - 1
-      const contentEndY = regionTop(lastIdx) + pageH(pages[lastIdx])
-      const closeMin = Math.min(L.sender.y, L.copyto.y, L.action.y)
-      const closeMax = Math.max(L.sender.y, L.copyto.y, L.action.y)
-      const blockH = (closeMax - closeMin) + Math.max(L.sender.size, L.copyto.size, L.action.size, 10) * MM  // ~ height of the closing block (last field ≈ one line)
-      const startY = contentEndY + m(3)
-      if (startY + blockH <= L.footer.y) shift = startY - closeMin  // fits under the content on this page
-      else { pages.push([]); shift = 0 }                            // overflow → own page, default position
-    }
-    setClosingShift(shift)
+    // The closing block (امضاکننده/رونوشت/اقدام) stays at the position you set in «چیدمان»
+    // (drag it to the bottom, wherever you like) on the LAST page. If the last page's
+    // content would reach into that zone, give the closing its own trailing page so nothing
+    // overlaps. (No auto-flow — dragging the sender/body box won't move the other fields.)
+    const li = pages.length - 1
+    if (!isHidden('sender') && pages.length && pageH(pages[li]) > regionAvail(li, true)) pages.push([])
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
@@ -877,9 +866,9 @@ export default function LetterPage() {
 
         {/* closing block — only on the last page */}
         {isLast && <>
-          {Box({ k: 'sender', style: { top: L.sender.y + closingShift }, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', style: { top: L.copyto.y + closingShift }, children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
-          {Box({ k: 'action', style: { top: L.action.y + closingShift }, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
+          {Box({ k: 'sender', children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
+          {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
+          {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </>}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
@@ -909,9 +898,9 @@ export default function LetterPage() {
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
-          {P('sender', f.sender, { top: L.sender.y + closingShift })}
-          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>, { top: L.copyto.y + closingShift })}
-          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, { top: L.action.y + closingShift })}
+          {P('sender', f.sender)}
+          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>)}
+          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>)}
         </>}
         {repImg('footer', LH_FOOTER)}
         {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
@@ -1028,7 +1017,7 @@ export default function LetterPage() {
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v15</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v16</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
