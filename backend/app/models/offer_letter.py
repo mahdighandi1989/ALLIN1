@@ -69,9 +69,14 @@ class RepaymentType(str, enum.Enum):
 class OfferLetter(Base):
     __tablename__ = "offer_letters"
 
-    id = Column(String(10), primary_key=True, default=generate_offer_id)
+    # id stays "OL"+8 hex for continuity, but the column leaves headroom so the
+    # generator can grow without another width migration.
+    id = Column(String(36), primary_key=True, default=generate_offer_id)
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False, index=True)
-    facility_id = Column(String(8), ForeignKey("facilities.id"), nullable=True, index=True)
+    # Facility ids are 9 chars ("F"+8 hex) and the column must match
+    # facilities.id (String(33)) — the old String(8) overflowed on EVERY real
+    # facility id, so no offer letter could ever be linked to a facility.
+    facility_id = Column(String(33), ForeignKey("facilities.id"), nullable=True, index=True)
     
     # Basic Information
     offer_date = Column(Date, nullable=False, default=date.today)
@@ -81,8 +86,11 @@ class OfferLetter(Base):
     # Financial Terms
     principal_amount = Column(Numeric(18, 2), nullable=False)
     currency = Column(String(10), default="AED")
-    interest_rate = Column(Numeric(5, 4), nullable=False)  # Annual rate
-    profit_rate = Column(Numeric(5, 4))  # For Islamic banking
+    # Rates are stored as PERCENT (8.5 = 8.5%) and the API accepts up to 100,
+    # so precision must allow >= 3 integer digits: Numeric(7,4) caps at
+    # 999.9999. The old Numeric(5,4) overflowed at 10% — routine SME rates.
+    interest_rate = Column(Numeric(7, 4), nullable=False)  # Annual rate (percent)
+    profit_rate = Column(Numeric(7, 4))  # For Islamic banking
     tenor_months = Column(Integer, nullable=False)
     grace_period_months = Column(Integer, default=0)
     
@@ -93,10 +101,10 @@ class OfferLetter(Base):
     
     # Fees and Charges
     processing_fee = Column(Numeric(18, 2), default=0)
-    processing_fee_percentage = Column(Numeric(5, 4))
+    processing_fee_percentage = Column(Numeric(7, 4))
     arrangement_fee = Column(Numeric(18, 2), default=0)
-    commitment_fee = Column(Numeric(5, 4))
-    early_settlement_fee = Column(Numeric(5, 4))
+    commitment_fee = Column(Numeric(7, 4))
+    early_settlement_fee = Column(Numeric(7, 4))
     late_payment_fee = Column(Numeric(18, 2))
     
     # Security and Collateral
@@ -146,9 +154,11 @@ class OfferLetter(Base):
 class OfferAttachment(Base):
     __tablename__ = "offer_attachments"
     
-    id = Column(String(10), primary_key=True, default=lambda: str(uuid.uuid4())[:10])
-    offer_letter_id = Column(String(10), ForeignKey("offer_letters.id"), nullable=False)
-    
+    # Full UUIDs: the truncated-uuid PK anti-pattern already bit users.id once
+    # (see backend/migrations/versions/003_widen_user_id.py).
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    offer_letter_id = Column(String(36), ForeignKey("offer_letters.id"), nullable=False)
+
     # File Information
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
@@ -171,9 +181,9 @@ class OfferAttachment(Base):
 class OfferCalculation(Base):
     __tablename__ = "offer_calculations"
     
-    id = Column(String(10), primary_key=True, default=lambda: str(uuid.uuid4())[:10])
-    offer_letter_id = Column(String(10), ForeignKey("offer_letters.id"), nullable=False)
-    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    offer_letter_id = Column(String(36), ForeignKey("offer_letters.id"), nullable=False)
+
     # Calculation Details
     calculation_date = Column(Date, default=date.today)
     installment_number = Column(Integer, nullable=False)
