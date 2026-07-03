@@ -170,3 +170,8 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   EMI=2,106/71، combobox با ۱۰ گزینه، بند ۷ با نام ضامن‌ها، فیلدهای English در قالب وام مخفی
   (و برعکس)، ذخیره → facility-types 200 + دو upsert ضامن 200 بدون تکرار. suite کامل + build
   نتیجه‌اش پایین‌تر ثبت می‌شود.
+- **[VERIFY — نهایی، قبل از مرج به main]** backend: `614 passed, 7 skipped`
+  (+۷ تست جدید نسبت به ۶۰۷؛ صفر شکست — run کامل بعد از همه‌ی تغییرات از جمله
+  fix انجین SQLite)؛ frontend: type-check + build سبز؛ `backend/static` و
+  `frontend/out` از همین سورس بازساخته و کامیت شدند. E2E مرورگر روی بیلد
+  سرو-شده انجام و اسکرین‌شات‌ها برای مالک ارسال شد. مرج مستقیم به `main`.
