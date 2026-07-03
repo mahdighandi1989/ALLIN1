@@ -49,14 +49,25 @@ def _build_connect_args(database_url: str) -> dict:
 # SSL configuration for remote databases (Render.com, etc.)
 connect_args = _build_connect_args(settings.DATABASE_URL)
 
+# Pool sizing applies to real (Postgres) pools only: SQLite uses NullPool, which
+# rejects pool_size/max_overflow/pool_recycle — passing them unconditionally
+# made the documented dev path (DATABASE_URL=sqlite+aiosqlite:///…) crash at boot.
+_pool_kwargs = (
+    {}
+    if settings.DATABASE_URL.startswith("sqlite")
+    else {
+        "pool_size": settings.DATABASE_POOL_SIZE,
+        "max_overflow": settings.DATABASE_MAX_OVERFLOW,
+        "pool_recycle": settings.DATABASE_POOL_RECYCLE,
+    }
+)
+
 # Create async engine
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DATABASE_ECHO,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_recycle=settings.DATABASE_POOL_RECYCLE,
     connect_args=connect_args,
+    **_pool_kwargs,
 )
 
 # Create async session factory
