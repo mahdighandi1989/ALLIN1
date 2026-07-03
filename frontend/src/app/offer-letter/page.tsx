@@ -65,6 +65,12 @@ const SECURITIES_CORPORATE =
   'Note:\n 1. The offer letter is valid for 30 working days from the date of its issuance.\n' +
   ' 2. In case of changing fixed deposit interest rate any time, overdraft rate must be revised accordingly from the same date.'
 
+// Notes printed under the securities table of the bilingual letter — editable;
+// default text comes verbatim from the bank's scanned Personal Loan sample.
+const DEFAULT_PL_NOTES =
+  'Note : 1- In addition to above conditions, this approval will be executed after receiving balance confirmation.\n' +
+  '2- Previous retail loan outstanding balance will be settled by above loan amount.'
+
 type Fields = Record<string, string>
 const INITIAL: Fields = {
   Prefix: 'M/S.', CompanyName: '', CompanyNameAr: '', AccountNumber: '', POBox: '', CityCountry: 'DUBAI - U.A.E.',
@@ -74,7 +80,39 @@ const INITIAL: Fields = {
   AccountSuffix: '', AcceptanceDate: '',
   // Personal-loan fields
   LoanAmount: '', LoanInterestRate: '', LoanTenor: '', MonthlyInstallment: '', Purpose: 'PERSONAL NEED', SubjectDate: '',
-  LienAmount: '',
+  LienAmount: '', NotesPersonal: DEFAULT_PL_NOTES,
+}
+
+type GuarantorRow = { name: string; account: string }
+
+// Persian-first field labels: what the field is + WHERE it lands on the printed
+// letter, so the sheet explains itself (the English key stays as a subtitle).
+const LABELS: Record<string, { fa: string; en: string }> = {
+  Prefix: { fa: 'عنوان گیرنده (آقا/خانم/شرکت)', en: 'Mr. / Ms. / M/S.' },
+  CompanyName: { fa: 'نام مشتری / شرکت', en: 'Customer / Company Name' },
+  AccountNumber: { fa: 'شماره حساب', en: 'Account Number' },
+  POBox: { fa: 'صندوق پستی', en: 'P.O. Box' },
+  CityCountry: { fa: 'شهر / کشور', en: 'City / Country' },
+  Branch: { fa: 'شعبه (نام و کد)', en: 'Branch Name & Code' },
+  IssueDate: { fa: 'تاریخ صدور نامه', en: 'Issue Date' },
+  RequestDate: { fa: 'تاریخ نامهٔ درخواست مشتری', en: 'Request Letter Date' },
+  AcceptanceDate: { fa: 'تاریخ امضا/پذیرش مشتری', en: 'Acceptance Date' },
+  FacilityType: { fa: 'نوع تسهیلات (از لیست یا تایپ آزاد)', en: 'Facility Type' },
+  CreditLimit: { fa: 'سقف اعتبار — درهم', en: 'Credit Limit (AED)' },
+  InterestRate: { fa: 'نرخ سود تسهیلات', en: 'Interest Rate' },
+  ValidUntil: { fa: 'اعتبار تسهیلات تا تاریخ', en: 'Valid Until' },
+  ProcessingFee: { fa: 'کارمزد پردازش — درهم (بند ۲۴ شرایط)', en: 'Processing Fee (AED)' },
+  AccountSuffix: { fa: 'پسوند حسابِ سود (بند ۲۵ شرایط)', en: 'Interest A/C Suffix' },
+  SubjectDate: { fa: 'تاریخ درخواست وام (موضوع نامه)', en: 'Loan Application Date' },
+  LoanAmount: { fa: 'مبلغ وام — درهم', en: 'Loan Amount (AED)' },
+  LoanInterestRate: { fa: 'نرخ سود وام — درصد سالانه', en: 'Loan Interest Rate (%)' },
+  LoanTenor: { fa: 'مدت بازپرداخت — ماه', en: 'Loan Tenor (Months)' },
+  MonthlyInstallment: { fa: 'قسط ماهانه (خالی = دکمهٔ محاسبه)', en: 'Monthly Installment' },
+  Purpose: { fa: 'هدف / مصرف وام', en: 'Purpose' },
+  LienAmount: { fa: 'مبلغ وثیقهٔ تودیع — درهم (بند ۴ مدارک)', en: 'Lien Amount (AED)' },
+  Remarks: { fa: 'ملاحظات — ستون Remarks جدول تسهیلات', en: 'Remarks' },
+  RequiredSecurities: { fa: 'وثایق و مدارک موردنیاز (متن صفحهٔ ۱)', en: 'Required Securities / Documents' },
+  NotesPersonal: { fa: 'یادداشت‌های زیر جدول مدارک (Note 1, 2, …)', en: 'Notes under securities table' },
 }
 
 // Branch code → name; used for the dropdown and the bilingual header table
@@ -108,9 +146,40 @@ export default function OfferLetterPage() {
   const [dragOver, setDragOver] = useState(false)
   // Required-document checkboxes (bilingual form). Default: all ticked.
   const [checks, setChecks] = useState<boolean[]>(() => PL.securities.map(() => true))
+  // Facility-type catalog (DB-backed): dropdown options for the combobox; a
+  // brand-new typed value is added to the catalog on Save.
+  const [ftypes, setFtypes] = useState<string[]>([])
+  // Guarantors printed into security-documents item 7 (and synced to the
+  // customer's guarantor records on Save).
+  const [guars, setGuars] = useState<GuarantorRow[]>([])
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
   const toggleCheck = (i: number) => setChecks((c) => c.map((v, idx) => (idx === i ? !v : v)))
+  const setGuar = (i: number, k: keyof GuarantorRow) => (e: any) =>
+    setGuars((g) => g.map((row, idx) => (idx === i ? { ...row, [k]: e.target.value } : row)))
+
+  useEffect(() => {
+    crmApi.facilityTypes().then((r) => setFtypes(r.types || [])).catch(() => {})
+  }, [])
+
+  // Reducing-balance EMI (like the sample's "2,106/71" for 80,000 @12% / 48m).
+  const parseNum = (s: string) => parseFloat(String(s || '').replace(/[^0-9.]/g, '')) || 0
+  const emiSuggest = (): string => {
+    const P = parseNum(f.LoanAmount)
+    const r = parseNum(f.LoanInterestRate || f.InterestRate)
+    const n = Math.round(parseNum(f.LoanTenor))
+    if (!P || !n) return ''
+    const m = r > 0 ? (P * (r / 1200)) / (1 - Math.pow(1 + r / 1200, -n)) : P / n
+    const [int_, dec] = m.toFixed(2).split('.')
+    return `${Number(int_).toLocaleString('en-US')}/${dec}`
+  }
+
+  // "-Mr. NAME- A/C NO.124076 / -Ms. OTHER- A/C NO.99881" — the guarantor line
+  // appended to securities item 7, exactly like the bank's filled sample.
+  const guarLine = guars
+    .filter((g) => g.name.trim())
+    .map((g) => `-${g.name.trim()}-${g.account.trim() ? ` A/C NO.${g.account.trim()}` : ''}`)
+    .join(' / ')
 
   // Department reference number: "182/4/<serial>/<year>" — prefix fixed, serial
   // typed, year auto (current year unless overridden).
@@ -163,11 +232,24 @@ export default function OfferLetterPage() {
         SubjectDate: saved.SubjectDate || s.SubjectDate,
         AcceptanceDate: saved.AcceptanceDate || s.AcceptanceDate,
         Remarks: saved.Remarks || s.Remarks,
+        RequestDate: saved.RequestDate || s.RequestDate,
+        ProcessingFee: saved.ProcessingFee || s.ProcessingFee,
+        AccountSuffix: saved.AccountSuffix || s.AccountSuffix,
+        NotesPersonal: saved.NotesPersonal || s.NotesPersonal,
       }))
       setChecks(
         Array.isArray(saved.securitiesChecked) && saved.securitiesChecked.length === PL.securities.length
           ? saved.securitiesChecked
           : PL.securities.map(() => true)
+      )
+      // Guarantors: last saved snapshot wins; otherwise the customer's recorded
+      // guarantors from the DB prefill the section.
+      const savedGuars = Array.isArray(saved.guarantors) ? saved.guarantors : null
+      const dbGuars = Array.isArray(d.Guarantors) ? d.Guarantors : []
+      setGuars(
+        (savedGuars ?? dbGuars)
+          .map((g: any) => ({ name: String(g?.name || ''), account: String(g?.account || '') }))
+          .filter((g: GuarantorRow) => g.name.trim())
       )
       if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
@@ -182,10 +264,30 @@ export default function OfferLetterPage() {
     if (!a) { if (!silent) toast.error('ابتدا حساب را بارگیری کنید'); return false }
     setSaving(true)
     try {
+      const cleanGuars = guars
+        .map((g) => ({ name: g.name.trim(), account: g.account.trim() }))
+        .filter((g) => g.name)
       await crmApi.saveOfferLetterData(a, {
         POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
-        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl },
+        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars },
       })
+      // A facility type with no name-similar entry in the catalog opens its own
+      // place in the DB list (and becomes selectable from now on). Similar
+      // entries are matched, not duplicated.
+      const ft = f.FacilityType.trim()
+      if (ft) {
+        try {
+          const r = await crmApi.addFacilityType(ft)
+          if (Array.isArray(r.types)) setFtypes(r.types)
+          if (r.added && !silent) toast.success(`نوع تسهیلات جدید «${ft}» به فهرست اضافه شد`)
+        } catch { /* catalog is best-effort; the letter still saves */ }
+      }
+      // Guarantors typed here also become customer guarantor records (idempotent
+      // upsert server-side) so the profile and future letters see them.
+      for (const g of cleanGuars) {
+        try { await crmApi.addGuarantor(a, { guarantor_name: g.name, guarantor_account: g.account }) }
+        catch { /* best-effort — the snapshot already holds them */ }
+      }
       if (!silent) toast.success('در پروندهٔ مشتری ذخیره شد')
       return true
     } catch (e) { if (!silent) toast.error(parseApiError(e)); return false }
@@ -231,6 +333,22 @@ export default function OfferLetterPage() {
       if (Array.isArray(r.profile_keys) && r.profile_keys.length) parts.push(`${r.profile_keys.length} مورد در پروفایل`)
       if (r.guarantors_added) parts.push(`${r.guarantors_added} ضامن جدید`)
       if (r.guarantors_updated) parts.push(`${r.guarantors_updated} ضامن به‌روز`)
+      // Pull the (possibly just-extracted) guarantors into the letter's section.
+      const acctForGuars = (r.account_no || a || '').trim()
+      if (acctForGuars) {
+        try {
+          const rows = await crmApi.listGuarantors(acctForGuars)
+          const seen = new Set<string>()
+          setGuars(rows
+            .map((g: any) => ({ name: String(g?.guarantor_name || '').trim(), account: String(g?.guarantor_account || '').trim() }))
+            .filter((g: GuarantorRow) => {
+              const k = g.name.toLowerCase() + '|' + g.account
+              if (!g.name || seen.has(k)) return false
+              seen.add(k)
+              return true
+            }))
+        } catch { /* prefill only */ }
+      }
       toast.success('استخراج و ثبت شد: ' + parts.join(' · '))
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setExtracting(false) }
@@ -262,10 +380,21 @@ export default function OfferLetterPage() {
   }, [fitPages])
 
   const field = 'w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-yellow-50'
-  // F is a render *function* (not a nested component) so inputs keep focus while typing.
-  const F = (k: string, label: string, area?: boolean) => (
+  // F is a render *function* (not a nested component) so inputs keep focus while
+  // typing. Labels are Persian-first (what the field is + where it prints) with
+  // the English key as a subtitle — see LABELS.
+  const FieldLabel = ({ k }: { k: string }) => {
+    const L = LABELS[k] || { fa: k, en: '' }
+    return (
+      <span className="flex items-baseline justify-between gap-1 text-[11px]">
+        <span className="text-gray-700 font-medium" dir="rtl">{L.fa}</span>
+        {L.en && <span className="text-gray-400 truncate" dir="ltr">{L.en}</span>}
+      </span>
+    )
+  }
+  const F = (k: string, area?: boolean) => (
     <label className="block">
-      <span className="text-[11px] text-gray-500">{label}</span>
+      <FieldLabel k={k} />
       {area
         ? <textarea value={f[k]} onChange={set(k)} rows={3} className={field + ' font-mono text-xs'} />
         : <input value={f[k]} onChange={set(k)} className={field} />}
@@ -462,10 +591,12 @@ export default function OfferLetterPage() {
             </button>
             <label>
               <span className="text-[11px] text-gray-500 block">قالب</span>
-              <select value={tpl} onChange={(e) => setTpl(e.target.value as any)} className="border border-gray-300 rounded-md px-3 py-2 text-sm">
-                <option value="auto">خودکار ({autoTpl === 'personal' ? 'Personal Loan' : 'English'})</option>
-                <option value="english">English (3p)</option>
-                <option value="personal">Personal Loan دوزبانه (4p)</option>
+              {/* dir=rtl: the options mix Persian with Latin (EN/AR, English) —
+                  without an explicit RTL ancestor the browser scrambles them. */}
+              <select value={tpl} onChange={(e) => setTpl(e.target.value as any)} dir="rtl" className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                <option value="auto">خودکار — {autoTpl === 'personal' ? 'وام شخصی دوزبانه' : 'English عمومی'}</option>
+                <option value="english">English — اضافه‌برداشت/عمومی (۳ صفحه)</option>
+                <option value="personal">وام شخصی دوزبانه EN/AR (۴ صفحه)</option>
               </select>
             </label>
             <button onClick={() => saveOffer()} disabled={saving} type="button"
@@ -495,14 +626,21 @@ export default function OfferLetterPage() {
             </div>
           </div>
 
+          {/* Smart sheet: only the fields THIS template actually prints are shown. */}
+          <p className="text-[11px] text-gray-400 mb-2" dir="rtl">
+            فقط فیلدهای مرتبط با قالبِ انتخاب‌شده نمایش داده می‌شوند — قالب فعلی:{' '}
+            <b>{effectiveTpl === 'personal' ? 'وام شخصی دوزبانه (EN/AR)' : 'English (اضافه‌برداشت / عمومی)'}</b>
+          </p>
+
+          <div className="text-xs font-bold text-gray-600 mb-1.5" dir="rtl">گیرندهٔ نامه — مشخصات مشتری</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-            {F('Prefix', 'Prefix / عنوان (Mr./Ms./M/S.)')}
-            {F('CompanyName', 'Customer / Company Name')}
-            {F('AccountNumber', 'Account Number')}
-            {F('POBox', 'P.O. Box')}
-            {F('CityCountry', 'City / Country')}
+            {F('Prefix')}
+            {F('CompanyName')}
+            {F('AccountNumber')}
+            {F('POBox')}
+            {F('CityCountry')}
             <label className="block">
-              <span className="text-[11px] text-gray-500">Branch Name &amp; Code</span>
+              <FieldLabel k="Branch" />
               <select value={f.Branch} onChange={set('Branch')} className={field}>
                 <option value="">—</option>
                 {BRANCH_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
@@ -510,7 +648,10 @@ export default function OfferLetterPage() {
               </select>
             </label>
             <label className="block">
-              <span className="text-[11px] text-gray-500">Ref Serial (شمارهٔ متغیر)</span>
+              <span className="flex items-baseline justify-between gap-1 text-[11px]">
+                <span className="text-gray-700 font-medium" dir="rtl">شمارهٔ نامه (سریال متغیر)</span>
+                <span className="text-gray-400" dir="ltr">Ref Serial</span>
+              </span>
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-400">182/4/</span>
                 <input value={f.RefSerial} onChange={set('RefSerial')} className={field} placeholder="202" />
@@ -518,28 +659,83 @@ export default function OfferLetterPage() {
                 <input value={f.RefYear} onChange={set('RefYear')} className={field + ' w-16'} />
               </div>
             </label>
-            {F('IssueDate', 'Issue Date')}
-            {F('FacilityType', 'Facility Type')}
-            {F('CreditLimit', 'Credit Limit (AED)')}
-            {F('InterestRate', 'Interest Rate')}
-            {F('ValidUntil', 'Valid Until / Expiry')}
-            {F('ProcessingFee', 'Processing Fee (AED)')}
-            {F('AccountSuffix', 'Account Suffix')}
-            {F('AcceptanceDate', 'Acceptance / Borrower Date')}
-            {effectiveTpl === 'personal' && <>
-              {F('SubjectDate', 'Application Date')}
-              {F('LoanAmount', 'Loan Amount (AED)')}
-              {F('LoanInterestRate', 'Loan Interest Rate')}
-              {F('LoanTenor', 'Loan Tenor (Months)')}
-              {F('MonthlyInstallment', 'Monthly Installment')}
-              {F('Purpose', 'Purpose')}
-              {F('LienAmount', 'Lien Amount (AED) — مبلغ وثیقهٔ توديع')}
-            </>}
+            {F('IssueDate')}
+            {F('AcceptanceDate')}
+            {/* Facility Type: combobox — pick from the DB-backed list OR type a
+                new one; a brand-new name is added to the list on Save. */}
+            <label className="block">
+              <FieldLabel k="FacilityType" />
+              <input value={f.FacilityType} onChange={set('FacilityType')} list="ftype-options" className={field} placeholder="Overdraft / Personal Loan / …" />
+              <datalist id="ftype-options">
+                {ftypes.map((t) => <option key={t} value={t} />)}
+              </datalist>
+            </label>
           </div>
-          <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
-            {F('Remarks', 'Remarks (جدول)', true)}
-            {effectiveTpl === 'english' && F('RequiredSecurities', 'REQUIRED SECURITIES / DOCUMENTS (English template)', true)}
-          </div>
+
+          {effectiveTpl === 'english' && <>
+            <div className="text-xs font-bold text-gray-600 mt-3 mb-1.5" dir="rtl">مشخصات تسهیلات — جدول صفحهٔ ۱ و شرایط (قالب English)</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              {F('RequestDate')}
+              {F('CreditLimit')}
+              {F('InterestRate')}
+              {F('ValidUntil')}
+              {F('ProcessingFee')}
+              {F('AccountSuffix')}
+            </div>
+            <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
+              {F('Remarks', true)}
+              {F('RequiredSecurities', true)}
+            </div>
+          </>}
+
+          {effectiveTpl === 'personal' && <>
+            <div className="text-xs font-bold text-gray-600 mt-3 mb-1.5" dir="rtl">جزئیات وام — جدول «Details of Loan» (قالب دوزبانه)</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              {F('SubjectDate')}
+              {F('LoanAmount')}
+              {F('LoanInterestRate')}
+              {F('LoanTenor')}
+              <label className="block">
+                <FieldLabel k="MonthlyInstallment" />
+                <div className="flex items-center gap-1">
+                  <input value={f.MonthlyInstallment} onChange={set('MonthlyInstallment')} className={field} />
+                  <button type="button" title="محاسبهٔ قسط (مانده‌ی نزولی) از مبلغ/نرخ/مدت"
+                    onClick={() => { const m = emiSuggest(); if (m) setF((s) => ({ ...s, MonthlyInstallment: m })); else toast.error('مبلغ وام و مدت را وارد کنید') }}
+                    className="shrink-0 border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white hover:bg-blue-50 text-blue-700">
+                    محاسبه
+                  </button>
+                </div>
+              </label>
+              {F('Purpose')}
+              {F('LienAmount')}
+            </div>
+            <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
+              {F('NotesPersonal', true)}
+              {F('Remarks', true)}
+            </div>
+
+            {/* Guarantors — printed into securities item 7 (like the bank sample)
+                and synced to the customer's guarantor records on Save. */}
+            <div className="mt-3 border border-gray-200 rounded-lg p-3 bg-gray-50/60">
+              <div className="flex items-center justify-between mb-2" dir="rtl">
+                <span className="text-xs font-bold text-gray-600">ضامن‌ها — در بند ۷ «مدارک موردنیاز» چاپ و در پروندهٔ مشتری ثبت می‌شوند</span>
+                <button type="button" onClick={() => setGuars((g) => [...g, { name: '', account: '' }])}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md px-2.5 py-1">+ افزودن ضامن</button>
+              </div>
+              {guars.length === 0 && (
+                <p className="text-[11px] text-gray-400" dir="rtl">ضامنی ثبت نشده است. ضامن‌های موجود مشتری هنگام «بارگیری» خودکار می‌آیند؛ ضامن جدید را با دکمهٔ بالا اضافه کن.</p>
+              )}
+              {guars.map((g, i) => (
+                <div key={i} className="flex items-center gap-2 mb-1.5">
+                  <input value={g.name} onChange={setGuar(i, 'name')} placeholder="Guarantor name — نام ضامن (مثل Mr. MUHAMMAD EBRAHIM)" className={field} />
+                  <input value={g.account} onChange={setGuar(i, 'account')} placeholder="A/C No — حساب ضامن" className={field + ' md:max-w-[200px]'} dir="ltr" />
+                  <button type="button" title="حذف از نامه (رکورد پرونده حذف نمی‌شود)"
+                    onClick={() => setGuars((rows) => rows.filter((_, idx) => idx !== i))}
+                    className="shrink-0 text-red-500 hover:text-red-700 border border-gray-200 rounded-md px-2 py-1.5 text-xs bg-white">✕</button>
+                </div>
+              ))}
+            </div>
+          </>}
         </div>
 
         {/* ---------------- printable document ---------------- */}
@@ -671,12 +867,20 @@ export default function OfferLetterPage() {
                       <tr key={i}>
                         <td className="pl-num">{s.n}</td>
                         <td className="pl-chk"><CheckBox on={!!checks[i]} onClick={() => toggleCheck(i)} /></td>
-                        <td className="pl-val">{s.en.replace('250,000', f.LienAmount || '________')}</td>
-                        <td className="pl-val pl-ar" dir="rtl">{s.ar.replace('250,000', f.LienAmount || '________')}</td>
+                        {/* Item 7 names the guarantor(s), exactly like the filled sample:
+                            "… borrower(s) / -Mr. NAME- A/C NO.124076" */}
+                        <td className="pl-val">
+                          {s.en.replace('250,000', f.LienAmount || '________')}
+                          {s.n === '7' && guarLine ? <b> {guarLine}</b> : null}
+                        </td>
+                        <td className="pl-val pl-ar" dir="rtl">
+                          {s.ar.replace('250,000', f.LienAmount || '________')}
+                          {s.n === '7' && guarLine ? <span dir="ltr"> {guarLine}</span> : null}
+                        </td>
                       </tr>
                     ))}
                   </tbody></table>
-                  <div className="pl-note">{PL.securitiesNote.en}</div>
+                  <div className="pl-note" style={{ whiteSpace: 'pre-wrap' }}>{f.NotesPersonal}</div>
                 </div>
                 <PageFooter mode="bilingual" n={1} total={4} />
               </div>

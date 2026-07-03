@@ -360,6 +360,17 @@ export const crmApi = {
     const { data } = await api.get(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`)
     return data
   },
+  // Facility-type catalog for the Offer Letter combobox (built-ins + user-added).
+  async facilityTypes(): Promise<{ ok: boolean; types: string[] }> {
+    const { data } = await api.get('/api/crm/facility-types')
+    return data
+  },
+  // Adds a NEW type to the catalog; a name-similar existing entry is matched
+  // instead of creating a near-duplicate ({added:false, matched}).
+  async addFacilityType(name: string): Promise<{ ok: boolean; added: boolean; matched: string; types: string[] }> {
+    const { data } = await api.post('/api/crm/facility-types', { name })
+    return data
+  },
   async saveOfferLetterData(accountNo: string, body: { POBox?: string; CityCountry?: string; Salutation?: string; Branch?: string; snapshot?: Record<string, any>; snapshot_key?: string; fields?: Record<string, any> }): Promise<any> {
     const { data } = await api.post(`/api/crm/offer-letter-data/${encodeURIComponent(accountNo)}`, body)
     return data
