@@ -266,6 +266,29 @@ async def add_guarantor(
                 )
             )
         ).scalar_one_or_none()
+    if g is None and not (payload.cheque_no or "").strip():
+        # No cheque to key on (e.g. saved from the Offer Letter): match by the
+        # guarantor's name (case-insensitive; same account when both sides have
+        # one) so re-saving the same person stays ONE record, not a duplicate.
+        name_key = " ".join(payload.guarantor_name.split()).lower()
+        acct_key = (payload.guarantor_account or "").strip()
+        candidates = (
+            await db.execute(
+                select(Guarantor).where(
+                    Guarantor.account_no == account_no,
+                    Guarantor.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        matches = [
+            c for c in candidates
+            if " ".join((c.guarantor_name or "").split()).lower() == name_key
+        ]
+        if acct_key:
+            with_acct = [c for c in matches if (c.guarantor_account or "").strip() in ("", acct_key)]
+            matches = with_acct
+        if matches:
+            g = matches[0]
     created = g is None
     if g is None:
         gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
@@ -277,7 +300,10 @@ async def add_guarantor(
 
     # Apply the submitted values (blank optional fields keep the existing value).
     g.guarantor_name = payload.guarantor_name[:200]
-    g.cheque_no = (payload.cheque_no or "")[:50]
+    if (payload.cheque_no or "").strip():
+        # A blank cheque_no keeps the stored one (per the contract above) — the
+        # old unconditional assignment wiped it on any cheque-less re-save.
+        g.cheque_no = payload.cheque_no.strip()[:50]
     if payload.cheque_amount is not None:
         g.cheque_amount = payload.cheque_amount
     g.issuing_bank = (payload.issuing_bank or "BSI")[:50]
@@ -672,6 +698,106 @@ _FTYPE_LABEL = {
     "lg": "Letter of Guarantee", "other": "Credit Facility",
 }
 
+# ---------------------------------------------------------------------------
+# Facility-type catalog — the Offer Letter's "Facility Type" combobox list.
+# Built-ins mirror the FacilityType enum (display labels); user-added types are
+# stored in SystemSetting("custom_facility_types") as a JSON array so a brand-new
+# type typed once becomes selectable everywhere afterwards.
+# ---------------------------------------------------------------------------
+_BUILTIN_FACILITY_TYPES = [
+    "Overdraft", "Loan", "Personal Loan", "Letter of Credit", "Letter of Guarantee",
+    "LC Sight", "LC Usance", "Trust Receipt", "Cheque Discounting", "Credit Facility",
+]
+_FACILITY_TYPES_KEY = "custom_facility_types"
+
+
+def _norm_ftype(s: str) -> str:
+    """Similarity key: case/punctuation/space-insensitive (Latin + Persian/Arabic)."""
+    return re.sub(r"[^a-z0-9؀-ۿ]+", "", (s or "").lower())
+
+
+def _similar_ftype(a: str, b: str) -> bool:
+    """Conservative name-similarity: same normalized key, or near-identical text
+    (catches 'Personal Loans' vs 'Personal Loan', double spaces, case)."""
+    na, nb = _norm_ftype(a), _norm_ftype(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    import difflib
+
+    return difflib.SequenceMatcher(None, na, nb).ratio() >= 0.9
+
+
+async def _load_custom_ftypes(db: AsyncSession) -> list[str]:
+    from app.models.system_setting import SystemSetting
+
+    row = (
+        await db.execute(select(SystemSetting).where(SystemSetting.key == _FACILITY_TYPES_KEY))
+    ).scalar_one_or_none()
+    if row is None or not (row.value or "").strip():
+        return []
+    try:
+        vals = json.loads(row.value)
+        return [str(v) for v in vals if str(v).strip()] if isinstance(vals, list) else []
+    except Exception:
+        return []
+
+
+def _merged_ftypes(custom: list[str]) -> list[str]:
+    out: list[str] = list(_BUILTIN_FACILITY_TYPES)
+    for c in custom:
+        if not any(_norm_ftype(c) == _norm_ftype(x) for x in out):
+            out.append(c)
+    return out
+
+
+@router.get("/facility-types")
+async def list_facility_types(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """The Facility Type list for the Offer Letter combobox: built-ins + custom."""
+    custom = await _load_custom_ftypes(db)
+    return {"ok": True, "types": _merged_ftypes(custom)}
+
+
+class FacilityTypeCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+
+
+@router.post("/facility-types")
+async def add_facility_type(
+    payload: FacilityTypeCreate,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Add a NEW facility type to the catalog. If a name-similar entry already
+    exists (case/punctuation/plural-level match) nothing is added and the
+    existing entry is returned — the list stays clean of near-duplicates."""
+    from app.models.system_setting import SystemSetting
+
+    name = " ".join((payload.name or "").split())
+    if not _norm_ftype(name):
+        raise HTTPException(status_code=422, detail="نام نوع تسهیلات معتبر نیست")
+    custom = await _load_custom_ftypes(db)
+    merged = _merged_ftypes(custom)
+    for existing in merged:
+        if _similar_ftype(existing, name):
+            return {"ok": True, "added": False, "matched": existing, "types": merged}
+    custom.append(name)
+    row = (
+        await db.execute(select(SystemSetting).where(SystemSetting.key == _FACILITY_TYPES_KEY))
+    ).scalar_one_or_none()
+    if row is None:
+        db.add(SystemSetting(key=_FACILITY_TYPES_KEY, value=json.dumps(custom, ensure_ascii=False)))
+    else:
+        row.value = json.dumps(custom, ensure_ascii=False)
+    await db.commit()
+    await _audit(db, user, action="create", entity_type="facility_type", account_no="",
+                 detail=f"افزودن نوع تسهیلات جدید به فهرست: «{name}»")
+    return {"ok": True, "added": True, "matched": name, "types": _merged_ftypes(custom)}
+
 
 @router.get("/offer-letter-data/{account_no}")
 async def offer_letter_data(
@@ -737,7 +863,27 @@ async def offer_letter_data(
     # state, edited values) so the form restores exactly what was last saved.
     saved = pdata.get("offer_letter") if isinstance(pdata.get("offer_letter"), dict) else {}
 
+    # The customer's recorded guarantors (name + account) so the letter's
+    # guarantee items can name them without re-typing. De-duped by name+account.
+    guar_rows = (
+        await db.execute(
+            select(Guarantor).where(
+                Guarantor.account_no == acc, Guarantor.is_deleted == False  # noqa: E712
+            )
+        )
+    ).scalars().all()
+    seen_guars: set = set()
+    guarantors = []
+    for g in guar_rows:
+        key = ((g.guarantor_name or "").strip().lower(), (g.guarantor_account or "").strip())
+        if not key[0] or key in seen_guars:
+            continue
+        seen_guars.add(key)
+        guarantors.append({"name": (g.guarantor_name or "").strip(),
+                           "account": (g.guarantor_account or "").strip()})
+
     return {
+        "Guarantors": guarantors,
         "CompanyName": cust.name or "",
         "CompanyNameAr": getattr(cust, "name_ar", "") or "",
         "AccountNumber": acc,

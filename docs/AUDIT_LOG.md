@@ -126,3 +126,52 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   `npm run build` سبز؛ `backend/static` از build تازه سینک و کامیت شده.
   طبق دستور دائمی مالک، مرج مستقیم به `main` (بدون PR) انجام شد — Render
   خودکار دیپلوی می‌کند.
+
+## 2026-07-03 — Offer Letter هوشمندسازی (درخواست مالک) + کاتالوگ نوع تسهیلات + ضامن‌ها
+
+- **[OWNER REPORT]** فرم Offer Letter هوشمند نیست: (۱) برای هر قالب همه‌ی فیلدها نمایش
+  داده می‌شوند حتی نامرتبط‌ها؛ (۲) عنوان فیلدها گیج‌کننده است؛ (۳) فیلد «نوع تسهیلات» باید
+  هم لیست انتخابی باشد هم تایپ آزاد، و نوع کاملاً جدید باید خودش در دیتابیس جا باز کند و
+  به لیست اضافه شود؛ (۴) بخش ضامن‌ها که در نمونه‌ی امضاشده‌ی بانک هست در فرم جایی ندارد؛
+  (۵) نمونه‌ی docx پیوست کامل پوشش داده نشده (یادداشت‌های زیر جدول مدارک).
+- **[CHANGE — فرم هوشمند]** `frontend/src/app/offer-letter/page.tsx`: فیلدها بر اساس قالبِ
+  مؤثر گروه‌بندی و شرطی شدند — گروه مشترک (گیرنده/شعبه/سریال/نوع تسهیلات)، گروه English
+  (RequestDate/CreditLimit/InterestRate/ValidUntil/ProcessingFee/AccountSuffix/Remarks/
+  RequiredSecurities) فقط در قالب English، و گروه وام (SubjectDate/LoanAmount/…/LienAmount/
+  NotesPersonal/ضامن‌ها) فقط در قالب دوزبانه. لیبل‌ها فارسی-اول با زیرنویس انگلیسی و اشاره
+  به این‌که هر فیلد کجای نامه چاپ می‌شود.
+- **[BUG FIXED ضمنی]** ورودی `RequestDate` اصلاً وجود نداشت درحالی‌که متن صفحه‌ی ۱ قالب
+  English به آن ارجاع می‌دهد («letter Dated: …») — هرگز قابل پر کردن نبود. اضافه شد.
+  همچنین `ProcessingFee`/`AccountSuffix`/`RequestDate` هنگام بارگیریِ snapshot ذخیره‌شده
+  restore نمی‌شدند — اضافه شدند.
+- **[CHANGE — کاتالوگ نوع تسهیلات]** بک‌اند `routers/crm.py`: `GET/POST /api/crm/facility-types`
+  — built-in ها + موارد سفارشی در `SystemSetting("custom_facility_types")`. افزودن با گارد
+  مشابهت نام (نرمال‌سازی حروف/فاصله/علائم + difflib ratio ≥0.9): مشابه ⇒ match بدون درج،
+  جدید ⇒ درج و از این به بعد در لیست. فرانت: combobox (input + datalist) و ثبت خودکار نوع
+  جدید هنگام «ذخیره».
+- **[CHANGE — ضامن‌ها]** پاسخ `offer-letter-data` حالا `Guarantors` (نام + حساب، بدون تکرار)
+  می‌دهد؛ بخش ضامن‌ها در فرم (قالب وام): ردیف‌های قابل‌ویرایش، prefill از پرونده، درج در بند ۷
+  «مدارک موردنیاز» دقیقاً مثل نمونه‌ی پرشده‌ی بانک («… borrower(s) / -Mr. NAME- A/C NO.…»)،
+  و هنگام ذخیره upsert به رکوردهای ضامن مشتری.
+- **[BUG FIXED — upsert ضامن]** `add_guarantor` فقط با `cheque_no` مطابقت می‌داد ⇒ ضامنِ
+  بدون چک (مسیر Offer Letter) در هر ذخیره رکورد تکراری می‌ساخت. مطابقت نام (case-insensitive
+  + حساب در صورت وجود) اضافه شد؛ و ارسال cheque_no خالی دیگر چکِ ذخیره‌شده را پاک نمی‌کند
+  (مطابق قرارداد مستند خود endpoint).
+- **[BUG FIXED — بوت SQLite]** `app/database.py` پارامترهای pool (`pool_size`/`max_overflow`/
+  `pool_recycle`) را بدون شرط پاس می‌داد ⇒ بوتِ dev با `DATABASE_URL=sqlite+aiosqlite:…`
+  (مسیر مستندشده) TypeError می‌داد. حالا فقط برای غیر-SQLite ارسال می‌شوند. (در وریفای E2E
+  همین تسک کشف شد.)
+- **[CHANGE — پوشش نمونه]** یادداشت‌های زیر جدول مدارک (`NotesPersonal`) قابل‌ویرایش شد با
+  متن پیش‌فرض عینِ نمونه (Note 1: balance confirmation، Note 2: تسویه‌ی وام قبلی)؛ دکمه‌ی
+  «محاسبه» قسط ماهانه با فرمول مانده‌ی نزولی — خروجی برای نمونه‌ی ۸۰٬۰۰۰/۱۲٪/۴۸ماه دقیقاً
+  `2,106/71` مطابق فرم بانک. گزینه‌های قالب فارسیِ شفاف + `dir="rtl"` (قانون bidi).
+- **[VERIFY]** تست‌های جدید: `test_facility_type_catalog.py` (۴) + `test_offer_letter_guarantors.py`
+  (۳)؛ E2E واقعی با Playwright روی بیلد سرو-شده: بارگیری حساب، prefill ضامن‌ها (۲ ردیف)،
+  EMI=2,106/71، combobox با ۱۰ گزینه، بند ۷ با نام ضامن‌ها، فیلدهای English در قالب وام مخفی
+  (و برعکس)، ذخیره → facility-types 200 + دو upsert ضامن 200 بدون تکرار. suite کامل + build
+  نتیجه‌اش پایین‌تر ثبت می‌شود.
+- **[VERIFY — نهایی، قبل از مرج به main]** backend: `614 passed, 7 skipped`
+  (+۷ تست جدید نسبت به ۶۰۷؛ صفر شکست — run کامل بعد از همه‌ی تغییرات از جمله
+  fix انجین SQLite)؛ frontend: type-check + build سبز؛ `backend/static` و
+  `frontend/out` از همین سورس بازساخته و کامیت شدند. E2E مرورگر روی بیلد
+  سرو-شده انجام و اسکرین‌شات‌ها برای مالک ارسال شد. مرج مستقیم به `main`.
