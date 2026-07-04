@@ -716,6 +716,30 @@ export const aiApi = {
 }
 
 // ---------------------------------------------------------------------------
+// AI letter-assistant — propose reviewable edits to an official letter. The
+// backend returns *proposals only* (validated, never auto-applied); the UI shows
+// them with checkboxes and applies only the ticked ones client-side.
+// ---------------------------------------------------------------------------
+export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
+export type LetterAiTool = { id: string; label: string }
+export type LetterAiChange = {
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note'
+  title: string; detail: string; severity: 'low' | 'medium' | 'high'
+  find?: string; replace?: string; occurrence?: 'first' | 'all'
+  before?: string; after?: string; applicable: boolean
+}
+export const letterAiApi = {
+  async models(): Promise<{ ok: boolean; models: LetterAiModel[]; tools: LetterAiTool[]; available: boolean }> {
+    const { data } = await api.get('/api/letter-ai/models')
+    return data
+  },
+  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
+    const { data } = await api.post('/api/letter-ai/analyze', body)
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Excel import
 // ---------------------------------------------------------------------------
 export const importsApi = {
