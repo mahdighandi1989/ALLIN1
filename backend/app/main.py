@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router, cleanup as cleanup_router
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router, letter_ai as letter_ai_router, cleanup as cleanup_router
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.middleware import MetricsMiddleware
 # Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
@@ -269,6 +269,7 @@ app.include_router(personal.router, prefix="/api/personal", tags=["personal"])
 app.include_router(staff_router.router, prefix="/api/staff", tags=["staff"])
 app.include_router(departments_router.router, prefix="/api/departments", tags=["departments"])
 app.include_router(letters_router.router, prefix="/api/letters", tags=["letters"])
+app.include_router(letter_ai_router.router, prefix="/api/letter-ai", tags=["letter-ai"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(facilities.router, prefix="/api/facilities", tags=["facilities"])
 app.include_router(properties.router, prefix="/api/properties", tags=["properties"])

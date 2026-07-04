@@ -174,6 +174,37 @@ class AIManager:
                             "provider_key": m.provider_key, "priority": m.priority})
         return out
 
+    async def list_usable(self, db: AsyncSession, need: Optional[str] = None) -> list:
+        """Every enabled model whose provider is configured (has a key), best
+        (lowest ``priority``) first. Optionally filter to a capability ``need``.
+
+        This backs user-facing model pickers where the human chooses which model
+        runs a task — so it returns ALL usable text models, not just doc/vision
+        ones (unlike :meth:`capable_models`). Never returns secrets."""
+        providers = {p.key: p for p in (await db.execute(select(AIProvider))).scalars()}
+        models = (
+            await db.execute(
+                select(AIModel).where(AIModel.enabled.is_(True)).order_by(AIModel.priority)
+            )
+        ).scalars().all()
+        out = []
+        for m in models:
+            if self._try_build(m, providers, "general") is None:
+                continue
+            caps = set(m.capabilities or [])
+            if need and need not in caps:
+                continue
+            provider = providers.get(m.provider_key)
+            out.append({
+                "id": m.id,
+                "display_name": m.display_name,
+                "provider_key": m.provider_key,
+                "provider_name": provider.display_name if provider else m.provider_key,
+                "capabilities": list(caps),
+                "priority": m.priority,
+            })
+        return out
+
     async def is_available(self, db: AsyncSession, task: Optional[str] = None) -> bool:
         """True if at least one usable model exists (optionally for ``task``)."""
         if task is not None:
