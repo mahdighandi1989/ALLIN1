@@ -44,9 +44,19 @@ BODY_FIELD = "body"
 
 VALID_CATEGORIES = {
     "spelling", "grammar", "paragraphs", "tables",
-    "consistency", "professional", "validation", "other",
+    "consistency", "professional", "validation", "db_extract", "other",
 }
 VALID_SEVERITY = {"low", "medium", "high"}
+
+# Suggested canonical profile keys the extractor maps facts onto (the profile
+# blob is free-form, so near-matches are fine; this just steers the model).
+CANONICAL_KEYS = [
+    "address", "po_box", "city", "emirate", "phone", "mobile", "email",
+    "nationality", "date_of_birth", "national_id", "emirates_id_no",
+    "passport_no", "passport_expiry", "trade_license_no", "trade_license_expiry",
+    "business_type", "company_name", "contact_person", "occupation",
+    "employer", "monthly_salary", "iban",
+]
 
 # The tools the UI offers; sent into the prompt so the model focuses only on
 # what the user ticked. id → (fa label, guidance appended to the prompt).
@@ -78,6 +88,19 @@ TOOLS: Dict[str, Dict[str, str]] = {
     "validation": {
         "label": "اعتبارسنجی موردِ انتخاب‌شده با پایگاه‌داده",
         "guide": "موردِ انتخاب‌شده را در برابر «حقایق پایگاه‌داده» راستی‌آزمایی کن؛ اگر درست است note با severity=low و اگر غلط است اصلاحِ text_replace/set_field پیشنهاد بده (category=validation).",
+    },
+    "db_extract": {
+        "label": "استخراج و ثبتِ داده‌های مفید در پروفایلِ مشتری(ها)",
+        "guide": (
+            "داده‌های مفیدِ پروفایلی را از متنِ نامه استخراج کن و برای هرکدام یک تغییر با "
+            "op=\"db_write\" بده. **با نهایت دقت**: یک نامه ممکن است چند مشتری را نام ببرد؛ هر "
+            "واقعیت را فقط به مشتریِ درستش نسبت بده. برای هر db_write این کلیدها را بده: "
+            "account_no (اگر شماره‌حسابِ آن مشتری در متن آمده؛ وگرنه خالی)، customer_name (نامِ "
+            "همان مشتری)، key (نامِ فیلدِ کوتاهِ snake_case از این فهرست یا مشابهش: "
+            + ", ".join(CANONICAL_KEYS) + ")، value (مقدارِ استخراج‌شده). "
+            "فقط واقعیت‌های صریحِ متن؛ چیزی از خودت نساز. اگر واقعیتی به مشتریِ اصلیِ نامه ربط "
+            "ندارد، account_no/customer_name همان مشتریِ دیگر را بگذار. (category=db_extract)"
+        ),
     },
 }
 
@@ -188,7 +211,9 @@ SYSTEM_PROMPT = (
     "2) هر تغییر این کلیدها را دارد: category, field, op, title, detail, severity, "
     "find, replace, occurrence, before, after, applicable.\n"
     "3) op یکی از این‌هاست: \"text_replace\" (جایگزینیِ جراحی‌وارِ یک عبارتِ موجود)، "
-    "\"set_field\" (جایگزینیِ کاملِ یک فیلدِ کوتاه)، \"note\" (فقط تذکر، بدونِ اعمال).\n"
+    "\"set_field\" (جایگزینیِ کاملِ یک فیلدِ کوتاه)، \"note\" (فقط تذکر، بدونِ اعمال)، و — "
+    "فقط اگر ابزارِ استخراج فعال باشد — \"db_write\" (ثبتِ یک واقعیتِ پروفایلی برای یک مشتری، "
+    "با کلیدهای account_no/customer_name/key/value).\n"
     "4) برای op=text_replace، مقدارِ find باید «عیناً» از متنِ فعلیِ همان فیلد کپی شود (کاراکتر‌به‌کاراکتر) "
     "تا قابلِ یافتن باشد؛ کوتاه و یکتا نگه‌اش دار. اگر مطمئن نیستی عبارت دقیقاً وجود دارد، به‌جای آن note بده.\n"
     "5) op=set_field فقط برای فیلدهای کوتاه مجاز است، نه برای body.\n"
@@ -342,6 +367,55 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any]) -> List[Dict[str, 
             out.append(item)
             continue
         # unknown op → skip
+    return out
+
+
+MAX_DB_WRITES = 40
+_KEY_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _norm_key(k: str) -> str:
+    """Canonicalize a proposed profile key: lower snake_case, trimmed, capped."""
+    k = (k or "").strip().lower().replace(" ", "_").replace("-", "_")
+    k = _KEY_RE.sub("", k)
+    return k[:60]
+
+
+def parse_db_writes(raw_text: str) -> List[Dict[str, Any]]:
+    """Pull the model's op=="db_write" proposals — the profile facts to persist.
+
+    Returns raw (account_no, customer_name, key, value, title, detail) dicts,
+    de-duped by (account_no, key). The DB resolution + add/update/skip decision is
+    done later, against the live database, by the router/service — never here."""
+    data = _loose_json(raw_text)
+    changes = data.get("changes") if isinstance(data, dict) else None
+    if not isinstance(changes, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    for ch in changes:
+        if not isinstance(ch, dict) or str(ch.get("op") or "").strip() != "db_write":
+            continue
+        key = _norm_key(str(ch.get("key") or ""))
+        value = str(ch.get("value") or "").strip()
+        if not key or not value:
+            continue
+        acc = str(ch.get("account_no") or "").strip()
+        name = str(ch.get("customer_name") or "").strip()
+        dedup = (acc.lower(), name.lower(), key)
+        if dedup in seen:
+            continue
+        seen.add(dedup)
+        out.append({
+            "account_no": acc,
+            "customer_name": name,
+            "key": key,
+            "value": value[:300],
+            "title": str(ch.get("title") or "").strip()[:300],
+            "detail": str(ch.get("detail") or "").strip()[:1000],
+        })
+        if len(out) >= MAX_DB_WRITES:
+            break
     return out
 
 

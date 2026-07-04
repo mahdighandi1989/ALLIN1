@@ -29,6 +29,7 @@ from app.models.facility import Facility
 from app.models.guarantor import Guarantor
 from app.routers.auth import require_editor, get_current_active_user
 from app.services import letter_assistant as la
+from app.services import letter_db_extract as db_extract
 from app.services.audit import record_audit
 
 router = APIRouter(tags=["letter-ai"])
@@ -131,6 +132,21 @@ async def analyze(
         }
 
     changes = la.parse_and_validate(result.get("text") or "", payload.fields or {})
+
+    # When the extract-to-DB tool is on, stage the model's db_write proposals
+    # against the live database (resolve target customer + add/update/skip). These
+    # are reviewed like any other change; applying them hits /apply-db.
+    if "db_extract" in tools:
+        raw_writes = la.parse_db_writes(result.get("text") or "")
+        if raw_writes:
+            primary_name = ""
+            if isinstance(facts.get("customer"), dict):
+                primary_name = facts["customer"].get("name") or ""
+            staged = await db_extract.stage_db_writes(
+                db, (payload.account_no or "").strip(), primary_name, raw_writes,
+            )
+            changes.extend(staged)
+
     await record_audit(
         action="analyze", entity_type="letter_ai", entity_id=None,
         account_no=(payload.account_no or None),
@@ -145,3 +161,32 @@ async def analyze(
         "facts_used": bool(facts),
         "tools": tools,
     }
+
+
+class DbWriteItem(BaseModel):
+    account_no: str
+    customer_name: str = ""
+    key: str
+    value: str
+
+
+class ApplyDbRequest(BaseModel):
+    items: List[DbWriteItem] = Field(default_factory=list)
+
+
+@router.post("/apply-db")
+async def apply_db(
+    payload: ApplyDbRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Persist the user-approved extracted facts into the right customer
+    profile(s) — dedup + staleness guarded, creating profiles as needed, auditing
+    every write to the account (global log + that profile's «Logs» tab)."""
+    items = [i.model_dump() for i in (payload.items or [])
+             if (i.account_no or "").strip() and (i.key or "").strip()]
+    if not items:
+        return {"ok": True, "outcomes": [],
+                "counts": {"added": 0, "updated": 0, "skipped": 0, "profiles_created": 0}}
+    return await db_extract.apply_db_writes(db, user, request, items)

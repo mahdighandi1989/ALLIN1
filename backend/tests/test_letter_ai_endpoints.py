@@ -92,6 +92,36 @@ async def test_analyze_validates_model_output(client, auth_headers, db_session, 
     assert "توهم" not in titles
 
 
+async def test_analyze_stages_db_writes(client, auth_headers, db_session, monkeypatch):
+    await _seed_usable_model(db_session)
+    db_session.add(Customer(account_no="780100", name="Primary LLC", account_type="corporate"))
+    await db_session.commit()
+
+    async def fake_complete(db, prompt, **kwargs):
+        # the db_extract guide must be in the prompt when the tool is on
+        assert "db_write" in prompt
+        return {"ok": True, "model": "m", "error": None, "text": json.dumps({"changes": [
+            {"op": "db_write", "account_no": "780100", "customer_name": "Primary LLC",
+             "key": "email", "value": "info@primary.co"},
+            {"op": "db_write", "account_no": "", "customer_name": "Unknown Person",
+             "key": "phone", "value": "050"},  # unresolved → note, not guessed
+        ]}, ensure_ascii=False)}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "account_no": "780100", "fields": {"body": "<div>x</div>"},
+        "tools": ["db_extract"],
+    })
+    assert r.status_code == 200, r.text
+    changes = r.json()["changes"]
+    dbw = [c for c in changes if c["op"] == "db_write"]
+    notes = [c for c in changes if c["op"] == "note"]
+    assert any(c["key"] == "email" and c["account_no"] == "780100" and c["action"] == "add" for c in dbw)
+    assert any("شناسایی نشد" in c["title"] for c in notes)  # unknown customer surfaced
+
+
 async def test_analyze_no_model_is_friendly(client, auth_headers, db_session, monkeypatch):
     # No model configured → inference returns no_model; endpoint stays 200 + ok:false.
     async def fake_complete(db, prompt, **kwargs):
