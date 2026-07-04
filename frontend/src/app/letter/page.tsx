@@ -324,7 +324,7 @@ export default function LetterPage() {
   const [aiChanges, setAiChanges] = useState<LetterAiChange[]>([])
   const [aiChecked, setAiChecked] = useState<Record<string, boolean>>({})
 
-  const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', other: 'سایر' }
+  const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', db_extract: 'ثبت در پایگاه‌داده', other: 'سایر' }
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
   const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
 
@@ -401,12 +401,18 @@ export default function LetterPage() {
     return err ? `خطای مدل: ${err}` : 'اجرای مدل ناموفق بود.'
   }
 
-  const applyAiChanges = () => {
+  const applyAiChanges = async () => {
     const nf: any = { ...f }
     let applied = 0, notLocated = 0
     const appliedIds: string[] = []
+    // db_write items go to the DB via the server (not onto the letter).
+    const dbItems: { id: string; account_no: string; customer_name: string; key: string; value: string }[] = []
     for (const ch of aiChanges) {
       if (!aiChecked[ch.id] || !ch.applicable) continue
+      if (ch.op === 'db_write') {
+        if (ch.account_no && ch.key) dbItems.push({ id: ch.id, account_no: ch.account_no, customer_name: ch.customer_name || '', key: ch.key, value: String(ch.value ?? ch.after ?? '') })
+        continue
+      }
       if (!(ch.field in nf)) continue
       if (ch.op === 'set_field') {
         const val = String(ch.after ?? '')
@@ -420,7 +426,23 @@ export default function LetterPage() {
     }
     if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
-    if (!applied && !notLocated) { toast('موردی برای اعمال تیک نخورده است'); return }
+
+    // Persist the approved extracted facts into the customer profile(s).
+    if (dbItems.length) {
+      try {
+        const r = await letterAiApi.applyDb(dbItems.map(({ id, ...rest }) => rest))
+        const c = r.counts || { added: 0, updated: 0, skipped: 0, profiles_created: 0 }
+        const parts: string[] = []
+        if (c.added) parts.push(`${fa(c.added)} ثبتِ جدید`)
+        if (c.updated) parts.push(`${fa(c.updated)} به‌روزرسانی`)
+        if (c.profiles_created) parts.push(`${fa(c.profiles_created)} پروفایلِ نو`)
+        if (c.skipped) parts.push(`${fa(c.skipped)} تکراری/کهنه رد شد`)
+        toast.success('در پایگاه‌داده: ' + (parts.join(' · ') || 'بدون تغییر') + ' — در لاگ‌ها ثبت شد')
+        appliedIds.push(...dbItems.map((d) => d.id))
+      } catch (e) { toast.error('ثبت در پایگاه‌داده ناموفق: ' + parseApiError(e)) }
+    }
+
+    if (!applied && !notLocated && !dbItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
     // drop applied rows; keep the rest so the user can iterate
     setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
   }
@@ -1160,6 +1182,11 @@ export default function LetterPage() {
         .lai-sev{font-size:10px;color:#fff;border-radius:20px;padding:1px 7px;white-space:nowrap}
         .lai-title{font-size:13px;font-weight:700;color:#0f172a}
         .lai-detail{font-size:12px;color:#475569;margin-top:5px;line-height:1.6}
+        .lai-item.dbw{border-color:#a7f3d0;background:#f0fdf9}
+        .lai-dbbadge{font-size:10px;background:#0d9488;color:#fff;border-radius:20px;padding:1px 7px;white-space:nowrap}
+        .lai-dbtarget{font-size:12px;color:#0f766e;margin-top:5px}
+        .lai-newprof{color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:20px;padding:0 6px;font-size:11px;margin-inline-start:6px}
+        .lai-key{background:#e2e8f0;color:#334155;border-radius:6px;padding:2px 7px;font-size:11.5px;font-family:monospace}
         .lai-diff{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap;font-size:12.5px}
         .lai-before{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:6px;padding:2px 7px;text-decoration:line-through;max-width:100%;overflow-wrap:anywhere}
         .lai-after{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;max-width:100%;overflow-wrap:anywhere}
@@ -1446,21 +1473,33 @@ export default function LetterPage() {
 
                     <div className="lai-list">
                       {aiChanges.map((c) => (
-                        <div key={c.id} className={`lai-item${c.applicable ? '' : ' note'}`}>
+                        <div key={c.id} className={`lai-item${c.applicable ? '' : ' note'}${c.op === 'db_write' ? ' dbw' : ''}`}>
                           <div className="lai-itemhead">
                             {c.applicable
                               ? <input type="checkbox" checked={!!aiChecked[c.id]} onChange={(e) => setAiChecked((s) => ({ ...s, [c.id]: e.target.checked }))} />
                               : <span className="lai-noteicon" title="فقط تذکر — اعمال نمی‌شود">ℹ</span>}
                             <span className="lai-cat">{CAT_FA[c.category] || c.category}</span>
+                            {c.op === 'db_write' && <span className="lai-dbbadge">{c.action === 'update' ? 'به‌روزرسانی' : 'ثبتِ نو'}</span>}
                             <span className="lai-sev" style={{ background: SEV_COLOR[c.severity] || '#64748b' }}>{SEV_FA[c.severity] || c.severity}</span>
                             <span className="lai-title">{c.title}</span>
                           </div>
+                          {/* db_write: show the resolved target customer + the field/value going to the DB */}
+                          {c.op === 'db_write' && (
+                            <div className="lai-dbtarget">→ پروفایلِ <b>{c.customer_name || '—'}</b> <span dir="ltr">({c.account_no})</span>{!c.exists && <span className="lai-newprof"> پروفایلِ جدید ساخته می‌شود</span>}</div>
+                          )}
                           {c.detail && <div className="lai-detail">{c.detail}</div>}
                           {c.applicable && (c.op === 'text_replace' || c.op === 'set_field') && (
                             <div className="lai-diff">
                               <span className="lai-before">{c.before || '—'}</span>
                               <span className="lai-arrow">←</span>
                               <span className="lai-after">{c.after || '—'}</span>
+                            </div>
+                          )}
+                          {c.op === 'db_write' && (
+                            <div className="lai-diff">
+                              <span className="lai-key">{c.key}</span>
+                              {c.action === 'update' && <><span className="lai-before">{c.before || '—'}</span><span className="lai-arrow">←</span></>}
+                              <span className="lai-after">{c.value || c.after || '—'}</span>
                             </div>
                           )}
                         </div>

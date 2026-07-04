@@ -723,11 +723,15 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
+  // db_write only — the extracted profile fact + its resolved target customer
+  account_no?: string; customer_name?: string; key?: string; value?: string
+  action?: 'add' | 'update'; resolution?: string; exists?: boolean
 }
+export type LetterAiDbOutcome = { account_no: string; key: string; outcome: string; profile_created?: boolean; reason?: string }
 export const letterAiApi = {
   async models(): Promise<{ ok: boolean; models: LetterAiModel[]; tools: LetterAiTool[]; available: boolean }> {
     const { data } = await api.get('/api/letter-ai/models')
@@ -735,6 +739,11 @@ export const letterAiApi = {
   },
   async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
     const { data } = await api.post('/api/letter-ai/analyze', body)
+    return data
+  },
+  // Persist the user-approved extracted facts into the right customer profile(s).
+  async applyDb(items: { account_no: string; customer_name?: string; key: string; value: string }[]): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number } }> {
+    const { data } = await api.post('/api/letter-ai/apply-db', { items })
     return data
   },
 }
