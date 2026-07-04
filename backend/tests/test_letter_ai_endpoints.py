@@ -57,6 +57,9 @@ async def test_analyze_validates_model_output(client, auth_headers, db_session, 
         # validate against them) — assert the wiring really passed them through.
         assert "حقایقِ پایگاه‌داده" in prompt
         assert "اعطا گردید" in prompt
+        # the gathered selections must reach the prompt as numbered targets
+        assert "موارد انتخاب‌شده" in prompt
+        assert "مبلغ ۵۰۰۰۰ درهم" in prompt
         return {"ok": True, "model": "Claude Opus 4.8", "error": None, "text": json.dumps({
             "changes": [
                 {"op": "text_replace", "field": "body", "category": "spelling",
@@ -75,7 +78,8 @@ async def test_analyze_validates_model_output(client, auth_headers, db_session, 
         "account_no": "770100",
         "fields": {"body": "<div>مبلغ ۵۰۰۰۰ درهم بابت تسهیلات اعطا گردید.</div>",
                    "subject": "موضوع"},
-        "tools": ["spelling", "consistency"],
+        "tools": ["spelling", "consistency", "validation"],
+        "selections": ["مبلغ ۵۰۰۰۰ درهم"],
     })
     assert r.status_code == 200, r.text
     body = r.json()

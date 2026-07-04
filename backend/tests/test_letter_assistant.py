@@ -135,3 +135,20 @@ def test_build_user_prompt_includes_body_and_facts():
     assert "body" in p and "اعطا گردید" in p
     assert "حقایقِ پایگاه‌داده" in p
     assert "کوتاه کن" in p
+
+
+def test_build_user_prompt_enumerates_multiple_selections():
+    # Each gathered snippet is listed as its own numbered validation target.
+    p = la.build_user_prompt(
+        FIELDS, {}, ["validation"],
+        selections=["مبلغ ۵۰،۰۰۰ درهم", "جناب آقای احمدی", "مبلغ ۵۰،۰۰۰ درهم"],  # dup collapses
+    )
+    assert "موارد انتخاب‌شده" in p
+    assert "1. «مبلغ ۵۰،۰۰۰ درهم»" in p
+    assert "2. «جناب آقای احمدی»" in p
+    assert "3." not in p.split("موارد انتخاب‌شده")[1][:200]  # duplicate did not add a 3rd
+
+
+def test_build_user_prompt_merges_legacy_selection_with_list():
+    p = la.build_user_prompt(FIELDS, {}, ["validation"], selection="عبارتِ قدیمی", selections=["عبارتِ نو"])
+    assert "عبارتِ قدیمی" in p and "عبارتِ نو" in p
