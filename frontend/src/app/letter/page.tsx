@@ -10,8 +10,9 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table } from 'lucide-react'
-import { auditApi, departmentsApi, lettersApi, parseApiError } from '@/lib/api'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X } from 'lucide-react'
+import { auditApi, departmentsApi, lettersApi, letterAiApi, parseApiError } from '@/lib/api'
+import type { LetterAiChange, LetterAiModel, LetterAiTool } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
@@ -186,6 +187,38 @@ function BodyCell({ html, editable, indent, firstPage, style, onChangeHtml, tran
 // Strip tags → plain text (for the departments DB, the letter title, comboboxes…).
 const plain = (h: string) => (h || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\s+/g, ' ').trim()
 
+// ---- AI-assistant apply helpers ----
+// Which letter fields store rich HTML (so a set_field value must be escaped, and a
+// text_replace must run on text nodes only, never inside tags).
+const RICH_FIELDS = new Set(['subject', 'recipientName', 'recipientTitle', 'recipientDept', 'copyTo', 'actionName', 'body'])
+// SURGICAL text replace: only ever rewrites the content of a single TEXT NODE, so
+// inline bold/underline spans, tables and every other tag survive untouched. The
+// replacement is inserted as literal text (never parsed as HTML). Returns the new
+// HTML and how many occurrences were applied (0 = the snippet wasn't locatable in
+// one node → the caller skips it, exactly like the backend's find-guard).
+function applyTextReplaceHtml(value: string, find: string, replace: string, occurrence: 'first' | 'all'): [string, number] {
+  if (!find) return [value, 0]
+  const isHtml = value.indexOf('<') !== -1
+  const container = document.createElement('div')
+  if (isHtml) container.innerHTML = value
+  else container.textContent = value  // plain field → safe text node
+  let applied = 0
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  let n: Node | null
+  while ((n = walker.nextNode())) nodes.push(n as Text)
+  for (const node of nodes) {
+    const text = node.textContent || ''
+    if (occurrence === 'all') {
+      if (text.indexOf(find) !== -1) { const parts = text.split(find); applied += parts.length - 1; node.textContent = parts.join(replace) }
+    } else {
+      const idx = text.indexOf(find)
+      if (idx !== -1) { node.textContent = text.slice(0, idx) + replace + text.slice(idx + find.length); applied++; break }
+    }
+  }
+  return [isHtml ? container.innerHTML : (container.textContent || ''), applied]
+}
+
 // An inline, auto-sizing, rich (contentEditable) field. Stores HTML so bold/underline
 // can be applied to SELECTED words only (via the floating toolbar). Caret-preserving.
 function RichSpan({ value, onChange, placeholder, dir, className, style }:
@@ -269,6 +302,97 @@ export default function LetterPage() {
   const [letterQuery, setLetterQuery] = useState('')
   const LRef = useRef(L); useEffect(() => { LRef.current = L }, [L])
   const designRef = useRef(design); useEffect(() => { designRef.current = design }, [design])
+
+  // --- AI assistant («دستیار هوشمند») — propose reviewable edits, apply only ticked ones ---
+  const DEFAULT_TOOLS = ['spelling', 'grammar', 'paragraphs', 'consistency', 'professional']
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiModels, setAiModels] = useState<LetterAiModel[]>([])
+  const [aiTools, setAiTools] = useState<LetterAiTool[]>([])
+  const [aiModelsLoaded, setAiModelsLoaded] = useState(false)
+  const [aiModelId, setAiModelId] = useState<number | ''>('')     // '' = auto (top-priority model)
+  const [aiSelTools, setAiSelTools] = useState<string[]>(DEFAULT_TOOLS)
+  const [aiInstruction, setAiInstruction] = useState('')
+  const [aiSelection, setAiSelection] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiRan, setAiRan] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiModelUsed, setAiModelUsed] = useState('')
+  const [aiFactsUsed, setAiFactsUsed] = useState(false)
+  const [aiChanges, setAiChanges] = useState<LetterAiChange[]>([])
+  const [aiChecked, setAiChecked] = useState<Record<string, boolean>>({})
+
+  const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', other: 'سایر' }
+  const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
+  const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
+
+  const openAi = () => {
+    const selText = (typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || ''
+    setAiSelection(selText.trim())
+    // A live selection is the target of «اعتبارسنجی» — turn it on automatically.
+    setAiSelTools(selText.trim() ? Array.from(new Set([...DEFAULT_TOOLS, 'validation'])) : DEFAULT_TOOLS)
+    setAiChanges([]); setAiChecked({}); setAiRan(false); setAiError(''); setAiModelUsed('')
+    setAiOpen(true)
+    if (!aiModelsLoaded) {
+      letterAiApi.models().then((r) => { setAiModels(r.models || []); setAiTools(r.tools || []); setAiModelsLoaded(true) })
+        .catch(() => { setAiTools([]); setAiModelsLoaded(true) })
+    }
+  }
+  const toggleTool = (id: string) => setAiSelTools((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
+
+  const runAi = async () => {
+    if (!aiSelTools.length) { toast.error('حداقل یک ابزار را انتخاب کن'); return }
+    setAiLoading(true); setAiError(''); setAiRan(false)
+    try {
+      const r = await letterAiApi.analyze({
+        account_no: general ? undefined : (acct.trim() || undefined),
+        fields: f, tools: aiSelTools,
+        instruction: aiInstruction.trim() || undefined,
+        selection: aiSelection.trim() || undefined,
+        model_id: aiModelId === '' ? undefined : Number(aiModelId),
+      })
+      setAiRan(true)
+      setAiModelUsed(r.model || ''); setAiFactsUsed(!!r.facts_used)
+      if (!r.ok) { setAiError(aiErrorText(r.error)); setAiChanges([]); return }
+      setAiChanges(r.changes || [])
+      // pre-tick every applicable change; notes are advisory (never applied)
+      const checked: Record<string, boolean> = {}
+      for (const c of r.changes || []) checked[c.id] = !!c.applicable
+      setAiChecked(checked)
+      if (!(r.changes || []).length) toast.success('موردی برای اصلاح یافت نشد — نامه تمیز است ✓')
+    } catch (e) { setAiError(parseApiError(e)); setAiRan(true) }
+    finally { setAiLoading(false) }
+  }
+  const aiErrorText = (err?: string) => {
+    if (err === 'no_model') return 'هیچ مدلِ هوش مصنوعیِ فعالی پیکربندی نشده — از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن.'
+    if (err === 'no_base_url') return 'آدرسِ سرویس‌دهندهٔ مدل تنظیم نشده است.'
+    if (err && /timed out/i.test(err)) return 'پاسخِ مدل به‌موقع نرسید؛ دوباره تلاش کن یا مدلِ سریع‌تری انتخاب کن.'
+    return err ? `خطای مدل: ${err}` : 'اجرای مدل ناموفق بود.'
+  }
+
+  const applyAiChanges = () => {
+    const nf: any = { ...f }
+    let applied = 0, notLocated = 0
+    const appliedIds: string[] = []
+    for (const ch of aiChanges) {
+      if (!aiChecked[ch.id] || !ch.applicable) continue
+      if (!(ch.field in nf)) continue
+      if (ch.op === 'set_field') {
+        const val = String(ch.after ?? '')
+        nf[ch.field] = RICH_FIELDS.has(ch.field) ? escapeHtml(val) : val
+        applied++; appliedIds.push(ch.id)
+      } else if (ch.op === 'text_replace' && ch.find != null) {
+        const [next, cnt] = applyTextReplaceHtml(String(nf[ch.field] ?? ''), ch.find, String(ch.replace ?? ''), (ch.occurrence as any) || 'first')
+        if (cnt > 0) { nf[ch.field] = next; applied++; appliedIds.push(ch.id) }
+        else notLocated++
+      }
+    }
+    if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
+    if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
+    if (!applied && !notLocated) { toast('موردی برای اعمال تیک نخورده است'); return }
+    // drop applied rows; keep the rest so the user can iterate
+    setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
+  }
+  const aiApplicableCount = aiChanges.filter((c) => c.applicable && aiChecked[c.id]).length
 
   const loadLetter = async (id: string) => {
     try {
@@ -959,6 +1083,52 @@ export default function LetterPage() {
         .tbl-bar button:hover{background:#115e59}
         .tbl-bar button.del:hover{background:#b91c1c}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
+        /* ---- AI assistant modal ---- */
+        .lai-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto;font-family:${NAZ}}
+        .lai-modal{background:#fff;width:min(760px,96vw);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);display:flex;flex-direction:column;max-height:88vh;overflow:hidden}
+        .lai-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#faf5ff}
+        .lai-sub{font-size:11px;color:#7c3aed;background:#f3e8ff;padding:1px 7px;border-radius:20px}
+        .lai-x{border:0;background:transparent;cursor:pointer;color:#64748b;padding:4px;border-radius:6px}
+        .lai-x:hover{background:#e2e8f0}
+        .lai-body{padding:14px 16px;overflow:auto}
+        .lai-setup{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
+        .lai-row{display:flex;flex-direction:column;gap:4px}
+        .lai-lbl{font-size:12px;font-weight:700;color:#334155}
+        .lai-inp{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit}
+        .lai-inp:focus{outline:none;border-color:#7c3aed}
+        .lai-warn{margin-top:8px;font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:7px 9px}
+        .lai-tools{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px}
+        .lai-tool{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#334155;border:1px solid #e2e8f0;border-radius:8px;padding:6px 9px;cursor:pointer;background:#fff}
+        .lai-tool.on{border-color:#7c3aed;background:#faf5ff;color:#5b21b6;font-weight:600}
+        .lai-tool input{accent-color:#7c3aed}
+        .lai-selbox{margin-top:8px;font-size:12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:7px 9px;color:#3730a3}
+        .lai-seltext{display:block;margin-top:3px;color:#475569;max-height:54px;overflow:auto}
+        .lai-run{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(90deg,#7c3aed,#4f46e5);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer;font-size:13px}
+        .lai-run:disabled{opacity:.6;cursor:default}
+        .lai-hint{font-size:11.5px;color:#64748b}
+        .lai-err{margin-top:12px;font-size:13px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px}
+        .lai-results{margin-top:12px}
+        .lai-resbar{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:8px}
+        .lai-mini{border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:3px 8px;font-size:11.5px;cursor:pointer;color:#475569}
+        .lai-mini:hover{background:#f1f5f9}
+        .lai-list{display:flex;flex-direction:column;gap:8px}
+        .lai-item{border:1px solid #e2e8f0;border-radius:10px;padding:9px 11px;background:#fff}
+        .lai-item.note{background:#f8fafc;border-style:dashed}
+        .lai-itemhead{display:flex;align-items:center;gap:8px}
+        .lai-itemhead input{accent-color:#7c3aed;width:16px;height:16px;flex:0 0 auto}
+        .lai-noteicon{width:16px;text-align:center;color:#0ea5e9;font-weight:800;flex:0 0 auto}
+        .lai-cat{font-size:10.5px;background:#ede9fe;color:#5b21b6;border-radius:20px;padding:1px 8px;white-space:nowrap;font-weight:700}
+        .lai-sev{font-size:10px;color:#fff;border-radius:20px;padding:1px 7px;white-space:nowrap}
+        .lai-title{font-size:13px;font-weight:700;color:#0f172a}
+        .lai-detail{font-size:12px;color:#475569;margin-top:5px;line-height:1.6}
+        .lai-diff{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap;font-size:12.5px}
+        .lai-before{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:6px;padding:2px 7px;text-decoration:line-through;max-width:100%;overflow-wrap:anywhere}
+        .lai-after{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:6px;padding:2px 7px;max-width:100%;overflow-wrap:anywhere}
+        .lai-arrow{color:#94a3b8}
+        .lai-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}
+        .lai-cancel{border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer}
+        .lai-apply{display:inline-flex;align-items:center;gap:6px;background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer;font-size:13px}
+        .lai-apply:disabled{opacity:.5;cursor:default}
         .sep-line{width:100%;border-top:1px dashed #000}
         .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
         .print-wrap{display:none}
@@ -1015,6 +1185,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
+          <button onClick={openAi} className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} title="بازبینی و اصلاحِ هوشمندِ نامه با هوش مصنوعی — پیش از اعمال، فهرست را می‌بینی و تیک می‌زنی"><Sparkles size={15} /> دستیارِ هوشمند</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
           <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v16</span>
@@ -1145,6 +1316,114 @@ export default function LetterPage() {
         <div className="canvas-wrap print-wrap">
           {pages.map((_, pi) => printPage(pi))}
         </div>
+
+        {/* ---- AI ASSISTANT MODAL («دستیار هوشمند») ---- */}
+        {aiOpen && (
+          <div className="lai-overlay no-print" onClick={() => setAiOpen(false)}>
+            <div className="lai-modal" onClick={(e) => e.stopPropagation()} dir="rtl">
+              <div className="lai-head">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={18} color="#7c3aed" />
+                  <b>دستیارِ هوشمندِ نامه</b>
+                  <span className="lai-sub">پیشنهاد می‌دهد؛ پیش از اعمال، خودت تیک می‌زنی</span>
+                </div>
+                <button className="lai-x" onClick={() => setAiOpen(false)}><X size={18} /></button>
+              </div>
+
+              <div className="lai-body">
+                {/* ---- setup panel ---- */}
+                <div className="lai-setup">
+                  <div className="lai-row">
+                    <label className="lai-lbl">مدلِ هوش مصنوعی</label>
+                    <select className="lai-inp" value={aiModelId} onChange={(e) => setAiModelId(e.target.value === '' ? '' : Number(e.target.value))}>
+                      <option value="">خودکار (بهترین مدلِ فعال بر اساس اولویت)</option>
+                      {aiModels.map((m) => <option key={m.id} value={m.id}>{m.display_name} — {m.provider_name}</option>)}
+                    </select>
+                  </div>
+                  {aiModelsLoaded && aiModels.length === 0 && (
+                    <div className="lai-warn">هیچ مدلِ فعالی یافت نشد. از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن؛ فعلاً می‌توانی روی حالتِ خودکار اجرا کنی ولی احتمالاً خطا می‌دهد.</div>
+                  )}
+
+                  <label className="lai-lbl" style={{ marginTop: 8 }}>ابزارها (چه کارهایی انجام شود)</label>
+                  <div className="lai-tools">
+                    {(aiTools.length ? aiTools : DEFAULT_TOOLS.map((id) => ({ id, label: id }))).map((t) => (
+                      <label key={t.id} className={`lai-tool${aiSelTools.includes(t.id) ? ' on' : ''}`}>
+                        <input type="checkbox" checked={aiSelTools.includes(t.id)} onChange={() => toggleTool(t.id)} />
+                        <span>{t.label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  {aiSelection && (
+                    <div className="lai-selbox">
+                      <b>موردِ انتخاب‌شده برای اعتبارسنجی:</b>
+                      <span className="lai-seltext">{aiSelection.slice(0, 240)}{aiSelection.length > 240 ? '…' : ''}</span>
+                    </div>
+                  )}
+
+                  <label className="lai-lbl" style={{ marginTop: 8 }}>دستورِ اختصاصی (اختیاری)</label>
+                  <textarea className="lai-inp" rows={2} value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)}
+                    placeholder="مثلاً: لحن را رسمی‌تر کن؛ مبلغ و نرخ را با پرونده تطبیق بده؛ جملهٔ آخر را کوتاه کن…" />
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                    <button className="lai-run" onClick={runAi} disabled={aiLoading}>
+                      {aiLoading ? '⏳ در حالِ بررسی…' : <><Sparkles size={15} /> بررسیِ نامه</>}
+                    </button>
+                    {(general || !acct.trim())
+                      ? <span className="lai-hint">نامهٔ عمومی — بدونِ حقایقِ پایگاه‌داده (اعتبارسنجیِ مالی محدود است).</span>
+                      : <span className="lai-hint">حسابِ {acct.trim()} — اصلاحات با حقایقِ پایگاه‌داده تطبیق داده می‌شوند.</span>}
+                  </div>
+                </div>
+
+                {/* ---- results ---- */}
+                {aiError && <div className="lai-err">{aiError}</div>}
+
+                {aiRan && !aiError && (
+                  <div className="lai-results">
+                    <div className="lai-resbar">
+                      <span>{aiChanges.length ? `${fa(aiChanges.length)} پیشنهاد` : 'پیشنهادی نیست'}</span>
+                      {aiModelUsed && <span className="lai-hint">مدل: {aiModelUsed}{aiFactsUsed ? ' · با حقایقِ پایگاه‌داده' : ''}</span>}
+                      {aiChanges.length > 0 && <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 6 }}>
+                        <button className="lai-mini" onClick={() => { const all: Record<string, boolean> = {}; aiChanges.forEach((c) => { all[c.id] = c.applicable }); setAiChecked(all) }}>تیکِ همه</button>
+                        <button className="lai-mini" onClick={() => setAiChecked({})}>برداشتنِ همه</button>
+                      </div>}
+                    </div>
+
+                    <div className="lai-list">
+                      {aiChanges.map((c) => (
+                        <div key={c.id} className={`lai-item${c.applicable ? '' : ' note'}`}>
+                          <div className="lai-itemhead">
+                            {c.applicable
+                              ? <input type="checkbox" checked={!!aiChecked[c.id]} onChange={(e) => setAiChecked((s) => ({ ...s, [c.id]: e.target.checked }))} />
+                              : <span className="lai-noteicon" title="فقط تذکر — اعمال نمی‌شود">ℹ</span>}
+                            <span className="lai-cat">{CAT_FA[c.category] || c.category}</span>
+                            <span className="lai-sev" style={{ background: SEV_COLOR[c.severity] || '#64748b' }}>{SEV_FA[c.severity] || c.severity}</span>
+                            <span className="lai-title">{c.title}</span>
+                          </div>
+                          {c.detail && <div className="lai-detail">{c.detail}</div>}
+                          {c.applicable && (c.op === 'text_replace' || c.op === 'set_field') && (
+                            <div className="lai-diff">
+                              <span className="lai-before">{c.before || '—'}</span>
+                              <span className="lai-arrow">←</span>
+                              <span className="lai-after">{c.after || '—'}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="lai-foot">
+                <button className="lai-cancel" onClick={() => setAiOpen(false)}>بستن</button>
+                <button className="lai-apply" onClick={applyAiChanges} disabled={aiApplicableCount === 0}>
+                  <Check size={15} /> اعمالِ {aiApplicableCount ? fa(aiApplicableCount) + ' ' : ''}موردِ انتخاب‌شده
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   )
