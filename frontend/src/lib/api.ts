@@ -733,7 +733,7 @@ export const letterAiApi = {
     const { data } = await api.get('/api/letter-ai/models')
     return data
   },
-  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
+  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
     const { data } = await api.post('/api/letter-ai/analyze', body)
     return data
   },

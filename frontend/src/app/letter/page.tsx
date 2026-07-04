@@ -312,7 +312,10 @@ export default function LetterPage() {
   const [aiModelId, setAiModelId] = useState<number | ''>('')     // '' = auto (top-priority model)
   const [aiSelTools, setAiSelTools] = useState<string[]>(DEFAULT_TOOLS)
   const [aiInstruction, setAiInstruction] = useState('')
-  const [aiSelection, setAiSelection] = useState('')
+  // Collected snippets to validate against the DB — the user builds this list by
+  // selecting text in the letter and pressing «افزودن به اعتبارسنجی» on the
+  // floating toolbar (so MANY, separate pieces can be gathered, not just one).
+  const [aiSelections, setAiSelections] = useState<string[]>([])
   const [aiLoading, setAiLoading] = useState(false)
   const [aiRan, setAiRan] = useState(false)
   const [aiError, setAiError] = useState('')
@@ -325,11 +328,40 @@ export default function LetterPage() {
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
   const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
 
+  const AI_MAX_SELECTIONS = 12
+  // Capture the CURRENT text selection (from the body or any rich field) and add
+  // it to the validation list. Called from the floating toolbar's shield button —
+  // it reads the live selection BEFORE the click clears it. De-dups + caps.
+  const addAiSelection = (): boolean => {
+    const raw = (typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || ''
+    const t = raw.replace(/\s+/g, ' ').trim()
+    if (!t) { toast.error('اول یک عبارت را در متن انتخاب کن'); return false }
+    // Enable the validation tool here (synchronously) — NOT inside the setAiSelections
+    // updater, which React runs asynchronously during render (a flag set there is
+    // still stale on the next line).
+    setAiSelTools((s) => s.includes('validation') ? s : [...s, 'validation'])
+    setAiSelections((s) => {
+      if (s.includes(t)) { toast('این عبارت قبلاً افزوده شده'); return s }
+      if (s.length >= AI_MAX_SELECTIONS) { toast.error(`حداکثر ${fa(AI_MAX_SELECTIONS)} مورد`); return s }
+      const next = [...s, t.slice(0, 2000)]
+      toast.success(`به فهرستِ اعتبارسنجی افزوده شد (${fa(next.length)})`)
+      return next
+    })
+    return true
+  }
+  const removeAiSelection = (i: number) => setAiSelections((s) => s.filter((_, idx) => idx !== i))
+
   const openAi = () => {
-    const selText = (typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || ''
-    setAiSelection(selText.trim())
-    // A live selection is the target of «اعتبارسنجی» — turn it on automatically.
-    setAiSelTools(selText.trim() ? Array.from(new Set([...DEFAULT_TOOLS, 'validation'])) : DEFAULT_TOOLS)
+    // If the user has an active selection when opening, fold it in too (so a quick
+    // select→open still works without touching the toolbar).
+    const live = ((typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || '').replace(/\s+/g, ' ').trim()
+    let sels = aiSelections
+    if (live && !aiSelections.includes(live) && aiSelections.length < AI_MAX_SELECTIONS) {
+      sels = [...aiSelections, live.slice(0, 2000)]
+      setAiSelections(sels)
+    }
+    // Any collected selection → «اعتبارسنجی» is a relevant tool; turn it on.
+    setAiSelTools(sels.length ? Array.from(new Set([...DEFAULT_TOOLS, 'validation'])) : DEFAULT_TOOLS)
     setAiChanges([]); setAiChecked({}); setAiRan(false); setAiError(''); setAiModelUsed('')
     setAiOpen(true)
     if (!aiModelsLoaded) {
@@ -347,7 +379,7 @@ export default function LetterPage() {
         account_no: general ? undefined : (acct.trim() || undefined),
         fields: f, tools: aiSelTools,
         instruction: aiInstruction.trim() || undefined,
-        selection: aiSelection.trim() || undefined,
+        selections: aiSelections.length ? aiSelections : undefined,
         model_id: aiModelId === '' ? undefined : Number(aiModelId),
       })
       setAiRan(true)
@@ -1083,14 +1115,21 @@ export default function LetterPage() {
         .tbl-bar button:hover{background:#115e59}
         .tbl-bar button.del:hover{background:#b91c1c}
         .az-sizer{position:absolute;visibility:hidden;white-space:pre;top:0;right:0;font:inherit;letter-spacing:inherit;pointer-events:none}
-        /* ---- AI assistant modal ---- */
-        .lai-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto;font-family:${NAZ}}
-        .lai-modal{background:#fff;width:min(760px,96vw);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.4);display:flex;flex-direction:column;max-height:88vh;overflow:hidden}
+        /* ---- AI assistant — right-docked side panel (non-blocking: the letter
+           stays selectable so you can gather validation snippets while it's open) ---- */
+        .lai-panelwrap{position:fixed;inset:0;z-index:400;pointer-events:none;font-family:${NAZ}}
+        .lai-modal{position:fixed;top:0;right:0;height:100vh;width:min(470px,96vw);background:#fff;box-shadow:-12px 0 40px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;border-left:1px solid #e2e8f0}
+        .lai-selhint{margin-top:4px;font-size:11.5px;color:#6d5bb5;line-height:1.7}
+        .lai-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+        .lai-chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #c7d2fe;border-radius:20px;padding:2px 4px 2px 9px;font-size:11.5px;color:#3730a3;max-width:100%}
+        .lai-chiptext{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}
+        .lai-chipx{border:0;background:#eef2ff;color:#4338ca;border-radius:50%;width:16px;height:16px;line-height:14px;cursor:pointer;flex:0 0 auto;font-size:13px}
+        .lai-chipx:hover{background:#c7d2fe}
         .lai-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#faf5ff}
         .lai-sub{font-size:11px;color:#7c3aed;background:#f3e8ff;padding:1px 7px;border-radius:20px}
         .lai-x{border:0;background:transparent;cursor:pointer;color:#64748b;padding:4px;border-radius:6px}
         .lai-x:hover{background:#e2e8f0}
-        .lai-body{padding:14px 16px;overflow:auto}
+        .lai-body{padding:14px 16px;overflow:auto;flex:1 1 auto;min-height:0}
         .lai-setup{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px}
         .lai-row{display:flex;flex-direction:column;gap:4px}
         .lai-lbl{font-size:12px;font-weight:700;color:#334155}
@@ -1269,6 +1308,10 @@ export default function LetterPage() {
             <span className="sep2" />
             <button title="کاهشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(-0.1) }}>خ−</button>
             <button title="افزایشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(0.1) }}>خ＋</button>
+            <span className="sep2" />
+            {/* preventDefault keeps the selection alive so addAiSelection can read it */}
+            <button title="افزودنِ این انتخاب به فهرستِ اعتبارسنجیِ هوش مصنوعی" style={{ color: '#c4b5fd' }}
+              onMouseDown={(e) => { e.preventDefault(); addAiSelection() }}><Sparkles size={13} /></button>
           </div>
         )}
 
@@ -1319,8 +1362,10 @@ export default function LetterPage() {
 
         {/* ---- AI ASSISTANT MODAL («دستیار هوشمند») ---- */}
         {aiOpen && (
-          <div className="lai-overlay no-print" onClick={() => setAiOpen(false)}>
-            <div className="lai-modal" onClick={(e) => e.stopPropagation()} dir="rtl">
+          // A non-blocking wrapper: pointer-events pass THROUGH to the letter (so you
+          // can still select text while the panel is open); only the panel captures.
+          <div className="lai-panelwrap no-print" dir="rtl">
+            <div className="lai-modal" dir="rtl">
               <div className="lai-head">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Sparkles size={18} color="#7c3aed" />
@@ -1354,12 +1399,22 @@ export default function LetterPage() {
                     ))}
                   </div>
 
-                  {aiSelection && (
-                    <div className="lai-selbox">
-                      <b>موردِ انتخاب‌شده برای اعتبارسنجی:</b>
-                      <span className="lai-seltext">{aiSelection.slice(0, 240)}{aiSelection.length > 240 ? '…' : ''}</span>
+                  <div className="lai-selbox">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <b>موارد انتخاب‌شده برای اعتبارسنجی {aiSelections.length ? `(${fa(aiSelections.length)})` : ''}</b>
+                      {aiSelections.length > 0 && <button className="lai-mini" onClick={() => setAiSelections([])}>پاک‌کردنِ همه</button>}
                     </div>
-                  )}
+                    {aiSelections.length === 0
+                      ? <div className="lai-selhint">این پنجره را باز بگذار، در متنِ نامه یک عبارت را انتخاب کن و روی <Sparkles size={11} style={{ verticalAlign: 'middle', color: '#7c3aed' }} /> در نوارِ شناور بزن تا این‌جا اضافه شود. می‌توانی چند عبارتِ جدا اضافه کنی؛ هرکدام مستقل با پایگاه‌داده اعتبارسنجی می‌شود.</div>
+                      : <div className="lai-chips">
+                          {aiSelections.map((s, i) => (
+                            <span key={i} className="lai-chip" title={s}>
+                              <span className="lai-chiptext">{s.length > 60 ? s.slice(0, 60) + '…' : s}</span>
+                              <button className="lai-chipx" onClick={() => removeAiSelection(i)} title="حذف">×</button>
+                            </span>
+                          ))}
+                        </div>}
+                  </div>
 
                   <label className="lai-lbl" style={{ marginTop: 8 }}>دستورِ اختصاصی (اختیاری)</label>
                   <textarea className="lai-inp" rows={2} value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)}
