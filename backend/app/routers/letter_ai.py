@@ -51,7 +51,8 @@ class AnalyzeRequest(BaseModel):
     fields: Dict[str, Any] = Field(default_factory=dict)
     tools: List[str] = Field(default_factory=list)
     instruction: str = ""
-    selection: str = ""
+    selection: str = ""                                    # back-compat (single)
+    selections: List[str] = Field(default_factory=list)    # the gathered snippets
     model_id: Optional[int] = None
 
 
@@ -112,6 +113,7 @@ async def analyze(
     prompt = la.build_user_prompt(
         payload.fields or {}, facts, tools,
         instruction=payload.instruction or "", selection=payload.selection or "",
+        selections=payload.selections or [],
     )
 
     result = await inference.complete(

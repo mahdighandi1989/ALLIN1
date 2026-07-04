@@ -200,10 +200,16 @@ SYSTEM_PROMPT = (
 MAX_CHANGES = 60
 
 
+MAX_SELECTIONS = 12
+
+
 def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List[str],
-                      instruction: str = "", selection: str = "") -> str:
+                      instruction: str = "", selection: str = "",
+                      selections: Optional[List[str]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
-    the requested tools + optional free-form instruction and selected snippet."""
+    the requested tools + optional free-form instruction and the user's SELECTED
+    snippets. ``selections`` is the list the user gathered (many, separate pieces);
+    ``selection`` is kept for back-compat and merged in as one more item."""
     parts: List[str] = []
     parts.append("### فیلدهای نامه (متنِ فعلی — برای text_replace از همین‌ها عیناً کپی کن):")
     field_lines = []
@@ -224,9 +230,22 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     guides = [f"- {TOOLS[t]['guide']}" for t in tools if t in TOOLS]
     parts.append("\n".join(guides) or "- اصلاحاتِ عمومیِ ویرایشی")
 
-    if selection.strip():
-        parts.append("\n### موردِ انتخاب‌شده توسطِ کاربر (کانونِ توجه، مثلاً برای اعتبارسنجی):")
-        parts.append(selection.strip()[:2000])
+    # Gather the user's selected items (de-duped, order-preserving, capped).
+    items: List[str] = []
+    for s in ([selection] if selection else []) + list(selections or []):
+        s = (s or "").strip()
+        if s and s not in items:
+            items.append(s[:2000])
+        if len(items) >= MAX_SELECTIONS:
+            break
+    if items:
+        parts.append(
+            "\n### موارد انتخاب‌شده توسطِ کاربر برای اعتبارسنجی (هر مورد را جداگانه در برابرِ "
+            "«حقایقِ پایگاه‌داده» بررسی کن؛ برای هرکدام یک change جدا بده — درست⇒note، غلط⇒اصلاح):"
+        )
+        for i, s in enumerate(items, 1):
+            parts.append(f"{i}. «{s}»")
+
     if instruction.strip():
         parts.append("\n### دستورِ اختصاصیِ کاربر:")
         parts.append(instruction.strip()[:2000])
