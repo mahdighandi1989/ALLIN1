@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -173,8 +173,17 @@ class DbWriteItem(BaseModel):
     value: str
 
 
+class LinkItem(BaseModel):
+    account_no: str
+    related_account: str
+    kind: str = "other"
+    reason: str
+
+
 class ApplyDbRequest(BaseModel):
     items: List[DbWriteItem] = Field(default_factory=list)
+    links: List[LinkItem] = Field(default_factory=list)
+    source_ref: str = ""
 
 
 @router.post("/apply-db")
@@ -186,10 +195,118 @@ async def apply_db(
 ):
     """Persist the user-approved extracted facts into the right customer
     profile(s) — dedup + staleness guarded, creating profiles as needed, auditing
-    every write to the account (global log + that profile's «Logs» tab)."""
+    every write to the account (global log + that profile's «Logs» tab). Also
+    creates approved profile↔profile links (kind + exact reason, both profiles)."""
     items = [i.model_dump() for i in (payload.items or [])
              if (i.account_no or "").strip() and (i.key or "").strip()]
-    if not items:
-        return {"ok": True, "outcomes": [],
-                "counts": {"added": 0, "updated": 0, "skipped": 0, "profiles_created": 0}}
-    return await db_extract.apply_db_writes(db, user, request, items)
+    result: Dict[str, Any] = {"ok": True, "outcomes": [],
+                              "counts": {"added": 0, "updated": 0, "skipped": 0, "profiles_created": 0}}
+    if items:
+        result = await db_extract.apply_db_writes(db, user, request, items)
+
+    links_created = 0
+    if payload.links:
+        from app.services.relationships import ensure_link
+        from app.services.customer_link import ensure_customer
+
+        username = getattr(user, "username", "") or ""
+        made = []
+        for l in payload.links:
+            if not (l.account_no or "").strip() or not (l.related_account or "").strip():
+                continue
+            # both sides must exist as profiles (stub-created if brand new)
+            await ensure_customer(db, l.account_no.strip(), None)
+            await ensure_customer(db, l.related_account.strip(), None)
+            link = await ensure_link(
+                db, l.account_no, l.related_account, kind=l.kind, reason=l.reason,
+                source="letter_attachment_ai", source_ref=payload.source_ref or "",
+                created_by=username,
+            )
+            if link is not None:
+                made.append((l.account_no.strip(), l.related_account.strip(), l.kind, l.reason))
+        await db.commit()
+        links_created = len(made)
+        for a, b, kind, reason in made:
+            for acc in (a, b):  # audit on BOTH profiles' logs
+                await record_audit(
+                    action="update", entity_type="customer_link", entity_id=kind,
+                    account_no=acc, detail=f"لینکِ پروفایلی «{kind}» با {b if acc == a else a} — علت: {reason}",
+                    user=user, request=request, db=db,
+                )
+    result["links_created"] = links_created
+    return result
+
+
+class ExtractAttachmentRequest(BaseModel):
+    account_no: str = ""
+    customer_name: str = ""
+    subject: str = ""
+    body_excerpt: str = ""
+    model_id: Optional[int] = None
+
+
+@router.post("/extract-attachment/{attachment_id}")
+async def extract_attachment_endpoint(
+    attachment_id: str,
+    payload: ExtractAttachmentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Deep-extract ONE letter attachment (the UI runs attachments sequentially so
+    each request stays bounded). Returns staged, reviewable changes — writes
+    nothing. Pipeline + guards mirror the Import page (chunking/backoff/caps)."""
+    from app.models.crm import Attachment
+    from app.services import attachments as attachments_store
+    from app.services import letter_attachment_extract as lax
+
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    # load the bytes from where they live (Drive or disk) — same as the download route
+    data: bytes = b""
+    if a.drive_file_id:
+        from app.services import drive_sync
+        try:
+            data = await drive_sync.download_attachment(a.drive_file_id)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"دانلود از Drive ناموفق: {exc}")
+    else:
+        path = attachments_store.resolve(a.file_path or "")
+        if path is None:
+            raise HTTPException(status_code=404, detail="فایل روی دیسک یافت نشد")
+        data = path.read_bytes()
+
+    import mimetypes
+    fname = a.original_name or a.file_name or "file"
+    mime = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+
+    letter_ctx = {
+        "subject": payload.subject or "", "account_no": payload.account_no or a.account_no or "",
+        "customer_name": payload.customer_name or "", "body_excerpt": payload.body_excerpt or "",
+    }
+    extraction = await lax.extract_attachment(
+        db, data=data, filename=fname, mimetype=mime,
+        letter_ctx=letter_ctx, model_id=payload.model_id,
+    )
+    if not extraction.get("ok"):
+        return {"ok": False, "error": extraction.get("error"),
+                "suggestions": extraction.get("suggestions", []), "changes": []}
+
+    staged = await lax.stage_extraction(
+        db, extraction, primary_account=(payload.account_no or a.account_no or "").strip(),
+        primary_name=payload.customer_name or "", source_ref=fname,
+    )
+    # unique ids per attachment so items from several attachments never collide
+    for it in staged:
+        it["id"] = f"{attachment_id[-6:]}-{it['id']}"
+        it["source_file"] = fname
+    await record_audit(
+        action="analyze", entity_type="letter_attachment_ai", entity_id=attachment_id,
+        account_no=(payload.account_no or a.account_no or None),
+        detail=f"استخراج هوشمند از پیوست «{fname}» — {len(staged)} مورد",
+        user=user, request=request, db=db,
+    )
+    return {"ok": True, "changes": staged, "model": extraction.get("model"),
+            "chunk_errors": extraction.get("chunk_errors", []), "file": fname}

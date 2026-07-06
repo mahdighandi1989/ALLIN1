@@ -11,8 +11,8 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X } from 'lucide-react'
-import { auditApi, departmentsApi, lettersApi, letterAiApi, parseApiError } from '@/lib/api'
-import type { LetterAiChange, LetterAiModel, LetterAiTool } from '@/lib/api'
+import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError } from '@/lib/api'
+import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
@@ -325,6 +325,39 @@ export default function LetterPage() {
   const [aiChecked, setAiChecked] = useState<Record<string, boolean>>({})
 
   const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', db_extract: 'ثبت در پایگاه‌داده', other: 'سایر' }
+
+  // --- Letter attachments (پیوست‌ها) — enabled when the letter says «دارد».
+  // Files go through the shared crm attachment endpoint (Drive with traceable
+  // names + disk fallback) scoped as facility_id=LTR-<letterId>, so they also
+  // show under the customer profile automatically. ---
+  const [attsOpen, setAttsOpen] = useState(false)
+  const [letterAtts, setLetterAtts] = useState<LetterAttachment[]>([])
+  const [attUploading, setAttUploading] = useState(false)
+  const [extracting2, setExtracting2] = useState('')   // progress text while extracting attachments
+  const loadAtts = async (id: string | null) => {
+    if (!id) { setLetterAtts([]); return }
+    try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
+  }
+  useEffect(() => { loadAtts(letterId) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [letterId])
+  const uploadAtt = async (file?: File | null) => {
+    if (!file) return
+    if (!letterId) { toast.error('اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد'); return }
+    if (!acct.trim() && !general) { toast.error('شمارهٔ حساب نامه لازم است'); return }
+    setAttUploading(true)
+    try {
+      await crmApi.uploadAttachment(acct.trim() || 'general', file, {
+        facility_id: `LTR-${letterId}`,
+        notes: `پیوست نامه${plain(f.subject) ? ` — ${plain(f.subject)}` : ''}`,
+      })
+      toast.success(`پیوست «${file.name}» بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`)
+      await loadAtts(letterId)
+    } catch (e) { toast.error(parseApiError(e)) } finally { setAttUploading(false) }
+  }
+  const deleteAtt = async (id: string, name: string) => {
+    if (!confirm(`حذفِ پیوست «${name}»؟`)) return
+    try { await crmApi.deleteAttachment(id); await loadAtts(letterId) } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const hasAttachmentMode = f.attachment === 'دارد'
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
   const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
 
@@ -371,28 +404,68 @@ export default function LetterPage() {
   }
   const toggleTool = (id: string) => setAiSelTools((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id])
 
+  const ATT_TOOL = 'attachments_extract'
   const runAi = async () => {
     if (!aiSelTools.length) { toast.error('حداقل یک ابزار را انتخاب کن'); return }
-    setAiLoading(true); setAiError(''); setAiRan(false)
+    setAiLoading(true); setAiError(''); setAiRan(false); setExtracting2('')
     try {
-      const r = await letterAiApi.analyze({
-        account_no: general ? undefined : (acct.trim() || undefined),
-        fields: f, tools: aiSelTools,
-        instruction: aiInstruction.trim() || undefined,
-        selections: aiSelections.length ? aiSelections : undefined,
-        model_id: aiModelId === '' ? undefined : Number(aiModelId),
-      })
+      const letterTools = aiSelTools.filter((t) => t !== ATT_TOOL)
+      let all: LetterAiChange[] = []
+      let modelUsed = ''
+      if (letterTools.length) {
+        const r = await letterAiApi.analyze({
+          account_no: general ? undefined : (acct.trim() || undefined),
+          fields: f, tools: letterTools,
+          instruction: aiInstruction.trim() || undefined,
+          selections: aiSelections.length ? aiSelections : undefined,
+          model_id: aiModelId === '' ? undefined : Number(aiModelId),
+        })
+        setAiFactsUsed(!!r.facts_used)
+        if (!r.ok) { setAiError(aiErrorText(r.error)); setAiRan(true); setAiChanges([]); return }
+        all = r.changes || []
+        modelUsed = r.model || ''
+      }
+      // Deep extraction from the letter's attachments — one attachment per
+      // request (bounded), mirroring the Import pipeline's guards server-side.
+      if (aiSelTools.includes(ATT_TOOL) && letterAtts.length) {
+        for (let i = 0; i < letterAtts.length; i++) {
+          const att = letterAtts[i]
+          setExtracting2(`استخراج از پیوست ${fa(i + 1)} از ${fa(letterAtts.length)}: ${att.original_name}…`)
+          try {
+            const rx = await letterAiApi.extractAttachment(att.id, {
+              account_no: general ? undefined : (acct.trim() || undefined),
+              customer_name: plain(f.recipientName) || undefined,
+              subject: plain(f.subject) || undefined,
+              body_excerpt: plain(f.body).slice(0, 1500) || undefined,
+              model_id: aiModelId === '' ? undefined : Number(aiModelId),
+            })
+            if (rx.ok) {
+              all = all.concat(rx.changes || [])
+              if (rx.model) modelUsed = modelUsed || rx.model
+              if ((rx.chunk_errors || []).length) toast.error(`${att.original_name}: بخشی از قطعات خطا داشت`)
+            } else {
+              all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
+                title: `استخراج از «${att.original_name}» ناموفق`, detail: aiErrorText(rx.error),
+                severity: 'high', applicable: false })
+            }
+          } catch (e) {
+            all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
+              title: `استخراج از «${att.original_name}» ناموفق`, detail: parseApiError(e),
+              severity: 'high', applicable: false })
+          }
+        }
+        setExtracting2('')
+      }
       setAiRan(true)
-      setAiModelUsed(r.model || ''); setAiFactsUsed(!!r.facts_used)
-      if (!r.ok) { setAiError(aiErrorText(r.error)); setAiChanges([]); return }
-      setAiChanges(r.changes || [])
+      setAiModelUsed(modelUsed)
+      setAiChanges(all)
       // pre-tick every applicable change; notes are advisory (never applied)
       const checked: Record<string, boolean> = {}
-      for (const c of r.changes || []) checked[c.id] = !!c.applicable
+      for (const c of all) checked[c.id] = !!c.applicable
       setAiChecked(checked)
-      if (!(r.changes || []).length) toast.success('موردی برای اصلاح یافت نشد — نامه تمیز است ✓')
+      if (!all.length) toast.success('موردی برای اصلاح یافت نشد — نامه تمیز است ✓')
     } catch (e) { setAiError(parseApiError(e)); setAiRan(true) }
-    finally { setAiLoading(false) }
+    finally { setAiLoading(false); setExtracting2('') }
   }
   const aiErrorText = (err?: string) => {
     if (err === 'no_model') return 'هیچ مدلِ هوش مصنوعیِ فعالی پیکربندی نشده — از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن.'
@@ -405,12 +478,17 @@ export default function LetterPage() {
     const nf: any = { ...f }
     let applied = 0, notLocated = 0
     const appliedIds: string[] = []
-    // db_write items go to the DB via the server (not onto the letter).
+    // db_write/link items go to the DB via the server (not onto the letter).
     const dbItems: { id: string; account_no: string; customer_name: string; key: string; value: string }[] = []
+    const linkItems: { id: string; account_no: string; related_account: string; kind: string; reason: string }[] = []
     for (const ch of aiChanges) {
       if (!aiChecked[ch.id] || !ch.applicable) continue
       if (ch.op === 'db_write') {
         if (ch.account_no && ch.key) dbItems.push({ id: ch.id, account_no: ch.account_no, customer_name: ch.customer_name || '', key: ch.key, value: String(ch.value ?? ch.after ?? '') })
+        continue
+      }
+      if (ch.op === 'link') {
+        if (ch.account_no && ch.related_account) linkItems.push({ id: ch.id, account_no: ch.account_no, related_account: ch.related_account, kind: ch.kind || 'other', reason: ch.reason || ch.detail || '' })
         continue
       }
       if (!(ch.field in nf)) continue
@@ -427,22 +505,27 @@ export default function LetterPage() {
     if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
-    // Persist the approved extracted facts into the customer profile(s).
-    if (dbItems.length) {
+    // Persist the approved extracted facts + profile↔profile links.
+    if (dbItems.length || linkItems.length) {
       try {
-        const r = await letterAiApi.applyDb(dbItems.map(({ id, ...rest }) => rest))
+        const r = await letterAiApi.applyDb({
+          items: dbItems.map(({ id, ...rest }) => rest),
+          links: linkItems.map(({ id, ...rest }) => rest),
+          source_ref: letterId || '',
+        })
         const c = r.counts || { added: 0, updated: 0, skipped: 0, profiles_created: 0 }
         const parts: string[] = []
         if (c.added) parts.push(`${fa(c.added)} ثبتِ جدید`)
         if (c.updated) parts.push(`${fa(c.updated)} به‌روزرسانی`)
         if (c.profiles_created) parts.push(`${fa(c.profiles_created)} پروفایلِ نو`)
+        if (r.links_created) parts.push(`${fa(r.links_created)} لینکِ پروفایلی`)
         if (c.skipped) parts.push(`${fa(c.skipped)} تکراری/کهنه رد شد`)
         toast.success('در پایگاه‌داده: ' + (parts.join(' · ') || 'بدون تغییر') + ' — در لاگ‌ها ثبت شد')
-        appliedIds.push(...dbItems.map((d) => d.id))
+        appliedIds.push(...dbItems.map((d) => d.id), ...linkItems.map((d) => d.id))
       } catch (e) { toast.error('ثبت در پایگاه‌داده ناموفق: ' + parseApiError(e)) }
     }
 
-    if (!applied && !notLocated && !dbItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
+    if (!applied && !notLocated && !dbItems.length && !linkItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
     // drop applied rows; keep the rest so the user can iterate
     setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
   }
@@ -1256,6 +1339,12 @@ export default function LetterPage() {
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={openAi} className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} title="بازبینی و اصلاحِ هوشمندِ نامه با هوش مصنوعی — پیش از اعمال، فهرست را می‌بینی و تیک می‌زنی"><Sparkles size={15} /> دستیارِ هوشمند</button>
+          {hasAttachmentMode && (
+            <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
+              title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
+              📎 پیوست‌ها{letterAtts.length ? ` (${fa(letterAtts.length)})` : ''}
+            </button>
+          )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
           <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v16</span>
@@ -1281,6 +1370,35 @@ export default function LetterPage() {
               onPick={(o) => { loadLetter(o.value); setLetterQuery('') }} />
           </div>}
         </div>
+
+        {/* ---- Letter attachments panel (پیوست‌ها) — only when پیوست=دارد ---- */}
+        {hasAttachmentMode && attsOpen && (
+          <div className="ltr-controls no-print" style={{ marginTop: -4, borderColor: '#99f6e4', background: '#f0fdfa', display: 'block' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="ltr-hint" style={{ fontWeight: 700, color: '#0f766e' }}>پیوست‌های نامه</span>
+              <label className="ltr-btn" style={{ background: '#0d9488', cursor: 'pointer' }}>
+                {attUploading ? '⏳ در حال بارگذاری…' : '⬆ افزودن پیوست'}
+                <input type="file" className="hidden" style={{ display: 'none' }} disabled={attUploading}
+                  onChange={(e) => { uploadAtt(e.target.files?.[0]); e.currentTarget.value = '' }} />
+              </label>
+              {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
+              <span className="ltr-hint">فایل در Google Drive (پوشهٔ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
+            </div>
+            {letterAtts.length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {letterAtts.map((a) => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #ccfbf1', borderRadius: 8, padding: '5px 9px' }}>
+                    <span>📄</span>
+                    <b>{a.original_name}</b>
+                    <span className="ltr-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}{a.upload_date ? ` · ${a.upload_date}` : ''}</span>
+                    <a href={`/api/crm/attachments/${a.id}/download`} target="_blank" rel="noreferrer" style={{ color: '#0d9488', marginInlineStart: 'auto' }}>دانلود</a>
+                    <button onClick={() => deleteAtt(a.id, a.original_name)} style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>حذف</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {editing && eb && (
           <div className="pp no-print" style={ppPos ? { left: ppPos.x, top: ppPos.y, right: 'auto' } : undefined}>
@@ -1428,6 +1546,14 @@ export default function LetterPage() {
                         <span>{t.label}</span>
                       </label>
                     ))}
+                    {/* Deep attachment extraction — only offered when the letter actually has enclosures */}
+                    {hasAttachmentMode && letterAtts.length > 0 && (
+                      <label className={`lai-tool${aiSelTools.includes(ATT_TOOL) ? ' on' : ''}`} style={{ borderColor: '#5eead4' }}
+                        title="مانند صفحهٔ Import: همهٔ داده‌های مرتبط با موضوع نامه و همهٔ حساب‌های نام‌برده، کامل و بدون خلاصه‌سازی، استخراج و پس از تیکِ شما ثبت می‌شود">
+                        <input type="checkbox" checked={aiSelTools.includes(ATT_TOOL)} onChange={() => toggleTool(ATT_TOOL)} />
+                        <span>استخراجِ کامل از پیوست‌ها ({fa(letterAtts.length)})</span>
+                      </label>
+                    )}
                   </div>
 
                   <div className="lai-selbox">
@@ -1453,7 +1579,7 @@ export default function LetterPage() {
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
                     <button className="lai-run" onClick={runAi} disabled={aiLoading}>
-                      {aiLoading ? '⏳ در حالِ بررسی…' : <><Sparkles size={15} /> بررسیِ نامه</>}
+                      {aiLoading ? (extracting2 || '⏳ در حالِ بررسی…') : <><Sparkles size={15} /> بررسیِ نامه</>}
                     </button>
                     {(general || !acct.trim())
                       ? <span className="lai-hint">نامهٔ عمومی — بدونِ حقایقِ پایگاه‌داده (اعتبارسنجیِ مالی محدود است).</span>
@@ -1489,7 +1615,11 @@ export default function LetterPage() {
                           </div>
                           {/* db_write: show the resolved target customer + the field/value going to the DB */}
                           {c.op === 'db_write' && (
-                            <div className="lai-dbtarget">→ پروفایلِ <b>{c.customer_name || '—'}</b> <span dir="ltr">({c.account_no})</span>{!c.exists && <span className="lai-newprof"> پروفایلِ جدید ساخته می‌شود</span>}</div>
+                            <div className="lai-dbtarget">→ پروفایلِ <b>{c.customer_name || '—'}</b> <span dir="ltr">({c.account_no})</span>{!c.exists && <span className="lai-newprof"> پروفایلِ جدید ساخته می‌شود</span>}{c.source_file && <span className="lai-hint"> · از {c.source_file}</span>}</div>
+                          )}
+                          {/* link: profile↔profile relationship with its exact reason */}
+                          {c.op === 'link' && (
+                            <div className="lai-dbtarget">🔗 <b>{c.customer_name || c.account_no}</b> <span dir="ltr">({c.account_no})</span> ↔ <b>{c.related_name || c.related_account}</b> <span dir="ltr">({c.related_account})</span> — در هر دو پروفایل با ذکرِ علت ثبت می‌شود</div>
                           )}
                           {c.detail && <div className="lai-detail">{c.detail}</div>}
                           {c.applicable && (c.op === 'text_replace' || c.op === 'set_field') && (

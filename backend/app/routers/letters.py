@@ -146,6 +146,28 @@ async def update_letter(letter_id: str, payload: LetterSave, request: Request, d
     return out
 
 
+@router.get("/{letter_id}/attachments")
+async def list_letter_attachments(letter_id: str, db: AsyncSession = Depends(get_db)):
+    """The letter's uploaded enclosures (پیوست‌ها). Uploads go through the shared
+    /api/crm/attachments endpoint with facility_id=LTR-<letter id> — so the files
+    live in Drive (attachments/cust-<acc>/fac-LTR-<id>, traceable names) with a
+    disk fallback, AND automatically appear under the customer profile's
+    attachments (they're keyed by the same account_no)."""
+    from app.models.crm import Attachment
+
+    rows = (
+        await db.execute(
+            select(Attachment).where(Attachment.facility_id == f"LTR-{letter_id}")
+            .order_by(Attachment.upload_date.desc())
+        )
+    ).scalars().all()
+    return [{
+        "id": a.id, "account_no": a.account_no, "original_name": a.original_name,
+        "file_size": a.file_size, "upload_date": a.upload_date, "uploaded_by": a.uploaded_by,
+        "storage": "drive" if (a.drive_file_id or "") else "disk",
+    } for a in rows]
+
+
 @router.delete("/{letter_id}", status_code=204)
 async def delete_letter(letter_id: str, request: Request, db: AsyncSession = Depends(get_db), user=Depends(require_editor)):
     l = (await db.execute(select(Letter).where(Letter.id == letter_id, Letter.is_deleted == False))).scalar_one_or_none()  # noqa: E712
