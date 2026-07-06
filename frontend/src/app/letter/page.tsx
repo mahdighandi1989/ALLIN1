@@ -10,7 +10,7 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X } from 'lucide-react'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon } from 'lucide-react'
 import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
 import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
 import { LetterSummary } from '@/types'
@@ -290,7 +290,7 @@ export default function LetterPage() {
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
   const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
-  const [colRz, setColRz] = useState<{ top: number; height: number; left: number; width: number; hdrUid: string; bounds: { x: number; i: number }[] } | null>(null) // column-resize + table-edge handles
+  const [colRz, setColRz] = useState<{ top: number; height: number; left: number; width: number; hdrUid: string; bounds: { x: number; i: number }[]; rowBounds: { y: number; uid: string; topEdge?: boolean }[] } | null>(null) // column/row/edge resize handles
   const [dropInd, setDropInd] = useState<{ x: number; y: number; w: number } | null>(null) // drag-a-table drop line
   const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
@@ -403,6 +403,18 @@ export default function LetterPage() {
   const updateAttTable = (id: string, patch: Partial<AttTable>) =>
     setAttTables((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)))
   const removeAttTable = (id: string) => setAttTables((list) => list.filter((t) => t.id !== id))
+
+  // --- BEHIND-TEXT floats (Word's «پشتِ متن»): tables/images lifted OUT of the text
+  // flow onto a free layer UNDER the text of one letter page. They never affect
+  // pagination; position/size are absolute on the sheet. Stored in values_json. ---
+  type FloatObj = { id: string; kind: 'table' | 'image'; html: string; x: number; y: number; w: number; w0: number; page: number }
+  const [floats, setFloats] = useState<FloatObj[]>([])
+  const [floatSel, setFloatSel] = useState<string | null>(null)
+  const updateFloat = (id: string, patch: Partial<FloatObj>) =>
+    setFloats((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+  const removeFloat = (id: string) => { setFloats((list) => list.filter((x) => x.id !== id)); setFloatSel((v) => (v === id ? null : v)) }
+  const letterSheets = () => Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet)')) as HTMLElement[]
+  const letterCells = () => (Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))
   // Auto-size every attachment table: orientation by NATURAL width, then font
   // step-down if it's still too tall for one page.
   useEffect(() => {
@@ -688,6 +700,8 @@ export default function LetterPage() {
         // `fields: f` verbatim).
         setAttTables(Array.isArray(v.attTables) ? v.attTables.filter((t: any) => t && t.id && t.html) : [])
         delete v.attTables
+        setFloats(Array.isArray(v.floats) ? v.floats.filter((t: any) => t && t.id && t.html) : [])
+        delete v.floats
         // ALWAYS reflow the loaded body into flowing, justified paragraphs (idempotent
         // for already-well-formed text: a paragraph that ends in a terminator stays as
         // one paragraph; only hard-wrapped visual lines get merged). No manual step.
@@ -714,7 +728,7 @@ export default function LetterPage() {
     else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
-  const newLetter = () => { setLetterId(null); setTitle(''); setAttTables([]); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
+  const newLetter = () => { setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
     if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
@@ -727,7 +741,7 @@ export default function LetterPage() {
         id: letterId || undefined, account_no: general ? undefined : acct.trim(), general,
         title: title.trim() || pSubj || 'نامه', subject: pSubj,
         recipient_dept: pDept, recipient_manager: pMgr,
-        values: (attTables.length ? { ...f, attTables } : f) as any, layout: L, labels,
+        values: ((attTables.length || floats.length) ? { ...f, ...(attTables.length ? { attTables } : {}), ...(floats.length ? { floats } : {}) } : f) as any, layout: L, labels,
       })
       setLetterId(saved.id)
       toast.success(general ? 'نامه در «نامه‌های عمومی» ذخیره شد' : `نامه ذیلِ حسابِ ${acct.trim()} ذخیره شد`)
@@ -929,7 +943,13 @@ export default function LetterPage() {
     // fit-to-page; this lets the table shrink when its content is small.
     const bounds: { x: number; i: number }[] = [{ x: tr.left, i: -1 }, { x: tr.right, i: -2 }]
     for (let i = 0; i < t.rows[0].cells.length - 1; i++) bounds.push({ x: t.rows[0].cells[i].getBoundingClientRect().left, i })
-    setColRz({ top: tr.top, height: tr.height, left: tr.left, width: tr.width, hdrUid, bounds })
+    // horizontal boundaries: each row's BOTTOM edge drags that row's height; the
+    // table's TOP edge drags the first row (delta inverted)
+    const rowBounds: { y: number; uid: string; topEdge?: boolean }[] = []
+    const rows0 = Array.from(t.rows) as HTMLTableRowElement[]
+    if (rows0.length) rowBounds.push({ y: rows0[0].getBoundingClientRect().top, uid: rows0[0].getAttribute('data-r') || '', topEdge: true })
+    rows0.forEach((r) => rowBounds.push({ y: r.getBoundingClientRect().bottom, uid: r.getAttribute('data-r') || '' }))
+    setColRz({ top: tr.top, height: tr.height, left: tr.left, width: tr.width, hdrUid, bounds, rowBounds })
   }
   // ---- Drag a whole TABLE to a new position in the letter's text flow. The move
   //      happens between top-level blocks (paragraph boundaries) — nothing else on
@@ -972,7 +992,7 @@ export default function LetterPage() {
     }
     const frags = liveTablesFor(hdrUid).filter((t) => !t.closest('.attsheet'))
     if (!frags.length) return
-    const cells = Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]
+    const cells = letterCells()
     let target: { cell: HTMLElement; ref: Element | null } | null = null
     const mv = (ev: PointerEvent) => {
       target = null
@@ -1014,6 +1034,40 @@ export default function LetterPage() {
       target.cell.insertBefore(combined, ref)
       setF((prev) => ({ ...prev, body: cells.map((c) => c.innerHTML).join('') }))
       setTbl(null); setColRz(null)
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+  // Drag a row's bottom edge (or the table's top edge) to change that ROW's height.
+  // The height lands on the <tr> style (acts as a min-height — content can still
+  // grow past it), persisted by the row's stable data-r into body or attachment.
+  const startRowResize = (e: React.PointerEvent, uid: string, topEdge?: boolean) => {
+    e.preventDefault(); e.stopPropagation()
+    if (!uid) return
+    const live = document.querySelector(`#ltr-edit .bcell tr[data-r="${cssEsc(uid)}"]`) as HTMLTableRowElement | null
+    if (!live) return
+    const h0 = live.getBoundingClientRect().height
+    const startY = e.clientY
+    let hh = h0
+    const mv = (ev: PointerEvent) => {
+      const d = topEdge ? (startY - ev.clientY) : (ev.clientY - startY)
+      hh = Math.max(14, Math.round(h0 + d))
+      live.style.height = `${hh}px`
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      const applyH = (html: string): string | null => {
+        const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+        mergeAdjacentTables(scratch); normalizeTables(scratch)
+        const tr2 = scratch.querySelector(`tr[data-r="${cssEsc(uid)}"]`) as HTMLTableRowElement | null
+        if (!tr2) return null
+        tr2.style.height = `${hh}px`
+        return scratch.innerHTML
+      }
+      const nextBody = applyH(f.body)
+      if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
+      else for (const at of attTables) { const nh = applyH(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); break } }
+      const hdr = live.closest('table')?.rows[0]?.getAttribute('data-r') || ''
+      requestAnimationFrame(() => recomputeColRz(hdr))
     }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
@@ -1194,6 +1248,353 @@ export default function LetterPage() {
     setTblDlg(null); insertRangeRef.current = null
   }
 
+  // ---- Insert an IMAGE at the caret (like tables). The file is downscaled on a
+  //      canvas (data-URL kept letter-sized), wrapped in a uniform .imgcrop holder
+  //      (one model for resize AND crop), and dropped exactly where the caret was.
+  const imgFileRef = useRef<HTMLInputElement>(null)
+  const insertImageClick = () => {
+    const sl = window.getSelection()
+    insertRangeRef.current = sl && sl.rangeCount ? sl.getRangeAt(0).cloneRange() : null
+    imgFileRef.current?.click()
+  }
+  const downscaleImage = async (file: File): Promise<{ url: string; w: number; h: number }> => {
+    const raw = await new Promise<string>((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.onerror = rej; fr.readAsDataURL(file) })
+    const im = await new Promise<HTMLImageElement>((res, rej) => { const x = new window.Image(); x.onload = () => res(x); x.onerror = rej; x.src = raw })
+    const MAX = 1400
+    const k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight, 1))
+    if (k >= 1 && file.size < 500_000) return { url: raw, w: im.naturalWidth, h: im.naturalHeight }
+    const cv = document.createElement('canvas')
+    cv.width = Math.max(1, Math.round(im.naturalWidth * k)); cv.height = Math.max(1, Math.round(im.naturalHeight * k))
+    cv.getContext('2d')!.drawImage(im, 0, 0, cv.width, cv.height)
+    const png = file.type === 'image/png'
+    return { url: cv.toDataURL(png ? 'image/png' : 'image/jpeg', png ? undefined : 0.87), w: cv.width, h: cv.height }
+  }
+  const onImageFile = async (file?: File | null) => {
+    if (!file) return
+    try {
+      const d = await downscaleImage(file)
+      const dispW = Math.min(d.w, 380)
+      const dispH = Math.max(1, Math.round(dispW * d.h / Math.max(1, d.w)))
+      const html = `<div style="text-align:center;text-indent:0"><span class="imgcrop" data-im="${uid()}" style="width:${dispW}px;height:${dispH}px"><img src="${d.url}" style="width:${dispW}px;height:${dispH}px;margin:0px 0px"></span></div><div><br></div>`
+      const r = insertRangeRef.current
+      const host = r ? ((r.commonAncestorContainer.nodeType === 3 ? r.commonAncestorContainer.parentElement : (r.commonAncestorContainer as HTMLElement)) as HTMLElement | null)?.closest?.('.bcell') as HTMLElement | null : null
+      if (host && document.contains(host)) {
+        const sl = window.getSelection()
+        sl?.removeAllRanges(); try { sl?.addRange(r!) } catch { /* stale → append */ }
+        host.focus()
+        document.execCommand('insertHTML', false, html)
+      } else setF((prev) => ({ ...prev, body: (prev.body || '') + html }))
+      toast.success('تصویر درج شد — رویش کلیک کن: اندازه/کراپ/جابه‌جایی/پشتِ متن')
+    } catch { toast.error('خواندنِ تصویر ناموفق بود') }
+    finally { insertRangeRef.current = null }
+  }
+
+  // ---- IMAGE tools: click an image → toolbar + 8 handles. Resize mode scales the
+  //      window AND the image together; crop mode shrinks the window while margins
+  //      keep the image content anchored (Word-like). Everything persists by the
+  //      image's stable data-im, mirroring the tables' data-r pattern. ----
+  const [imgSel, setImgSel] = useState<string | null>(null)
+  const [imgCropMode, setImgCropMode] = useState(false)
+  const [imgRz, setImgRz] = useState<{ uid: string; x: number; y: number; w: number; h: number } | null>(null)
+  const liveImg = (id: string) => document.querySelector(`#ltr-edit .bcell .imgcrop[data-im="${cssEsc(id)}"]`) as HTMLElement | null
+  const recomputeImgRz = () => {
+    const el = imgSel ? liveImg(imgSel) : null
+    if (!el) { setImgRz(null); return }
+    const r = el.getBoundingClientRect()
+    setImgRz({ uid: imgSel as string, x: r.left, y: r.top, w: r.width, h: r.height })
+  }
+  useEffect(() => { recomputeImgRz() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [imgSel, f.body, attTables])
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement
+      if (t.closest?.('.img-bar, .img-hd')) return                       // toolbar/handles keep the selection
+      const wrap = t.closest?.('.imgcrop[data-im]') as HTMLElement | null
+      if (wrap && wrap.closest('#ltr-edit .bcell')) { setImgSel(wrap.getAttribute('data-im')); setImgCropMode(false); return }
+      setImgSel(null); setImgCropMode(false)
+    }
+    document.addEventListener('click', onClick)
+    return () => document.removeEventListener('click', onClick)
+  }, [])
+  useEffect(() => {
+    let raf = 0
+    const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(recomputeImgRz) }
+    window.addEventListener('scroll', onScroll, true)
+    return () => { window.removeEventListener('scroll', onScroll, true); cancelAnimationFrame(raf) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imgSel])
+  // read/write the wrapper+img geometry (all px)
+  const readImgGeom = (wrap: HTMLElement) => {
+    const img = wrap.querySelector('img') as HTMLImageElement | null
+    const px = (v: string) => parseFloat(v.replace('px', '')) || 0
+    return {
+      W: px(wrap.style.width) || wrap.getBoundingClientRect().width,
+      H: px(wrap.style.height) || wrap.getBoundingClientRect().height,
+      iw: img ? (px(img.style.width) || img.getBoundingClientRect().width) : 0,
+      ih: img ? (px(img.style.height) || img.getBoundingClientRect().height) : 0,
+      ml: img ? px(img.style.marginLeft) : 0,
+      mt: img ? px(img.style.marginTop) : 0,
+    }
+  }
+  const applyImgGeom = (wrap: HTMLElement, g: { W: number; H: number; iw: number; ih: number; ml: number; mt: number }) => {
+    wrap.style.width = `${Math.round(g.W)}px`; wrap.style.height = `${Math.round(g.H)}px`
+    const img = wrap.querySelector('img') as HTMLElement | null
+    if (img) {
+      img.style.width = `${Math.round(g.iw)}px`; img.style.height = `${Math.round(g.ih)}px`
+      img.style.marginLeft = `${Math.round(g.ml)}px`; img.style.marginTop = `${Math.round(g.mt)}px`
+    }
+  }
+  // persist a mutation on the image (located by data-im) into body or attachment
+  const persistImg = (id: string, mutate: (wrap: HTMLElement, doc: HTMLElement) => void): boolean => {
+    const run = (html: string): string | null => {
+      const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+      const wrap = scratch.querySelector(`.imgcrop[data-im="${cssEsc(id)}"]`) as HTMLElement | null
+      if (!wrap) return null
+      mutate(wrap, scratch)
+      return scratch.innerHTML
+    }
+    const nextBody = run(f.body)
+    if (nextBody != null) { setF((prev) => ({ ...prev, body: nextBody })); return true }
+    for (const at of attTables) { const nh = run(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); return true } }
+    return false
+  }
+  // one of the 8 handles: dir ∈ n,s,e,w,ne,nw,se,sw
+  const startImgHandle = (e: React.PointerEvent, dir: string) => {
+    e.preventDefault(); e.stopPropagation()
+    const id = imgSel; if (!id) return
+    const el = liveImg(id); if (!el) return
+    const g0 = readImgGeom(el)
+    const sx = e.clientX, sy = e.clientY
+    const crop = imgCropMode
+    let cur = { ...g0 }
+    const mv = (ev: PointerEvent) => {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy
+      const g = { ...g0 }
+      if (!crop) {
+        // RESIZE: sides stretch that dimension; corners scale proportionally
+        let W = g0.W, H = g0.H
+        if (dir.includes('e')) W = g0.W + dx
+        if (dir.includes('w')) W = g0.W - dx
+        if (dir.includes('n')) H = g0.H - dy
+        if (dir.includes('s')) H = g0.H + dy
+        if (dir.length === 2) { const k = Math.max(0.05, (dir.includes('e') || dir.includes('w')) ? W / g0.W : H / g0.H); W = g0.W * k; H = g0.H * k }
+        W = Math.max(24, W); H = Math.max(24, H)
+        const kx = W / g0.W, ky = H / g0.H
+        g.W = W; g.H = H; g.iw = g0.iw * kx; g.ih = g0.ih * ky; g.ml = g0.ml * kx; g.mt = g0.mt * ky
+      } else {
+        // CROP: the window shrinks/grows from that side; margins keep content anchored
+        let { W, H, ml, mt } = g0
+        if (dir.includes('w')) { W = g0.W - dx; ml = g0.ml - dx }
+        if (dir.includes('e')) { W = g0.W + dx }
+        if (dir.includes('n')) { H = g0.H - dy; mt = g0.mt - dy }
+        if (dir.includes('s')) { H = g0.H + dy }
+        W = Math.max(16, Math.min(W, g0.iw)); H = Math.max(16, Math.min(H, g0.ih))
+        ml = Math.max(W - g0.iw, Math.min(0, ml)); mt = Math.max(H - g0.ih, Math.min(0, mt))
+        g.W = W; g.H = H; g.ml = ml; g.mt = mt
+      }
+      cur = g
+      applyImgGeom(el, g)
+      recomputeImgRz()
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      persistImg(id, (wrap) => applyImgGeom(wrap, cur))
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+  // reset crop: window snaps back to the full (current-scale) image
+  const resetImgCrop = () => {
+    const id = imgSel; if (!id) return
+    persistImg(id, (wrap) => {
+      const g = readImgGeom(wrap)
+      applyImgGeom(wrap, { W: g.iw, H: g.ih, iw: g.iw, ih: g.ih, ml: 0, mt: 0 })
+    })
+  }
+  const alignImg = (ta: 'right' | 'center' | 'left') => {
+    const id = imgSel; if (!id) return
+    persistImg(id, (wrap) => {
+      const blk = wrap.closest('div,p') as HTMLElement | null
+      if (blk) { blk.style.textAlign = ta; blk.style.textIndent = '0' }
+    })
+  }
+  const deleteImg = () => {
+    const id = imgSel; if (!id) return
+    if (!confirm('حذفِ این تصویر؟')) return
+    persistImg(id, (wrap) => {
+      const blk = wrap.closest('div,p') as HTMLElement | null
+      wrap.remove()
+      if (blk && !(blk.textContent || '').trim() && !blk.querySelector('img,table')) blk.remove()
+    })
+    setImgSel(null)
+  }
+  // drag the image between paragraph boundaries (same drop indicator as tables)
+  const startImgMove = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    const id = imgSel; if (!id) return
+    const el = liveImg(id); if (!el) return
+    const cells = letterCells()
+    let target: { cell: HTMLElement; ref: Element | null } | null = null
+    const ownBlock = (c: HTMLElement) => { let n: HTMLElement | null = el; while (n && n.parentElement !== c) n = n.parentElement; return n }
+    const mv = (ev: PointerEvent) => {
+      target = null
+      for (const cell of cells) {
+        const r = cell.getBoundingClientRect()
+        if (ev.clientX < r.left - 40 || ev.clientX > r.right + 40 || ev.clientY < r.top || ev.clientY > r.bottom) continue
+        const own = ownBlock(cell)
+        const kids = (Array.from(cell.children) as HTMLElement[]).filter((k) => k !== own)
+        let ref: Element | null = null
+        let y = kids.length ? kids[kids.length - 1].getBoundingClientRect().bottom : r.top + 4
+        for (const k of kids) { const kr = k.getBoundingClientRect(); if (ev.clientY < kr.top + kr.height / 2) { ref = k; y = kr.top; break } }
+        target = { cell, ref }
+        setDropInd({ x: r.left, w: r.width, y })
+        break
+      }
+      if (!target) setDropInd(null)
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      setDropInd(null)
+      if (!target) return
+      // detach: if the image's block holds ONLY the image, move the whole block;
+      // otherwise pull the image out into its own centered block
+      const cellOfEl = el.closest('.bcell') as HTMLElement | null
+      let node: HTMLElement = el
+      if (cellOfEl) {
+        const own = (() => { let n: HTMLElement | null = el; while (n && n.parentElement !== cellOfEl) n = n.parentElement; return n })()
+        if (own && !(own.textContent || '').trim() && own.querySelectorAll('img').length === 1 && !own.querySelector('table')) node = own
+      }
+      let carrier: HTMLElement
+      if (node === el) { carrier = document.createElement('div'); carrier.style.cssText = 'text-align:center;text-indent:0'; carrier.appendChild(el) }
+      else carrier = node
+      let ref = target.ref
+      if (ref === carrier) ref = carrier.nextElementSibling
+      target.cell.insertBefore(carrier, ref)
+      setF((prev) => ({ ...prev, body: cells.map((c) => c.innerHTML).join('') }))
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+
+  // ---- Behind-text float interactions ----
+  const startFloatDrag = (e: React.PointerEvent, id: string) => {
+    e.preventDefault(); e.stopPropagation()
+    setFloatSel(id)
+    const el = document.querySelector(`[data-flt="${cssEsc(id)}"]`) as HTMLElement | null
+    const fl = floats.find((x) => x.id === id)
+    if (!el || !fl) return
+    const homeSheet = el.closest('.lsheet') as HTMLElement | null
+    if (!homeSheet) return
+    const homeTop = homeSheet.getBoundingClientRect().top, homeLeft = homeSheet.getBoundingClientRect().left
+    const sx = e.clientX, sy = e.clientY
+    let dx = 0, dy = 0
+    const mv = (ev: PointerEvent) => { dx = ev.clientX - sx; dy = ev.clientY - sy; el.style.transform = `translate(${dx}px, ${dy}px)` }
+    const up = (ev: PointerEvent) => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      el.style.transform = ''
+      const sheets = letterSheets()
+      let pi = Math.min(fl.page, sheets.length - 1)
+      // the sheet under the pointer wins (a float can hop to another letter page)
+      for (let i = 0; i < sheets.length; i++) { const r = sheets[i].getBoundingClientRect(); if (ev.clientY >= r.top && ev.clientY <= r.bottom) { pi = i; break } }
+      const tr = sheets[pi]?.getBoundingClientRect(); if (!tr) return
+      const elH = el.getBoundingClientRect().height
+      const nx = Math.max(0, Math.min(tr.width - fl.w, (homeLeft + fl.x + dx) - tr.left))
+      const ny = Math.max(0, Math.min(tr.height - Math.min(elH, tr.height), (homeTop + fl.y + dy) - tr.top))
+      updateFloat(id, { x: Math.round(nx), y: Math.round(ny), page: pi })
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+  const startFloatResize = (e: React.PointerEvent, id: string) => {
+    e.preventDefault(); e.stopPropagation()
+    const el = document.querySelector(`[data-flt="${cssEsc(id)}"]`) as HTMLElement | null
+    const fl = floats.find((x) => x.id === id)
+    if (!el || !fl) return
+    const rightX = el.getBoundingClientRect().right   // RTL: the right edge stays anchored
+    let w = fl.w
+    const mv = (ev: PointerEvent) => {
+      w = Math.max(60, Math.round(rightX - ev.clientX))
+      el.style.width = `${w}px`
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      updateFloat(id, { w, x: Math.max(0, Math.round(fl.x + (fl.w - w))) })
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+  // bring a float back INTO the text flow, at the block boundary nearest its position
+  const unfloat = (id: string) => {
+    const fl = floats.find((x) => x.id === id); if (!fl) return
+    const sheets = letterSheets()
+    const pi = Math.min(fl.page, sheets.length - 1)
+    const cell = (Array.from(sheets[pi]?.querySelectorAll('.bcell') || []) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))[0]
+    if (!cell) { toast.error('صفحهٔ مقصد پیدا نشد'); return }
+    const holder = document.createElement('div')
+    holder.innerHTML = fl.html
+    let node: HTMLElement
+    if (fl.kind === 'table') node = (holder.querySelector('table') as HTMLElement) || holder
+    else { holder.style.cssText = 'text-align:center;text-indent:0'; node = holder }
+    const sheetTop = sheets[pi].getBoundingClientRect().top
+    const targetY = sheetTop + fl.y
+    let ref: Element | null = null
+    for (const k of Array.from(cell.children)) { const kr = k.getBoundingClientRect(); if (targetY < kr.top + kr.height / 2) { ref = k; break } }
+    cell.insertBefore(node, ref)
+    setF((prev) => ({ ...prev, body: letterCells().map((c) => c.innerHTML).join('') }))
+    removeFloat(id)
+    toast.success('به داخلِ متن برگشت')
+  }
+  // «پشتِ متن» for the table under the caret (letter-body tables only)
+  const floatCurrentTable = () => {
+    const sl = window.getSelection(); if (!sl || !sl.rangeCount) return
+    const n = sl.anchorNode || sl.focusNode
+    const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
+    const liveTable = el?.closest('table') as HTMLTableElement | null
+    const hdrUid = liveTable?.rows[0]?.getAttribute('data-r') || ''
+    if (!liveTable || !hdrUid) return
+    if (liveTable.closest('.attsheet')) { toast('جدولِ پیوست صفحهٔ مستقلِ خودش را دارد'); return }
+    if (liveTable.closest('.lfloat')) { toast('این جدول همین حالا پشتِ متن است'); return }
+    const sheet = liveTable.closest('.lsheet') as HTMLElement | null
+    if (!sheet) return
+    const page = Math.max(0, letterSheets().indexOf(sheet))
+    // merge page-split fragments into one table html
+    const frags = liveTablesFor(hdrUid).filter((t) => !t.closest('.attsheet') && !t.closest('.lfloat'))
+    const combined = frags[0].cloneNode(true) as HTMLTableElement
+    const tb = combined.querySelector('tbody') || combined
+    for (let fi = 1; fi < frags.length; fi++) Array.from(frags[fi].rows).forEach((row, ri) => { if (ri === 0 && row.getAttribute('data-r') === hdrUid) return; tb.appendChild(row.cloneNode(true)) })
+    const r = frags[0].getBoundingClientRect(), sr = sheet.getBoundingClientRect()
+    const fid = uid()
+    setFloats((list) => [...list, { id: fid, kind: 'table', html: combined.outerHTML, x: Math.round(r.left - sr.left), y: Math.round(r.top - sr.top), w: Math.round(r.width), w0: Math.round(r.width), page }])
+    // remove from the flow
+    const rm = (html: string): string | null => {
+      const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+      mergeAdjacentTables(scratch); normalizeTables(scratch)
+      const tr2 = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
+      const table = tr2?.closest('table') as HTMLTableElement | null
+      if (!table) return null
+      table.remove()
+      return scratch.innerHTML
+    }
+    const nb = rm(f.body)
+    if (nb != null) setF((prev) => ({ ...prev, body: nb }))
+    setTbl(null); setColRz(null); setFloatSel(fid)
+    toast.success('جدول «پشتِ متن» شد — با دستگیرهٔ ⠿ بالای آن آزادانه جابه‌جایش کن')
+  }
+  // «پشتِ متن» for the selected image
+  const floatCurrentImg = () => {
+    const id = imgSel; if (!id) return
+    const el = liveImg(id); if (!el) return
+    if (el.closest('.attsheet')) { toast('تصویرِ داخلِ صفحهٔ پیوست پشتِ متن نمی‌شود'); return }
+    const sheet = el.closest('.lsheet') as HTMLElement | null
+    if (!sheet) return
+    const page = Math.max(0, letterSheets().indexOf(sheet))
+    const r = el.getBoundingClientRect(), sr = sheet.getBoundingClientRect()
+    const fid = uid()
+    setFloats((list) => [...list, { id: fid, kind: 'image', html: el.outerHTML, x: Math.round(r.left - sr.left), y: Math.round(r.top - sr.top), w: Math.round(r.width), w0: Math.round(r.width), page }])
+    persistImg(id, (wrap) => {
+      const blk = wrap.closest('div,p') as HTMLElement | null
+      wrap.remove()
+      if (blk && !(blk.textContent || '').trim() && !blk.querySelector('img,table')) blk.remove()
+    })
+    setImgSel(null); setFloatSel(fid)
+    toast.success('تصویر «پشتِ متن» شد — با دستگیرهٔ ⠿ بالای آن آزادانه جابه‌جایش کن')
+  }
+
   // ---- Reflow: merge hard-wrapped LINES (from PDF/line-broken pastes, or older saved
   //      letters) back into real flowing PARAGRAPHS so they justify like Word. A whole
   //      already-wrapping paragraph (one long block) is left untouched; the greeting,
@@ -1224,11 +1625,12 @@ export default function LetterPage() {
     const ends = (t: string) => /[.؟!:]\s*$/.test(t)
     for (const el of Array.from(doc.children)) {
       // never reflow structural blocks — keep tables & lists intact
-      if (/^(TABLE|UL|OL)$/.test(el.tagName) || el.querySelector('table,ul,ol')) { flush(); out.push(el.outerHTML); continue }
+      if (/^(TABLE|UL|OL)$/.test(el.tagName) || el.querySelector('table,ul,ol,img')) { flush(); out.push(el.outerHTML); continue }
       // split on <br> AND newlines (a pre-wrap block can hold \n line breaks too)
       const segs = (el as HTMLElement).innerHTML.split(/<br\s*\/?>|\r?\n/i)
       for (const seg of segs) {
         const t = seg.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
+        if (!t && /<img/i.test(seg)) { flush(); out.push(`<div>${seg}</div>`); continue }  // image-only line — keep it
         if (!t) { flush(); continue }                                   // blank line → paragraph break
         if (isDash(t)) { flush(); out.push(`<div>${seg}</div>`); continue }
         if (isGreet(t)) { flush(); out.push(`<div>${seg}</div>`); continue }
@@ -1243,9 +1645,17 @@ export default function LetterPage() {
   // one-time: make sure every table row in the body has a stable id (older saved letters
   // & fresh manual edits) so the table toolbar can find rows reliably.
   useEffect(() => {
-    if (!f.body || f.body.indexOf('<table') === -1) return
-    if (!/<tr(?![^>]*data-r)/i.test(f.body)) return
+    if (!f.body) return
+    const needRows = f.body.indexOf('<table') !== -1 && /<tr(?![^>]*data-r)/i.test(f.body)
+    const needImgs = /<img/i.test(f.body) && (() => { const d0 = document.createElement('div'); d0.innerHTML = f.body; return Array.from(d0.querySelectorAll('img')).some((im) => !(((im.closest('.imgcrop') as HTMLElement | null) || im).getAttribute('data-im'))) })()
+    if (!needRows && !needImgs) return
     const d = document.createElement('div'); d.innerHTML = f.body; normalizeTables(d)
+    // every image (or its crop wrapper) gets a stable id so the image toolbar can
+    // locate it in the body — the mirror of the tables' data-r
+    d.querySelectorAll('img').forEach((im) => {
+      const holder = (im.closest('.imgcrop') as HTMLElement | null) || im
+      if (!holder.getAttribute('data-im')) holder.setAttribute('data-im', uid())
+    })
     setF((s) => ({ ...s, body: d.innerHTML }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.body])
@@ -1582,6 +1992,43 @@ export default function LetterPage() {
     return st
   }
 
+  // Behind-text floats of one letter page: the visual layer sits FIRST inside the
+  // sheet (painted under everything); a selected float raises above the text so its
+  // table cells become editable. Controls (grip/resize/toolbar) render on top.
+  const floatsOf = (pi: number) => floats.filter((fl) => Math.min(Math.max(0, fl.page), pages.length - 1) === pi)
+  const floatLayer = (pi: number, editorMode: boolean) => floatsOf(pi).map((fl) => {
+    const seld = editorMode && floatSel === fl.id
+    return (
+      <div key={fl.id} {...(editorMode ? { 'data-flt': fl.id } : {})} className={`lfloat${seld ? ' seld' : ''}`}
+        style={{ left: fl.x, top: fl.y, width: fl.w, zIndex: seld ? 30 : 0 }}>
+        {fl.kind === 'image'
+          ? <div style={{ transform: `scale(${fl.w / Math.max(1, fl.w0)})`, transformOrigin: 'top left', width: fl.w0 }} dangerouslySetInnerHTML={{ __html: fl.html }} />
+          : (seld
+            ? <BodyCell html={fl.html} editable onChangeHtml={(h) => updateFloat(fl.id, { html: h })}
+                style={{ fontFamily: latin(L.body.font), fontSize: `${L.body.size}pt`, direction: 'rtl', lineHeight: 1.35, height: 'auto' }} />
+            : <div dangerouslySetInnerHTML={{ __html: fl.html }} />)}
+      </div>
+    )
+  })
+  const floatControls = (pi: number) => floatsOf(pi).map((fl) => {
+    const seld = floatSel === fl.id
+    return (
+      <span key={`fc-${fl.id}`}>
+        <button className="flt-grip no-print" title="پشتِ متن — کشیدن: جابه‌جاییِ آزاد؛ کلیک: ابزارها"
+          style={{ left: fl.x, top: Math.max(0, fl.y - 18) }} onPointerDown={(e) => startFloatDrag(e, fl.id)}>⠿</button>
+        {seld && <>
+          <button className="flt-grip no-print" title="تغییرِ اندازه (لبهٔ راست ثابت می‌ماند)" style={{ left: fl.x + 24, top: Math.max(0, fl.y - 18), cursor: 'nesw-resize' }}
+            onPointerDown={(e) => startFloatResize(e, fl.id)}>⇲</button>
+          <div className="flt-bar no-print" dir="rtl" style={{ left: fl.x, top: Math.max(0, fl.y - 46) }}>
+            <button onClick={() => unfloat(fl.id)}>بازگشت به متن</button>
+            <button onClick={() => { if (confirm('حذفِ این آیتمِ پشتِ متن؟')) removeFloat(fl.id) }}>حذف</button>
+            <button onClick={() => setFloatSel(null)}>بستن</button>
+          </div>
+        </>}
+      </span>
+    )
+  })
+
   // one attachment-table page in the EDITABLE view — text is never rotated: a
   // landscape page is simply a wider sheet on screen, so editing stays natural.
   const attEditorPage = (t: AttTable, i: number) => {
@@ -1634,6 +2081,8 @@ export default function LetterPage() {
     const isLast = pi === pages.length - 1
     return (
       <div className="lsheet" key={pi}>
+        {/* behind-text floats — painted first = under everything */}
+        {floatLayer(pi, true)}
         {/* header + footer + page number repeat on every page (editable on page 1, mirrored after) */}
         {pi === 0 ? <>{Box({ k: 'logo', children: <img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /> })}{Box({ k: 'name', children: <img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /> })}</>
           : <>{repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}</>}
@@ -1669,6 +2118,8 @@ export default function LetterPage() {
         {pi === 0
           ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(totalPageCount)}` })
           : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>)}
+        {/* float grips/toolbars — always on top, editor only */}
+        {floatControls(pi)}
       </div>
     )
   }
@@ -1678,6 +2129,7 @@ export default function LetterPage() {
     const isLast = pi === pages.length - 1
     return (
       <div className="psheet" key={pi}>
+        {floatLayer(pi, false)}
         {repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}
         {pi === 0 && <>
           {P('besmele', H(labels.besmele))}
@@ -1745,6 +2197,10 @@ export default function LetterPage() {
         .bcell td *,.bcell th *,.psheet td *,.psheet th *,.measure td *,.measure th *{text-indent:0!important;margin:0}
         .bcell th,.psheet th,.measure th{font-weight:700;text-align:center;background:#f3f4f6}
         .bcell img,.psheet img{max-width:100%}
+        /* uniform image holder: resize scales it, crop shrinks the window while the
+           inner img is offset by margins — the img may exceed the window on purpose */
+        .bcell .imgcrop,.psheet .imgcrop,.measure .imgcrop{display:inline-block;overflow:hidden;max-width:100%;vertical-align:middle}
+        .bcell .imgcrop img,.psheet .imgcrop img,.measure .imgcrop img{display:block;max-width:none!important}
         /* inline rich fields (labels + values) — bold/underline per selected word */
         #ltr-edit .rich{display:inline;outline:none;text-align:inherit;letter-spacing:inherit;white-space:normal;overflow-wrap:break-word}
         #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
@@ -1760,6 +2216,32 @@ export default function LetterPage() {
         .col-rz{position:fixed;width:6px;z-index:122;cursor:col-resize;background:transparent}
         .tbl-hmove{position:fixed;height:6px;z-index:122;cursor:ew-resize;background:transparent;border-radius:3px}
         .tbl-hmove:hover{background:rgba(15,118,110,.4)}
+        /* image selection: floating bar, sizing handles, outline */
+        .img-bar{position:fixed;transform:translate(-50%,-125%);z-index:124;display:flex;gap:2px;align-items:center;background:#334155;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .img-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 6px;border-radius:5px;cursor:pointer;font-size:12px;line-height:1;white-space:nowrap}
+        .img-bar button:hover{background:#475569}
+        .img-bar button.on{background:#0d9488}
+        .img-bar button.del:hover{background:#b91c1c}
+        .img-hd{position:fixed;width:10px;height:10px;background:#fff;border:2px solid #334155;border-radius:50%;z-index:125}
+        .img-hd.crop{border-color:#0d9488;border-radius:2px}
+        .img-outline{position:fixed;border:1.5px dashed #334155;z-index:120;pointer-events:none}
+        /* behind-text floats: painted under the text (DOM-first, z 0); selected one
+           raises so its cells are editable; controls live on top */
+        .lfloat{position:absolute;z-index:0}
+        .lfloat.seld{outline:2px dashed #7c3aed;background:#fff}
+        .lfloat table{width:100%!important;border-collapse:collapse;margin:0;table-layout:auto}
+        .lfloat td,.lfloat th{border:0.6px solid #222;padding:2px 5px;vertical-align:top;white-space:normal;overflow-wrap:break-word;line-height:1.35;text-indent:0!important}
+        .lfloat th{font-weight:700;text-align:center;background:#f3f4f6}
+        .lfloat .imgcrop{display:inline-block;overflow:hidden}
+        .lfloat .imgcrop img{display:block;max-width:none}
+        .lfloat .bcell{width:100%;height:auto;overflow:visible}
+        .flt-grip{position:absolute;z-index:40;width:22px;height:17px;font-size:11px;line-height:1;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;border-radius:5px;cursor:grab;padding:0}
+        .flt-grip:hover{background:#e0e7ff}
+        .flt-bar{position:absolute;z-index:42;display:flex;gap:3px;background:#312e81;border-radius:7px;padding:3px 5px;white-space:nowrap}
+        .flt-bar button{border:0;background:transparent;color:#fff;font-size:11.5px;border-radius:4px;padding:2px 8px;cursor:pointer}
+        .flt-bar button:hover{background:#4338ca}
+        .row-rz{position:fixed;height:5px;z-index:121;cursor:row-resize;background:transparent}
+        .row-rz:hover{background:rgba(15,118,110,.4)}
         .col-rz:hover{background:rgba(15,118,110,.45)}
         .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
         .tbl-bar button:hover{background:#115e59}
@@ -1907,6 +2389,9 @@ export default function LetterPage() {
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
+          <button onClick={insertImageClick} className="ltr-btn gray" title="درجِ تصویر در محلِ نشانگر — بعد از درج با کلیک روی تصویر: اندازه، کراپ، جابه‌جایی و «پشتِ متن»"><ImageIcon size={14} /> تصویر</button>
+          <input ref={imgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={(e) => { onImageFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
           <button onClick={openAi} className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} title="بازبینی و اصلاحِ هوشمندِ نامه با هوش مصنوعی — پیش از اعمال، فهرست را می‌بینی و تیک می‌زنی"><Sparkles size={15} /> دستیارِ هوشمند</button>
           {hasAttachmentMode && (
             <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
@@ -1916,7 +2401,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v18</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v19</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2048,6 +2533,7 @@ export default function LetterPage() {
         {tbl && (
           <div className="tbl-bar no-print" style={{ left: tbl.x, top: tbl.y }} onMouseDown={(e) => e.preventDefault()}>
             <button title="جابه‌جاییِ جدول در متن — بگیر و بکش، بینِ بندها رها کن" style={{ cursor: 'grab', fontSize: 14 }} onPointerDown={startTableDrag}>⠿</button>
+            <button title="پشتِ متن (مثل Word): جدول از جریانِ متن جدا و آزادانه روی صفحه، زیرِ متن‌ها و فیلدها، جابه‌جا می‌شود" onClick={floatCurrentTable}>پشتِ متن</button>
             <span className="sep2" />
             <button title="توپُر" style={{ fontWeight: 700 }} onClick={() => document.execCommand('bold')}>B</button>
             <button title="کج" style={{ fontStyle: 'italic' }} onClick={() => document.execCommand('italic')}>I</button>
@@ -2087,6 +2573,36 @@ export default function LetterPage() {
           <div className="tbl-hmove no-print" style={{ left: colRz.left, top: colRz.top - 7, width: colRz.width }}
             title="کشیدن به چپ/راست برای جابه‌جاییِ افقیِ جدول (وقتی جدول کوچک‌تر از عرضِ صفحه است)" onPointerDown={startTableHMove} />
         )}
+        {/* ---- image toolbar + 8 resize/crop handles (shown when an image is selected) ---- */}
+        {imgRz && !design && (
+          <div className="img-bar no-print" dir="rtl" style={{ left: imgRz.x + imgRz.w / 2, top: imgRz.y }} onMouseDown={(e) => e.preventDefault()}>
+            <button title="جابه‌جاییِ تصویر در متن — بگیر و بینِ بندها رها کن" style={{ cursor: 'grab' }} onPointerDown={startImgMove}>⠿</button>
+            <span className="sep2" />
+            <button className={imgCropMode ? 'on' : ''} title="حالتِ کراپ: لبه‌ها پنجرهٔ برش را جابه‌جا می‌کنند" onClick={() => setImgCropMode((v) => !v)}>✂ کراپ</button>
+            <button title="بازنشانیِ کراپ (نمایشِ کاملِ تصویر)" onClick={resetImgCrop}>↺</button>
+            <span className="sep2" />
+            <button title="راست‌چین" onClick={() => alignImg('right')}>≡▸</button>
+            <button title="وسط‌چین" onClick={() => alignImg('center')}>≡▾</button>
+            <button title="چپ‌چین" onClick={() => alignImg('left')}>◂≡</button>
+            <span className="sep2" />
+            <button title="پشتِ متن (مثل Word): تصویر آزادانه روی صفحه، زیرِ متن‌ها" onClick={floatCurrentImg}>پشتِ متن</button>
+            <span className="sep2" />
+            <button className="del" title="حذفِ تصویر" onClick={deleteImg}>حذف</button>
+          </div>
+        )}
+        {imgRz && !design && (['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((d) => {
+          const cx = d.includes('w') ? imgRz.x : d.includes('e') ? imgRz.x + imgRz.w : imgRz.x + imgRz.w / 2
+          const cy = d.includes('n') ? imgRz.y : d.includes('s') ? imgRz.y + imgRz.h : imgRz.y + imgRz.h / 2
+          const cur = d === 'n' || d === 's' ? 'ns-resize' : d === 'e' || d === 'w' ? 'ew-resize' : (d === 'ne' || d === 'sw') ? 'nesw-resize' : 'nwse-resize'
+          return <div key={d} className={`img-hd no-print${imgCropMode ? ' crop' : ''}`} style={{ left: cx - 5, top: cy - 5, cursor: cur }} onPointerDown={(e) => startImgHandle(e, d)} />
+        })}
+        {imgRz && !design && <div className="img-outline no-print" style={{ left: imgRz.x, top: imgRz.y, width: imgRz.w, height: imgRz.h }} />}
+
+        {/* horizontal strips at each row boundary (+ table top): drag to change ROW heights */}
+        {colRz && !design && colRz.rowBounds.map((rb, k) => (
+          <div key={`r${k}`} className="row-rz no-print" style={{ left: colRz.left, top: rb.y - 2, width: colRz.width }}
+            title="کشیدن برای کم/زیادکردنِ ارتفاعِ ردیف" onPointerDown={(e) => startRowResize(e, rb.uid, rb.topEdge)} />
+        ))}
 
         {/* hidden measurers — body height/pagination and subject width (for the separator) */}
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
