@@ -32,10 +32,11 @@ export type WordExportArgs = {
 }
 
 const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0))
-// LTR-ISOLATE a purely Latin/numeric value (serial, date, phone ext) so Word's
-// bidi never flips its segment order inside an RTL paragraph — the exact mirror
-// of the dir="ltr" spans the letter page itself uses.
-const ltr = (t: string) => `\u2066${t}\u2069`
+// Guard a purely Latin/numeric value (serial, date, phone ext) with LRM marks —
+// Word's own zero-width bidi marks — so its segment order never flips inside an
+// RTL paragraph. (U+2066/2069 isolates would be more precise, but Word renders
+// them as visible LRI/PDI boxes; LRM is invisible and is what Word itself uses.)
+const ltr = (t: string) => `\u200E${t}\u200E`
 // NB: per-run rightToLeft is an OVERRIDE in Word — putting it on mixed runs
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
