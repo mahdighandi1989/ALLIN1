@@ -723,10 +723,12 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
+  // table_replace only — 1-based index into the tables[] sent with analyze + the sanitized new HTML
+  table_index?: number; html?: string
   // db_write only — the extracted profile fact + its resolved target customer
   account_no?: string; customer_name?: string; key?: string; value?: string
   action?: 'add' | 'update'; resolution?: string; exists?: boolean
@@ -740,7 +742,7 @@ export const letterAiApi = {
     const { data } = await api.get('/api/letter-ai/models')
     return data
   },
-  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
+  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; tables?: string[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
     const { data } = await api.post('/api/letter-ai/analyze', body)
     return data
   },

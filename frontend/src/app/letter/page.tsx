@@ -339,6 +339,32 @@ export default function LetterPage() {
   const [aiSelAtts, setAiSelAtts] = useState<Record<string, boolean>>({})
   const attSelected = (id: string) => aiSelAtts[id] !== false   // default: selected
   const selectedAttCount = letterAtts.filter((a) => attSelected(a.id)).length
+
+  // --- Tables tool: enumerate the letter's tables (across all pages — the body
+  // is the single source of truth) so the user picks WHICH ones the AI works on.
+  // Each table is identified by its header row's stable data-r uid.
+  type BodyTable = { uid: string; html: string; label: string }
+  const getBodyTables = (): BodyTable[] => {
+    if (!f.body || f.body.indexOf('<table') === -1) return []
+    const d = document.createElement('div')
+    d.innerHTML = normalizeBodyHtml(f.body)
+    mergeAdjacentTables(d)
+    normalizeTables(d)
+    return (Array.from(d.querySelectorAll('table')) as HTMLTableElement[]).map((t, i) => {
+      const rows = t.rows.length, cols = t.rows[0]?.cells.length || 0
+      const first = (t.rows[0]?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+      return {
+        uid: t.rows[0]?.getAttribute('data-r') || `t${i}`,
+        html: t.outerHTML,
+        label: `جدول ${fa(i + 1)} — ${fa(rows)}×${fa(cols)}${first ? ` («${first}…»)` : ''}`,
+      }
+    })
+  }
+  const [aiSelTables, setAiSelTables] = useState<Record<string, boolean>>({})
+  const tblSelected = (uid: string) => aiSelTables[uid] !== false   // default: selected
+  // uid list of the tables actually SENT with the last analyze (index → uid),
+  // so table_replace results can be applied to the exact right table.
+  const sentTableUidsRef = useRef<string[]>([])
   const loadAtts = async (id: string | null) => {
     if (!id) { setLetterAtts([]); return }
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
@@ -417,12 +443,17 @@ export default function LetterPage() {
       const letterTools = aiSelTools.filter((t) => t !== ATT_TOOL)
       let all: LetterAiChange[] = []
       let modelUsed = ''
+      // Send the user-picked tables (full HTML) when the tables tool is on —
+      // the model gets full control over exactly these, nothing else.
+      const pickedTables = letterTools.includes('tables') ? getBodyTables().filter((t) => tblSelected(t.uid)) : []
+      sentTableUidsRef.current = pickedTables.map((t) => t.uid)
       if (letterTools.length) {
         const r = await letterAiApi.analyze({
           account_no: general ? undefined : (acct.trim() || undefined),
           fields: f, tools: letterTools,
           instruction: aiInstruction.trim() || undefined,
           selections: aiSelections.length ? aiSelections : undefined,
+          tables: pickedTables.length ? pickedTables.map((t) => t.html) : undefined,
           model_id: aiModelId === '' ? undefined : Number(aiModelId),
         })
         setAiFactsUsed(!!r.facts_used)
@@ -499,6 +530,27 @@ export default function LetterPage() {
       }
       if (ch.op === 'link') {
         if (ch.account_no && ch.related_account) linkItems.push({ id: ch.id, account_no: ch.account_no, related_account: ch.related_account, kind: ch.kind || 'other', reason: ch.reason || ch.detail || '' })
+        continue
+      }
+      if (ch.op === 'table_replace') {
+        // Replace the EXACT table the user selected (uid-mapped from the list
+        // sent with analyze). HTML was whitelist-sanitized server-side.
+        const uid = ch.table_index != null ? sentTableUidsRef.current[ch.table_index - 1] : undefined
+        if (!uid || !ch.html) { notLocated++; continue }
+        const d = document.createElement('div')
+        d.innerHTML = normalizeBodyHtml(nf.body || '')
+        mergeAdjacentTables(d); normalizeTables(d)
+        const hdr = d.querySelector(`tr[data-r="${cssEsc(uid)}"]`)
+        const tbl = hdr?.closest('table')
+        if (!tbl) { notLocated++; continue }
+        const wrap = document.createElement('div')
+        wrap.innerHTML = ch.html
+        const newTbl = wrap.querySelector('table')
+        if (!newTbl) { notLocated++; continue }
+        normalizeTables(wrap)   // stable data-r ids for the new rows (toolbar/pagination)
+        tbl.replaceWith(newTbl)
+        nf.body = d.innerHTML
+        applied++; appliedIds.push(ch.id)
         continue
       }
       if (!(ch.field in nf)) continue
@@ -1243,6 +1295,10 @@ export default function LetterPage() {
         .lai-attrow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#134e4a;cursor:pointer}
         .lai-attrow input{accent-color:#0d9488}
         .lai-attname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;font-weight:600}
+        .lai-tblprev{margin-top:7px;max-height:180px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;padding:6px;background:#fff;font-size:11px}
+        .lai-tblprev table{width:100%;border-collapse:collapse}
+        .lai-tblprev td,.lai-tblprev th{border:0.6px solid #94a3b8;padding:2px 5px;vertical-align:top}
+        .lai-tblprev th{background:#f1f5f9;font-weight:700}
         .lai-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
         .lai-chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #c7d2fe;border-radius:20px;padding:2px 4px 2px 9px;font-size:11.5px;color:#3730a3;max-width:100%}
         .lai-chiptext{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}
@@ -1572,6 +1628,31 @@ export default function LetterPage() {
                     )}
                   </div>
 
+                  {/* Which tables the AI works on — pick exactly the ones you mean */}
+                  {aiSelTools.includes('tables') && (() => { const bt = getBodyTables(); return bt.length > 0 ? (
+                    <div className="lai-attpick" style={{ background: '#fefce8', borderColor: '#fde68a' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span className="lai-lbl">کدام جدول‌ها بررسی/اصلاح شوند؟ ({fa(bt.filter((t) => tblSelected(t.uid)).length)} از {fa(bt.length)})</span>
+                        <span style={{ display: 'flex', gap: 6 }}>
+                          <button className="lai-mini" onClick={() => setAiSelTables({})}>همه</button>
+                          <button className="lai-mini" onClick={() => { const off: Record<string, boolean> = {}; bt.forEach((t) => { off[t.uid] = false }); setAiSelTables(off) }}>هیچ‌کدام</button>
+                        </span>
+                      </div>
+                      {bt.map((t) => (
+                        <label key={t.uid} className="lai-attrow">
+                          <input type="checkbox" checked={tblSelected(t.uid)}
+                            onChange={(e) => setAiSelTables((s) => ({ ...s, [t.uid]: e.target.checked }))} />
+                          <span className="lai-attname" style={{ maxWidth: 320 }}>▦ {t.label}</span>
+                        </label>
+                      ))}
+                      <div className="lai-selhint" style={{ color: '#92400e' }}>
+                        اگر در «دستورِ اختصاصی» خواسته‌ای دربارهٔ جدول بنویسی، هوش مصنوعی همان جدول(های)
+                        انتخاب‌شده را همه‌جانبه (ساختار + محتوا + چیدمان) بازطراحی می‌کند؛ بدونِ دستور،
+                        فقط بررسیِ پیش‌فرض (گزارشِ ناهماهنگی + اصلاحِ جزئی) انجام می‌شود.
+                      </div>
+                    </div>
+                  ) : null })()}
+
                   {/* Which attachments to extract — pick exactly the ones you need */}
                   {aiSelTools.includes(ATT_TOOL) && letterAtts.length > 0 && (
                     <div className="lai-attpick">
@@ -1672,6 +1753,10 @@ export default function LetterPage() {
                               {c.action === 'update' && <><span className="lai-before">{c.before || '—'}</span><span className="lai-arrow">←</span></>}
                               <span className="lai-after">{c.value || c.after || '—'}</span>
                             </div>
+                          )}
+                          {/* table_replace: live preview of the redesigned table (server-sanitized HTML) */}
+                          {c.op === 'table_replace' && c.html && (
+                            <div className="lai-tblprev" dir="rtl" dangerouslySetInnerHTML={{ __html: c.html }} />
                           )}
                         </div>
                       ))}

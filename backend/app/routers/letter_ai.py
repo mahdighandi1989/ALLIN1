@@ -54,6 +54,7 @@ class AnalyzeRequest(BaseModel):
     instruction: str = ""
     selection: str = ""                                    # back-compat (single)
     selections: List[str] = Field(default_factory=list)    # the gathered snippets
+    tables: List[str] = Field(default_factory=list)        # user-selected tables' HTML
     model_id: Optional[int] = None
 
 
@@ -115,6 +116,7 @@ async def analyze(
         payload.fields or {}, facts, tools,
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
+        tables=(payload.tables or []) if "tables" in tools else [],
     )
 
     result = await inference.complete(
@@ -134,7 +136,10 @@ async def analyze(
             "facts_used": bool(facts),
         }
 
-    changes = la.parse_and_validate(result.get("text") or "", payload.fields or {})
+    changes = la.parse_and_validate(
+        result.get("text") or "", payload.fields or {},
+        tables_count=(len(payload.tables or []) if "tables" in tools else 0),
+    )
 
     # When the extract-to-DB tool is on, stage the model's db_write proposals
     # against the live database (resolve target customer + add/update/skip). These
