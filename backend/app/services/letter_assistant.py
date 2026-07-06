@@ -104,6 +104,113 @@ TOOLS: Dict[str, Dict[str, str]] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Table HTML sanitizer — the ONLY way model-authored HTML ever reaches the
+# letter. op="table_replace" lets the model redesign a user-selected table in
+# EVERY way (structure + content + basic styling), so the returned HTML must be
+# strictly whitelisted: table tags + basic inline emphasis, colspan/rowspan and
+# a small set of safe style properties. Everything else (scripts, handlers,
+# links, images, unknown tags/attrs) is dropped.
+# ---------------------------------------------------------------------------
+_TBL_ALLOWED_TAGS = {"table", "thead", "tbody", "tfoot", "tr", "td", "th",
+                     "colgroup", "col", "caption", "b", "strong", "i", "em",
+                     "u", "s", "br", "span", "div", "p"}
+_TBL_VOID_TAGS = {"br", "col"}
+_TBL_STYLE_PROPS = {"text-align", "font-weight", "font-style", "text-decoration",
+                    "width", "vertical-align", "line-height", "font-size",
+                    "direction", "background"}
+MAX_TABLES = 8
+
+
+def _clean_style(style: str) -> str:
+    parts = []
+    for decl in (style or "").split(";"):
+        if ":" not in decl:
+            continue
+        prop, val = decl.split(":", 1)
+        prop, val = prop.strip().lower(), val.strip()
+        if prop in _TBL_STYLE_PROPS and "url(" not in val.lower() and "expression" not in val.lower():
+            parts.append(f"{prop}:{val}")
+    return ";".join(parts)
+
+
+def sanitize_table_html(html: str) -> str:
+    """Whitelist-rebuild a <table> fragment. Returns '' when it isn't one."""
+    from html.parser import HTMLParser
+
+    src = (html or "").strip()
+    if not src.lower().startswith("<table"):
+        return ""
+
+    class _S(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.out: List[str] = []
+            self.depth = 0          # open allowed tags
+            self.skip = 0           # inside a disallowed tag
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in _TBL_ALLOWED_TAGS:
+                # HTML void elements (img, input, hr, …) never get an end tag —
+                # entering skip-mode for them would swallow the REST of the cell.
+                if tag not in ("img", "input", "hr", "meta", "link", "area", "base",
+                               "embed", "source", "track", "wbr"):
+                    self.skip += 1
+                return
+            if self.skip:
+                return
+            keep = []
+            for k, v in attrs:
+                k = k.lower()
+                if k in ("colspan", "rowspan") and str(v or "").isdigit():
+                    keep.append(f'{k}="{v}"')
+                elif k == "style":
+                    cs = _clean_style(v or "")
+                    if cs:
+                        keep.append(f'style="{cs}"')
+            self.out.append(f"<{tag}{(' ' + ' '.join(keep)) if keep else ''}>")
+            if tag not in _TBL_VOID_TAGS:
+                self.depth += 1
+
+        def handle_startendtag(self, tag, attrs):
+            if tag in _TBL_VOID_TAGS and not self.skip:
+                self.out.append(f"<{tag}>")
+
+        def handle_endtag(self, tag):
+            if tag not in _TBL_ALLOWED_TAGS:
+                if self.skip:
+                    self.skip -= 1
+                return
+            if self.skip or tag in _TBL_VOID_TAGS:
+                return
+            if self.depth > 0:
+                self.out.append(f"</{tag}>")
+                self.depth -= 1
+
+        def handle_data(self, data):
+            if not self.skip and data:
+                self.out.append(_html.escape(_html.unescape(data)))
+
+        def handle_entityref(self, name):
+            if not self.skip:
+                self.out.append(f"&{name};")
+
+        def handle_charref(self, name):
+            if not self.skip:
+                self.out.append(f"&#{name};")
+
+    s = _S()
+    try:
+        s.feed(src)
+        s.close()
+    except Exception:
+        return ""
+    cleaned = "".join(s.out)
+    if not cleaned.lower().startswith("<table") or "<tr" not in cleaned.lower():
+        return ""
+    return cleaned[:60000]
+
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t ]+")
 
@@ -213,7 +320,10 @@ SYSTEM_PROMPT = (
     "3) op یکی از این‌هاست: \"text_replace\" (جایگزینیِ جراحی‌وارِ یک عبارتِ موجود)، "
     "\"set_field\" (جایگزینیِ کاملِ یک فیلدِ کوتاه)، \"note\" (فقط تذکر، بدونِ اعمال)، و — "
     "فقط اگر ابزارِ استخراج فعال باشد — \"db_write\" (ثبتِ یک واقعیتِ پروفایلی برای یک مشتری، "
-    "با کلیدهای account_no/customer_name/key/value).\n"
+    "با کلیدهای account_no/customer_name/key/value)؛ و فقط اگر «جدول‌های انتخاب‌شده» به تو داده "
+    "شده باشد — \"table_replace\" (بازطراحیِ کاملِ یکی از همان جدول‌ها: کلیدهای table_index "
+    "(شمارهٔ جدول در فهرستِ داده‌شده، از 1) و html (HTML کاملِ جدولِ جدید، فقط تگ‌های جدول/"
+    "تأکیدِ ساده، بدون script/link/img)).\n"
     "4) برای op=text_replace، مقدارِ find باید «عیناً» از متنِ فعلیِ همان فیلد کپی شود (کاراکتر‌به‌کاراکتر) "
     "تا قابلِ یافتن باشد؛ کوتاه و یکتا نگه‌اش دار. اگر مطمئن نیستی عبارت دقیقاً وجود دارد، به‌جای آن note بده.\n"
     "5) op=set_field فقط برای فیلدهای کوتاه مجاز است، نه برای body.\n"
@@ -230,7 +340,8 @@ MAX_SELECTIONS = 12
 
 def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List[str],
                       instruction: str = "", selection: str = "",
-                      selections: Optional[List[str]] = None) -> str:
+                      selections: Optional[List[str]] = None,
+                      tables: Optional[List[str]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -271,6 +382,29 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
         for i, s in enumerate(items, 1):
             parts.append(f"{i}. «{s}»")
 
+    # The user's SELECTED tables (raw HTML) — full AI control over these only.
+    tbls = [t for t in (tables or []) if (t or "").strip()][:MAX_TABLES]
+    if tbls:
+        parts.append(
+            "\n### جدول‌های انتخاب‌شده توسطِ کاربر (HTML فعلی — شماره‌ها برای table_index):"
+        )
+        for i, t in enumerate(tbls, 1):
+            parts.append(f"[جدول {i}]\n{t[:20000]}")
+        parts.append(
+            "قواعدِ کار با جدول‌های انتخاب‌شده:\n"
+            "- اگر «دستورِ اختصاصیِ کاربر» خواسته‌ای دربارهٔ جدول(ها) دارد، آن را کامل و همه‌جانبه "
+            "اجرا کن — ساختاری و محتوایی هر دو: افزودن/حذف/ادغامِ سطر و ستون، تغییرِ چیدمان، "
+            "سرستون، ترازبندی، عرضِ ستون‌ها (style)، مرتب‌سازی، تفکیک/ترکیبِ جدول‌ها — با یک "
+            "op=\"table_replace\" برای هر جدولِ تغییرکرده (table_index از فهرستِ بالا؛ html کاملِ "
+            "جدولِ جدید). محتوای واقعیِ داده‌ها را بدونِ دستورِ صریح تغییر نده و هیچ داده‌ای را "
+            "از خودت نساز.\n"
+            "- اگر دستورِ کاربر بخش‌های غیرمرتبط با جدول هم دارد، آن‌ها را جداگانه با opهای "
+            "معمول (text_replace/set_field/note) پوشش بده — هیچ بخشی از دستور بی‌پاسخ نماند.\n"
+            "- اگر دستورِ اختصاصی خالی است یا ربطی به جدول ندارد، table_replace نده؛ همان "
+            "رفتارِ پیش‌فرضِ ابزارِ جداول را انجام بده (ناهماهنگی‌ها به‌صورت note، اصلاحِ "
+            "محتواییِ جزئی با text_replace)."
+        )
+
     if instruction.strip():
         parts.append("\n### دستورِ اختصاصیِ کاربر:")
         parts.append(instruction.strip()[:2000])
@@ -279,7 +413,8 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     return "\n".join(parts)
 
 
-def parse_and_validate(raw_text: str, fields: Dict[str, Any]) -> List[Dict[str, Any]]:
+def parse_and_validate(raw_text: str, fields: Dict[str, Any],
+                       tables_count: int = 0) -> List[Dict[str, Any]]:
     """Parse the model's JSON reply and keep ONLY changes that are safe to apply.
 
     The hallucination guard: a ``text_replace`` is dropped unless its ``find`` is
@@ -326,6 +461,28 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any]) -> List[Dict[str, 
 
         if op == "note":
             item["applicable"] = False
+            out.append(item)
+            continue
+
+        if op == "table_replace":
+            # Full redesign of ONE user-selected table. Valid only when tables
+            # were actually provided; the HTML must survive the whitelist
+            # sanitizer (scripts/handlers/links/images never reach the letter).
+            try:
+                ti = int(ch.get("table_index"))
+            except (TypeError, ValueError):
+                continue
+            if not (1 <= ti <= tables_count):
+                continue
+            clean = sanitize_table_html(str(ch.get("html") or ""))
+            if not clean:
+                continue
+            item["field"] = BODY_FIELD
+            item["table_index"] = ti
+            item["html"] = clean
+            item["before"] = f"جدول {ti} (نسخهٔ فعلی)"
+            item["after"] = "نسخهٔ بازطراحی‌شده — پیش‌نمایش زیر"
+            item["applicable"] = True
             out.append(item)
             continue
 

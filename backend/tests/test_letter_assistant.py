@@ -152,3 +152,54 @@ def test_build_user_prompt_enumerates_multiple_selections():
 def test_build_user_prompt_merges_legacy_selection_with_list():
     p = la.build_user_prompt(FIELDS, {}, ["validation"], selection="عبارتِ قدیمی", selections=["عبارتِ نو"])
     assert "عبارتِ قدیمی" in p and "عبارتِ نو" in p
+
+
+# ---------------- table_replace (full AI table redesign, sanitized) ----------------
+
+def test_sanitize_table_html_whitelists():
+    dirty = ('<table onclick="x()"><tr data-r="r1" style="color:red;text-align:center">'
+             '<th style="width:30%;background:#eee">A</th>'
+             '<td colspan="2">v<script>alert(1)</script></td>'
+             '<td><a href="http://evil">link</a><img src=x onerror=y><b>ok</b></td></tr></table>')
+    clean = la.sanitize_table_html(dirty)
+    assert clean.startswith("<table>")
+    assert "script" not in clean and "onclick" not in clean and "img" not in clean and "href" not in clean
+    assert 'colspan="2"' in clean
+    assert "width:30%" in clean and "background:#eee" in clean
+    assert "color:red" not in clean and "text-align:center" in clean  # style whitelist
+    assert "<b>ok</b>" in clean
+    assert "alert(1)" not in clean  # script CONTENT dropped too, not just the tag
+
+
+def test_sanitize_table_html_rejects_non_tables():
+    assert la.sanitize_table_html("<div>hi</div>") == ""
+    assert la.sanitize_table_html("plain text") == ""
+    assert la.sanitize_table_html("<table></table>") == ""  # no rows → not a real table
+
+
+def test_table_replace_validated_against_range_and_sanitizer():
+    import json as _json
+    raw = _json.dumps({"changes": [
+        {"op": "table_replace", "table_index": 1, "title": "ادغام ستون‌ها",
+         "html": "<table><tr><th>الف</th></tr><tr><td>۱</td></tr></table>"},
+        {"op": "table_replace", "table_index": 5, "title": "خارج از محدوده",
+         "html": "<table><tr><td>x</td></tr></table>"},
+        {"op": "table_replace", "table_index": 2, "title": "HTML غیرجدولی",
+         "html": "<div>not a table</div>"},
+    ]}, ensure_ascii=False)
+    out = la.parse_and_validate(raw, FIELDS, tables_count=2)
+    assert len(out) == 1
+    c = out[0]
+    assert c["op"] == "table_replace" and c["table_index"] == 1 and c["applicable"] is True
+    assert c["html"].startswith("<table>")
+    # with NO tables provided, table_replace is never accepted
+    assert la.parse_and_validate(raw, FIELDS, tables_count=0) == []
+
+
+def test_build_user_prompt_table_rules():
+    p = la.build_user_prompt(FIELDS, {}, ["tables"], instruction="ستون مبلغ را جدا کن",
+                             tables=["<table><tr><td>a</td></tr></table>"])
+    assert "[جدول 1]" in p
+    assert "table_replace" in p
+    assert "رفتارِ پیش‌فرضِ ابزارِ جداول" in p          # default when no table instruction
+    assert "بخش‌های غیرمرتبط با جدول" in p             # mixed-instruction routing
