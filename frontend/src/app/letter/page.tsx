@@ -1532,36 +1532,36 @@ export default function LetterPage() {
       toast.error('ساختِ PDF ناموفق بود — دوباره تلاش کن', { id: tId })
     } finally { setPdfBusy(false) }
   }
+  // renders ONE behind-text float (its real CSS) → PNG, for the Word export
+  const renderFloatPngForWord = async (html: string, w: number): Promise<{ png: string; h: number }> => {
+    const { toPng } = await import('html-to-image')
+    const host = document.createElement('div')
+    host.style.cssText = 'position:absolute;left:-99999px;top:0;background:#fff'
+    const box = document.createElement('div')
+    box.className = 'lfloat'
+    box.style.cssText = `position:static;width:${Math.round(w)}px`
+    box.innerHTML = html
+    host.appendChild(box)
+    document.body.appendChild(host)
+    try {
+      const h = Math.max(10, Math.ceil(box.getBoundingClientRect().height))
+      const png = await toPng(box, { pixelRatio: 2, width: Math.round(w), height: h, backgroundColor: undefined })
+      return { png, h }
+    } finally { document.body.removeChild(host) }
+  }
   const downloadWord = async () => {
     if (pdfBusy) return
     setPdfBusy(true); setDlMenu(false)
-    const tId = toast.loading('در حالِ ساختِ Word…')
+    const tId = toast.loading('در حالِ ساختِ فایلِ Word (متنِ قابلِ ویرایش)…')
     try {
-      const [pngs, docxMod] = await Promise.all([renderSheetPngs(tId, 'Word'), import('docx')])
-      const { Document, Packer, Paragraph, ImageRun, PageOrientation } = docxMod as any
-      const b64ToU8 = (durl: string) => Uint8Array.from(atob(durl.split(',')[1]), (c) => c.charCodeAt(0))
-      // image sized JUST under A4 (793×1122 px @96dpi) so Word never wraps it to a
-      // second page; zero margins; landscape sheets get landscape sections.
-      const doc = new Document({
-        sections: pngs.map((pg) => ({
-          properties: {
-            page: {
-              size: pg.land ? { orientation: PageOrientation.LANDSCAPE } : {},
-              margin: { top: 0, right: 0, bottom: 0, left: 0, header: 0, footer: 0, gutter: 0 },
-            },
-          },
-          children: [new Paragraph({
-            spacing: { before: 0, after: 0 },
-            children: [new ImageRun({
-              type: 'png', data: b64ToU8(pg.png),
-              transformation: { width: pg.land ? 1122 : 793, height: pg.land ? 793 : 1122 },
-            })],
-          })],
-        })),
+      const { buildLetterDocx } = await import('./wordExport')
+      const blob = await buildLetterDocx({
+        f: f as any, labels, L: L as any, attTables, attMeta: attMeta as any, floats,
+        pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
+        renderFloatPng: renderFloatPngForWord,
       })
-      const blob = await Packer.toBlob(doc)
       saveBlob(blob, `${exportName()}.docx`)
-      toast.success('فایلِ Word دانلود شد — هر صفحه دقیقاً با همان ظاهر', { id: tId })
+      toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و فیلدها همه قابلِ ویرایش‌اند', { id: tId })
       auditApi.logActivity({ action: 'export', entity_type: 'letter', detail: `دانلود Word نامه${plain(f.subject) ? ` — موضوع: ${plain(f.subject)}` : ''}` })
     } catch {
       toast.error('ساختِ Word ناموفق بود — دوباره تلاش کن', { id: tId })
@@ -2492,7 +2492,7 @@ export default function LetterPage() {
             {dlMenu && !pdfBusy && (
               <div className="dl-menu" dir="rtl">
                 <button onClick={downloadPdf}>PDF — چاپیِ دقیق</button>
-                <button onClick={downloadWord}>Word (.docx)</button>
+                <button onClick={downloadWord}>Word (.docx) — قابلِ ویرایش</button>
               </div>
             )}
           </span>
@@ -2509,7 +2509,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v21</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v22</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
