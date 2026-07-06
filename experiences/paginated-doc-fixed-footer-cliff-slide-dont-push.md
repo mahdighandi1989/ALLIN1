@@ -7,7 +7,7 @@ source:
   origin: "claude-code"
   imported_at: "2026-07-06T00:00:00Z"
 created_at: "2026-07-06T00:00:00Z"
-updated_at: "2026-07-06T16:00:00Z"
+updated_at: "2026-07-06T19:00:00Z"
 ---
 
 # چالش
