@@ -31,6 +31,12 @@ export type WordExportArgs = {
   renderFloatPng: (html: string, w: number) => Promise<{ png: string; h: number }>
 }
 
+const hasPersian = (t: string) => /[\u0600-\u06FF]/.test(t)
+// Inside Persian text, ASCII digits must become REAL Persian digits: Word picks
+// a Latin fallback font for them (they rendered western/slanted), while the
+// letter's B Nazanin shows them Persian-shaped — real ۰-۹ codepoints match the
+// letter's look in every Word configuration.
+const faDigitsIf = (t: string, on: boolean) => (on ? t.replace(/[0-9]/g, (d) => FA_DIGITS[+d]) : t)
 const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0))
 // Guard a purely Latin/numeric value (serial, date, phone ext) with LRM marks —
 // Word's own zero-width bidi marks — so its segment order never flips inside an
@@ -89,12 +95,12 @@ async function bakeImages(root: HTMLElement): Promise<ImgMap> {
 
 // ---------- inline runs (bold/italic/underline survive; Persian font + RTL) ----------
 type RunOpts = { bold?: boolean; italics?: boolean; underline?: boolean }
-function inlineRuns(node: Node, font: string, half: number, st: RunOpts, imgs: ImgMap): (TextRun | ImageRun)[] {
+function inlineRuns(node: Node, font: string, half: number, st: RunOpts, imgs: ImgMap, faDig = false): (TextRun | ImageRun)[] {
   const out: (TextRun | ImageRun)[] = []
   node.childNodes.forEach((ch) => {
     if (ch.nodeType === 3) {
       const text = (ch.textContent || '').replace(/ /g, ' ')
-      if (text) out.push(mkRun(text, font, half, st))
+      if (text) out.push(mkRun(faDigitsIf(text, faDig), font, half, st))
       return
     }
     if (ch.nodeType !== 1) return
@@ -107,7 +113,7 @@ function inlineRuns(node: Node, font: string, half: number, st: RunOpts, imgs: I
       italics: st.italics || el.tagName === 'I' || el.tagName === 'EM',
       underline: st.underline || el.tagName === 'U' || /text-decoration[^;]*underline/.test(el.getAttribute('style') || ''),
     }
-    out.push(...inlineRuns(el, font, half, next, imgs))
+    out.push(...inlineRuns(el, font, half, next, imgs, faDig))
   })
   return out
 }
@@ -134,10 +140,10 @@ function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, 
     return Array.from(el.querySelectorAll('li')).map((li, i) => new Paragraph({
       bidirectional: true, alignment: alignOf(el, AlignmentType.RIGHT),
       children: [mkRun(el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, half),
-        ...inlineRuns(li, font, half, {}, imgs)],
+        ...inlineRuns(li, font, half, {}, imgs, hasPersian(li.textContent || ''))],
     }))
   }
-  const runs = inlineRuns(el, font, half, {}, imgs)
+  const runs = inlineRuns(el, font, half, {}, imgs, hasPersian(el.textContent || ''))
   return [new Paragraph({
     bidirectional: true,
     alignment: alignOf(el, justify ? AlignmentType.JUSTIFIED : AlignmentType.RIGHT),
@@ -162,7 +168,7 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
         const para = new Paragraph({
           bidirectional: true,
           alignment: alignOf(td, isTh ? AlignmentType.CENTER : AlignmentType.RIGHT),
-          children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs) : [mkRun('', font, half)],
+          children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs, hasPersian(td.textContent || '')) : [mkRun('', font, half)],
         })
         return new TableCell({
           children: [para],
@@ -266,6 +272,11 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
     P(plainText(a.f.recipientName) || ' ', { pt: 12, bold: true, font: TITR }),
     P(`${plainText(a.f.recipientTitle)} ${plainText(a.f.recipientDept)}`.trim() || ' ', { pt: 12, bold: true, font: TITR }),
   ]
+  // the letter starts the recipient block LOWER than the شماره line — mirror
+  // that stagger with blank lines derived from the letter's own layout
+  const staggerPx = Math.max(0, (a.L.recName?.y ?? 0) - (a.L.shomareh?.y ?? 0))
+  const nBlank = Math.min(4, Math.round(staggerPx / 26))
+  for (let i = 0; i < nBlank; i++) recCol.unshift(P(' ', { pt: 10 }))
   // column order follows the letter's OWN layout: in an RTL table the FIRST cell
   // renders on the RIGHT — put whichever block the letter has on its right there.
   const recOnRight = (a.L.recName?.x ?? 480) >= (a.L.shomareh?.x ?? 30)
