@@ -280,7 +280,23 @@ async def extract_attachment_endpoint(
 
     import mimetypes
     fname = a.original_name or a.file_name or "file"
-    mime = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+    mime = mimetypes.guess_type(fname)[0] or ""
+    if not mime:
+        # No/unknown extension → sniff the magic bytes (the Import-page lesson:
+        # never trust the name alone to decide how to read a file).
+        head = data[:12]
+        if head.startswith(b"%PDF-"):
+            mime = "application/pdf"
+        elif head.startswith(b"\x89PNG"):
+            mime = "image/png"
+        elif head.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+        elif head.startswith(b"II*\x00") or head.startswith(b"MM\x00*"):
+            mime = "image/tiff"
+        elif head.startswith(b"PK\x03\x04") and fname.lower().endswith((".docx", ".xlsx", ".xlsm")):
+            mime = "application/zip"
+        else:
+            mime = "application/octet-stream"
 
     # General letters store their attachments under the 'general' key — that is a
     # bucket, NOT a customer; never let it become the primary account (facts

@@ -172,3 +172,32 @@ async def test_general_letter_attachment_never_attributes_to_general(client, aut
     accounts = {c.get("account_no") for c in changes if c["op"] == "db_write"}
     assert "general" not in accounts and "" not in accounts
     assert "G77" in accounts
+
+
+async def test_text_attachment_extraction_path(db_session, monkeypatch):
+    """Plain-text attachments extract through the chunked text path; the prompt
+    carries the strengthened relationship rules (explicit-only, quoted reason)."""
+    import json as _json
+    from app.ai import inference as inf
+
+    captured = {}
+
+    async def fake_complete(db, prompt, **kw):
+        captured["prompt"] = prompt
+        return {"ok": True, "model": "Stub", "error": None, "text": _json.dumps({
+            "customers": [{"account_no": "T90", "name": "Text Co", "fields": {"city": "Ajman"}}],
+            "relationships": [],
+        }, ensure_ascii=False)}
+
+    monkeypatch.setattr(inf, "complete", fake_complete)
+    res = await lax.extract_attachment(
+        db_session, data="متن نامه دربارهٔ حساب T90".encode("utf-8"),
+        filename="notes.txt", mimetype="text/plain",
+        letter_ctx={"subject": "s", "account_no": "T90", "customer_name": ""},
+    )
+    assert res["ok"] is True
+    assert res["customers"][0]["account_no"] == "T90"
+    p = captured["prompt"]
+    assert "PLAIN-TEXT" in p
+    assert "Record ONLY relationships the document explicitly states" in p
+    assert "QUOTE or precisely restate" in p
