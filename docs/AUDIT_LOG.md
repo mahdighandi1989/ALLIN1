@@ -550,3 +550,19 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
 - **[VERIFY]** +۴ چکِ E2E: PDFِ سه‌صفحه‌ای با صفحهٔ **افقیِ** واقعی (MediaBox 841.89pt)،
   ساختارِ سالمِ %PDF، تطابقِ تعدادِ صفحه با ورق‌ها، حجمِ محتوایی — مجموعِ ۶۴ چک روی
   باندلِ دیپلوی‌شده سبز. مارکر → reflow-v20. type-check/build سبز؛ suiteِ بک‌اند پایین‌تر.
+
+### 2026-07-06 — انتخابِ فرمتِ دانلود: PDF یا Word (درخواست مالک)
+
+- **[OWNER REQUEST]** موقعِ دانلود بشود بین PDF و Word انتخاب کرد.
+- **[CHANGE]** دکمهٔ «دانلود PDF» شد «دانلود ▾» با منویِ دو گزینه: «PDF — چاپیِ دقیق» و
+  «Word (.docx)». رندرِ صفحات به یک تابعِ مشترک (`renderSheetPngs`) refactor شد — همان
+  موتورِ وفادارِ foreignObject در 2x. **Word:** فایلِ .docx واقعی با کتابخانهٔ `docx`
+  (lazy-load): هر صفحه یک section با حاشیهٔ صفر و جهتِ خودش (صفحهٔ افقیِ پیوست ⇒
+  sectionِ landscape) و تصویرِ صفحه با ابعادِ 793×1122 (یک پیکسل زیرِ A4 تا Word هرگز
+  به صفحهٔ دوم سرریز نکند). نامِ فایل با anchor+blob (نامِ فارسی سالم).
+- **[BUILD ISSUE]** `docx@9` (ESM) با SWCِ Next 14 کامپایل نمی‌شود («super outside a
+  method») → پین به `docx@8.5.0` که با webpack سالم است.
+- **[VERIFY]** ساختارِ docx با zipfileِ پایتون عمیقاً اعتبارسنجی شد: zip سالم، ۳ section،
+  ۱ orient=landscape، ۳ `<w:drawing>`، ۳ فایلِ mediaی PNG (۲۰۷–۲۵۰KB) با ۳ relationship و
+  Content-Typeِ درست. +۴ چکِ E2E (منو، امضای PK، document.xml، media per sheet) — مجموع
+  ۶۷ چک روی باندلِ دیپلوی‌شده سبز. مارکر → reflow-v21. suiteِ بک‌اند پایین‌تر.

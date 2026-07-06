@@ -1473,54 +1473,99 @@ export default function LetterPage() {
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
 
-  // ---- Download the letter as a PDF that looks EXACTLY like the prepared pages.
+  // ---- Download the letter EXACTLY as prepared — as PDF or Word (.docx).
   //      Each print-view sheet is rendered by the browser itself (SVG foreignObject
   //      via html-to-image → real layout: RTL, justify, local fonts, floats, images)
-  //      into a 2x PNG, then placed full-bleed on an A4 PDF page with the sheet's
-  //      own orientation. Libraries are lazy-loaded on first use. ----
+  //      into a 2x PNG; then either placed full-bleed on A4 PDF pages or embedded
+  //      one-per-section in a real .docx (portrait/landscape per page). All the
+  //      libraries are lazy-loaded on first use. ----
   const [pdfBusy, setPdfBusy] = useState(false)
-  const downloadPdf = async () => {
-    if (pdfBusy) return
-    setPdfBusy(true)
-    const tId = toast.loading('در حالِ ساختِ PDF…')
+  const [dlMenu, setDlMenu] = useState(false)
+  const exportName = () => (title.trim() || plain(f.subject) || 'نامه').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80)
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const aEl = document.createElement('a')
+    aEl.href = url; aEl.download = filename
+    document.body.appendChild(aEl); aEl.click(); aEl.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+  // one 2x PNG per print sheet, rendered off-screen with the page's real CSS
+  const renderSheetPngs = async (tId: string, label: string): Promise<{ png: string; land: boolean }[]> => {
+    const { toPng } = await import('html-to-image')
+    const sheets = Array.from(document.querySelectorAll('.print-wrap .psheet')) as HTMLElement[]
+    if (!sheets.length) throw new Error('empty')
     const host = document.createElement('div')
     host.style.cssText = 'position:absolute;left:-99999px;top:0;background:#fff'
     document.body.appendChild(host)
     try {
-      const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')])
-      const sheets = Array.from(document.querySelectorAll('.print-wrap .psheet')) as HTMLElement[]
-      if (!sheets.length) throw new Error('empty')
-      let pdf: any = null
+      const out: { png: string; land: boolean }[] = []
       for (let i = 0; i < sheets.length; i++) {
-        toast.loading(`در حالِ ساختِ PDF — صفحهٔ ${fa(i + 1)} از ${fa(sheets.length)}…`, { id: tId })
+        toast.loading(`در حالِ ساختِ ${label} — صفحهٔ ${fa(i + 1)} از ${fa(sheets.length)}…`, { id: tId })
         const src = sheets[i]
         const land = src.classList.contains('land')
         const W = land ? PAGE_H : PAGE_W, H = land ? PAGE_W : PAGE_H
         const clone = src.cloneNode(true) as HTMLElement
         clone.style.margin = '0'; clone.style.boxShadow = 'none'
         host.innerHTML = ''; host.appendChild(clone)
-        const png = await toPng(clone, { pixelRatio: 2, width: W, height: H, backgroundColor: '#ffffff' })
-        const orient = land ? 'landscape' : 'portrait'
+        out.push({ png: await toPng(clone, { pixelRatio: 2, width: W, height: H, backgroundColor: '#ffffff' }), land })
+      }
+      return out
+    } finally { if (host.parentNode) host.parentNode.removeChild(host) }
+  }
+  const downloadPdf = async () => {
+    if (pdfBusy) return
+    setPdfBusy(true); setDlMenu(false)
+    const tId = toast.loading('در حالِ ساختِ PDF…')
+    try {
+      const [pngs, { jsPDF }] = await Promise.all([renderSheetPngs(tId, 'PDF'), import('jspdf')])
+      let pdf: any = null
+      for (const pg of pngs) {
+        const orient = pg.land ? 'landscape' : 'portrait'
         if (!pdf) pdf = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4', compress: true })
         else pdf.addPage('a4', orient)
-        pdf.addImage(png, 'PNG', 0, 0, land ? 297 : 210, land ? 210 : 297, undefined, 'FAST')
+        pdf.addImage(pg.png, 'PNG', 0, 0, pg.land ? 297 : 210, pg.land ? 210 : 297, undefined, 'FAST')
       }
-      const name = (title.trim() || plain(f.subject) || 'نامه').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80)
-      // manual anchor (jsPDF's save drops non-Latin filenames in some browsers)
-      const blob = pdf.output('blob')
-      const url = URL.createObjectURL(blob)
-      const aEl = document.createElement('a')
-      aEl.href = url; aEl.download = `${name}.pdf`
-      document.body.appendChild(aEl); aEl.click(); aEl.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      saveBlob(pdf.output('blob'), `${exportName()}.pdf`)
       toast.success('PDF دانلود شد — دقیقاً با همان ظاهرِ نامه', { id: tId })
       auditApi.logActivity({ action: 'export', entity_type: 'letter', detail: `دانلود PDF نامه${plain(f.subject) ? ` — موضوع: ${plain(f.subject)}` : ''}` })
     } catch {
       toast.error('ساختِ PDF ناموفق بود — دوباره تلاش کن', { id: tId })
-    } finally {
-      if (host.parentNode) host.parentNode.removeChild(host)
-      setPdfBusy(false)
-    }
+    } finally { setPdfBusy(false) }
+  }
+  const downloadWord = async () => {
+    if (pdfBusy) return
+    setPdfBusy(true); setDlMenu(false)
+    const tId = toast.loading('در حالِ ساختِ Word…')
+    try {
+      const [pngs, docxMod] = await Promise.all([renderSheetPngs(tId, 'Word'), import('docx')])
+      const { Document, Packer, Paragraph, ImageRun, PageOrientation } = docxMod as any
+      const b64ToU8 = (durl: string) => Uint8Array.from(atob(durl.split(',')[1]), (c) => c.charCodeAt(0))
+      // image sized JUST under A4 (793×1122 px @96dpi) so Word never wraps it to a
+      // second page; zero margins; landscape sheets get landscape sections.
+      const doc = new Document({
+        sections: pngs.map((pg) => ({
+          properties: {
+            page: {
+              size: pg.land ? { orientation: PageOrientation.LANDSCAPE } : {},
+              margin: { top: 0, right: 0, bottom: 0, left: 0, header: 0, footer: 0, gutter: 0 },
+            },
+          },
+          children: [new Paragraph({
+            spacing: { before: 0, after: 0 },
+            children: [new ImageRun({
+              type: 'png', data: b64ToU8(pg.png),
+              transformation: { width: pg.land ? 1122 : 793, height: pg.land ? 793 : 1122 },
+            })],
+          })],
+        })),
+      })
+      const blob = await Packer.toBlob(doc)
+      saveBlob(blob, `${exportName()}.docx`)
+      toast.success('فایلِ Word دانلود شد — هر صفحه دقیقاً با همان ظاهر', { id: tId })
+      auditApi.logActivity({ action: 'export', entity_type: 'letter', detail: `دانلود Word نامه${plain(f.subject) ? ` — موضوع: ${plain(f.subject)}` : ''}` })
+    } catch {
+      toast.error('ساختِ Word ناموفق بود — دوباره تلاش کن', { id: tId })
+    } finally { setPdfBusy(false) }
   }
 
   // ---- Behind-text float interactions ----
@@ -2215,6 +2260,9 @@ export default function LetterPage() {
         .ltr-btn { padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer; border:0; display:inline-flex; align-items:center; gap:6px; color:#fff; }
         .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}
         .ltr-hint{font-size:12px;color:#64748b}
+        .dl-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:200;background:#fff;border:1px solid #e2e8f0;border-radius:9px;box-shadow:0 10px 28px rgba(15,23,42,.22);display:flex;flex-direction:column;min-width:170px;overflow:hidden}
+        .dl-menu button{border:0;background:#fff;color:#0f172a;text-align:right;padding:9px 13px;font-size:13px;cursor:pointer;font-family:inherit}
+        .dl-menu button:hover{background:#fff7ed;color:#9a3412}
         .meta-in{border:1px solid #cbd5e1;border-radius:6px;padding:5px 8px;font-size:13px;background:#fff;color:#0f172a}
         .meta-in:focus{outline:none;border-color:#2563eb}
         .canvas-wrap { overflow:auto; padding-bottom:20px; }
@@ -2438,8 +2486,16 @@ export default function LetterPage() {
             </select>
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
-          <button onClick={downloadPdf} disabled={pdfBusy} className="ltr-btn" style={{ background: '#9a3412', opacity: pdfBusy ? 0.6 : 1 }}
-            title="دانلودِ نامه به‌صورتِ PDF — دقیقاً با همان ظاهر، صفحه‌بندی و سربرگ (صفحاتِ افقیِ پیوست هم افقی می‌مانند)"><Download size={15} /> {pdfBusy ? '⏳ در حالِ ساخت…' : 'دانلود PDF'}</button>
+          <span style={{ position: 'relative', display: 'inline-block' }}>
+            <button onClick={() => setDlMenu((v) => !v)} disabled={pdfBusy} className="ltr-btn" style={{ background: '#9a3412', opacity: pdfBusy ? 0.6 : 1 }}
+              title="دانلودِ نامه — دقیقاً با همان ظاهر، صفحه‌بندی و سربرگ؛ فرمت را انتخاب کن"><Download size={15} /> {pdfBusy ? '⏳ در حالِ ساخت…' : 'دانلود ▾'}</button>
+            {dlMenu && !pdfBusy && (
+              <div className="dl-menu" dir="rtl">
+                <button onClick={downloadPdf}>PDF — چاپیِ دقیق</button>
+                <button onClick={downloadWord}>Word (.docx)</button>
+              </div>
+            )}
+          </span>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={insertImageClick} className="ltr-btn gray" title="درجِ تصویر در محلِ نشانگر — بعد از درج با کلیک روی تصویر: اندازه، کراپ، جابه‌جایی و «پشتِ متن»"><ImageIcon size={14} /> تصویر</button>
           <input ref={imgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -2453,7 +2509,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v20</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v21</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>

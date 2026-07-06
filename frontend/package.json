@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "axios": "1.6.5",
+    "docx": "^8.5.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lucide-react": "0.312.0",
