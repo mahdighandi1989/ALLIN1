@@ -37,8 +37,11 @@ from app.services import letter_db_extract as dbx
 
 logger = logging.getLogger(__name__)
 
-_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
-_EXCEL_EXT = (".xlsx", ".xls", ".csv")
+# Same coverage as the Import page (tiff/bmp scans included) + plain text.
+_IMAGE_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif",
+                "image/tiff", "image/bmp"}
+_EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".csv")
+_TEXT_EXT = (".txt", ".text", ".log")
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # Same chunking thresholds as the import page (proven against OOM/timeouts).
 _PDF_SPLIT_BYTES = 4 * 1024 * 1024
@@ -59,13 +62,22 @@ def build_prompt(letter_ctx: Dict[str, str], part: str = "") -> str:
         ctx_lines.append(f"- Letter body (for context): {letter_ctx['body_excerpt'][:1500]}")
     ctx_lines.append(
         "Extract EVERYTHING relevant to the letter's subject — completely and precisely, "
-        "NO summarizing, NO skipping — for EVERY account/customer named anywhere in this "
-        "attachment (not only the primary customer). Attribute each fact to the correct "
-        "account. ALSO add a top-level \"relationships\" array to the SAME JSON object: "
-        "[{\"from_account\", \"from_name\", \"to_account\", \"to_name\", "
-        "\"kind\": one of guarantor|letter|co_signer|family|business_partner|other, "
-        "\"reason\": the exact stated reason in Persian}] for every connection between "
-        "named parties. Never invent accounts or values."
+        "NO summarizing, NO skipping, NO 'etc.' — for EVERY account/customer named anywhere "
+        "in this attachment (not only the primary customer). Attribute each fact to the "
+        "correct account; when in doubt about WHO a fact belongs to, leave it out rather "
+        "than guessing.\n"
+        "ALSO add a top-level \"relationships\" array to the SAME JSON object:\n"
+        "[{\"from_account\": \"\", \"from_name\": \"\", \"to_account\": \"\", \"to_name\": \"\", "
+        "\"kind\": \"guarantor|co_signer|family|business_partner|letter|other\", \"reason\": \"\"}]\n"
+        "Relationship rules:\n"
+        "- Record ONLY relationships the document explicitly states or unambiguously shows "
+        "(a signature as guarantor, a listed partner, a joint account) — never inferred ones.\n"
+        "- \"reason\" must QUOTE or precisely restate the document's own wording (in Persian), "
+        "including the document/section it came from — this exact text is stored on both "
+        "customer profiles as the recorded justification of the link.\n"
+        "- Pick the MOST SPECIFIC kind (a guarantor is \"guarantor\", not \"other\"); use "
+        "\"letter\" only for parties connected merely by being named in this correspondence.\n"
+        "- Never invent accounts, names, numbers or relationships."
     )
     return doc_ingest.EXTRACTION_PROMPT + "\n".join(ctx_lines) + (("\n\n" + part) if part else "")
 
@@ -96,7 +108,31 @@ async def extract_attachment(
             if isinstance(r, dict):
                 relationships.append(r)
 
-    if lower.endswith(_EXCEL_EXT) or mimetype in ("text/csv",):
+    if lower.endswith(_TEXT_EXT) or mimetype == "text/plain":
+        # Plain-text attachment: decode tolerantly, chunk, extract as text.
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("cp1256", errors="replace")  # Arabic/Persian legacy encoding
+        if not text.strip():
+            return {"ok": False, "error": "فایل متنی خالی است."}
+        chunks = doc_ingest.chunk_text(text, 100000)[:_MAX_CHUNKS]
+        for ci, ch in enumerate(chunks):
+            prompt = build_prompt(
+                letter_ctx,
+                f"The content below is a PLAIN-TEXT document (part {ci+1} of {len(chunks)}). "
+                "There are no page images — ignore the 'documents' array.\n\nTEXT CONTENT:\n" + ch,
+            )
+            res = await inference.complete(db, prompt, task="document_extraction",
+                                           model_id=model_id, max_tokens=8000)
+            if not res.get("ok"):
+                if res.get("error") == "no_model":
+                    return {"ok": False, "error": "no_model"}
+                chunk_errors.append(str(res.get("error")))
+                continue
+            model_name = res.get("model")
+            _fold(doc_ingest.parse_model_json(res.get("text", "")))
+    elif lower.endswith(_EXCEL_EXT) or mimetype in ("text/csv",):
         try:
             table_text = doc_ingest.workbook_to_text(data, filename)
         except Exception as exc:
