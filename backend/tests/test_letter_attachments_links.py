@@ -145,3 +145,30 @@ async def test_extract_attachment_endpoint_stages(client, auth_headers, db_sessi
     # ids are namespaced per attachment + source file recorded
     assert all(c["id"].startswith(att_id[-6:]) for c in body["changes"])
     assert all(c.get("source_file") == "doc.pdf" for c in body["changes"])
+
+
+async def test_general_letter_attachment_never_attributes_to_general(client, auth_headers, db_session, monkeypatch):
+    """A general letter's attachments live under the 'general' bucket — that must
+    NEVER become a customer: unattributed facts are dropped, cited ones stage."""
+    files = {"file": ("g.pdf", b"%PDF-1.4 fake", "application/pdf")}
+    up = await client.post("/api/crm/attachments/general", headers=auth_headers,
+                           files=files, data={"facility_id": "LTR-gen1"})
+    att_id = up.json()["id"]
+
+    async def fake_extract(db, **kw):
+        assert kw["letter_ctx"]["account_no"] == ""   # general → no primary
+        return {"ok": True, "model": "Stub", "chunk_errors": [],
+                "customers": [
+                    {"account_no": "", "name": "", "fields": {"city": "Dubai"}},      # unattributed → dropped
+                    {"account_no": "G77", "name": "Cited Co", "fields": {"phone": "050"}},  # cited → staged
+                ], "relationships": []}
+
+    import app.services.letter_attachment_extract as mod
+    monkeypatch.setattr(mod, "extract_attachment", fake_extract)
+
+    r = await client.post(f"/api/letter-ai/extract-attachment/{att_id}", headers=auth_headers, json={})
+    assert r.status_code == 200, r.text
+    changes = r.json()["changes"]
+    accounts = {c.get("account_no") for c in changes if c["op"] == "db_write"}
+    assert "general" not in accounts and "" not in accounts
+    assert "G77" in accounts
