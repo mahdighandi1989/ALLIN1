@@ -343,28 +343,105 @@ export default function LetterPage() {
   // --- Tables tool: enumerate the letter's tables (across all pages — the body
   // is the single source of truth) so the user picks WHICH ones the AI works on.
   // Each table is identified by its header row's stable data-r uid.
-  type BodyTable = { uid: string; html: string; label: string }
+  type BodyTable = { uid: string; html: string; label: string; attId?: string }
   const getBodyTables = (): BodyTable[] => {
-    if (!f.body || f.body.indexOf('<table') === -1) return []
-    const d = document.createElement('div')
-    d.innerHTML = normalizeBodyHtml(f.body)
-    mergeAdjacentTables(d)
-    normalizeTables(d)
-    return (Array.from(d.querySelectorAll('table')) as HTMLTableElement[]).map((t, i) => {
-      const rows = t.rows.length, cols = t.rows[0]?.cells.length || 0
-      const first = (t.rows[0]?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
-      return {
-        uid: t.rows[0]?.getAttribute('data-r') || `t${i}`,
-        html: t.outerHTML,
-        label: `جدول ${fa(i + 1)} — ${fa(rows)}×${fa(cols)}${first ? ` («${first}…»)` : ''}`,
-      }
+    const out: BodyTable[] = []
+    if (f.body && f.body.indexOf('<table') !== -1) {
+      const d = document.createElement('div')
+      d.innerHTML = normalizeBodyHtml(f.body)
+      mergeAdjacentTables(d)
+      normalizeTables(d)
+      ;(Array.from(d.querySelectorAll('table')) as HTMLTableElement[]).forEach((t, i) => {
+        const rows = t.rows.length, cols = t.rows[0]?.cells.length || 0
+        const first = (t.rows[0]?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40)
+        out.push({
+          uid: t.rows[0]?.getAttribute('data-r') || `t${i}`,
+          html: t.outerHTML,
+          label: `جدول ${fa(i + 1)} — ${fa(rows)}×${fa(cols)}${first ? ` («${first}…»)` : ''}`,
+        })
+      })
+    }
+    // attachment tables are just as pickable — the AI gets full control over them too
+    attTables.forEach((t, i) => {
+      const d = document.createElement('div')
+      d.innerHTML = t.html
+      normalizeTables(d)
+      const tbl = d.querySelector('table') as HTMLTableElement | null
+      if (!tbl) return
+      const rows = tbl.rows.length, cols = tbl.rows[0]?.cells.length || 0
+      out.push({
+        uid: tbl.rows[0]?.getAttribute('data-r') || t.id,
+        html: tbl.outerHTML,
+        label: `جدولِ پیوست ${fa(i + 1)} — ${fa(rows)}×${fa(cols)}${plain(t.title) ? ` («${plain(t.title).slice(0, 40)}»)` : ''}`,
+        attId: t.id,
+      })
     })
+    return out
   }
   const [aiSelTables, setAiSelTables] = useState<Record<string, boolean>>({})
   const tblSelected = (uid: string) => aiSelTables[uid] !== false   // default: selected
-  // uid list of the tables actually SENT with the last analyze (index → uid),
-  // so table_replace results can be applied to the exact right table.
-  const sentTableUidsRef = useRef<string[]>([])
+  // the tables actually SENT with the last analyze (index → uid + owner), so
+  // table_replace results land on the exact right table — body or attachment.
+  const sentTableUidsRef = useRef<{ uid: string; attId?: string }[]>([])
+
+  // --- ATTACHMENT TABLES (جدول‌های پیوست): tables registered as letter پیوست‌ها.
+  // Unlike file attachments they are rendered as their OWN letterhead pages after
+  // the letter's last (closing) page, in order. Sizing is automatic: a table whose
+  // natural width doesn't fit portrait flips the page to LANDSCAPE (on screen the
+  // sheet simply becomes wider — text is never rotated, so editing stays normal);
+  // a too-tall table steps its font down before admitting defeat with a warning.
+  // Stored inside values_json alongside the letter fields. ---
+  type AttTable = { id: string; title: string; html: string }
+  const [attTables, setAttTables] = useState<AttTable[]>([])
+  const [attMeta, setAttMeta] = useState<Record<string, { land: boolean; scale: number; tooTall: boolean }>>({})
+  const ATT_MARGIN = m(15)                       // side margins of an attachment page
+  const ATT_TOP = m(40)                          // content starts below the letterhead
+  const ATT_BOTTOM = m(24)                       // clear of footer + page number
+  const ATT_TITLE_H = 46                         // title row above the table
+  const PAGE_W = 794, PAGE_H = 1123              // A4 @96dpi (portrait)
+  const updateAttTable = (id: string, patch: Partial<AttTable>) =>
+    setAttTables((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+  const removeAttTable = (id: string) => setAttTables((list) => list.filter((t) => t.id !== id))
+  // Auto-size every attachment table: orientation by NATURAL width, then font
+  // step-down if it's still too tall for one page.
+  useEffect(() => {
+    if (!attTables.length) { setAttMeta({}); return }
+    const holder = document.createElement('div')
+    holder.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden'
+    document.body.appendChild(holder)
+    const meta: Record<string, { land: boolean; scale: number; tooTall: boolean }> = {}
+    const PORT_W = PAGE_W - 2 * ATT_MARGIN, LAND_W = PAGE_H - 2 * ATT_MARGIN
+    const PORT_H = PAGE_H - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, LAND_H = PAGE_W - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM
+    for (const t of attTables) {
+      // natural (unconstrained) width — in a huge container the table shrinks to fit content
+      const free = document.createElement('div')
+      free.style.cssText = 'width:2600px;font-size:13pt;line-height:1.7'
+      free.innerHTML = t.html
+      holder.appendChild(free)
+      const naturalW = (free.querySelector('table') as HTMLElement | null)?.offsetWidth || 0
+      holder.removeChild(free)
+      const land = naturalW > PORT_W
+      const availW = land ? LAND_W : PORT_W, availH = land ? LAND_H : PORT_H
+      // height at the real width (the .measure class carries the exact table CSS)
+      let scale = 1, tooTall = false
+      for (const s of [1, 0.85, 0.72, 0.6]) {
+        scale = s
+        const box = document.createElement('div')
+        box.className = 'measure'
+        box.style.cssText = `position:static;visibility:hidden;width:${availW}px;font-size:${13 * s}pt;line-height:1.7;white-space:pre-wrap`
+        box.innerHTML = t.html
+        holder.appendChild(box)
+        const hh = box.offsetHeight
+        holder.removeChild(box)
+        if (hh <= availH) { tooTall = false; break }
+        tooTall = true
+      }
+      meta[t.id] = { land, scale, tooTall }
+    }
+    document.body.removeChild(holder)
+    setAttMeta(meta)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attTables])
   const loadAtts = async (id: string | null) => {
     if (!id) { setLetterAtts([]); return }
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
@@ -446,7 +523,7 @@ export default function LetterPage() {
       // Send the user-picked tables (full HTML) when the tables tool is on —
       // the model gets full control over exactly these, nothing else.
       const pickedTables = letterTools.includes('tables') ? getBodyTables().filter((t) => tblSelected(t.uid)) : []
-      sentTableUidsRef.current = pickedTables.map((t) => t.uid)
+      sentTableUidsRef.current = pickedTables.map((t) => ({ uid: t.uid, attId: t.attId }))
       if (letterTools.length) {
         const r = await letterAiApi.analyze({
           account_no: general ? undefined : (acct.trim() || undefined),
@@ -535,19 +612,26 @@ export default function LetterPage() {
       if (ch.op === 'table_replace') {
         // Replace the EXACT table the user selected (uid-mapped from the list
         // sent with analyze). HTML was whitelist-sanitized server-side.
-        const uid = ch.table_index != null ? sentTableUidsRef.current[ch.table_index - 1] : undefined
-        if (!uid || !ch.html) { notLocated++; continue }
-        const d = document.createElement('div')
-        d.innerHTML = normalizeBodyHtml(nf.body || '')
-        mergeAdjacentTables(d); normalizeTables(d)
-        const hdr = d.querySelector(`tr[data-r="${cssEsc(uid)}"]`)
-        const tbl = hdr?.closest('table')
-        if (!tbl) { notLocated++; continue }
+        const sent = ch.table_index != null ? sentTableUidsRef.current[ch.table_index - 1] : undefined
+        if (!sent || !ch.html) { notLocated++; continue }
         const wrap = document.createElement('div')
         wrap.innerHTML = ch.html
         const newTbl = wrap.querySelector('table')
         if (!newTbl) { notLocated++; continue }
         normalizeTables(wrap)   // stable data-r ids for the new rows (toolbar/pagination)
+        if (sent.attId) {
+          // the redesigned table replaces its ATTACHMENT page's table
+          if (!attTables.some((t) => t.id === sent.attId)) { notLocated++; continue }
+          updateAttTable(sent.attId, { html: newTbl.outerHTML })
+          applied++; appliedIds.push(ch.id)
+          continue
+        }
+        const d = document.createElement('div')
+        d.innerHTML = normalizeBodyHtml(nf.body || '')
+        mergeAdjacentTables(d); normalizeTables(d)
+        const hdr = d.querySelector(`tr[data-r="${cssEsc(sent.uid)}"]`)
+        const tbl = hdr?.closest('table')
+        if (!tbl) { notLocated++; continue }
         tbl.replaceWith(newTbl)
         nf.body = d.innerHTML
         applied++; appliedIds.push(ch.id)
@@ -598,6 +682,11 @@ export default function LetterPage() {
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
+        // attachment tables live alongside the fields inside values_json but are
+        // kept OUT of `f` (they're a list, not a letter field — and analyze sends
+        // `fields: f` verbatim).
+        setAttTables(Array.isArray(v.attTables) ? v.attTables.filter((t: any) => t && t.id && t.html) : [])
+        delete v.attTables
         // ALWAYS reflow the loaded body into flowing, justified paragraphs (idempotent
         // for already-well-formed text: a paragraph that ends in a terminator stays as
         // one paragraph; only hard-wrapped visual lines get merged). No manual step.
@@ -624,7 +713,7 @@ export default function LetterPage() {
     else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
-  const newLetter = () => { setLetterId(null); setTitle(''); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
+  const newLetter = () => { setLetterId(null); setTitle(''); setAttTables([]); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
     if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
@@ -637,7 +726,7 @@ export default function LetterPage() {
         id: letterId || undefined, account_no: general ? undefined : acct.trim(), general,
         title: title.trim() || pSubj || 'نامه', subject: pSubj,
         recipient_dept: pDept, recipient_manager: pMgr,
-        values: f, layout: L, labels,
+        values: (attTables.length ? { ...f, attTables } : f) as any, layout: L, labels,
       })
       setLetterId(saved.id)
       toast.success(general ? 'نامه در «نامه‌های عمومی» ذخیره شد' : `نامه ذیلِ حسابِ ${acct.trim()} ذخیره شد`)
@@ -745,13 +834,16 @@ export default function LetterPage() {
     if (!selLive.includes(td)) selLive.push(td)
     const selKeys = selLive.map((c) => ({ uid: c.closest('tr')?.getAttribute('data-r') || '', ci: c.cellIndex }))
 
+    // Structural edits run on whichever document owns the row: the letter BODY
+    // (single source of truth) or one of the ATTACHMENT tables. Same ops either way.
+    const runOn = (html: string): string | null => {
     const scratch = document.createElement('div')
-    scratch.innerHTML = normalizeBodyHtml(f.body)
+    scratch.innerHTML = normalizeBodyHtml(html)
     mergeAdjacentTables(scratch)
     normalizeTables(scratch)
     const tr = rowUid ? (scratch.querySelector(`tr[data-r="${cssEsc(rowUid)}"]`) as HTMLTableRowElement | null) : null
     const table = tr?.closest('table') as HTMLTableElement | null
-    if (!table || !tr) return
+    if (!table || !tr) return null
     const rows = Array.from(table.rows)
     const rowByUid = (u: string) => scratch.querySelector(`tr[data-r="${cssEsc(u)}"]`) as HTMLTableRowElement | null
     const clean = (h: string) => h.replace(/<[^>]+>/g, '').replace(/ /g, ' ').trim()
@@ -800,7 +892,20 @@ export default function LetterPage() {
       const keys = selKeys.length ? selKeys : [{ uid: rowUid, ci: colIndex }]
       keys.forEach((k) => { const srow = rowByUid(k.uid); const cell = srow?.cells[k.ci]; if (cell) cell.style.verticalAlign = va })
     } else if (op === 'delTable') table.remove()
-    setF((prev) => ({ ...prev, body: scratch.innerHTML }))
+    return scratch.innerHTML
+    }
+    const nextBody = runOn(f.body)
+    if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
+    else {
+      for (const at of attTables) {
+        const nextHtml = runOn(at.html)
+        if (nextHtml == null) continue
+        // an attachment table whose <table> was deleted disappears entirely (its page too)
+        if (nextHtml.indexOf('<table') === -1) removeAttTable(at.id)
+        else updateAttTable(at.id, { html: nextHtml })
+        break
+      }
+    }
     setTbl(null)
   }
 
@@ -833,30 +938,63 @@ export default function LetterPage() {
     }
     const up = () => {
       document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
-      // persist the resulting column widths onto the full body
+      // persist the resulting column widths onto the owning document (body OR an attachment table)
       const live = liveTablesFor(hdrUid)[0]; if (!live) return
       const widths = Array.from(live.rows[0].cells).map((c) => (c as HTMLElement).style.width)
-      const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(f.body)
-      mergeAdjacentTables(scratch); normalizeTables(scratch)
-      const tr = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
-      const table = tr?.closest('table') as HTMLTableElement | null
-      if (table) { Array.from(table.rows).forEach((r) => widths.forEach((w, ci) => { if (w && r.cells[ci]) (r.cells[ci] as HTMLElement).style.width = w })); setF((prev) => ({ ...prev, body: scratch.innerHTML })) }
+      const applyWidths = (html: string): string | null => {
+        const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+        mergeAdjacentTables(scratch); normalizeTables(scratch)
+        const tr = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
+        const table = tr?.closest('table') as HTMLTableElement | null
+        if (!table) return null
+        Array.from(table.rows).forEach((r) => widths.forEach((w, ci) => { if (w && r.cells[ci]) (r.cells[ci] as HTMLElement).style.width = w }))
+        return scratch.innerHTML
+      }
+      const nextBody = applyWidths(f.body)
+      if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
+      else for (const at of attTables) { const nh = applyWidths(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); break } }
       requestAnimationFrame(() => recomputeColRz(hdrUid))   // realign the handles to the re-rendered table
     }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
-  // insert a fresh R×C table at the caret (or append to the body)
+  // ---- Insert a fresh R×C table: a small dialog asks rows/columns, an optional
+  //      TITLE, and whether the table is a letter ATTACHMENT (پیوست) — attachment
+  //      tables become their own pages after the letter's last page. ----
+  const [tblDlg, setTblDlg] = useState<{ rows: string; cols: string; title: string; asAtt: boolean } | null>(null)
+  const insertRangeRef = useRef<Range | null>(null)   // caret at the moment the dialog opened
   const insertTable = () => {
-    const R = parseInt(prompt('چند ردیف؟ (rows)', '3') || '0', 10)
-    const C = parseInt(prompt('چند ستون؟ (columns)', '3') || '0', 10)
-    if (!R || !C || R > 200 || C > 30) return
+    const s = window.getSelection()
+    insertRangeRef.current = s && s.rangeCount ? s.getRangeAt(0).cloneRange() : null
+    setTblDlg({ rows: '3', cols: '3', title: '', asAtt: false })
+  }
+  const freshTableHtml = (R: number, C: number) => {
     let html = '<table>'
     for (let r = 0; r < R; r++) { html += `<tr data-r="${uid()}">`; for (let c = 0; c < C; c++) html += '<td><br></td>'; html += '</tr>' }
-    html += '</table><div><br></div>'
-    const sn = window.getSelection()?.anchorNode
-    const host = sn ? ((sn.nodeType === 3 ? (sn as any).parentElement : (sn as HTMLElement)) as HTMLElement | null)?.closest?.('.bcell') as HTMLElement | null : null
-    if (host) { host.focus(); document.execCommand('insertHTML', false, html) }
-    else setF((prev) => ({ ...prev, body: (prev.body || '') + html }))
+    return html + '</table>'
+  }
+  const confirmInsertTable = () => {
+    if (!tblDlg) return
+    const R = parseInt(tblDlg.rows, 10) || 0, C = parseInt(tblDlg.cols, 10) || 0
+    const ttl = tblDlg.title.trim()
+    if (!R || !C || R > 200 || C > 30) { toast.error('تعدادِ ردیف/ستون معتبر نیست'); return }
+    if (tblDlg.asAtt) {
+      // ATTACHMENT table → its own page after the letter; also counted as a پیوست.
+      setAttTables((list) => [...list, { id: uid(), title: ttl, html: freshTableHtml(R, C) }])
+      if (f.attachment !== 'دارد') setF((s) => ({ ...s, attachment: 'دارد' }))
+      toast.success('جدولِ پیوست ساخته شد — صفحهٔ آن بعد از صفحهٔ آخرِ نامه است')
+    } else {
+      const title = ttl ? `<div style="font-weight:700;text-align:center;text-indent:0">${escapeHtml(ttl)}</div>` : ''
+      const html = `${title}${freshTableHtml(R, C)}<div><br></div>`
+      const r = insertRangeRef.current
+      const host = r ? ((r.commonAncestorContainer.nodeType === 3 ? r.commonAncestorContainer.parentElement : (r.commonAncestorContainer as HTMLElement)) as HTMLElement | null)?.closest?.('.bcell') as HTMLElement | null : null
+      if (host && document.contains(host)) {
+        const sel = window.getSelection()
+        sel?.removeAllRanges(); try { sel?.addRange(r!) } catch { /* stale range → append below */ }
+        host.focus()
+        document.execCommand('insertHTML', false, html)
+      } else setF((prev) => ({ ...prev, body: (prev.body || '') + html }))
+    }
+    setTblDlg(null); insertRangeRef.current = null
   }
 
   // ---- Reflow: merge hard-wrapped LINES (from PDF/line-broken pastes, or older saved
@@ -998,6 +1136,9 @@ export default function LetterPage() {
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
+  // How far the closing block slides DOWN on the last page to clear the content
+  // (0 = exactly where «چیدمان» put it). Bounded by the page-number/footer floor.
+  const [closingShift, setClosingShift] = useState(0)
   useEffect(() => {
     // Use the rendered off-screen measurer; if it isn't attached yet (e.g. a letter
     // loaded during mount, before refs settle), fall back to a temporary one so
@@ -1094,11 +1235,47 @@ export default function LetterPage() {
     // Pack content tightly (every page filled to its full text region).
     const pages = distribute(-1)
     // The closing block (امضاکننده/رونوشت/اقدام) stays at the position you set in «چیدمان»
-    // (drag it to the bottom, wherever you like) on the LAST page. If the last page's
-    // content would reach into that zone, give the closing its own trailing page so nothing
-    // overlaps. (No auto-flow — dragging the sender/body box won't move the other fields.)
+    // on the LAST page. A hard cliff here used to banish the whole closing to a fresh
+    // page the moment content crossed the zone — even by 2px, and even when the
+    // "content" was only invisible trailing empty lines (insertTable always appends
+    // one). So, in order: (1) trailing EMPTY blocks don't count against the closing,
+    // (2) a small overlap is absorbed by sliding the closing group DOWN into the free
+    // space above the page number / footer, (3) only when even that can't clear the
+    // content does the closing get its own trailing page.
     const li = pages.length - 1
-    if (!isHidden('sender') && pages.length && pageH(pages[li]) > regionAvail(li, true)) pages.push([])
+    let shift = 0
+    if (!isHidden('sender') && pages.length) {
+      const isEmptyBlock = (u: Unit) => u.kind === 'block' && !u.html.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '').replace(/&nbsp;| /gi, ' ').trim()
+      const us = pages[li].slice()
+      while (us.length && isEmptyBlock(us[us.length - 1])) us.pop()
+      const overflow = pageH(us) - regionAvail(li, true)
+      if (overflow > 0) {
+        // How far down can the closing go? Measure each visible closing field at its
+        // real width/font (copyTo/action can wrap to several lines) and keep the
+        // bottom-most one above the page-number line and the footer.
+        const tmp = document.createElement('div')
+        tmp.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden'
+        document.body.appendChild(tmp)
+        let closingBottom = 0
+        for (const k of CLOSING) {
+          const b = L[k]; if (!b || b.hidden) continue
+          const inner = document.createElement('div')
+          inner.style.cssText = `width:${b.w}px;font-size:${b.size}pt;line-height:1.25;white-space:normal${b.font ? `;font-family:${b.font}` : ''}`
+          inner.innerHTML = k === 'sender' ? escapeHtml(f.sender || 'x')
+            : k === 'copyto' ? (labels.copyto || '') + (f.copyTo || 'x')
+            : (labels.action || '') + (f.actionName || 'x') + (labels.actionExt || '') + escapeHtml(f.actionExt || 'x')
+          tmp.appendChild(inner)
+          closingBottom = Math.max(closingBottom, b.y + inner.offsetHeight)
+          tmp.removeChild(inner)
+        }
+        document.body.removeChild(tmp)
+        const floor = Math.min(pageNumLimit, (L.footer && !L.footer.hidden ? L.footer.y : m(277)) - gap)
+        const maxShift = Math.max(0, floor - closingBottom)
+        if (overflow <= maxShift) shift = Math.ceil(overflow)
+        else pages.push([])
+      }
+    }
+    setClosingShift(shift)
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
@@ -1111,8 +1288,10 @@ export default function LetterPage() {
     }
     setPages(pages.length ? pages.map(render) : [''])
     if (temp && el.parentNode) el.parentNode.removeChild(el)
+    // NB: the closing fields' own content changes the closing block's measured
+    // height (copyTo/action wrap), so they re-run the slide computation too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f.body, L])
+  }, [f.body, f.sender, f.copyTo, f.actionName, f.actionExt, labels, L])
 
   // ---- Subject separator length follows the subject (capped at one full line) ----
   useEffect(() => {
@@ -1160,6 +1339,69 @@ export default function LetterPage() {
   const P = (k: string, node: React.ReactNode, extra?: React.CSSProperties) => isHidden(k) ? null : <div style={{ ...boxStyle(k), ...extra }}>{node}</div>  // print: positioned, hide-aware
   const H = (h: string) => <span dangerouslySetInnerHTML={{ __html: h || '' }} />  // render a rich (HTML) value
 
+  const totalPageCount = pages.length + attTables.length
+
+  // Letterhead placement on an ATTACHMENT page. Portrait pages reuse the letter's
+  // exact boxes; landscape pages keep each element's anchor: logo stays top-left,
+  // the bank name keeps its distance from the RIGHT edge, footer/page-number keep
+  // their horizontal balance and their distance from the BOTTOM edge — so the
+  // letterhead renders correctly without ever touching the table area.
+  const attHeadStyle = (k: string, land: boolean): React.CSSProperties => {
+    const st = boxStyle(k)
+    if (!land) return st
+    const b = L[k], D = PAGE_H - PAGE_W
+    if (k === 'name') return { ...st, left: b.x + D }
+    if (k === 'footer' || k === 'pagenum') return { ...st, left: b.x + D / 2, top: b.y - D }
+    return st
+  }
+
+  // one attachment-table page in the EDITABLE view — text is never rotated: a
+  // landscape page is simply a wider sheet on screen, so editing stays natural.
+  const attEditorPage = (t: AttTable, i: number) => {
+    const meta = attMeta[t.id]
+    const land = !!meta?.land, scale = meta?.scale ?? 1
+    const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
+    const contentW = W - 2 * ATT_MARGIN
+    return (
+      <div className="lsheet" key={`att-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
+          <span className="att-badge">پیوست {fa(i + 1)}</span>
+          <RichSpan value={t.title} onChange={(h) => updateAttTable(t.id, { title: h })} placeholder="عنوانِ جدولِ پیوست…" style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} />
+          <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌اش)" onClick={() => { if (confirm(`حذفِ جدولِ پیوست ${fa(i + 1)}؟`)) removeAttTable(t.id) }}>🗑</button>
+        </div>
+        {meta?.tooTall && <div className="att-warn no-print">جدول از یک صفحه بلندتر است — چند ردیف را حذف یا جدول را کوچک‌تر کن</div>}
+        <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: h })} transformPaste={cleanPaste}
+          style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
+      </div>
+    )
+  }
+
+  // one attachment-table page in the PRINT view (landscape pages print via a
+  // named @page rule — size:A4 landscape — so nothing is rotated or clipped)
+  const attPrintPage = (t: AttTable, i: number) => {
+    const meta = attMeta[t.id]
+    const land = !!meta?.land, scale = meta?.scale ?? 1
+    const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
+    const contentW = W - 2 * ATT_MARGIN
+    return (
+      <div className={`psheet${land ? ' land' : ''}`} key={`patt-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
+          <span className="att-badge">پیوست {fa(i + 1)}</span>
+          <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: t.title || '' }} />
+        </div>
+        <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: t.html }} />
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
+      </div>
+    )
+  }
+
   // one A4 page in the editable view
   const editorPage = (pi: number) => {
     const isLast = pi === pages.length - 1
@@ -1187,17 +1429,19 @@ export default function LetterPage() {
           : (isHidden('body') ? null : <BodyCell html={pages[pi] || ''} editable={!design} indent={L.body.indent} onChangeHtml={onBody(pi)} transformPaste={reflowPaste}
             style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: contY, width: L.body.w, height: regionAvail(pi, false) }} />)}
 
-        {/* closing block — only on the last page */}
-        {isLast && <>
-          {Box({ k: 'sender', children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
-          {Box({ k: 'action', children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
-        </>}
+        {/* closing block — only on the last page (slid down by closingShift when the
+            content would otherwise collide with its designed position; in «چیدمان»
+            mode it sits at its TRUE designed spot so dragging isn't confusing) */}
+        {isLast && (() => { const cs = design ? 0 : closingShift; return <>
+          {Box({ k: 'sender', style: cs ? { top: L.sender.y + cs } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
+          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
+          {Box({ k: 'action', style: cs ? { top: L.action.y + cs } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
+        </> })()}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
         {pi === 0
-          ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(pages.length)}` })
-          : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>)}
+          ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(totalPageCount)}` })
+          : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>)}
       </div>
     )
   }
@@ -1221,12 +1465,12 @@ export default function LetterPage() {
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
-          {P('sender', f.sender)}
-          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>)}
-          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>)}
+          {P('sender', f.sender, closingShift ? { top: L.sender.y + closingShift } : undefined)}
+          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>, closingShift ? { top: L.copyto.y + closingShift } : undefined)}
+          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift ? { top: L.action.y + closingShift } : undefined)}
         </>}
         {repImg('footer', LH_FOOTER)}
-        {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(pages.length)}`}</div>}
+        {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
     )
   }
@@ -1353,6 +1597,22 @@ export default function LetterPage() {
         .lai-apply{display:inline-flex;align-items:center;gap:6px;background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer;font-size:13px}
         .lai-apply:disabled{opacity:.5;cursor:default}
         .sep-line{width:100%;border-top:1px dashed #000}
+        /* ---- attachment-table pages (جدول‌های پیوست) ---- */
+        .att-ttl{display:flex;align-items:center;justify-content:center;gap:10px;text-align:center;min-height:34px}
+        .att-badge{font-size:10pt;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:16px;padding:1px 10px;font-family:${NAZ};font-weight:600;white-space:nowrap}
+        .att-del{border:0;background:transparent;cursor:pointer;font-size:15px;opacity:.55}
+        .att-del:hover{opacity:1}
+        .att-warn{position:absolute;top:6px;left:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 9px;font-size:11px;z-index:5}
+        /* ---- new-table dialog ---- */
+        .tdlg-wrap{position:fixed;inset:0;z-index:420;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;font-family:${NAZ}}
+        .tdlg{background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(15,23,42,.35);padding:16px 18px;width:min(360px,92vw);display:flex;flex-direction:column;gap:10px}
+        .tdlg h5{font-size:15px;font-weight:800;color:#0f172a;margin:0}
+        .tdlg .trow2{display:flex;gap:8px}
+        .tdlg label{font-size:12px;color:#334155;display:flex;flex-direction:column;gap:3px;flex:1}
+        .tdlg input[type=number],.tdlg input[type=text]{border:1px solid #cbd5e1;border-radius:8px;padding:6px 9px;font-size:13px;width:100%;box-sizing:border-box}
+        .tdlg .tchk{flex-direction:row;align-items:center;gap:7px;font-size:12.5px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 10px;cursor:pointer;color:#134e4a}
+        .tdlg .tchk input{accent-color:#0d9488}
+        .tdlg .tbtns{display:flex;justify-content:flex-start;gap:8px;margin-top:2px}
         .measure{position:absolute;left:-99999px;top:0;visibility:hidden;word-break:normal;overflow-wrap:break-word}
         .print-wrap{display:none}
         .lbox.dz{outline:1px dashed #93c5fd}
@@ -1391,6 +1651,10 @@ export default function LetterPage() {
              sub-pixel overflow so one sheet = exactly one printed page */
           .psheet{box-shadow:none;margin:0!important;height:296mm;overflow:hidden;break-after:page;page-break-after:always}
           .psheet:last-child{break-after:auto;page-break-after:auto}
+          /* attachment-table pages that flipped to LANDSCAPE print on their own named
+             page (A4 landscape) — content stays unrotated, nothing overflows the edges */
+          @page attland { size: A4 landscape; margin: 0 }
+          .psheet.land{page:attland;width:296mm;height:209mm}
         }
         `}</style>
 
@@ -1412,12 +1676,12 @@ export default function LetterPage() {
           {hasAttachmentMode && (
             <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
               title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
-              📎 پیوست‌ها{letterAtts.length ? ` (${fa(letterAtts.length)})` : ''}
+              📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
             </button>
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
-          <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(pages.length)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v16</span>
+          <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v17</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -1454,7 +1718,7 @@ export default function LetterPage() {
               {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
               <span className="ltr-hint">فایل در Google Drive (پوشهٔ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
             </div>
-            {letterAtts.length > 0 && (
+            {(letterAtts.length > 0 || attTables.length > 0) && (
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {letterAtts.map((a) => (
                   <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #ccfbf1', borderRadius: 8, padding: '5px 9px' }}>
@@ -1465,6 +1729,16 @@ export default function LetterPage() {
                     <button onClick={() => downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name).catch((e) => toast.error(parseApiError(e)))}
                       style={{ border: 0, background: 'transparent', color: '#0d9488', cursor: 'pointer', marginInlineStart: 'auto' }}>دانلود</button>
                     <button onClick={() => deleteAtt(a.id, a.original_name)} style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>حذف</button>
+                  </div>
+                ))}
+                {/* attachment TABLES — rendered as pages after the letter (not files) */}
+                {attTables.map((t, i) => (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 9px' }}>
+                    <span>▦</span>
+                    <b>جدولِ پیوست {fa(i + 1)}{plain(t.title) ? ` — ${plain(t.title)}` : ''}</b>
+                    <span className="ltr-hint">صفحهٔ {fa(pages.length + i + 1)}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
+                    <button onClick={() => { if (confirm(`حذفِ جدولِ پیوست ${fa(i + 1)}؟`)) removeAttTable(t.id) }}
+                      style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer', marginInlineStart: 'auto' }}>حذف</button>
                   </div>
                 ))}
               </div>
@@ -1571,15 +1845,49 @@ export default function LetterPage() {
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
         <span ref={subjRef} aria-hidden className="measure" style={{ whiteSpace: 'nowrap', fontFamily: L.subject.font, fontSize: `${L.subject.size}pt` }} />
 
-        {/* ---- EDITABLE PAGINATED VIEW (screen) ---- */}
+        {/* ---- EDITABLE PAGINATED VIEW (screen) — attachment-table pages follow
+             the letter's last (closing) page, in order ---- */}
         <div id="ltr-edit" className="canvas-wrap" onDoubleClick={exitEditing}>
           {pages.map((_, pi) => editorPage(pi))}
+          {attTables.map((t, i) => attEditorPage(t, i))}
         </div>
 
         {/* ---- PRINT VIEW (read-only values) ---- */}
         <div className="canvas-wrap print-wrap">
           {pages.map((_, pi) => printPage(pi))}
+          {attTables.map((t, i) => attPrintPage(t, i))}
         </div>
+
+        {/* ---- NEW-TABLE DIALOG: rows/columns + optional title + «به‌عنوانِ پیوست» ---- */}
+        {tblDlg && (
+          <div className="tdlg-wrap no-print" dir="rtl" onClick={() => setTblDlg(null)}>
+            <div className="tdlg" onClick={(e) => e.stopPropagation()}>
+              <h5>جدولِ جدید</h5>
+              <div className="trow2">
+                <label>تعدادِ ردیف
+                  <input type="number" min={1} max={200} value={tblDlg.rows} autoFocus
+                    onChange={(e) => setTblDlg((d) => d && { ...d, rows: e.target.value })} />
+                </label>
+                <label>تعدادِ ستون
+                  <input type="number" min={1} max={30} value={tblDlg.cols}
+                    onChange={(e) => setTblDlg((d) => d && { ...d, cols: e.target.value })} />
+                </label>
+              </div>
+              <label>عنوانِ جدول (اختیاری — بالای جدول، قابلِ ویرایش)
+                <input type="text" value={tblDlg.title} placeholder="مثلاً: جدولِ اقساطِ تسهیلات"
+                  onChange={(e) => setTblDlg((d) => d && { ...d, title: e.target.value })} />
+              </label>
+              <label className="tchk">
+                <input type="checkbox" checked={tblDlg.asAtt} onChange={(e) => setTblDlg((d) => d && { ...d, asAtt: e.target.checked })} />
+                <span>ثبت به‌عنوانِ <b>پیوستِ نامه</b> — جدول صفحهٔ جداگانه‌ای بعد از صفحهٔ آخرِ نامه می‌گیرد؛ اگر عریض باشد صفحه خودکار افقی (landscape) می‌شود</span>
+              </label>
+              <div className="tbtns">
+                <button className="ltr-btn green" onClick={confirmInsertTable}><Table size={14} /> ساختِ جدول</button>
+                <button className="ltr-btn gray" onClick={() => setTblDlg(null)}>انصراف</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ---- AI ASSISTANT MODAL («دستیار هوشمند») ---- */}
         {aiOpen && (
