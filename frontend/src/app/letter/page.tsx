@@ -10,7 +10,7 @@
 // 210×297 mm @96dpi → prints 1:1. Fonts: locally-installed B Nazanin / Titr / B Titr.
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
-import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon } from 'lucide-react'
+import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon, Download } from 'lucide-react'
 import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
 import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
 import { LetterSummary } from '@/types'
@@ -1473,6 +1473,56 @@ export default function LetterPage() {
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
 
+  // ---- Download the letter as a PDF that looks EXACTLY like the prepared pages.
+  //      Each print-view sheet is rendered by the browser itself (SVG foreignObject
+  //      via html-to-image → real layout: RTL, justify, local fonts, floats, images)
+  //      into a 2x PNG, then placed full-bleed on an A4 PDF page with the sheet's
+  //      own orientation. Libraries are lazy-loaded on first use. ----
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const downloadPdf = async () => {
+    if (pdfBusy) return
+    setPdfBusy(true)
+    const tId = toast.loading('در حالِ ساختِ PDF…')
+    const host = document.createElement('div')
+    host.style.cssText = 'position:absolute;left:-99999px;top:0;background:#fff'
+    document.body.appendChild(host)
+    try {
+      const [{ toPng }, { jsPDF }] = await Promise.all([import('html-to-image'), import('jspdf')])
+      const sheets = Array.from(document.querySelectorAll('.print-wrap .psheet')) as HTMLElement[]
+      if (!sheets.length) throw new Error('empty')
+      let pdf: any = null
+      for (let i = 0; i < sheets.length; i++) {
+        toast.loading(`در حالِ ساختِ PDF — صفحهٔ ${fa(i + 1)} از ${fa(sheets.length)}…`, { id: tId })
+        const src = sheets[i]
+        const land = src.classList.contains('land')
+        const W = land ? PAGE_H : PAGE_W, H = land ? PAGE_W : PAGE_H
+        const clone = src.cloneNode(true) as HTMLElement
+        clone.style.margin = '0'; clone.style.boxShadow = 'none'
+        host.innerHTML = ''; host.appendChild(clone)
+        const png = await toPng(clone, { pixelRatio: 2, width: W, height: H, backgroundColor: '#ffffff' })
+        const orient = land ? 'landscape' : 'portrait'
+        if (!pdf) pdf = new jsPDF({ orientation: orient, unit: 'mm', format: 'a4', compress: true })
+        else pdf.addPage('a4', orient)
+        pdf.addImage(png, 'PNG', 0, 0, land ? 297 : 210, land ? 210 : 297, undefined, 'FAST')
+      }
+      const name = (title.trim() || plain(f.subject) || 'نامه').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80)
+      // manual anchor (jsPDF's save drops non-Latin filenames in some browsers)
+      const blob = pdf.output('blob')
+      const url = URL.createObjectURL(blob)
+      const aEl = document.createElement('a')
+      aEl.href = url; aEl.download = `${name}.pdf`
+      document.body.appendChild(aEl); aEl.click(); aEl.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      toast.success('PDF دانلود شد — دقیقاً با همان ظاهرِ نامه', { id: tId })
+      auditApi.logActivity({ action: 'export', entity_type: 'letter', detail: `دانلود PDF نامه${plain(f.subject) ? ` — موضوع: ${plain(f.subject)}` : ''}` })
+    } catch {
+      toast.error('ساختِ PDF ناموفق بود — دوباره تلاش کن', { id: tId })
+    } finally {
+      if (host.parentNode) host.parentNode.removeChild(host)
+      setPdfBusy(false)
+    }
+  }
+
   // ---- Behind-text float interactions ----
   const startFloatDrag = (e: React.PointerEvent, id: string) => {
     e.preventDefault(); e.stopPropagation()
@@ -2388,6 +2438,8 @@ export default function LetterPage() {
             </select>
           )}
           <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
+          <button onClick={downloadPdf} disabled={pdfBusy} className="ltr-btn" style={{ background: '#9a3412', opacity: pdfBusy ? 0.6 : 1 }}
+            title="دانلودِ نامه به‌صورتِ PDF — دقیقاً با همان ظاهر، صفحه‌بندی و سربرگ (صفحاتِ افقیِ پیوست هم افقی می‌مانند)"><Download size={15} /> {pdfBusy ? '⏳ در حالِ ساخت…' : 'دانلود PDF'}</button>
           <button onClick={insertTable} className="ltr-btn gray" title="افزودنِ جدولِ نو (بعد کلیک داخلِ متن)"><Table size={14} /> جدول</button>
           <button onClick={insertImageClick} className="ltr-btn gray" title="درجِ تصویر در محلِ نشانگر — بعد از درج با کلیک روی تصویر: اندازه، کراپ، جابه‌جایی و «پشتِ متن»"><ImageIcon size={14} /> تصویر</button>
           <input ref={imgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -2401,7 +2453,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v19</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v20</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
