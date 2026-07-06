@@ -1108,7 +1108,11 @@ export default function LetterPage() {
         #ltr-edit select{cursor:pointer;width:auto}
         #ltr-edit input.fld::placeholder{color:#c7cfdb}
         #ltr-edit input.fld:focus,#ltr-edit .lbl-in:focus,#ltr-edit .bcell:focus{background:rgba(37,99,235,.06);border-radius:2px;outline:none}
-        .bcell{width:100%;height:100%;overflow:hidden;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
+        /* overflow:clip + a small clip-margin instead of overflow:hidden: still clips
+           the box (pagination height stays controlled) but paints a few px past the
+           edge so the FIRST glyph of a wrapped RTL line (esp. bold, e.g. «ابطال»/
+           «مخاطراتی» at line start) isn't shaved off by the right edge. */
+        .bcell{width:100%;height:100%;overflow:clip;overflow-clip-margin:4px;outline:none;white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
         .bcell > div,.bcell > p{text-indent:var(--ind,0)}
         .bcell.firstpage > div:first-child,.bcell.firstpage > p:first-child{text-indent:0}
         /* pasted paragraphs shouldn't carry Word's big block margins (huge line gaps) */
