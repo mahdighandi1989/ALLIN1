@@ -334,6 +334,11 @@ export default function LetterPage() {
   const [letterAtts, setLetterAtts] = useState<LetterAttachment[]>([])
   const [attUploading, setAttUploading] = useState(false)
   const [extracting2, setExtracting2] = useState('')   // progress text while extracting attachments
+  // Which attachments the extraction tool should read — user-pickable (all by
+  // default; maybe not every enclosure is worth extracting).
+  const [aiSelAtts, setAiSelAtts] = useState<Record<string, boolean>>({})
+  const attSelected = (id: string) => aiSelAtts[id] !== false   // default: selected
+  const selectedAttCount = letterAtts.filter((a) => attSelected(a.id)).length
   const loadAtts = async (id: string | null) => {
     if (!id) { setLetterAtts([]); return }
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
@@ -425,12 +430,17 @@ export default function LetterPage() {
         all = r.changes || []
         modelUsed = r.model || ''
       }
-      // Deep extraction from the letter's attachments — one attachment per
-      // request (bounded), mirroring the Import pipeline's guards server-side.
-      if (aiSelTools.includes(ATT_TOOL) && letterAtts.length) {
-        for (let i = 0; i < letterAtts.length; i++) {
-          const att = letterAtts[i]
-          setExtracting2(`استخراج از پیوست ${fa(i + 1)} از ${fa(letterAtts.length)}: ${att.original_name}…`)
+      // Deep extraction from the letter's attachments — only the ones the user
+      // ticked, one attachment per request (bounded), mirroring the Import
+      // pipeline's guards server-side.
+      const attsToRun = aiSelTools.includes(ATT_TOOL) ? letterAtts.filter((a) => attSelected(a.id)) : []
+      if (aiSelTools.includes(ATT_TOOL) && letterAtts.length && !attsToRun.length) {
+        toast.error('هیچ پیوستی برای استخراج انتخاب نشده — در فهرستِ زیرِ ابزار، پیوست(ها) را تیک بزن')
+      }
+      if (attsToRun.length) {
+        for (let i = 0; i < attsToRun.length; i++) {
+          const att = attsToRun[i]
+          setExtracting2(`استخراج از پیوست ${fa(i + 1)} از ${fa(attsToRun.length)}: ${att.original_name}…`)
           try {
             const rx = await letterAiApi.extractAttachment(att.id, {
               account_no: general ? undefined : (acct.trim() || undefined),
@@ -1229,6 +1239,10 @@ export default function LetterPage() {
         .lai-panelwrap{position:fixed;inset:0;z-index:400;pointer-events:none;font-family:${NAZ}}
         .lai-modal{position:fixed;top:0;right:0;height:100vh;width:min(470px,96vw);background:#fff;box-shadow:-12px 0 40px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;border-left:1px solid #e2e8f0}
         .lai-selhint{margin-top:4px;font-size:11.5px;color:#6d5bb5;line-height:1.7}
+        .lai-attpick{margin-top:8px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:5px}
+        .lai-attrow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#134e4a;cursor:pointer}
+        .lai-attrow input{accent-color:#0d9488}
+        .lai-attname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;font-weight:600}
         .lai-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
         .lai-chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #c7d2fe;border-radius:20px;padding:2px 4px 2px 9px;font-size:11.5px;color:#3730a3;max-width:100%}
         .lai-chiptext{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px}
@@ -1553,10 +1567,31 @@ export default function LetterPage() {
                       <label className={`lai-tool${aiSelTools.includes(ATT_TOOL) ? ' on' : ''}`} style={{ borderColor: '#5eead4' }}
                         title="مانند صفحهٔ Import: همهٔ داده‌های مرتبط با موضوع نامه و همهٔ حساب‌های نام‌برده، کامل و بدون خلاصه‌سازی، استخراج و پس از تیکِ شما ثبت می‌شود">
                         <input type="checkbox" checked={aiSelTools.includes(ATT_TOOL)} onChange={() => toggleTool(ATT_TOOL)} />
-                        <span>استخراجِ کامل از پیوست‌ها ({fa(letterAtts.length)})</span>
+                        <span>استخراجِ کامل از پیوست‌ها ({fa(selectedAttCount)} از {fa(letterAtts.length)})</span>
                       </label>
                     )}
                   </div>
+
+                  {/* Which attachments to extract — pick exactly the ones you need */}
+                  {aiSelTools.includes(ATT_TOOL) && letterAtts.length > 0 && (
+                    <div className="lai-attpick">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span className="lai-lbl">کدام پیوست‌ها استخراج شوند؟</span>
+                        <span style={{ display: 'flex', gap: 6 }}>
+                          <button className="lai-mini" onClick={() => setAiSelAtts({})}>همه</button>
+                          <button className="lai-mini" onClick={() => { const off: Record<string, boolean> = {}; letterAtts.forEach((a) => { off[a.id] = false }); setAiSelAtts(off) }}>هیچ‌کدام</button>
+                        </span>
+                      </div>
+                      {letterAtts.map((a) => (
+                        <label key={a.id} className="lai-attrow">
+                          <input type="checkbox" checked={attSelected(a.id)}
+                            onChange={(e) => setAiSelAtts((s) => ({ ...s, [a.id]: e.target.checked }))} />
+                          <span className="lai-attname">📄 {a.original_name}</span>
+                          <span className="lai-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="lai-selbox">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
