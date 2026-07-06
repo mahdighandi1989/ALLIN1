@@ -723,13 +723,16 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
   // db_write only — the extracted profile fact + its resolved target customer
   account_no?: string; customer_name?: string; key?: string; value?: string
   action?: 'add' | 'update'; resolution?: string; exists?: boolean
+  // link only — profile↔profile relationship proposal (kind + exact reason)
+  related_account?: string; related_name?: string; kind?: string; reason?: string
+  source_file?: string
 }
 export type LetterAiDbOutcome = { account_no: string; key: string; outcome: string; profile_created?: boolean; reason?: string }
 export const letterAiApi = {
@@ -741,9 +744,16 @@ export const letterAiApi = {
     const { data } = await api.post('/api/letter-ai/analyze', body)
     return data
   },
-  // Persist the user-approved extracted facts into the right customer profile(s).
-  async applyDb(items: { account_no: string; customer_name?: string; key: string; value: string }[]): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number } }> {
-    const { data } = await api.post('/api/letter-ai/apply-db', { items })
+  // Persist the user-approved extracted facts into the right customer profile(s)
+  // + create approved profile↔profile links (kind + exact reason).
+  async applyDb(body: { items: { account_no: string; customer_name?: string; key: string; value: string }[]; links?: { account_no: string; related_account: string; kind: string; reason: string }[]; source_ref?: string }): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number }; links_created?: number }> {
+    const { data } = await api.post('/api/letter-ai/apply-db', body)
+    return data
+  },
+  // Deep extraction from ONE letter attachment (UI runs them sequentially).
+  // Long timeout: chunked model calls over a large file can take minutes.
+  async extractAttachment(attachmentId: string, body: { account_no?: string; customer_name?: string; subject?: string; body_excerpt?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; changes: LetterAiChange[]; model?: string; chunk_errors?: string[]; file?: string; suggestions?: any[] }> {
+    const { data } = await api.post(`/api/letter-ai/extract-attachment/${encodeURIComponent(attachmentId)}`, body, { timeout: 420000 })
     return data
   },
 }
@@ -915,7 +925,12 @@ export const departmentsApi = {
 // ---------------------------------------------------------------------------
 // Saved letters — under an account (auto-creates the profile) or general.
 // ---------------------------------------------------------------------------
+export type LetterAttachment = { id: string; account_no?: string; original_name: string; file_size?: string; upload_date?: string; uploaded_by?: string; storage: 'drive' | 'disk' }
 export const lettersApi = {
+  async attachments(letterId: string): Promise<LetterAttachment[]> {
+    const { data } = await api.get(`/api/letters/${encodeURIComponent(letterId)}/attachments`)
+    return data
+  },
   async list(params: { account_no?: string; general?: boolean } = {}): Promise<LetterSummary[]> {
     const { data } = await api.get('/api/letters/', { params })
     return data

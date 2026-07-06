@@ -80,7 +80,45 @@ async def relationships_for_account(db: AsyncSession, account_no: str) -> dict:
             raw_received.append((entry, r))
             needed_accounts.add(_clean(getattr(r, entry.relation_account_attr, "")))
 
+    # First-class explicit links (letters, AI-extractions, manual) — generic for
+    # EVERY subject, each carrying its kind + the exact recorded reason. A link is
+    # stored once but surfaces on BOTH profiles (given on the owning side,
+    # received on the related side).
+    from app.models.customer_link_rel import CustomerLink
+
+    link_given = (
+        await db.execute(
+            sa.select(CustomerLink).where(
+                CustomerLink.account_no == account_no, CustomerLink.is_deleted == False  # noqa: E712
+            )
+        )
+    ).scalars().all()
+    link_recv = (
+        await db.execute(
+            sa.select(CustomerLink).where(
+                CustomerLink.related_account == account_no, CustomerLink.is_deleted == False  # noqa: E712
+            )
+        )
+    ).scalars().all()
+    for l in link_given:
+        needed_accounts.add(_clean(l.related_account))
+    for l in link_recv:
+        needed_accounts.add(_clean(l.account_no))
+
     cmap = await _customer_map(db, needed_accounts)
+
+    for l, mine, other_acc in (
+        [(l, "given", _clean(l.related_account)) for l in link_given]
+        + [(l, "received", _clean(l.account_no)) for l in link_recv]
+    ):
+        info = cmap.get(other_acc, {})
+        item = {
+            "relation": KIND_FA.get(l.kind, l.kind), "kind": f"link:{l.kind}", "id": l.id,
+            "counterparty_account": other_acc, "counterparty_name": info.get("name"),
+            "counterparty_customer_id": info.get("customer_id"),
+            "detail": {"reason": l.reason, "source": l.source, "source_ref": l.source_ref},
+        }
+        (given if mine == "given" else received).append(item)
 
     for entry, r in raw_given:
         owner_acc = _clean(getattr(r, "account_no", ""))
@@ -110,6 +148,49 @@ async def relationships_for_account(db: AsyncSession, account_no: str) -> dict:
         })
 
     return {"given": given, "received": received}
+
+
+KIND_FA = {"guarantor": "ضامن", "letter": "نامه‌نگاری", "co_signer": "امضای مشترک",
+           "family": "نسبت خانوادگی", "business_partner": "شریک تجاری", "other": "مرتبط"}
+VALID_LINK_KINDS = set(KIND_FA)
+
+
+async def ensure_link(
+    db: AsyncSession, account_no: str, related_account: str, *, kind: str, reason: str,
+    source: str = "manual", source_ref: str = "", created_by: str = "",
+):
+    """Create an explicit profile↔profile link once (idempotent, direction-agnostic).
+
+    The SAME pair+kind (either direction) never duplicates: an existing live link
+    is returned with its reason kept (first recorded reason wins; a new distinct
+    reason is appended). Does NOT commit — caller owns the transaction."""
+    from app.models.customer_link_rel import CustomerLink
+
+    a, b = _clean(account_no), _clean(related_account)
+    k = (kind or "other").strip() if (kind or "").strip() in VALID_LINK_KINDS else "other"
+    why = " ".join((reason or "").split())[:900]
+    if not a or not b or a == b or not why:
+        return None
+    existing = (
+        await db.execute(
+            sa.select(CustomerLink).where(
+                CustomerLink.kind == k, CustomerLink.is_deleted == False,  # noqa: E712
+                sa.or_(
+                    sa.and_(CustomerLink.account_no == a, CustomerLink.related_account == b),
+                    sa.and_(CustomerLink.account_no == b, CustomerLink.related_account == a),
+                ),
+            )
+        )
+    ).scalars().first()
+    if existing is not None:
+        if why not in (existing.reason or ""):
+            existing.reason = ((existing.reason or "") + " | " + why)[:2000]
+        return existing
+    link = CustomerLink(account_no=a, related_account=b, kind=k, reason=why,
+                        source=source[:40], source_ref=(source_ref or "")[:80],
+                        created_by=(created_by or "")[:80])
+    db.add(link)
+    return link
 
 
 def _has_deleted(model) -> bool:

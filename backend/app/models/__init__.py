@@ -16,6 +16,7 @@ from app.models.system_setting import SystemSetting
 from app.models.exposure_snapshot import ExposureSnapshot
 from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY
 from app.models.ai_config import AIProvider, AIModel, AITaskRoute
+from app.models.customer_link_rel import CustomerLink
 
 __all__ = [
     "User",
