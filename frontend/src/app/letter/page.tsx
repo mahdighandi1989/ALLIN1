@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X } from 'lucide-react'
-import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError } from '@/lib/api'
+import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
 import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
@@ -1391,7 +1391,9 @@ export default function LetterPage() {
                     <span>📄</span>
                     <b>{a.original_name}</b>
                     <span className="ltr-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}{a.upload_date ? ` · ${a.upload_date}` : ''}</span>
-                    <a href={`/api/crm/attachments/${a.id}/download`} target="_blank" rel="noreferrer" style={{ color: '#0d9488', marginInlineStart: 'auto' }}>دانلود</a>
+                    {/* authed fetch → blob (a plain <a href> would drop the JWT → 401 in production) */}
+                    <button onClick={() => downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name).catch((e) => toast.error(parseApiError(e)))}
+                      style={{ border: 0, background: 'transparent', color: '#0d9488', cursor: 'pointer', marginInlineStart: 'auto' }}>دانلود</button>
                     <button onClick={() => deleteAtt(a.id, a.original_name)} style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>حذف</button>
                   </div>
                 ))}

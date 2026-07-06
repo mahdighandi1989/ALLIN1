@@ -282,8 +282,14 @@ async def extract_attachment_endpoint(
     fname = a.original_name or a.file_name or "file"
     mime = mimetypes.guess_type(fname)[0] or "application/octet-stream"
 
+    # General letters store their attachments under the 'general' key — that is a
+    # bucket, NOT a customer; never let it become the primary account (facts
+    # would be attributed to a bogus «general» profile). With no primary, only
+    # facts whose account is explicitly cited (or name-matched) get staged.
+    att_acc = (a.account_no or "").strip()
+    primary_acc = (payload.account_no or "").strip() or ("" if att_acc.lower() == "general" else att_acc)
     letter_ctx = {
-        "subject": payload.subject or "", "account_no": payload.account_no or a.account_no or "",
+        "subject": payload.subject or "", "account_no": primary_acc,
         "customer_name": payload.customer_name or "", "body_excerpt": payload.body_excerpt or "",
     }
     extraction = await lax.extract_attachment(
@@ -295,7 +301,7 @@ async def extract_attachment_endpoint(
                 "suggestions": extraction.get("suggestions", []), "changes": []}
 
     staged = await lax.stage_extraction(
-        db, extraction, primary_account=(payload.account_no or a.account_no or "").strip(),
+        db, extraction, primary_account=primary_acc,
         primary_name=payload.customer_name or "", source_ref=fname,
     )
     # unique ids per attachment so items from several attachments never collide
@@ -304,7 +310,7 @@ async def extract_attachment_endpoint(
         it["source_file"] = fname
     await record_audit(
         action="analyze", entity_type="letter_attachment_ai", entity_id=attachment_id,
-        account_no=(payload.account_no or a.account_no or None),
+        account_no=(primary_acc or None),
         detail=f"استخراج هوشمند از پیوست «{fname}» — {len(staged)} مورد",
         user=user, request=request, db=db,
     )
