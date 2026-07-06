@@ -119,7 +119,10 @@ async def analyze(
 
     result = await inference.complete(
         db, prompt, task="report_drafting", system=system,
-        model_id=payload.model_id, max_tokens=8000, temperature=0.2,
+        model_id=payload.model_id, max_tokens=8000,
+        # No explicit temperature: newer reasoning models (Opus 4.8) reject it with
+        # a 400. inference.complete also strips+retries as a backstop for any model
+        # that carries a configured temperature.
     )
     if not result.get("ok"):
         # Friendly, non-fatal: the UI shows the reason (e.g. no model configured).

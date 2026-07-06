@@ -29,6 +29,30 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 60.0
 
 
+def _body_text(resp) -> str:
+    """The provider's error body as text (safe — never raises)."""
+    try:
+        return resp.text or ""
+    except Exception:  # pragma: no cover - defensive
+        return ""
+
+
+def _has_temperature(payload: Dict[str, Any]) -> bool:
+    """True if this payload carries a temperature (top-level or Gemini's nested)."""
+    if "temperature" in payload:
+        return True
+    gc = payload.get("generationConfig")
+    return isinstance(gc, dict) and "temperature" in gc
+
+
+def _strip_temperature(payload: Dict[str, Any]) -> None:
+    """Remove temperature wherever a provider family puts it (in place)."""
+    payload.pop("temperature", None)
+    gc = payload.get("generationConfig")
+    if isinstance(gc, dict):
+        gc.pop("temperature", None)
+
+
 def _extract_text(family: str, data: Dict[str, Any]) -> str:
     """Pull the assistant's text out of a provider response body."""
     try:
@@ -146,6 +170,13 @@ async def complete(
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             resp = await client.post(url, headers=headers, json=payload)
+            # Some newer models (e.g. Claude Opus 4.8 reasoning) reject an explicit
+            # `temperature` with a 400 ("temperature is deprecated/unsupported for
+            # this model"). That shouldn't force the user to a weaker model — strip
+            # the offending param and retry ONCE. Applies to every AI feature.
+            if resp.status_code == 400 and "temperature" in (_body_text(resp)).lower() and _has_temperature(payload):
+                _strip_temperature(payload)
+                resp = await client.post(url, headers=headers, json=payload)
     except httpx.TimeoutException:
         return {"ok": False, "error": f"timed out after {int(_TIMEOUT)}s", "text": "", "model": resolved.display_name}
     except Exception as exc:  # network/DNS/TLS
