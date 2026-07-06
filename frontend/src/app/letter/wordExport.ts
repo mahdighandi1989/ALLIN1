@@ -32,6 +32,23 @@ export type WordExportArgs = {
 }
 
 const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0))
+// LTR-ISOLATE a purely Latin/numeric value (serial, date, phone ext) so Word's
+// bidi never flips its segment order inside an RTL paragraph — the exact mirror
+// of the dir="ltr" spans the letter page itself uses.
+const ltr = (t: string) => `\u2066${t}\u2069`
+// NB: per-run rightToLeft is an OVERRIDE in Word — putting it on mixed runs
+// reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
+// flag gives the RTL base; character order is then resolved by the standard
+// bidi algorithm, exactly like the browser renders the letter.
+const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean } = {}) =>
+  new TextRun({
+    text,
+    font: { ascii: font, hAnsi: font, cs: font } as any,
+    size: half, sizeComplexScript: half,
+    bold: o.bold, boldComplexScript: o.bold,
+    italics: o.italics, italicsComplexScript: o.italics,
+    underline: o.underline ? {} : undefined,
+  })
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
 
 // ---------- inline images: bake the imgcrop window onto a canvas ----------
@@ -76,7 +93,7 @@ function inlineRuns(node: Node, font: string, half: number, st: RunOpts, imgs: I
   node.childNodes.forEach((ch) => {
     if (ch.nodeType === 3) {
       const text = (ch.textContent || '').replace(/ /g, ' ')
-      if (text) out.push(new TextRun({ text, font, size: half, rightToLeft: true, bold: st.bold, italics: st.italics, underline: st.underline ? {} : undefined }))
+      if (text) out.push(mkRun(text, font, half, st))
       return
     }
     if (ch.nodeType !== 1) return
@@ -115,7 +132,7 @@ function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, 
   if (el.tagName === 'UL' || el.tagName === 'OL') {
     return Array.from(el.querySelectorAll('li')).map((li, i) => new Paragraph({
       bidirectional: true, alignment: alignOf(el, AlignmentType.RIGHT),
-      children: [new TextRun({ text: el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, size: half, rightToLeft: true }),
+      children: [mkRun(el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, half),
         ...inlineRuns(li, font, half, {}, imgs)],
     }))
   }
@@ -123,7 +140,8 @@ function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, 
   return [new Paragraph({
     bidirectional: true,
     alignment: alignOf(el, justify ? AlignmentType.JUSTIFIED : AlignmentType.RIGHT),
-    children: runs.length ? runs : [new TextRun({ text: '', font, size: half })],
+    spacing: justify ? { line: 360 } : undefined,
+    children: runs.length ? runs : [mkRun('', font, half)],
   })]
 }
 
@@ -143,7 +161,7 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
         const para = new Paragraph({
           bidirectional: true,
           alignment: alignOf(td, isTh ? AlignmentType.CENTER : AlignmentType.RIGHT),
-          children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs) : [new TextRun({ text: '', font, size: half })],
+          children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs) : [mkRun('', font, half)],
         })
         return new TableCell({
           children: [para],
@@ -206,10 +224,10 @@ function letterheadFooter(L: WordExportArgs['L'], font: string) {
       alignment: AlignmentType.CENTER, bidirectional: true,
       children: [
         ...kids,
-        new TextRun({ text: 'صفحه ', font, size: 20, rightToLeft: true }),
-        new TextRun({ children: [PageNumber.CURRENT], font, size: 20 }),
-        new TextRun({ text: ' از ', font, size: 20, rightToLeft: true }),
-        new TextRun({ children: [PageNumber.TOTAL_PAGES], font, size: 20 }),
+        mkRun('صفحه ', font, 20),
+        new TextRun({ children: [PageNumber.CURRENT], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
+        mkRun(' از ', font, 20),
+        new TextRun({ children: [PageNumber.TOTAL_PAGES], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
       ],
     })],
   })
@@ -224,24 +242,34 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   bodyDiv.innerHTML = a.f.body || ''
   const imgs = await bakeImages(bodyDiv)
 
-  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number } = {}) =>
+  // label (Persian) + optional VALUE kept in an LTR isolate (mirrors the page's
+  // dir="ltr" spans: serial line, date, phone extension never get bidi-flipped)
+  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string } = {}) =>
     new Paragraph({
       bidirectional: true, alignment: opts.align || AlignmentType.RIGHT,
-      children: [new TextRun({ text, font: opts.font || FONT, size: Math.round((opts.pt || a.bodyFontPt) * 2), rightToLeft: true, bold: opts.bold })],
+      children: [
+        mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
+        ...(opts.ltrValue != null ? [mkRun(ltr(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
+      ],
     })
 
   // -- top block: right column (شماره/تاریخ/پیوست/طبقه‌بندی) + left column (گیرنده) --
-  const lbl = (k: string) => plainText(a.labels[k] || '')
-  const rightCol = [
-    P(`${lbl('shomareh')}182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}`, { pt: 12 }),
-    P(`${lbl('tarikh')}${a.f.date || ''}`, { pt: 12 }),
+  const lbl = (k: string) => { const t = plainText(a.labels[k] || ''); return t && !/[\s:،–-]$/.test(t) ? t + ' ' : (t ? t + ' ' : t) }
+  const metaCol = [
+    P(lbl('shomareh'), { pt: 12, ltrValue: `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}` }),
+    P(lbl('tarikh'), { pt: 12, ltrValue: a.f.date || '' }),
     P(`${lbl('peyvast')}${a.f.attachment || ''}`, { pt: 12 }),
     P(`${lbl('classification')}${a.f.classification || ''}`, { pt: 11, bold: true }),
   ]
-  const leftCol = [
+  const recCol = [
     P(plainText(a.f.recipientName) || ' ', { pt: 12, bold: true, font: TITR }),
     P(`${plainText(a.f.recipientTitle)} ${plainText(a.f.recipientDept)}`.trim() || ' ', { pt: 12, bold: true, font: TITR }),
   ]
+  // column order follows the letter's OWN layout: in an RTL table the FIRST cell
+  // renders on the RIGHT — put whichever block the letter has on its right there.
+  const recOnRight = (a.L.recName?.x ?? 480) >= (a.L.shomareh?.x ?? 30)
+  const rightCol = recOnRight ? recCol : metaCol
+  const leftCol = recOnRight ? metaCol : recCol
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
   const topTable = new Table({
     visuallyRightToLeft: true,
@@ -258,7 +286,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const subjectPara = new Paragraph({
     bidirectional: true, alignment: AlignmentType.RIGHT,
     border: { bottom: { style: BorderStyle.DASHED, size: 4, color: '000000', space: 4 } },
-    children: [new TextRun({ text: `${lbl('subject')}${plainText(a.f.subject)}`, font: TITR, size: 24, rightToLeft: true, bold: true })],
+    children: [mkRun(`${lbl('subject')}${plainText(a.f.subject)}`, TITR, 24, { bold: true })],
   })
 
   // -- body --
@@ -288,7 +316,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const closing = [
     P(a.f.sender || '', { bold: true, align: AlignmentType.CENTER, font: TITR, pt: 13 }),
     P(`${lbl('copyto')}${plainText(a.f.copyTo)}`, { pt: 10 }),
-    P(`${lbl('action')}${plainText(a.f.actionName)}${lbl('actionExt')}${a.f.actionExt || ''}`, { pt: 10 }),
+    P(`${lbl('action')}${plainText(a.f.actionName)} ${lbl('actionExt')}`, { pt: 10, ltrValue: a.f.actionExt || '' }),
   ]
 
   // -- letter section margins from the designed body box --
@@ -305,7 +333,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
     headers: { default: letterheadHeader(a.L) },
     footers: { default: letterheadFooter(a.L, FONT) },
     children: [
-      new Paragraph({ alignment: AlignmentType.CENTER, bidirectional: true, children: [...floatRuns, new TextRun({ text: lbl('besmele') || 'بسمه تعالی', font: FONT, size: 26, rightToLeft: true })] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, bidirectional: true, children: [...floatRuns, mkRun(plainText(a.labels.besmele || '') || 'بسمه تعالی', FONT, 26)] }),
       topTable,
       subjectPara,
       P(' ', { pt: 6 }),
@@ -335,7 +363,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       children: [
         new Paragraph({
           alignment: AlignmentType.CENTER, bidirectional: true,
-          children: [new TextRun({ text: `جدول ${fa(i + 1)} پیوست${plainText(t.title) ? ` — ${plainText(t.title)}` : ''}`, font: TITR, size: 28, rightToLeft: true, bold: true })],
+          children: [mkRun(`جدول ${fa(i + 1)} پیوست${plainText(t.title) ? ` — ${plainText(t.title)}` : ''}`, TITR, 28, { bold: true })],
         }),
         P(' ', { pt: 6 }),
         tblEl ? tableToDocx(tblEl, FONT, half, attImgs) : P(''),
@@ -344,7 +372,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   }
 
   const doc = new Document({
-    styles: { default: { document: { run: { font: FONT, size: half, rightToLeft: true } as any } } },
+    styles: { default: { document: { run: { font: { ascii: FONT, hAnsi: FONT, cs: FONT }, size: half, sizeComplexScript: half } as any } } },
     sections,
   })
   return Packer.toBlob(doc)
