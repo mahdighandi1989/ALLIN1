@@ -203,3 +203,20 @@ def test_build_user_prompt_table_rules():
     assert "table_replace" in p
     assert "رفتارِ پیش‌فرضِ ابزارِ جداول" in p          # default when no table instruction
     assert "بخش‌های غیرمرتبط با جدول" in p             # mixed-instruction routing
+
+
+def test_build_user_prompt_table_fill_is_db_aware():
+    # Filling a table's CONTENT must be sourced ONLY from the DB-facts block:
+    # found items copied verbatim, missing items left «—» + reported in a note,
+    # nothing ever invented — and no fabrication on general (fact-less) letters.
+    p = la.build_user_prompt(FIELDS, {"customer": {"name": "x"}}, ["tables"],
+                             instruction="جدول را با مشخصات تسهیلات پر کن",
+                             tables=["<table><tr><td>a</td></tr></table>"])
+    assert "پر کردن/تکمیلِ محتوای جدول" in p
+    assert "تنها منبعِ مجازِ داده" in p and "«حقایقِ پایگاه‌داده»" in p
+    assert "customer/facilities/guarantors/profile" in p     # where to look things up
+    assert "اگر یافت نشد، خانه را «—» بگذار" in p            # missing ⇒ blank, not invented
+    assert "هرگز عدد، تاریخ، نام یا مبلغی را حدس نزن" in p   # anti-hallucination
+    assert "نامهٔ عمومی/بدونِ حساب" in p                     # fact-less letters ⇒ say so
+    # the tables tool guide itself also carries the DB-only rule
+    assert "حقایقِ پایگاه‌داده" in la.TOOLS["tables"]["guide"]
