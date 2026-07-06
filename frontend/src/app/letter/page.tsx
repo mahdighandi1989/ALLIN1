@@ -290,7 +290,7 @@ export default function LetterPage() {
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
   const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
-  const [colRz, setColRz] = useState<{ top: number; height: number; hdrUid: string; bounds: { x: number; i: number }[] } | null>(null) // column-resize handles
+  const [colRz, setColRz] = useState<{ top: number; height: number; left: number; width: number; hdrUid: string; bounds: { x: number; i: number }[] } | null>(null) // column-resize + table-edge handles
   const [dropInd, setDropInd] = useState<{ x: number; y: number; w: number } | null>(null) // drag-a-table drop line
   const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
@@ -392,7 +392,7 @@ export default function LetterPage() {
   // sheet simply becomes wider — text is never rotated, so editing stays normal);
   // a too-tall table steps its font down before admitting defeat with a warning.
   // Stored inside values_json alongside the letter fields. ---
-  type AttTable = { id: string; title: string; html: string }
+  type AttTable = { id: string; title: string; html: string; offY?: number }
   const [attTables, setAttTables] = useState<AttTable[]>([])
   const [attMeta, setAttMeta] = useState<Record<string, { land: boolean; scale: number; tooTall: boolean }>>({})
   const ATT_MARGIN = m(15)                       // side margins of an attachment page
@@ -924,11 +924,12 @@ export default function LetterPage() {
     const t = liveTablesFor(hdrUid)[0]
     if (!t || !t.rows[0] || !t.rows[0].cells.length) { setColRz(null); return }
     const tr = t.getBoundingClientRect()
-    // i = -1 → the table's OUTER left edge (RTL end): dragging it resizes the WHOLE
-    // table (default is fit-to-page; this lets it shrink when the content is small)
-    const bounds: { x: number; i: number }[] = [{ x: tr.left, i: -1 }]
+    // i = -1 → OUTER left edge, i = -2 → OUTER right edge: dragging either one
+    // resizes the WHOLE table (the opposite edge stays anchored). Default is
+    // fit-to-page; this lets the table shrink when its content is small.
+    const bounds: { x: number; i: number }[] = [{ x: tr.left, i: -1 }, { x: tr.right, i: -2 }]
     for (let i = 0; i < t.rows[0].cells.length - 1; i++) bounds.push({ x: t.rows[0].cells[i].getBoundingClientRect().left, i })
-    setColRz({ top: tr.top, height: tr.height, hdrUid, bounds })
+    setColRz({ top: tr.top, height: tr.height, left: tr.left, width: tr.width, hdrUid, bounds })
   }
   // ---- Drag a whole TABLE to a new position in the letter's text flow. The move
   //      happens between top-level blocks (paragraph boundaries) — nothing else on
@@ -943,7 +944,32 @@ export default function LetterPage() {
     const liveTable = el?.closest('table') as HTMLTableElement | null
     const hdrUid = liveTable?.rows[0]?.getAttribute('data-r') || ''
     if (!liveTable || !hdrUid) return
-    if (liveTable.closest('.attsheet')) { toast('جدولِ پیوست صفحهٔ خودش را دارد و در متن جابه‌جا نمی‌شود'); return }
+    if (liveTable.closest('.attsheet')) {
+      // An attachment table moves WITHIN ITS OWN PAGE: dragging the grip slides it
+      // up/down (offY), clamped so it never leaves the page or covers the footer.
+      // Horizontal movement = the strip above the table (like body tables).
+      const sheet = liveTable.closest('.lsheet') as HTMLElement
+      const cellEl = liveTable.closest('.bcell') as HTMLElement | null
+      const att = attTables.find((t) => t.html.indexOf(`data-r="${hdrUid}"`) !== -1)
+      if (!sheet || !cellEl || !att) return
+      const baseTop = ATT_TOP + ATT_TITLE_H
+      const tblH = liveTable.getBoundingClientRect().height
+      const maxOff = Math.max(0, sheet.offsetHeight - ATT_BOTTOM - tblH - baseTop)
+      const off0 = Math.min(att.offY || 0, maxOff)
+      const startY = e.clientY
+      let off = off0
+      const mvA = (ev: PointerEvent) => {
+        off = Math.round(Math.min(maxOff, Math.max(0, off0 + (ev.clientY - startY))))
+        cellEl.style.top = `${baseTop + off}px`
+      }
+      const upA = () => {
+        document.removeEventListener('pointermove', mvA); document.removeEventListener('pointerup', upA)
+        updateAttTable(att.id, { offY: off })
+        setTbl(null); setColRz(null)
+      }
+      document.addEventListener('pointermove', mvA); document.addEventListener('pointerup', upA)
+      return
+    }
     const frags = liveTablesFor(hdrUid).filter((t) => !t.closest('.attsheet'))
     if (!frags.length) return
     const cells = Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]
@@ -991,47 +1017,107 @@ export default function LetterPage() {
     }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
+  // Persist a table's whole-geometry (--tw width + --toff offset-from-right) onto
+  // the owning document (body OR attachment table); ≥99.5% width = reset to the
+  // default fit-to-page.
+  const persistTableGeom = (hdrUid: string, pct: number, toff: number) => {
+    const applyW = (html: string): string | null => {
+      const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+      mergeAdjacentTables(scratch); normalizeTables(scratch)
+      const tr2 = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
+      const table = tr2?.closest('table') as HTMLTableElement | null
+      if (!table) return null
+      if (pct >= 99.5) {
+        table.classList.remove('tblw'); table.style.removeProperty('--tw'); table.style.removeProperty('--toff')
+        if (!table.className) table.removeAttribute('class')
+        if (!table.getAttribute('style')) table.removeAttribute('style')
+      } else {
+        table.classList.add('tblw'); table.style.setProperty('--tw', `${pct}%`)
+        if (toff > 0.2) table.style.setProperty('--toff', `${toff}%`); else table.style.removeProperty('--toff')
+      }
+      return scratch.innerHTML
+    }
+    const nextBody = applyW(f.body)
+    if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
+    else for (const at of attTables) { const nh = applyW(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); break } }
+    requestAnimationFrame(() => recomputeColRz(hdrUid))
+  }
+  const readTableGeom = (el: HTMLElement) => ({
+    tw: parseFloat((el.style.getPropertyValue('--tw') || '100').replace('%', '')) || 100,
+    toff: parseFloat((el.style.getPropertyValue('--toff') || '0').replace('%', '')) || 0,
+  })
+  // Drag the strip ABOVE the table to move a shrunk table left/right (adjusts the
+  // offset-from-right; a full-width table has no room and shows a hint instead).
+  const startTableHMove = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    if (!colRz) return
+    const hdrUid = colRz.hdrUid
+    const tables = liveTablesFor(hdrUid); if (!tables.length) return
+    const t0 = tables[0]
+    const host = t0.closest('.bcell') as HTMLElement | null; if (!host) return
+    const hostR = host.getBoundingClientRect(); const cw = host.clientWidth || 1
+    const rect0 = t0.getBoundingClientRect()
+    const tw = +(rect0.width / cw * 100).toFixed(1)
+    if (tw >= 99.5) { toast('جدول تمام‌عرض است — اول از لبهٔ بیرونی کوچکش کن تا جای حرکتِ افقی باز شود'); return }
+    const toff0 = (hostR.right - rect0.right) / cw * 100
+    const startX = e.clientX
+    const mv = (ev: PointerEvent) => {
+      const toff = +Math.min(100 - tw, Math.max(0, toff0 + (startX - ev.clientX) / cw * 100)).toFixed(1)
+      tables.forEach((t) => {
+        t.classList.add('tblw'); t.style.setProperty('--tw', `${tw}%`)
+        if (toff > 0.2) t.style.setProperty('--toff', `${toff}%`); else t.style.removeProperty('--toff')
+      })
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      const live = liveTablesFor(hdrUid)[0]; if (!live) return
+      const g = readTableGeom(live)
+      persistTableGeom(hdrUid, g.tw, g.toff)
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
   const startColResize = (e: React.PointerEvent, i: number) => {
     e.preventDefault(); e.stopPropagation()
     if (!colRz) return
     const hdrUid = colRz.hdrUid
     const tables = liveTablesFor(hdrUid); if (!tables.length) return
     const t0 = tables[0]
-    if (i === -1) {
-      // WHOLE-TABLE resize: the right edge stays anchored (RTL start); dragging the
-      // outer left edge sets the table's width as a % of the text column, persisted
-      // via the .tblw class + --tw var (also applied in .measure/.psheet so
-      // pagination and print see exactly the same size).
+    if (i === -1 || i === -2) {
+      // WHOLE-TABLE resize from EITHER outer edge: the opposite edge stays anchored.
+      // Width is a % of the text column (.tblw class + --tw/--toff vars — also
+      // applied in .measure/.psheet so pagination and print see the same geometry).
       const host = t0.closest('.bcell') as HTMLElement | null
       if (!host) return
+      const hostR = host.getBoundingClientRect()
       const cw = host.clientWidth || 1
-      const rightX = t0.getBoundingClientRect().right
+      const rect0 = t0.getBoundingClientRect()
       const mvT = (ev: PointerEvent) => {
-        const w = Math.min(cw, Math.max(cw * 0.2, rightX - ev.clientX))
-        const pct = +(w / cw * 100).toFixed(1)
-        tables.forEach((t) => { t.classList.add('tblw'); t.style.setProperty('--tw', `${pct}%`) })
+        let pct: number, toff: number
+        if (i === -1) {
+          // drag the LEFT edge — right edge anchored (keep current offset)
+          toff = (hostR.right - rect0.right) / cw * 100
+          const w = Math.min(hostR.right - hostR.left, Math.max(cw * 0.2, rect0.right - ev.clientX))
+          pct = w / cw * 100
+          if (pct + toff > 100) pct = 100 - toff
+        } else {
+          // drag the RIGHT edge — left edge anchored; offset follows the pointer
+          const leftPct = (rect0.left - hostR.left) / cw * 100
+          toff = Math.max(0, (hostR.right - ev.clientX) / cw * 100)
+          pct = 100 - leftPct - toff
+          if (pct < 20) { pct = 20; toff = Math.max(0, 100 - leftPct - pct) }
+        }
+        pct = +pct.toFixed(1); toff = +Math.max(0, toff).toFixed(1)
+        tables.forEach((t) => {
+          t.classList.add('tblw')
+          t.style.setProperty('--tw', `${pct}%`)
+          if (toff > 0.2) t.style.setProperty('--toff', `${toff}%`); else t.style.removeProperty('--toff')
+        })
       }
       const upT = () => {
         document.removeEventListener('pointermove', mvT); document.removeEventListener('pointerup', upT)
         const live = liveTablesFor(hdrUid)[0]; if (!live) return
-        const pct = parseFloat((live.style.getPropertyValue('--tw') || '100').replace('%', '')) || 100
-        const applyW = (html: string): string | null => {
-          const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
-          mergeAdjacentTables(scratch); normalizeTables(scratch)
-          const tr2 = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
-          const table = tr2?.closest('table') as HTMLTableElement | null
-          if (!table) return null
-          if (pct >= 99.5) {
-            table.classList.remove('tblw'); table.style.removeProperty('--tw')
-            if (!table.className) table.removeAttribute('class')
-            if (!table.getAttribute('style')) table.removeAttribute('style')
-          } else { table.classList.add('tblw'); table.style.setProperty('--tw', `${pct}%`) }
-          return scratch.innerHTML
-        }
-        const nextBody = applyW(f.body)
-        if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
-        else for (const at of attTables) { const nh = applyW(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); break } }
-        requestAnimationFrame(() => recomputeColRz(hdrUid))
+        const g = readTableGeom(live)
+        persistTableGeom(hdrUid, g.tw, g.toff)
       }
       document.addEventListener('pointermove', mvT); document.addEventListener('pointerup', upT)
       return
@@ -1265,7 +1351,7 @@ export default function LetterPage() {
     mergeAdjacentTables(el)
     // Flatten into atomic UNITS: plain blocks, and one unit per table body-row (so a
     // tall table can split across pages, its header repeated on each page).
-    type Unit = { kind: 'block'; h: number; html: string } | { kind: 'trow'; h: number; tid: number; header: string; headerH: number; rowHtml: string }
+    type Unit = { kind: 'block'; h: number; html: string } | { kind: 'trow'; h: number; tid: number; header: string; headerH: number; rowHtml: string; topen: string }
     const units: Unit[] = []
     let tid = 0
     // recurse into wrappers so a table nested in a paste-wrapper <div> is still split
@@ -1277,7 +1363,10 @@ export default function LetterPage() {
           if (rows.length > 1) {
             tid++
             const header = (rows[0] as HTMLElement).outerHTML, headerH = (rows[0] as HTMLElement).offsetHeight
-            for (let i = 1; i < rows.length; i++) units.push({ kind: 'trow', tid, header, headerH, rowHtml: (rows[i] as HTMLElement).outerHTML, h: (rows[i] as HTMLElement).offsetHeight })
+            // the OPENING tag keeps the table-level class/style (tblw width/offset) —
+            // rebuilding pages with a bare <table> silently reset resized tables
+            const topen = c.outerHTML.slice(0, c.outerHTML.indexOf('>') + 1)
+            for (let i = 1; i < rows.length; i++) units.push({ kind: 'trow', tid, header, headerH, topen, rowHtml: (rows[i] as HTMLElement).outerHTML, h: (rows[i] as HTMLElement).offsetHeight })
           } else units.push({ kind: 'block', html: c.outerHTML, h: c.offsetHeight })
         } else if (c.querySelector('table')) {
           collect(c)   // unwrap: promote the nested table (+ its siblings) to top-level units
@@ -1353,6 +1442,15 @@ export default function LetterPage() {
     }
     // Pack content tightly (every page filled to its full text region).
     const pages = distribute(-1)
+    // KILL-SWITCH invariant: a trailing page whose content is ONLY invisible empty
+    // blocks must never exist (it reads as «the closing jumped to an empty page»).
+    // Whatever path produced it — fold its empties back onto the previous page.
+    while (pages.length > 1) {
+      const tail = pages[pages.length - 1]
+      if (tail.some((u) => !isEmptyBlock(u))) break
+      pages.pop()
+      pages[pages.length - 1].push(...tail)
+    }
     // The closing block (امضاکننده/رونوشت/اقدام) stays at the position you set in «چیدمان»
     // on the LAST page. A hard cliff here used to banish the whole closing to a fresh
     // page the moment content crossed the zone — even by 2px, and even when the
@@ -1394,13 +1492,24 @@ export default function LetterPage() {
       }
     }
     setClosingShift(shift)
+    // Remote-debug aid: open the letter with ?pdbg=1 and read the console to see
+    // exactly why pages/closing ended up where they did.
+    if (typeof window !== 'undefined' && /[?&]pdbg=1/.test(window.location.search)) {
+      // eslint-disable-next-line no-console
+      console.info('[letter-pagination]', {
+        pages: pages.length, heights: pages.map((p2) => pageH(p2)),
+        availLast: regionAvail(pages.length - 1, true), availTight: pages.map((_, i2) => regionAvail(i2, false)),
+        closingShift: shift, bodyY: L.body.y, bodyH: L.body.h,
+        closingY: { sender: L.sender?.y, copyto: L.copyto?.y, action: L.action?.y },
+      })
+    }
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
       let out = '', i = 0
       while (i < us.length) {
         const u = us[i]
         if (u.kind === 'block') { out += u.html; i++ }
-        else { const t = u.tid, hdr = u.header; let rr = ''; while (i < us.length && us[i].kind === 'trow' && (us[i] as any).tid === t) { rr += (us[i] as any).rowHtml; i++ } out += `<table>${hdr}${rr}</table>` }
+        else { const t = u.tid, hdr = u.header, open = (u as any).topen || '<table>'; let rr = ''; while (i < us.length && us[i].kind === 'trow' && (us[i] as any).tid === t) { rr += (us[i] as any).rowHtml; i++ } out += `${open}${hdr}${rr}</table>` }
       }
       return out
     }
@@ -1491,7 +1600,7 @@ export default function LetterPage() {
         </div>
         {meta?.tooTall && <div className="att-warn no-print">جدول از یک صفحه بلندتر است — چند ردیف را حذف یا جدول را کوچک‌تر کن</div>}
         <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: h })} transformPaste={cleanPaste}
-          style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
+          style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + (t.offY || 0), width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - (t.offY || 0) - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
         {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
@@ -1513,7 +1622,7 @@ export default function LetterPage() {
           <span className="att-badge">جدول {fa(i + 1)} پیوست</span>
           <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: t.title || '' }} />
         </div>
-        <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: t.html }} />
+        <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + (t.offY || 0), width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - (t.offY || 0) - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: t.html }} />
         {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
@@ -1627,9 +1736,11 @@ export default function LetterPage() {
         /* pasted tables fit the box width, stay COMPACT (content-height rows), with
            borders and sensible wrapping (no character-by-character breaking) */
         .bcell table,.psheet table,.measure table{width:100%!important;max-width:100%;border-collapse:collapse;margin:3px 0;font-size:inherit;table-layout:auto}
-        /* a user-resized table: width set by the outer-edge drag handle (default
-           stays 100% — legacy letters untouched); same var in measurer + print */
-        .bcell table.tblw,.psheet table.tblw,.measure table.tblw{width:var(--tw)!important}
+        /* a user-resized table: width set by the outer-edge drag handles (default
+           stays 100% — legacy letters untouched); --toff = distance from the RIGHT
+           edge (RTL start) so a shrunk table can be dragged left/right; margin-left
+           auto absorbs the remainder. Same vars in measurer + print. */
+        .bcell table.tblw,.psheet table.tblw,.measure table.tblw{width:var(--tw)!important;margin-left:auto!important;margin-right:var(--toff,0%)!important}
         .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.6px solid #222;padding:2px 5px;vertical-align:top;white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.35;text-indent:0!important}
         .bcell td *,.bcell th *,.psheet td *,.psheet th *,.measure td *,.measure th *{text-indent:0!important;margin:0}
         .bcell th,.psheet th,.measure th{font-weight:700;text-align:center;background:#f3f4f6}
@@ -1647,6 +1758,8 @@ export default function LetterPage() {
         .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px);background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
         .drop-ind{position:fixed;height:3px;background:#7c3aed;border-radius:2px;z-index:130;pointer-events:none;box-shadow:0 0 6px rgba(124,58,237,.55)}
         .col-rz{position:fixed;width:6px;z-index:122;cursor:col-resize;background:transparent}
+        .tbl-hmove{position:fixed;height:6px;z-index:122;cursor:ew-resize;background:transparent;border-radius:3px}
+        .tbl-hmove:hover{background:rgba(15,118,110,.4)}
         .col-rz:hover{background:rgba(15,118,110,.45)}
         .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
         .tbl-bar button:hover{background:#115e59}
@@ -1803,7 +1916,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v17</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v18</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -1967,8 +2080,13 @@ export default function LetterPage() {
         {dropInd && <div className="drop-ind no-print" style={{ left: dropInd.x, top: dropInd.y - 2, width: dropInd.w }} />}
         {colRz && !design && colRz.bounds.map((b) => (
           <div key={b.i} className="col-rz no-print" style={{ left: b.x - 3, top: colRz.top, height: colRz.height }}
-            title={b.i === -1 ? 'کشیدن برای کوچک/بزرگ‌کردنِ کلِ جدول' : 'کشیدن برای تغییرِ عرضِ ستون'} onPointerDown={(e) => startColResize(e, b.i)} />
+            title={b.i < 0 ? 'کشیدن برای کوچک/بزرگ‌کردنِ کلِ جدول (از هر دو لبه)' : 'کشیدن برای تغییرِ عرضِ ستون'} onPointerDown={(e) => startColResize(e, b.i)} />
         ))}
+        {/* thin strip above the table: drag LEFT/RIGHT to move a shrunk table horizontally */}
+        {colRz && !design && (
+          <div className="tbl-hmove no-print" style={{ left: colRz.left, top: colRz.top - 7, width: colRz.width }}
+            title="کشیدن به چپ/راست برای جابه‌جاییِ افقیِ جدول (وقتی جدول کوچک‌تر از عرضِ صفحه است)" onPointerDown={startTableHMove} />
+        )}
 
         {/* hidden measurers — body height/pagination and subject width (for the separator) */}
         <div ref={measureRef} aria-hidden className="measure" style={{ width: L.body.w, fontFamily: L.body.font, fontSize: `${L.body.size}pt`, lineHeight: L.body.lh || 1.7, letterSpacing: L.body.ls ? `${L.body.ls}px` : undefined, whiteSpace: 'pre-wrap' }} />
