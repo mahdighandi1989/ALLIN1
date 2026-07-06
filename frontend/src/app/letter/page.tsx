@@ -291,6 +291,7 @@ export default function LetterPage() {
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
   const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
   const [colRz, setColRz] = useState<{ top: number; height: number; hdrUid: string; bounds: { x: number; i: number }[] } | null>(null) // column-resize handles
+  const [dropInd, setDropInd] = useState<{ x: number; y: number; w: number } | null>(null) // drag-a-table drop line
   const [ppPos, setPpPos] = useState<{ x: number; y: number } | null>(null)    // draggable field panel
   // --- saving the letter under an account (or general) ---
   const [acct, setAcct] = useState('')
@@ -372,7 +373,7 @@ export default function LetterPage() {
       out.push({
         uid: tbl.rows[0]?.getAttribute('data-r') || t.id,
         html: tbl.outerHTML,
-        label: `جدولِ پیوست ${fa(i + 1)} — ${fa(rows)}×${fa(cols)}${plain(t.title) ? ` («${plain(t.title).slice(0, 40)}»)` : ''}`,
+        label: `جدول ${fa(i + 1)} پیوست — ${fa(rows)}×${fa(cols)}${plain(t.title) ? ` («${plain(t.title).slice(0, 40)}»)` : ''}`,
         attId: t.id,
       })
     })
@@ -819,7 +820,7 @@ export default function LetterPage() {
   // ---- Word-like TABLE editing. Structural edits run on the FULL body (the single
   //      source of truth), located by the caret cell's column and the row's stable id,
   //      then the body re-paginates automatically. ----
-  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'mergeCells' | 'valTop' | 'valMiddle' | 'valBottom' | 'delTable') => {
+  const tableOp = (op: 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'mergeCells' | 'valTop' | 'valMiddle' | 'valBottom' | 'alignRight' | 'alignCenter' | 'alignLeft' | 'delTable') => {
     const s = window.getSelection(); if (!s || !s.rangeCount) return
     const cellOf = (node: Node | null) => { const e = node ? (node.nodeType === 3 ? node.parentElement : (node as HTMLElement)) : null; return (e?.closest('td,th') as HTMLTableCellElement | null) }
     const td = cellOf(s.anchorNode) || cellOf(s.focusNode)
@@ -891,6 +892,12 @@ export default function LetterPage() {
       const va = op === 'valTop' ? 'top' : op === 'valMiddle' ? 'middle' : 'bottom'
       const keys = selKeys.length ? selKeys : [{ uid: rowUid, ci: colIndex }]
       keys.forEach((k) => { const srow = rowByUid(k.uid); const cell = srow?.cells[k.ci]; if (cell) cell.style.verticalAlign = va })
+    } else if (op === 'alignRight' || op === 'alignCenter' || op === 'alignLeft') {
+      // horizontal alignment of the SELECTED cells' text (deterministic — on the
+      // cell style, not execCommand, so it survives re-render and printing)
+      const ta = op === 'alignRight' ? 'right' : op === 'alignCenter' ? 'center' : 'left'
+      const keys = selKeys.length ? selKeys : [{ uid: rowUid, ci: colIndex }]
+      keys.forEach((k) => { const srow = rowByUid(k.uid); const cell = srow?.cells[k.ci]; if (cell) cell.style.textAlign = ta })
     } else if (op === 'delTable') table.remove()
     return scratch.innerHTML
     }
@@ -915,10 +922,74 @@ export default function LetterPage() {
   const liveTablesFor = (hdrUid: string) => (Array.from(document.querySelectorAll('#ltr-edit .bcell table')) as HTMLTableElement[]).filter((t) => t.rows[0]?.getAttribute('data-r') === hdrUid)
   const recomputeColRz = (hdrUid: string) => {
     const t = liveTablesFor(hdrUid)[0]
-    if (!t || !t.rows[0] || t.rows[0].cells.length < 2) { setColRz(null); return }
-    const tr = t.getBoundingClientRect(); const bounds: { x: number; i: number }[] = []
+    if (!t || !t.rows[0] || !t.rows[0].cells.length) { setColRz(null); return }
+    const tr = t.getBoundingClientRect()
+    // i = -1 → the table's OUTER left edge (RTL end): dragging it resizes the WHOLE
+    // table (default is fit-to-page; this lets it shrink when the content is small)
+    const bounds: { x: number; i: number }[] = [{ x: tr.left, i: -1 }]
     for (let i = 0; i < t.rows[0].cells.length - 1; i++) bounds.push({ x: t.rows[0].cells[i].getBoundingClientRect().left, i })
     setColRz({ top: tr.top, height: tr.height, hdrUid, bounds })
+  }
+  // ---- Drag a whole TABLE to a new position in the letter's text flow. The move
+  //      happens between top-level blocks (paragraph boundaries) — nothing else on
+  //      the page (fields/layout) is touched. Attachment tables own their page and
+  //      are not draggable. Persisting goes through the same path as manual edits
+  //      (the page cells' HTML joined back into the body). ----
+  const startTableDrag = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation()
+    const sel = window.getSelection()
+    const n = sel?.anchorNode || sel?.focusNode
+    const el = n ? (n.nodeType === 3 ? n.parentElement : (n as HTMLElement)) : null
+    const liveTable = el?.closest('table') as HTMLTableElement | null
+    const hdrUid = liveTable?.rows[0]?.getAttribute('data-r') || ''
+    if (!liveTable || !hdrUid) return
+    if (liveTable.closest('.attsheet')) { toast('جدولِ پیوست صفحهٔ خودش را دارد و در متن جابه‌جا نمی‌شود'); return }
+    const frags = liveTablesFor(hdrUid).filter((t) => !t.closest('.attsheet'))
+    if (!frags.length) return
+    const cells = Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]
+    let target: { cell: HTMLElement; ref: Element | null } | null = null
+    const mv = (ev: PointerEvent) => {
+      target = null
+      for (const cell of cells) {
+        const r = cell.getBoundingClientRect()
+        if (ev.clientX < r.left - 40 || ev.clientX > r.right + 40 || ev.clientY < r.top || ev.clientY > r.bottom) continue
+        // candidate boundaries = the cell's top-level blocks, minus the dragged table itself
+        const kids = (Array.from(cell.children) as HTMLElement[]).filter(
+          (k) => !(k.tagName === 'TABLE' && (k as HTMLTableElement).rows[0]?.getAttribute('data-r') === hdrUid))
+        let ref: Element | null = null
+        let y = kids.length ? kids[kids.length - 1].getBoundingClientRect().bottom : r.top + 4
+        for (const k of kids) {
+          const kr = k.getBoundingClientRect()
+          if (ev.clientY < kr.top + kr.height / 2) { ref = k; y = kr.top; break }
+        }
+        target = { cell, ref }
+        setDropInd({ x: r.left, w: r.width, y })
+        break
+      }
+      if (!target) setDropInd(null)
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up)
+      setDropInd(null)
+      if (!target) return
+      // re-merge the table's page fragments into ONE table (drop the header row
+      // that pagination duplicates on continuation pages)
+      const combined = frags[0]
+      const tb = combined.querySelector('tbody') || combined
+      for (let fi = 1; fi < frags.length; fi++) {
+        Array.from(frags[fi].rows).forEach((row, ri) => {
+          if (ri === 0 && row.getAttribute('data-r') === hdrUid) return
+          tb.appendChild(row)
+        })
+        frags[fi].remove()
+      }
+      let ref = target.ref
+      if (ref === combined) ref = combined.nextElementSibling
+      target.cell.insertBefore(combined, ref)
+      setF((prev) => ({ ...prev, body: cells.map((c) => c.innerHTML).join('') }))
+      setTbl(null); setColRz(null)
+    }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
   const startColResize = (e: React.PointerEvent, i: number) => {
     e.preventDefault(); e.stopPropagation()
@@ -926,6 +997,46 @@ export default function LetterPage() {
     const hdrUid = colRz.hdrUid
     const tables = liveTablesFor(hdrUid); if (!tables.length) return
     const t0 = tables[0]
+    if (i === -1) {
+      // WHOLE-TABLE resize: the right edge stays anchored (RTL start); dragging the
+      // outer left edge sets the table's width as a % of the text column, persisted
+      // via the .tblw class + --tw var (also applied in .measure/.psheet so
+      // pagination and print see exactly the same size).
+      const host = t0.closest('.bcell') as HTMLElement | null
+      if (!host) return
+      const cw = host.clientWidth || 1
+      const rightX = t0.getBoundingClientRect().right
+      const mvT = (ev: PointerEvent) => {
+        const w = Math.min(cw, Math.max(cw * 0.2, rightX - ev.clientX))
+        const pct = +(w / cw * 100).toFixed(1)
+        tables.forEach((t) => { t.classList.add('tblw'); t.style.setProperty('--tw', `${pct}%`) })
+      }
+      const upT = () => {
+        document.removeEventListener('pointermove', mvT); document.removeEventListener('pointerup', upT)
+        const live = liveTablesFor(hdrUid)[0]; if (!live) return
+        const pct = parseFloat((live.style.getPropertyValue('--tw') || '100').replace('%', '')) || 100
+        const applyW = (html: string): string | null => {
+          const scratch = document.createElement('div'); scratch.innerHTML = normalizeBodyHtml(html)
+          mergeAdjacentTables(scratch); normalizeTables(scratch)
+          const tr2 = scratch.querySelector(`tr[data-r="${cssEsc(hdrUid)}"]`) as HTMLTableRowElement | null
+          const table = tr2?.closest('table') as HTMLTableElement | null
+          if (!table) return null
+          if (pct >= 99.5) {
+            table.classList.remove('tblw'); table.style.removeProperty('--tw')
+            if (!table.className) table.removeAttribute('class')
+            if (!table.getAttribute('style')) table.removeAttribute('style')
+          } else { table.classList.add('tblw'); table.style.setProperty('--tw', `${pct}%`) }
+          return scratch.innerHTML
+        }
+        const nextBody = applyW(f.body)
+        if (nextBody != null) setF((prev) => ({ ...prev, body: nextBody }))
+        else for (const at of attTables) { const nh = applyW(at.html); if (nh != null) { updateAttTable(at.id, { html: nh }); break } }
+        requestAnimationFrame(() => recomputeColRz(hdrUid))
+      }
+      document.addEventListener('pointermove', mvT); document.addEventListener('pointerup', upT)
+      return
+    }
+    if (t0.rows[0].cells.length < 2) return
     const startX = e.clientX
     const w0 = t0.rows[0].cells[i].getBoundingClientRect().width
     const w1 = t0.rows[0].cells[i + 1].getBoundingClientRect().width
@@ -1201,6 +1312,9 @@ export default function LetterPage() {
       return [build(best), open + atoms.slice(best).join('').replace(/^\s+/, '') + close]
     }
     const pageH = (us: Unit[]) => { let h = 0; const seen = new Set<number>(); for (const u of us) { h += u.h; if (u.kind === 'trow' && !seen.has(u.tid)) { h += u.headerH; seen.add(u.tid) } } return h }
+    // An invisible block: only whitespace/<br> (contentEditable leftovers; insertTable
+    // always appends one after the table so the caret has a place below it).
+    const isEmptyBlock = (u: Unit) => u.kind === 'block' && !u.html.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '').replace(/&nbsp;| /gi, ' ').trim()
     // Flow the units across pages, packing each page to its FULL text region and SPLITTING
     // any text block taller than the space left so long paragraphs continue on the next
     // page. `lastIdx` marks the page that must leave room for the closing block; pass -1
@@ -1223,6 +1337,11 @@ export default function LetterPage() {
         }
         const avail = cap() - used
         if (u.h <= avail || u.h === 0) { cur.push(u); used += u.h; continue }
+        // Trailing INVISIBLE empties must never open a new page (a phantom page
+        // that also drags the closing block with it — e.g. the caret line that
+        // insertTable appends). Once only empty blocks remain, keep them on the
+        // current page over-cap; they're clipped, nothing visible overflows.
+        if (isEmptyBlock(u) && q.every((x) => isEmptyBlock(x))) { cur.push(u); continue }
         if (avail < 48 && cur.length) { push(); q.unshift(u); continue }
         const [fit, rest] = splitBlock(u.html, Math.max(48, avail))
         if (!fit) { if (cur.length) { push(); q.unshift(u) } else { cur.push(u); used += u.h }; continue }
@@ -1245,7 +1364,6 @@ export default function LetterPage() {
     const li = pages.length - 1
     let shift = 0
     if (!isHidden('sender') && pages.length) {
-      const isEmptyBlock = (u: Unit) => u.kind === 'block' && !u.html.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '').replace(/&nbsp;| /gi, ' ').trim()
       const us = pages[li].slice()
       while (us.length && isEmptyBlock(us[us.length - 1])) us.pop()
       const overflow = pageH(us) - regionAvail(li, true)
@@ -1363,13 +1481,13 @@ export default function LetterPage() {
     const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
     const contentW = W - 2 * ATT_MARGIN
     return (
-      <div className="lsheet" key={`att-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
+      <div className="lsheet attsheet" key={`att-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
         {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
-          <span className="att-badge">پیوست {fa(i + 1)}</span>
+          <span className="att-badge">جدول {fa(i + 1)} پیوست</span>
           <RichSpan value={t.title} onChange={(h) => updateAttTable(t.id, { title: h })} placeholder="عنوانِ جدولِ پیوست…" style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} />
-          <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌اش)" onClick={() => { if (confirm(`حذفِ جدولِ پیوست ${fa(i + 1)}؟`)) removeAttTable(t.id) }}>🗑</button>
+          <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌اش)" onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}>حذف</button>
         </div>
         {meta?.tooTall && <div className="att-warn no-print">جدول از یک صفحه بلندتر است — چند ردیف را حذف یا جدول را کوچک‌تر کن</div>}
         <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: h })} transformPaste={cleanPaste}
@@ -1392,7 +1510,7 @@ export default function LetterPage() {
         {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
-          <span className="att-badge">پیوست {fa(i + 1)}</span>
+          <span className="att-badge">جدول {fa(i + 1)} پیوست</span>
           <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: t.title || '' }} />
         </div>
         <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: t.html }} />
@@ -1509,6 +1627,9 @@ export default function LetterPage() {
         /* pasted tables fit the box width, stay COMPACT (content-height rows), with
            borders and sensible wrapping (no character-by-character breaking) */
         .bcell table,.psheet table,.measure table{width:100%!important;max-width:100%;border-collapse:collapse;margin:3px 0;font-size:inherit;table-layout:auto}
+        /* a user-resized table: width set by the outer-edge drag handle (default
+           stays 100% — legacy letters untouched); same var in measurer + print */
+        .bcell table.tblw,.psheet table.tblw,.measure table.tblw{width:var(--tw)!important}
         .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.6px solid #222;padding:2px 5px;vertical-align:top;white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.35;text-indent:0!important}
         .bcell td *,.bcell th *,.psheet td *,.psheet th *,.measure td *,.measure th *{text-indent:0!important;margin:0}
         .bcell th,.psheet th,.measure th{font-weight:700;text-align:center;background:#f3f4f6}
@@ -1524,6 +1645,7 @@ export default function LetterPage() {
         .fmt-bar .sep2,.tbl-bar .sep2{width:1px;height:16px;background:rgba(255,255,255,.28);margin:0 2px;flex:0 0 auto}
         /* floating TABLE toolbar (shown when the caret is inside a cell) */
         .tbl-bar{position:fixed;transform:translate(-50%,-135%);z-index:121;display:flex;gap:2px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:min(92vw,760px);background:#0f766e;border-radius:7px;padding:3px 4px;box-shadow:0 6px 18px rgba(0,0,0,.32)}
+        .drop-ind{position:fixed;height:3px;background:#7c3aed;border-radius:2px;z-index:130;pointer-events:none;box-shadow:0 0 6px rgba(124,58,237,.55)}
         .col-rz{position:fixed;width:6px;z-index:122;cursor:col-resize;background:transparent}
         .col-rz:hover{background:rgba(15,118,110,.45)}
         .tbl-bar button{border:0;background:transparent;color:#fff;height:24px;min-width:26px;padding:0 5px;border-radius:5px;cursor:pointer;font-size:12px;font-family:sans-serif;line-height:1}
@@ -1600,8 +1722,8 @@ export default function LetterPage() {
         /* ---- attachment-table pages (جدول‌های پیوست) ---- */
         .att-ttl{display:flex;align-items:center;justify-content:center;gap:10px;text-align:center;min-height:34px}
         .att-badge{font-size:10pt;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:16px;padding:1px 10px;font-family:${NAZ};font-weight:600;white-space:nowrap}
-        .att-del{border:0;background:transparent;cursor:pointer;font-size:15px;opacity:.55}
-        .att-del:hover{opacity:1}
+        .att-del{border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-size:11px;border-radius:6px;padding:1px 8px;opacity:.75}
+        .att-del:hover{opacity:1;background:#fef2f2}
         .att-warn{position:absolute;top:6px;left:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 9px;font-size:11px;z-index:5}
         /* ---- new-table dialog ---- */
         .tdlg-wrap{position:fixed;inset:0;z-index:420;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;font-family:${NAZ}}
@@ -1735,9 +1857,9 @@ export default function LetterPage() {
                 {attTables.map((t, i) => (
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 9px' }}>
                     <span>▦</span>
-                    <b>جدولِ پیوست {fa(i + 1)}{plain(t.title) ? ` — ${plain(t.title)}` : ''}</b>
+                    <b>جدول {fa(i + 1)} پیوست{plain(t.title) ? ` — ${plain(t.title)}` : ''}</b>
                     <span className="ltr-hint">صفحهٔ {fa(pages.length + i + 1)}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
-                    <button onClick={() => { if (confirm(`حذفِ جدولِ پیوست ${fa(i + 1)}؟`)) removeAttTable(t.id) }}
+                    <button onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}
                       style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer', marginInlineStart: 'auto' }}>حذف</button>
                   </div>
                 ))}
@@ -1812,6 +1934,8 @@ export default function LetterPage() {
 
         {tbl && (
           <div className="tbl-bar no-print" style={{ left: tbl.x, top: tbl.y }} onMouseDown={(e) => e.preventDefault()}>
+            <button title="جابه‌جاییِ جدول در متن — بگیر و بکش، بینِ بندها رها کن" style={{ cursor: 'grab', fontSize: 14 }} onPointerDown={startTableDrag}>⠿</button>
+            <span className="sep2" />
             <button title="توپُر" style={{ fontWeight: 700 }} onClick={() => document.execCommand('bold')}>B</button>
             <button title="کج" style={{ fontStyle: 'italic' }} onClick={() => document.execCommand('italic')}>I</button>
             <button title="زیرخط" style={{ textDecoration: 'underline' }} onClick={() => document.execCommand('underline')}>U</button>
@@ -1821,6 +1945,10 @@ export default function LetterPage() {
             <button title="تراز عمودی: بالا" onClick={() => tableOp('valTop')}>⤒</button>
             <button title="تراز عمودی: وسط" onClick={() => tableOp('valMiddle')}>⇳</button>
             <button title="تراز عمودی: پایین" onClick={() => tableOp('valBottom')}>⤓</button>
+            <span className="sep2" />
+            <button title="راست‌چینِ متنِ خانه‌های انتخاب‌شده" onClick={() => tableOp('alignRight')}>≡▸</button>
+            <button title="وسط‌چینِ متنِ خانه‌های انتخاب‌شده" onClick={() => tableOp('alignCenter')}>≡▾</button>
+            <button title="چپ‌چینِ متنِ خانه‌های انتخاب‌شده" onClick={() => tableOp('alignLeft')}>◂≡</button>
             <span className="sep2" />
             <button title="افزودنِ ردیف بالا" onClick={() => tableOp('rowAbove')}>▤↑</button>
             <button title="افزودنِ ردیف پایین" onClick={() => tableOp('rowBelow')}>▤↓</button>
@@ -1836,9 +1964,10 @@ export default function LetterPage() {
         )}
 
         {/* draggable gridlines to resize table columns (shown while the caret is in a table) */}
+        {dropInd && <div className="drop-ind no-print" style={{ left: dropInd.x, top: dropInd.y - 2, width: dropInd.w }} />}
         {colRz && !design && colRz.bounds.map((b) => (
           <div key={b.i} className="col-rz no-print" style={{ left: b.x - 3, top: colRz.top, height: colRz.height }}
-            title="کشیدن برای تغییرِ عرضِ ستون" onPointerDown={(e) => startColResize(e, b.i)} />
+            title={b.i === -1 ? 'کشیدن برای کوچک/بزرگ‌کردنِ کلِ جدول' : 'کشیدن برای تغییرِ عرضِ ستون'} onPointerDown={(e) => startColResize(e, b.i)} />
         ))}
 
         {/* hidden measurers — body height/pagination and subject width (for the separator) */}
