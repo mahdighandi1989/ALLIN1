@@ -161,10 +161,15 @@ async def list_letter_attachments(letter_id: str, db: AsyncSession = Depends(get
             .order_by(Attachment.upload_date.desc())
         )
     ).scalars().all()
+    from app.services.letter_attachment_generate import AI_GENERATED_MARK
+
     return [{
         "id": a.id, "account_no": a.account_no, "original_name": a.original_name,
         "file_size": a.file_size, "upload_date": a.upload_date, "uploaded_by": a.uploaded_by,
         "storage": "drive" if (a.drive_file_id or "") else "disk",
+        # built by the AI attachment generator (its data already came FROM the
+        # DB) — the extraction tool default-excludes these to avoid a circular write
+        "ai_generated": (a.notes or "").startswith(AI_GENERATED_MARK),
     } for a in rows]
 
 

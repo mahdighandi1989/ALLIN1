@@ -335,11 +335,23 @@ export default function LetterPage() {
   const [letterAtts, setLetterAtts] = useState<LetterAttachment[]>([])
   const [attUploading, setAttUploading] = useState(false)
   const [extracting2, setExtracting2] = useState('')   // progress text while extracting attachments
-  // Which attachments the extraction tool should read — user-pickable (all by
-  // default; maybe not every enclosure is worth extracting).
+  // Which attachments the extraction tool should read — user-pickable. Default:
+  // selected, EXCEPT AI-generated ones (ساختِ AI): their content came OUT of the
+  // database, so extracting them back in would be a circular write. Explicit
+  // tick still allowed.
   const [aiSelAtts, setAiSelAtts] = useState<Record<string, boolean>>({})
-  const attSelected = (id: string) => aiSelAtts[id] !== false   // default: selected
-  const selectedAttCount = letterAtts.filter((a) => attSelected(a.id)).length
+  const attSelected = (a: LetterAttachment) => aiSelAtts[a.id] ?? !a.ai_generated
+  const selectedAttCount = letterAtts.filter((a) => attSelected(a)).length
+
+  // --- AI attachment GENERATOR (ساختِ پیوست با هوش مصنوعی): the user describes
+  // the file, the model proposes a strict spec from DB facts + the letter's tone,
+  // the SERVER validates and renders a real xlsx/docx and registers it like an
+  // uploaded پیوست (Drive/دیسک + پروفایل مشتری). ---
+  const [genOpen, setGenOpen] = useState(false)
+  const [genInstruction, setGenInstruction] = useState('')
+  const [genKind, setGenKind] = useState<'' | 'excel' | 'word'>('')   // '' = auto
+  const [genBusy, setGenBusy] = useState(false)
+  const [genWarnings, setGenWarnings] = useState<string[]>([])
 
   // --- Tables tool: enumerate the letter's tables (across all pages — the body
   // is the single source of truth) so the user picks WHICH ones the AI works on.
@@ -478,6 +490,42 @@ export default function LetterPage() {
     if (!confirm(`حذفِ پیوست «${name}»؟`)) return
     try { await crmApi.deleteAttachment(id); await loadAtts(letterId) } catch (e) { toast.error(parseApiError(e)) }
   }
+  const toggleGen = () => {
+    setGenOpen((v) => !v)
+    // the generator uses the same model list as the assistant — lazy-load it here too
+    if (!aiModelsLoaded) {
+      letterAiApi.models().then((r) => { setAiModels(r.models || []); setAiTools(r.tools || []); setAiModelsLoaded(true) })
+        .catch(() => { setAiTools([]); setAiModelsLoaded(true) })
+    }
+  }
+  const generateAtt = async () => {
+    if (!letterId) { toast.error('اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد'); return }
+    const inst = genInstruction.trim()
+    if (inst.length < 3) { toast.error('شرحِ پیوستِ درخواستی را بنویس — مثلاً: «جدولی بساز با ستون‌های … و در ردیف‌ها …»'); return }
+    setGenBusy(true); setGenWarnings([])
+    try {
+      const r = await letterAiApi.generateAttachment({
+        letter_id: letterId,
+        account_no: general ? undefined : (acct.trim() || undefined),
+        instruction: inst,
+        kind: genKind || undefined,
+        subject: plain(f.subject) || undefined,
+        recipient: plain(f.recipientName) || undefined,
+        body_excerpt: plain(f.body).slice(0, 1500) || undefined,
+        model_id: aiModelId === '' ? undefined : Number(aiModelId),
+      })
+      if (!r.ok) {
+        toast.error((r.error || '').startsWith('bad_spec')
+          ? 'خروجی مدل ساختارِ معتبری نداشت؛ دستور را شفاف‌تر بنویس یا دوباره تلاش کن.'
+          : aiErrorText(r.error))
+        return
+      }
+      setGenWarnings(r.warnings || [])
+      toast.success(`پیوست «${r.attachment?.original_name || ''}» ساخته و ثبت شد (${r.kind === 'word' ? 'ورد' : 'اکسل'})`)
+      setGenInstruction('')
+      await loadAtts(letterId)
+    } catch (e) { toast.error(parseApiError(e)) } finally { setGenBusy(false) }
+  }
   const hasAttachmentMode = f.attachment === 'دارد'
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
   const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
@@ -554,7 +602,7 @@ export default function LetterPage() {
       // Deep extraction from the letter's attachments — only the ones the user
       // ticked, one attachment per request (bounded), mirroring the Import
       // pipeline's guards server-side.
-      const attsToRun = aiSelTools.includes(ATT_TOOL) ? letterAtts.filter((a) => attSelected(a.id)) : []
+      const attsToRun = aiSelTools.includes(ATT_TOOL) ? letterAtts.filter((a) => attSelected(a)) : []
       if (aiSelTools.includes(ATT_TOOL) && letterAtts.length && !attsToRun.length) {
         toast.error('هیچ پیوستی برای استخراج انتخاب نشده — در فهرستِ زیرِ ابزار، پیوست(ها) را تیک بزن')
       }
@@ -2509,7 +2557,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v25</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v26</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2543,15 +2591,61 @@ export default function LetterPage() {
                 <input type="file" className="hidden" style={{ display: 'none' }} disabled={attUploading}
                   onChange={(e) => { uploadAtt(e.target.files?.[0]); e.currentTarget.value = '' }} />
               </label>
+              <button className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} onClick={toggleGen}
+                title="هوش مصنوعی بر اساس دستور تو و داده‌های پایگاه‌داده یک فایل واقعی (اکسل یا ورد) می‌سازد و پیوستِ نامه می‌کند">
+                <Sparkles size={14} /> ساختِ پیوست با هوش مصنوعی
+              </button>
               {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
               <span className="ltr-hint">فایل در Google Drive (پوشهٔ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
             </div>
+            {/* ---- AI attachment generator (ساختِ پیوست) ---- */}
+            {genOpen && (
+              <div style={{ marginTop: 8, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span className="ltr-hint" style={{ fontWeight: 700, color: '#6d28d9' }}>
+                  چه پیوستی ساخته شود؟ (مثلاً: «جدولی بساز با ستون‌های شمارهٔ قرارداد، مبلغ و وضعیت، برای همهٔ تسهیلاتِ این مشتری» یا «توضیحی دربارهٔ وضعیتِ وثایق بنویس»)
+                </span>
+                <textarea className="meta-in" rows={2} value={genInstruction} disabled={genBusy}
+                  onChange={(e) => setGenInstruction(e.target.value)} style={{ width: '100%', resize: 'vertical', font: 'inherit' }}
+                  placeholder="شرحِ دقیقِ جدول یا متنِ درخواستی…" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <label className="ltr-hint">قالب:</label>
+                  <select className="meta-in" style={{ width: 150 }} value={genKind} disabled={genBusy}
+                    onChange={(e) => setGenKind(e.target.value as '' | 'excel' | 'word')}>
+                    <option value="">خودکار (بسته به دستور)</option>
+                    <option value="excel">اکسل (xlsx)</option>
+                    <option value="word">ورد (docx)</option>
+                  </select>
+                  <label className="ltr-hint">مدل:</label>
+                  <select className="meta-in" style={{ width: 210 }} value={aiModelId} disabled={genBusy}
+                    onChange={(e) => setAiModelId(e.target.value === '' ? '' : Number(e.target.value))}>
+                    <option value="">خودکار (بهترین مدلِ فعال)</option>
+                    {aiModels.map((mm) => <option key={mm.id} value={mm.id}>{mm.display_name} — {mm.provider_name}</option>)}
+                  </select>
+                  <button className="ltr-btn" style={{ background: '#7c3aed' }} onClick={generateAtt} disabled={genBusy || !letterId}>
+                    {genBusy ? '⏳ در حالِ ساخت… (ممکن است تا چند دقیقه طول بکشد)' : '🪄 بساز و پیوست کن'}
+                  </button>
+                  {(general || !acct.trim())
+                    ? <span className="ltr-hint" style={{ color: '#b45309' }}>نامهٔ عمومی — بدونِ داده‌های پایگاه‌داده، فقط از متنِ دستور ساخته می‌شود.</span>
+                    : <span className="ltr-hint">داده‌ها از پروندهٔ حسابِ {acct.trim()} خوانده می‌شود؛ چیزی اختراع نمی‌شود.</span>}
+                </div>
+                {genWarnings.length > 0 && (
+                  <div style={{ fontSize: 11.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px' }}>
+                    {genWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+                  </div>
+                )}
+                <span className="ltr-hint" style={{ color: '#7c3aed' }}>
+                  پیوست‌های ساختهٔ AI چون داده‌شان از خودِ پایگاه‌داده آمده، در ابزارِ «استخراج از پیوست‌ها» به‌صورت پیش‌فرض تیک نمی‌خورند (برای جلوگیری از ثبتِ دوباره) — ولی می‌توانی دستی تیکشان بزنی.
+                </span>
+              </div>
+            )}
             {(letterAtts.length > 0 || attTables.length > 0) && (
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {letterAtts.map((a) => (
                   <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #ccfbf1', borderRadius: 8, padding: '5px 9px' }}>
                     <span>📄</span>
                     <b>{a.original_name}</b>
+                    {a.ai_generated && <span title="این فایل را هوش مصنوعی از روی داده‌های پایگاه‌داده ساخته است"
+                      style={{ fontSize: 10.5, fontWeight: 700, color: '#6d28d9', background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>🪄 ساختِ AI</span>}
                     <span className="ltr-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}{a.upload_date ? ` · ${a.upload_date}` : ''}</span>
                     {/* authed fetch → blob (a plain <a href> would drop the JWT → 401 in production) */}
                     <button onClick={() => downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name).catch((e) => toast.error(parseApiError(e)))}
@@ -2838,18 +2932,25 @@ export default function LetterPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <span className="lai-lbl">کدام پیوست‌ها استخراج شوند؟</span>
                         <span style={{ display: 'flex', gap: 6 }}>
-                          <button className="lai-mini" onClick={() => setAiSelAtts({})}>همه</button>
+                          <button className="lai-mini" onClick={() => { const on: Record<string, boolean> = {}; letterAtts.forEach((a) => { on[a.id] = true }); setAiSelAtts(on) }}>همه</button>
                           <button className="lai-mini" onClick={() => { const off: Record<string, boolean> = {}; letterAtts.forEach((a) => { off[a.id] = false }); setAiSelAtts(off) }}>هیچ‌کدام</button>
                         </span>
                       </div>
                       {letterAtts.map((a) => (
                         <label key={a.id} className="lai-attrow">
-                          <input type="checkbox" checked={attSelected(a.id)}
+                          <input type="checkbox" checked={attSelected(a)}
                             onChange={(e) => setAiSelAtts((s) => ({ ...s, [a.id]: e.target.checked }))} />
                           <span className="lai-attname">📄 {a.original_name}</span>
+                          {a.ai_generated && <span title="ساختهٔ هوش مصنوعی از روی داده‌های پایگاه‌داده — پیش‌فرض از استخراج کنار گذاشته می‌شود تا داده دوباره ثبت نشود"
+                            style={{ fontSize: 10, fontWeight: 700, color: '#6d28d9', background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>🪄 ساختِ AI</span>}
                           <span className="lai-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}</span>
                         </label>
                       ))}
+                      {letterAtts.some((a) => a.ai_generated) && (
+                        <div className="lai-selhint" style={{ color: '#6d28d9' }}>
+                          پیوست‌های «ساختِ AI» چون داده‌شان از خودِ پایگاه‌داده آمده، پیش‌فرض تیک ندارند (جلوگیری از ثبتِ دوباره)؛ در صورت نیاز دستی تیک بزن.
+                        </div>
+                      )}
                     </div>
                   )}
 

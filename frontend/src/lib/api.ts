@@ -758,6 +758,12 @@ export const letterAiApi = {
     const { data } = await api.post(`/api/letter-ai/extract-attachment/${encodeURIComponent(attachmentId)}`, body, { timeout: 420000 })
     return data
   },
+  // AI builds a REAL file attachment (Excel/Word) from an instruction — data
+  // only from the DB facts; stored like a manual upload, marked ai_generated.
+  async generateAttachment(body: { letter_id: string; account_no?: string; instruction: string; kind?: 'excel' | 'word'; subject?: string; recipient?: string; body_excerpt?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; kind?: string; warnings?: string[]; attachment?: LetterAttachment }> {
+    const { data } = await api.post('/api/letter-ai/generate-attachment', body, { timeout: 420000 })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -927,7 +933,7 @@ export const departmentsApi = {
 // ---------------------------------------------------------------------------
 // Saved letters — under an account (auto-creates the profile) or general.
 // ---------------------------------------------------------------------------
-export type LetterAttachment = { id: string; account_no?: string; original_name: string; file_size?: string; upload_date?: string; uploaded_by?: string; storage: 'drive' | 'disk' }
+export type LetterAttachment = { id: string; account_no?: string; original_name: string; file_size?: string; upload_date?: string; uploaded_by?: string; storage: 'drive' | 'disk'; ai_generated?: boolean }
 export const lettersApi = {
   async attachments(letterId: string): Promise<LetterAttachment[]> {
     const { data } = await api.get(`/api/letters/${encodeURIComponent(letterId)}/attachments`)
