@@ -490,6 +490,19 @@ export default function LetterPage() {
     if (!confirm(`حذفِ پیوست «${name}»؟`)) return
     try { await crmApi.deleteAttachment(id); await loadAtts(letterId) } catch (e) { toast.error(parseApiError(e)) }
   }
+  // Open an attachment in a NEW TAB (view, not download) — authed blob, same
+  // pattern as the customer profile. The browser shows/prints PDFs and images
+  // inline; Office files open in their app.
+  const viewAtt = async (id: string) => {
+    const win = window.open('', '_blank')
+    try {
+      const blob = await crmApi.attachmentBlob(id)
+      const url = URL.createObjectURL(blob)
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) { if (win) win.close(); toast.error(parseApiError(e)) }
+  }
   const toggleGen = () => {
     setGenOpen((v) => !v)
     // the generator uses the same model list as the assistant — lazy-load it here too
@@ -617,6 +630,9 @@ export default function LetterPage() {
               subject: plain(f.subject) || undefined,
               body_excerpt: plain(f.body).slice(0, 1500) || undefined,
               model_id: aiModelId === '' ? undefined : Number(aiModelId),
+              // an ai_generated attachment only reaches this loop when the user
+              // explicitly ticked it — tell the server the override is deliberate
+              allow_ai_generated: att.ai_generated ? true : undefined,
             })
             if (rx.ok) {
               all = all.concat(rx.changes || [])
@@ -647,6 +663,7 @@ export default function LetterPage() {
     finally { setAiLoading(false); setExtracting2('') }
   }
   const aiErrorText = (err?: string) => {
+    if (err === 'ai_generated_attachment') return 'این پیوست را خودِ هوش مصنوعی از داده‌های پایگاه‌داده ساخته — استخراجِ دوباره‌اش به دیتابیس بی‌معناست و سرور آن را رد کرد.'
     if (err === 'no_model') return 'هیچ مدلِ هوش مصنوعیِ فعالی پیکربندی نشده — از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن.'
     if (err === 'no_base_url') return 'آدرسِ سرویس‌دهندهٔ مدل تنظیم نشده است.'
     if (err && /timed out/i.test(err)) return 'پاسخِ مدل به‌موقع نرسید؛ دوباره تلاش کن یا مدلِ سریع‌تری انتخاب کن.'
@@ -2557,7 +2574,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v26</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v27</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2648,8 +2665,10 @@ export default function LetterPage() {
                       style={{ fontSize: 10.5, fontWeight: 700, color: '#6d28d9', background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>🪄 ساختِ AI</span>}
                     <span className="ltr-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}{a.upload_date ? ` · ${a.upload_date}` : ''}</span>
                     {/* authed fetch → blob (a plain <a href> would drop the JWT → 401 in production) */}
+                    <button onClick={() => viewAtt(a.id)} title="بازکردن در تبِ جدید — PDF/تصویر همان‌جا دیده و پرینت می‌شود"
+                      style={{ border: 0, background: 'transparent', color: '#0d9488', cursor: 'pointer', marginInlineStart: 'auto' }}>مشاهده</button>
                     <button onClick={() => downloadFile(`/api/crm/attachments/${a.id}/download`, a.original_name).catch((e) => toast.error(parseApiError(e)))}
-                      style={{ border: 0, background: 'transparent', color: '#0d9488', cursor: 'pointer', marginInlineStart: 'auto' }}>دانلود</button>
+                      style={{ border: 0, background: 'transparent', color: '#0d9488', cursor: 'pointer' }}>دانلود</button>
                     <button onClick={() => deleteAtt(a.id, a.original_name)} style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>حذف</button>
                   </div>
                 ))}

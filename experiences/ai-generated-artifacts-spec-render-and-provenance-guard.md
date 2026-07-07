@@ -82,6 +82,15 @@ const selected = (a: Attachment) => picks[a.id] ?? !a.ai_generated
 - [ ] تمام مصرف‌کننده‌های ingestion را پیدا کن و default-exclusion بگذار؛
   تست بنویس که «آیتم ساختهٔ AI پیش‌فرض بی‌تیک است ولی تیک دستی کار می‌کند».
 
+## Update 2026-07-07 — گاردِ چرخه باید سمتِ سرور هم باشد
+
+تیکِ پیش‌فرضِ فرانت‌اند فقط UI feedback است؛ اگر «سرور مرجع است»، ingestion
+endpoint خودش باید آیتمِ دارای نشانِ منشأ را رد کند و override فقط با یک فلگ
+صریح در بدنهٔ درخواست (`allow_ai_generated: true`) ممکن باشد که UI تنها هنگام
+تیکِ عمدی کاربر می‌فرستد. خطای typed برگردان (`error: "ai_generated_artifact"`)
+تا کلاینت پیامِ فهمیدنی نشان دهد، و هر دو مسیر (ردِ پیش‌فرض + عبور با override)
+را تست کن.
+
 ## 🔗 References
 
 - مرتبط: [ai-edit-suggestions-review-first-with-locate-guard]

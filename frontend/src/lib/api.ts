@@ -754,7 +754,7 @@ export const letterAiApi = {
   },
   // Deep extraction from ONE letter attachment (UI runs them sequentially).
   // Long timeout: chunked model calls over a large file can take minutes.
-  async extractAttachment(attachmentId: string, body: { account_no?: string; customer_name?: string; subject?: string; body_excerpt?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; changes: LetterAiChange[]; model?: string; chunk_errors?: string[]; file?: string; suggestions?: any[] }> {
+  async extractAttachment(attachmentId: string, body: { account_no?: string; customer_name?: string; subject?: string; body_excerpt?: string; model_id?: number | null; allow_ai_generated?: boolean }): Promise<{ ok: boolean; error?: string; changes: LetterAiChange[]; model?: string; chunk_errors?: string[]; file?: string; suggestions?: any[] }> {
     const { data } = await api.post(`/api/letter-ai/extract-attachment/${encodeURIComponent(attachmentId)}`, body, { timeout: 420000 })
     return data
   },

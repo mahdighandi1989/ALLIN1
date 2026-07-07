@@ -248,6 +248,10 @@ class ExtractAttachmentRequest(BaseModel):
     subject: str = ""
     body_excerpt: str = ""
     model_id: Optional[int] = None
+    # AI-generated attachments (their data came OUT of the database) are refused
+    # by default to prevent circular re-ingestion; the UI sets this only when the
+    # user explicitly ticked such an attachment.
+    allow_ai_generated: bool = False
 
 
 @router.post("/extract-attachment/{attachment_id}")
@@ -268,6 +272,13 @@ async def extract_attachment_endpoint(
     a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
     if a is None:
         raise HTTPException(status_code=404, detail="Attachment not found")
+
+    # Server-side circular-write guard (the frontend default-unticks these, but
+    # the server is ground truth): an AI-generated attachment's content already
+    # came out of the database — re-extracting it would re-ingest our own output.
+    from app.services.letter_attachment_generate import AI_GENERATED_MARK
+    if (a.notes or "").startswith(AI_GENERATED_MARK) and not payload.allow_ai_generated:
+        return {"ok": False, "error": "ai_generated_attachment", "changes": []}
 
     # load the bytes from where they live (Drive or disk) — same as the download route
     data: bytes = b""
