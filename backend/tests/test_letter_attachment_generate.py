@@ -1,0 +1,170 @@
+"""The AI attachment GENERATOR: the model only proposes a strict JSON spec;
+these tests lock the deterministic gate (spec parsing/clamps), the server-side
+renderers (real xlsx/docx round-trips), the endpoint wiring with a mocked
+model, and the AI_GENERATED marker that default-excludes these files from the
+extraction tool (their data came out of the database in the first place)."""
+import io
+import json
+
+import pytest
+
+from app.models.ai_config import AIModel, AIProvider
+from app.services import letter_attachment_generate as gen
+
+
+# ---------------- spec parsing / clamps ----------------
+
+def test_parse_spec_excel_clamps_and_sanitizes():
+    raw = json.dumps({
+        "kind": "excel", "filename": 'گزارش/تسهیلات: <ویژه>؟',
+        "title": "ت" * 500,
+        "warnings": ["نرخ سود در پایگاه‌داده نبود", ""],
+        "sheets": [{
+            "name": "برگه[1]*", "columns": [f"ستون{i}" for i in range(50)],
+            "rows": [[i, None, "x" * 900] for i in range(1000)],
+        }],
+    }, ensure_ascii=False)
+    spec, warnings = gen.parse_spec(raw)
+    assert spec["kind"] == "excel"
+    assert "/" not in spec["filename"] and "<" not in spec["filename"]
+    assert len(spec["title"]) == 200
+    assert warnings == ["نرخ سود در پایگاه‌داده نبود"]
+    sh = spec["sheets"][0]
+    assert len(sh["columns"]) == gen.MAX_COLS
+    assert len(sh["rows"]) == gen.MAX_ROWS
+    assert sh["rows"][0][1] == ""                      # None → empty, never invented
+    assert len(sh["rows"][0][2]) == gen.MAX_CELL
+    assert "[" not in sh["name"] and "*" not in sh["name"]
+
+
+def test_parse_spec_word_and_kind_inference():
+    raw = json.dumps({
+        "filename": "توضیحات",
+        "paragraphs": ["بند سادهٔ متنی", {"text": "سرفصل", "heading": True},
+                       {"text": "بند تراز", "align": "bogus"}],
+    }, ensure_ascii=False)
+    spec, _ = gen.parse_spec(raw)
+    assert spec["kind"] == "word"                       # inferred from paragraphs
+    assert spec["paragraphs"][0]["text"] == "بند سادهٔ متنی"
+    assert spec["paragraphs"][1]["heading"] is True
+    assert spec["paragraphs"][2]["align"] == "justify"  # bogus align → safe default
+
+
+def test_parse_spec_rejects_garbage():
+    with pytest.raises(ValueError):
+        gen.parse_spec("no json here")
+    with pytest.raises(ValueError):
+        gen.parse_spec(json.dumps({"kind": "excel", "sheets": []}))
+    with pytest.raises(ValueError):
+        gen.parse_spec(json.dumps({"kind": "word", "paragraphs": [{"text": ""}]}))
+
+
+# ---------------- renderers (real file round-trips) ----------------
+
+def test_render_excel_roundtrip_rtl_and_styling():
+    spec, _ = gen.parse_spec(json.dumps({
+        "kind": "excel", "filename": "جدول آزمون", "title": "وضعیت املاک",
+        "sheets": [{"name": "املاک", "columns": ["ردیف", "ملک", "ملاحظات"],
+                    "rows": [["۱", "پلاک ۱۲", ""], ["۲", "پلاک ۱۵", "بیمه‌نامه ندارد"]]}],
+    }, ensure_ascii=False))
+    data, filename, mimetype = gen.render(spec)
+    assert filename.endswith(".xlsx") and "spreadsheet" in mimetype
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["املاک"]
+    assert ws.sheet_view.rightToLeft is True
+    assert ws.cell(row=1, column=1).value == "وضعیت املاک"     # merged title row
+    assert ws.cell(row=2, column=1).value == "ردیف"            # styled header
+    assert ws.cell(row=2, column=1).font.bold is True
+    assert ws.cell(row=3, column=2).value == "پلاک ۱۲"
+    assert ws.cell(row=4, column=3).value == "بیمه‌نامه ندارد"
+
+
+def test_render_word_roundtrip_rtl():
+    spec, _ = gen.parse_spec(json.dumps({
+        "kind": "word", "filename": "توضیحات", "title": "توضیحات تکمیلی",
+        "paragraphs": [{"text": "سرفصل اول", "heading": True},
+                       {"text": "متن رسمی مطابق لحن نامه.", "align": "justify"}],
+    }, ensure_ascii=False))
+    data, filename, mimetype = gen.render(spec)
+    assert filename.endswith(".docx") and "wordprocessing" in mimetype
+    import docx
+    d = docx.Document(io.BytesIO(data))
+    texts = [p.text for p in d.paragraphs]
+    assert "توضیحات تکمیلی" in texts and "سرفصل اول" in texts
+    # every paragraph is bidi (RTL) — the whole point for a Persian letter
+    assert all(p._p.xpath("./w:pPr/w:bidi") for p in d.paragraphs if p.text)
+
+
+# ---------------- endpoint wiring (mocked model) ----------------
+
+async def _seed_model(db_session):
+    db_session.add(AIProvider(key="anthropic", display_name="Anthropic", enabled=True,
+                              auth_scheme="api_key", base_url="https://api.anthropic.com",
+                              api_key="sk-test-xxx"))
+    db_session.add(AIModel(model_key="claude-opus-4-8", provider_key="anthropic",
+                           display_name="Claude Opus 4.8", enabled=True,
+                           capabilities=["text"], priority=1))
+    await db_session.commit()
+
+
+async def test_generate_attachment_endpoint_stores_marked_file(
+    client, auth_headers, db_session, monkeypatch,
+):
+    await _seed_model(db_session)
+
+    async def fake_complete(db, prompt, **kwargs):
+        # the wiring must hand the model the DB facts + the user's instruction
+        assert "حقایقِ پایگاه‌داده" in prompt
+        assert "جدول وضعیت املاک" in prompt
+        return {"ok": True, "model": "claude-opus-4-8", "text": json.dumps({
+            "kind": "excel", "filename": "وضعیت املاک", "title": "وضعیت املاک رهنی",
+            "warnings": ["ارزش کارشناسی در پایگاه‌داده نبود"],
+            "sheets": [{"name": "املاک", "columns": ["ردیف", "وضعیت"],
+                        "rows": [["۱", "فاقد بیمه‌نامه"]]}],
+        }, ensure_ascii=False)}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "LTRX1", "account_no": "", "kind": "excel",
+        "instruction": "جدول وضعیت املاک رهنی را بساز",
+        "subject": "استعلام وضعیت املاک",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and body["kind"] == "excel"
+    assert body["warnings"] == ["ارزش کارشناسی در پایگاه‌داده نبود"]
+    att = body["attachment"]
+    assert att["original_name"].endswith(".xlsx")
+    assert att["ai_generated"] is True
+
+    # the letter's attachment listing must expose the flag (frontend uses it to
+    # default-EXCLUDE these from the extraction tool)
+    r2 = await client.get("/api/letters/LTRX1/attachments", headers=auth_headers)
+    assert r2.status_code == 200
+    rows = r2.json()
+    assert len(rows) == 1 and rows[0]["ai_generated"] is True
+
+    # and the stored bytes are a real workbook (disk fallback path in tests)
+    r3 = await client.get(f"/api/crm/attachments/{att['id']}/download", headers=auth_headers)
+    assert r3.status_code == 200
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r3.content))
+    assert wb["املاک"].cell(row=3, column=2).value == "فاقد بیمه‌نامه"
+
+
+async def test_generate_attachment_rejects_bad_spec(client, auth_headers, db_session, monkeypatch):
+    await _seed_model(db_session)
+
+    async def fake_complete(db, prompt, **kwargs):
+        return {"ok": True, "model": "m", "text": "این اصلاً JSON نیست"}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "LTRX2", "instruction": "هرچیزی",
+    })
+    assert r.status_code == 200
+    assert r.json()["ok"] is False and r.json()["error"].startswith("bad_spec")

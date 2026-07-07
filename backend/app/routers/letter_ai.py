@@ -337,3 +337,121 @@ async def extract_attachment_endpoint(
     )
     return {"ok": True, "changes": staged, "model": extraction.get("model"),
             "chunk_errors": extraction.get("chunk_errors", []), "file": fname}
+
+
+class GenerateAttachmentRequest(BaseModel):
+    letter_id: str
+    account_no: Optional[str] = None
+    instruction: str = Field(min_length=3, max_length=3000)
+    kind: Optional[str] = None                 # "excel" | "word" | None = model decides
+    subject: Optional[str] = None
+    recipient: Optional[str] = None
+    body_excerpt: Optional[str] = None
+    model_id: Optional[int] = None
+
+
+@router.post("/generate-attachment")
+async def generate_attachment(
+    payload: GenerateAttachmentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Build a REAL file attachment (Excel/Word) for the letter from the owner's
+    instruction. The model only proposes a strict JSON spec; the file is rendered
+    server-side and stored through the SAME Drive+disk+DB path as manual uploads,
+    marked AI_GENERATED (default-excluded from the extraction tool — its data
+    came out of the database in the first place)."""
+    from app.services import letter_attachment_generate as gen
+
+    acct = (payload.account_no or "").strip()
+    facts = await _gather_facts(db, acct)
+
+    instruction = payload.instruction.strip()
+    if payload.kind in ("excel", "word"):
+        instruction += f"\n(فرمتِ خواسته‌شده توسط کاربر: {payload.kind})"
+    prompt = gen.build_prompt(
+        facts,
+        {
+            "subject": payload.subject or "",
+            "recipient": payload.recipient or "",
+            "body_excerpt": payload.body_excerpt or "",
+        },
+        instruction,
+    )
+    result = await inference.complete(
+        db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
+        model_id=payload.model_id, max_tokens=8000,
+    )
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
+
+    try:
+        spec, warnings = gen.parse_spec(result.get("text") or "")
+        if payload.kind in ("excel", "word"):
+            spec["kind"] = payload.kind
+            if payload.kind == "excel" and "sheets" not in spec:
+                raise ValueError("no_sheets")
+            if payload.kind == "word" and "paragraphs" not in spec:
+                raise ValueError("no_paragraphs")
+        data, filename, mimetype = gen.render(spec)
+    except ValueError as exc:
+        return {"ok": False, "error": f"bad_spec:{exc}", "model": result.get("model")}
+
+    # ---- store EXACTLY like a manual upload (Drive first, disk fallback) ----
+    import uuid as _uuid
+    from datetime import date as _date, datetime as _dt
+
+    from app.models.crm import Attachment
+    from app.services import attachments as attachments_store
+    from app.services import drive_sync
+
+    store_acct = acct or "general"
+    facility_id = f"LTR-{payload.letter_id}"
+    drive_file_id = ""
+    stored = ""
+    rel = ""
+    size = len(data)
+    if drive_sync.is_enabled():
+        try:
+            res = await drive_sync.sync_attachment(
+                account_no=store_acct, facility_id=facility_id,
+                original_name=filename, data=data, mimetype=mimetype,
+            )
+            if res.get("ok"):
+                drive_file_id = res["result"]["id"]
+                stored = res["result"]["name"]
+        except Exception:  # noqa: BLE001 - Drive errors fall back to disk
+            drive_file_id = ""
+    if not drive_file_id:
+        rel, size, stored = await attachments_store.save_bytes(store_acct, facility_id, filename, data)
+
+    aid = f"A-{store_acct}-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:3]}"
+    att = Attachment(
+        id=aid, account_no=store_acct, facility_id=facility_id[:60],
+        row_index="", file_name=stored[:255], original_name=filename[:255],
+        file_path=rel, drive_file_id=drive_file_id or None,
+        file_size=str(size), upload_date=_date.today().isoformat(),
+        uploaded_by=getattr(user, "username", "") or "",
+        is_shared="0",
+        notes=f"{gen.AI_GENERATED_MARK}: {instruction[:400]}",
+    )
+    db.add(att)
+    await db.commit()
+    await record_audit(
+        action="create", entity_type="letter_attachment_ai", entity_id=aid,
+        account_no=(acct or None),
+        detail=f"ساختِ پیوستِ هوشمند «{filename}» ({spec['kind']}) برای نامهٔ {payload.letter_id}",
+        user=user, request=request, db=db,
+    )
+    return {
+        "ok": True, "model": result.get("model"), "kind": spec["kind"],
+        "warnings": warnings,
+        "attachment": {
+            "id": att.id, "account_no": att.account_no, "original_name": att.original_name,
+            "file_size": att.file_size, "upload_date": att.upload_date,
+            "uploaded_by": att.uploaded_by,
+            "storage": "drive" if drive_file_id else "disk",
+            "ai_generated": True,
+        },
+    }
