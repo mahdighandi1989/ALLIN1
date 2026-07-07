@@ -96,6 +96,54 @@ def test_render_word_roundtrip_rtl():
     assert all(p._p.xpath("./w:pPr/w:bidi") for p in d.paragraphs if p.text)
 
 
+# ---------------- need_data protocol (cross-customer datasets) ----------------
+
+def test_parse_need_data():
+    ok = gen.parse_need_data(json.dumps({
+        "need_data": {"datasets": ["properties", "bogus", "customers"], "branch": "Sheikh Zayed"},
+    }))
+    assert ok == {"datasets": ["properties", "customers"], "branch": "Sheikh Zayed"}
+    # a spec reply is NOT a data request
+    assert gen.parse_need_data(json.dumps({"kind": "excel", "sheets": []})) is None
+    # only-bogus datasets → not a valid request
+    assert gen.parse_need_data(json.dumps({"need_data": {"datasets": ["nope"]}})) is None
+    assert gen.parse_need_data("garbage") is None
+
+
+async def _seed_branch_data(db_session):
+    from app.models.customer import Customer
+    from app.models.profile_entities import MortgagedProperty
+
+    db_session.add(Customer(account_no="ACC1", name="شرکت الف", branch="Sheikh Zayed",
+                            relationship_manager="آقای مدیری"))
+    db_session.add(Customer(account_no="ACC2", name="شرکت ب", branch="Deira",
+                            relationship_manager="خانم دیگری"))
+    db_session.add(MortgagedProperty(id="P1", account_no="ACC1", plate_no="1234/56",
+                                     mortgage_deed_no="MD-77", insurance_no="INS-9",
+                                     insurance_expiry="2026-09-01", city="دبی"))
+    db_session.add(MortgagedProperty(id="P2", account_no="ACC2", plate_no="9999/99",
+                                     mortgage_deed_no="MD-88"))
+    await db_session.commit()
+
+
+async def test_fetch_datasets_branch_filter(db_session):
+    await _seed_branch_data(db_session)
+    data, warnings = await gen.fetch_datasets(db_session, ["properties", "customers"], "sheikh zayed")
+    assert warnings == []
+    props = data["properties"]
+    assert len(props) == 1 and props[0]["plate_no"] == "1234/56"
+    assert props[0]["mortgage_deed_no"] == "MD-77"
+    assert props[0]["insurance_no"] == "INS-9" and props[0]["insurance_expiry"] == "2026-09-01"
+    assert props[0]["account_manager"] == "آقای مدیری" and props[0]["branch"] == "Sheikh Zayed"
+    assert [c["account_no"] for c in data["customers"]] == ["ACC1"]
+    # unknown branch → FULL capped list with a warning (model filters), never silently empty
+    data2, warnings2 = await gen.fetch_datasets(db_session, ["properties"], "ناموجود")
+    assert len(data2["properties"]) == 2 and warnings2
+    # branches catalog covers both
+    branches = await gen.list_branches(db_session)
+    assert "Sheikh Zayed" in branches and "Deira" in branches
+
+
 # ---------------- endpoint wiring (mocked model) ----------------
 
 async def _seed_model(db_session):
@@ -153,6 +201,56 @@ async def test_generate_attachment_endpoint_stores_marked_file(
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(r3.content))
     assert wb["املاک"].cell(row=3, column=2).value == "فاقد بیمه‌نامه"
+
+
+async def test_generate_attachment_branch_wide_two_phase(
+    client, auth_headers, db_session, monkeypatch,
+):
+    """The owner's real failure: «لیست املاک شعبهٔ شیخ زاید» on a general letter
+    (no account) returned an empty skeleton. Now the model sees the datasets
+    catalog + real branch values, requests need_data, and the second round gets
+    the actual branch-filtered rows to build the file from."""
+    await _seed_model(db_session)
+    await _seed_branch_data(db_session)
+    calls = []
+
+    async def fake_complete(db, prompt, **kwargs):
+        calls.append(prompt)
+        if len(calls) == 1:
+            # round 1: catalog + real branch values must be offered
+            assert "کاتالوگِ داده‌های سراسری" in prompt
+            assert "Sheikh Zayed" in prompt and "properties" in prompt
+            return {"ok": True, "model": "m", "text": json.dumps(
+                {"need_data": {"datasets": ["properties"], "branch": "Sheikh Zayed"}},
+                ensure_ascii=False)}
+        # round 2: the fetched, branch-filtered rows are in the prompt
+        assert "داده‌های واکشی‌شده" in prompt
+        assert "1234/56" in prompt          # Sheikh Zayed property
+        assert "9999/99" not in prompt      # Deira property filtered out
+        return {"ok": True, "model": "m", "text": json.dumps({
+            "kind": "excel", "filename": "املاک شعبه", "title": "املاک رهنی شعبه شیخ زاید",
+            "sheets": [{"name": "املاک",
+                        "columns": ["حساب", "پلاک ثبتی", "سند رهنی", "بیمه‌نامه", "مدیر حساب"],
+                        "rows": [["ACC1", "1234/56", "MD-77", "INS-9", "آقای مدیری"]]}],
+        }, ensure_ascii=False)}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "LTRX9", "account_no": "",   # general letter — the owner's case
+        "instruction": "لیستی از املاک شعبه شیخ زاید به همراه وضعیت بیمه‌نامه و شماره اسناد رهنی و پلاک ثبتی و اسامی مدیران حساب‌ها",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and len(calls) == 2
+    # the produced workbook actually contains the DB rows
+    r2 = await client.get(f"/api/crm/attachments/{body['attachment']['id']}/download",
+                          headers=auth_headers)
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(r2.content))
+    ws = wb["املاک"]
+    assert ws.cell(row=3, column=2).value == "1234/56"
+    assert ws.cell(row=3, column=5).value == "آقای مدیری"
 
 
 async def test_extract_refuses_ai_generated_attachment(

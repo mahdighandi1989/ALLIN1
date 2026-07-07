@@ -27,6 +27,21 @@ MAX_ROWS = 500
 MAX_COLS = 30
 MAX_PARAGRAPHS = 150
 MAX_CELL = 500
+MAX_DATASET_ROWS = 300
+
+# Cross-customer datasets the model may REQUEST via the need_data protocol —
+# a single-account letter (or a general one) can still build branch-wide /
+# bank-wide lists: the model names the dataset(s) + an exact branch value, the
+# server runs the deterministic capped query, and a second round produces the
+# spec from those rows. The model never queries the DB itself.
+DATASETS: Dict[str, str] = {
+    "properties": "املاک رهنی: شمارهٔ حساب، نام مشتری، شعبه، مدیرِ حساب، پلاک ثبتی، شمارهٔ سند رهنی، شهر، نوع، مالک، ارزیابی، شماره و تاریخ انقضای بیمه‌نامه، تاریخ/مبلغ ترهین، ملاحظات",
+    "customers": "مشتریان: شمارهٔ حساب، نام، شعبه، مدیرِ حساب",
+    "facilities": "تسهیلات: حساب، نام مشتری، شعبه، مدیرِ حساب، نوع/نام تسهیلات، مبلغ، مانده، نرخ، تاریخ‌های شروع/پایان/انقضا",
+    "securities": "تضامین/وثایق چندساله: سال، شعبه، حساب، نام مشتری، FD، ضامن، چک‌ها، مبلغ چک، شمارهٔ ملک، مبلغ ترهین، ملاحظات",
+    "fixed_deposits": "سپرده‌های ثابت: حساب، نام مشتری، شمارهٔ سپرده، مبلغ، ارز، تاریخ افتتاح/سررسید، نرخ",
+    "guarantors": "ضامن‌ها: حساب، نام مشتری، نام ضامن، حسابِ ضامن، شمارهٔ چک، مبلغ چک، بانک",
+}
 
 SYSTEM_PROMPT = (
     "تو سازندهٔ «پیوستِ رسمیِ» یک نامهٔ بانکی هستی. بر اساسِ دستورِ کاربر، زمینهٔ نامه و "
@@ -46,13 +61,28 @@ SYSTEM_PROMPT = (
     f"5) سقف‌ها: {MAX_SHEETS} شیت، {MAX_ROWS} ردیف، {MAX_COLS} ستون، {MAX_PARAGRAPHS} پاراگراف.\n"
     "6) سرستون‌ها فارسی و روشن؛ اعدادِ مبلغ با جداکنندهٔ هزارگان؛ ستونِ آخرِ هر شیت را اگر مفید است "
     "«ملاحظات» بگذار.\n"
-    "7) filename کوتاه، فارسی، بدونِ / \\ : * ? \" < > |."
+    "7) filename کوتاه، فارسی، بدونِ / \\ : * ? \" < > |.\n"
+    "8) اگر برای انجامِ دستور به داده‌هایی فراتر از «حقایقِ پایگاه‌داده» نیاز داری (فهرستِ چندمشتری، "
+    "به تفکیکِ شعبه، یا سراسری) و «کاتالوگِ داده‌های سراسری» در پیام هست، به‌جای spec فقط این JSON را "
+    "برگردان تا داده برایت واکشی شود:\n"
+    "{\"need_data\": {\"datasets\": [\"<از نام‌های کاتالوگ>\"], \"branch\": \"<دقیقاً یکی از مقادیرِ "
+    "فهرست‌شدهٔ شعبه یا رشتهٔ خالی برای همه>\"}}\n"
+    "این فرصت فقط یک بار است: در نوبتِ بعد «داده‌های واکشی‌شده» را می‌گیری و باید spec نهایی را بدهی. "
+    "نامِ شعبه در دستورِ کاربر ممکن است فارسی و در پایگاه‌داده لاتین باشد — خودت معادلِ درست را از فهرست "
+    "انتخاب کن. هرگز به‌جای درخواستِ داده، جدولِ خالی یا دادهٔ ساختگی نده."
 )
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def build_prompt(facts: Dict[str, Any], letter_ctx: Dict[str, str], instruction: str) -> str:
+def build_prompt(
+    facts: Dict[str, Any],
+    letter_ctx: Dict[str, str],
+    instruction: str,
+    *,
+    catalog: str = "",
+    fetched: Dict[str, Any] | None = None,
+) -> str:
     parts: List[str] = []
     parts.append("### زمینهٔ نامه (برای لحن و موضوع):")
     for k, label in (("subject", "موضوع"), ("recipient", "گیرنده"), ("body_excerpt", "گزیدهٔ متن")):
@@ -60,11 +90,235 @@ def build_prompt(facts: Dict[str, Any], letter_ctx: Dict[str, str], instruction:
         if v:
             parts.append(f"- {label}: {v[:1200]}")
     parts.append("\n### حقایقِ پایگاه‌داده (تنها منبعِ مجازِ داده):")
-    parts.append(json.dumps(facts, ensure_ascii=False, indent=1) if facts else "(بدون رکورد مرتبط — فقط از خودِ دستور استفاده کن و کمبودها را در warnings بگو)")
+    parts.append(json.dumps(facts, ensure_ascii=False, indent=1) if facts else "(بدون رکوردِ تک‌مشتری — اگر دستور به داده‌های سراسری نیاز دارد از need_data استفاده کن)")
+    if catalog:
+        parts.append("\n### کاتالوگِ داده‌های سراسری (در صورتِ نیاز با need_data درخواست بده — قاعدهٔ ۸):")
+        parts.append(catalog)
+    if fetched is not None:
+        parts.append("\n### داده‌های واکشی‌شده از پایگاه‌داده (پاسخِ need_data تو — تنها منبعِ مجازِ داده):")
+        parts.append(json.dumps(fetched, ensure_ascii=False, separators=(",", ":")))
+        parts.append("دیگر need_data مجاز نیست؛ همین حالا spec نهایی را از همین داده‌ها بساز. "
+                     "اگر پس از فیلترِ درست هیچ ردیفی نماند، جدول را خالی بده و دلیل را در warnings بنویس.")
     parts.append("\n### دستورِ کاربر (پیوستی که باید ساخته شود):")
     parts.append(instruction.strip()[:3000])
-    parts.append("\nحالا فقط JSON مشخصاتِ پیوست را برگردان.")
+    parts.append("\nحالا فقط JSON را برگردان.")
     return "\n".join(parts)
+
+
+def catalog_text(branches: List[str]) -> str:
+    lines = [f"- {name}: {desc}" for name, desc in DATASETS.items()]
+    lines.append(
+        "مقادیرِ موجودِ «شعبه» در پایگاه‌داده: "
+        + (", ".join(f"«{b}»" for b in branches) if branches else "(هیچ شعبه‌ای ثبت نشده)")
+    )
+    return "\n".join(lines)
+
+
+def parse_need_data(raw_text: str) -> Dict[str, Any] | None:
+    """Detect a need_data request in the model's reply (None when it's a spec)."""
+    m = _JSON_RE.search(raw_text or "")
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except Exception:  # noqa: BLE001
+        return None
+    need = data.get("need_data") if isinstance(data, dict) else None
+    if not isinstance(need, dict):
+        return None
+    datasets = [str(d).strip() for d in (need.get("datasets") or []) if str(d).strip() in DATASETS]
+    if not datasets:
+        return None
+    return {"datasets": datasets[:4], "branch": str(need.get("branch") or "").strip()[:100]}
+
+
+def _s(v: Any) -> str:
+    return "" if v is None else str(v).strip()
+
+
+def _cap(label: str, items: List[Dict[str, str]], warnings: List[str]) -> List[Dict[str, str]]:
+    if len(items) > MAX_DATASET_ROWS:
+        warnings.append(f"فهرستِ {label} به {MAX_DATASET_ROWS} ردیفِ نخست محدود شد ({len(items)} ردیف موجود است)")
+        return items[:MAX_DATASET_ROWS]
+    return items
+
+
+async def list_branches(db) -> List[str]:
+    """Distinct branch values (customers + facilities) for the prompt catalog."""
+    from sqlalchemy import select
+
+    from app.models.customer import Customer
+    from app.models.facility import Facility
+
+    vals: set = set()
+    for col, flt in (
+        (Customer.branch, Customer.is_deleted == False),  # noqa: E712
+        (Facility.branch, Facility.is_deleted == False),  # noqa: E712
+    ):
+        try:
+            rows = (await db.execute(select(col).where(flt).distinct())).scalars().all()
+            vals.update(str(v).strip() for v in rows if v and str(v).strip())
+        except Exception:  # noqa: BLE001 - a missing table must not kill generation
+            continue
+    return sorted(vals)[:60]
+
+
+async def fetch_datasets(db, datasets: List[str], branch: str = "") -> Tuple[Dict[str, Any], List[str]]:
+    """Deterministic, capped cross-customer queries for the need_data protocol.
+
+    ``branch`` filters by the CUSTOMER's branch (exact, case-insensitive); when
+    it matches nothing the full (capped) list is returned WITH a branch column
+    plus a warning, so the model can still filter — never silently empty."""
+    from sqlalchemy import select
+
+    from app.models.customer import Customer
+    from app.models.facility import Facility
+    from app.models.guarantor import Guarantor
+    from app.models.profile_entities import FixedDeposit, MortgagedProperty
+    from app.models.security import Security
+
+    warnings: List[str] = []
+    out: Dict[str, Any] = {}
+    b = (branch or "").strip()
+
+    custs = (
+        await db.execute(select(Customer).where(Customer.is_deleted == False))  # noqa: E712
+    ).scalars().all()
+    by_acc = {c.account_no: c for c in custs if c.account_no}
+    accounts: set | None = None
+    if b:
+        bl = b.lower()
+        matched = {c.account_no for c in custs if _s(c.branch).lower() == bl}
+        if matched:
+            accounts = matched
+        else:
+            warnings.append(
+                f"مشتری‌ای با شعبهٔ «{b}» یافت نشد — فهرستِ کامل با ستونِ شعبه ارسال شد"
+            )
+
+    def keep(acc: str) -> bool:
+        return accounts is None or acc in accounts
+
+    def cust_info(acc: str) -> Dict[str, str]:
+        c = by_acc.get(acc)
+        return {
+            "customer_name": _s(getattr(c, "name", "")) if c else "",
+            "branch": _s(getattr(c, "branch", "")) if c else "",
+            "account_manager": _s(getattr(c, "relationship_manager", "")) if c else "",
+        }
+
+    if "properties" in datasets:
+        rows = (
+            await db.execute(select(MortgagedProperty).where(MortgagedProperty.is_deleted == False))  # noqa: E712
+        ).scalars().all()
+        items = []
+        for p in rows:
+            if not keep(p.account_no):
+                continue
+            ci = cust_info(p.account_no)
+            items.append({
+                "account_no": _s(p.account_no),
+                "customer_name": _s(p.customer_name) or ci["customer_name"],
+                "branch": ci["branch"], "account_manager": ci["account_manager"],
+                "plate_no": _s(p.plate_no), "mortgage_deed_no": _s(p.mortgage_deed_no),
+                "city": _s(p.city), "prop_type": _s(p.prop_type), "owner": _s(p.owner),
+                "valuation": _s(p.valuation), "valuation_currency": _s(p.valuation_currency),
+                "insurance_no": _s(p.insurance_no), "insurance_expiry": _s(p.insurance_expiry),
+                "mortgage_date": _s(p.mortgage_date), "mortgage_amount": _s(p.mortgage_amount),
+                "remarks": _s(p.remarks),
+            })
+        out["properties"] = _cap("املاک رهنی", items, warnings)
+
+    if "customers" in datasets:
+        items = [
+            {"account_no": _s(c.account_no), "name": _s(c.name),
+             "branch": _s(c.branch), "account_manager": _s(c.relationship_manager)}
+            for c in custs if keep(c.account_no)
+        ]
+        out["customers"] = _cap("مشتریان", items, warnings)
+
+    if "facilities" in datasets:
+        facs = (
+            await db.execute(
+                select(Facility, Customer.account_no)
+                .join(Customer, Facility.customer_id == Customer.id)
+                .where(Facility.is_deleted == False, Customer.is_deleted == False)  # noqa: E712
+            )
+        ).all()
+        items = []
+        for fac, acc in facs:
+            if not keep(acc):
+                continue
+            ci = cust_info(acc)
+            items.append({
+                "account_no": _s(acc), "customer_name": ci["customer_name"],
+                "branch": _s(fac.branch) or ci["branch"],
+                "account_manager": _s(fac.relationship_manager) or ci["account_manager"],
+                "facility": _s(fac.name), "amount": _s(fac.amount), "currency": _s(fac.currency),
+                "outstanding": _s(fac.outstanding), "interest_rate": _s(fac.interest_rate),
+                "start_date": _s(fac.start_date), "end_date": _s(fac.end_date),
+                "expiry_date": _s(fac.expiry_date),
+            })
+        out["facilities"] = _cap("تسهیلات", items, warnings)
+
+    if "securities" in datasets:
+        rows = (
+            await db.execute(select(Security).where(Security.is_deleted == False))  # noqa: E712
+        ).scalars().all()
+        items = []
+        for s in rows:
+            if not keep(s.account_no):
+                continue
+            ci = cust_info(s.account_no)
+            items.append({
+                "year": _s(s.year), "branch": _s(s.branch) or ci["branch"],
+                "account_no": _s(s.account_no),
+                "customer_name": _s(s.customer_name) or ci["customer_name"],
+                "fd": _s(s.fd), "guarantor": _s(s.guarantor), "cheque_no": _s(s.cheque_no),
+                "cheque_amount": _s(s.cheque_amount), "property_no": _s(s.property_no),
+                "mortgage_aed": _s(s.mortgage_aed), "remarks": _s(s.remarks),
+            })
+        out["securities"] = _cap("تضامین", items, warnings)
+
+    if "fixed_deposits" in datasets:
+        rows = (
+            await db.execute(select(FixedDeposit).where(FixedDeposit.is_deleted == False))  # noqa: E712
+        ).scalars().all()
+        items = []
+        for fd in rows:
+            if not keep(fd.account_no):
+                continue
+            ci = cust_info(fd.account_no)
+            items.append({
+                "account_no": _s(fd.account_no),
+                "customer_name": _s(fd.customer_name) or ci["customer_name"],
+                "branch": ci["branch"], "fd_number": _s(fd.fd_number),
+                "amount": _s(fd.amount), "currency": _s(fd.currency),
+                "open_date": _s(fd.open_date), "maturity_date": _s(fd.maturity_date),
+                "rate": _s(fd.rate),
+            })
+        out["fixed_deposits"] = _cap("سپرده‌ها", items, warnings)
+
+    if "guarantors" in datasets:
+        rows = (
+            await db.execute(select(Guarantor).where(Guarantor.is_deleted == False))  # noqa: E712
+        ).scalars().all()
+        items = []
+        for g in rows:
+            if not keep(g.account_no):
+                continue
+            ci = cust_info(g.account_no)
+            items.append({
+                "account_no": _s(g.account_no),
+                "customer_name": _s(g.customer_name) or ci["customer_name"],
+                "branch": _s(g.branch) or ci["branch"],
+                "guarantor_name": _s(g.guarantor_name), "guarantor_account": _s(g.guarantor_account),
+                "cheque_no": _s(g.cheque_no), "cheque_amount": _s(g.cheque_amount),
+                "issuing_bank": _s(g.issuing_bank),
+            })
+        out["guarantors"] = _cap("ضامن‌ها", items, warnings)
+
+    return out, warnings
 
 
 def _clean_filename(name: str) -> str:
