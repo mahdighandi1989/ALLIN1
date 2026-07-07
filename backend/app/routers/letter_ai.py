@@ -381,15 +381,16 @@ async def generate_attachment(
     instruction = payload.instruction.strip()
     if payload.kind in ("excel", "word"):
         instruction += f"\n(فرمتِ خواسته‌شده توسط کاربر: {payload.kind})"
-    prompt = gen.build_prompt(
-        facts,
-        {
-            "subject": payload.subject or "",
-            "recipient": payload.recipient or "",
-            "body_excerpt": payload.body_excerpt or "",
-        },
-        instruction,
-    )
+    letter_ctx = {
+        "subject": payload.subject or "",
+        "recipient": payload.recipient or "",
+        "body_excerpt": payload.body_excerpt or "",
+    }
+    # The catalog lets the model REQUEST cross-customer data (branch-wide /
+    # bank-wide lists) via need_data instead of returning an empty skeleton —
+    # single-account facts alone cannot answer e.g. «همهٔ املاک شعبهٔ X».
+    branches = await gen.list_branches(db)
+    prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches))
     result = await inference.complete(
         db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
         model_id=payload.model_id, max_tokens=8000,
@@ -397,8 +398,24 @@ async def generate_attachment(
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
 
+    fetch_warnings: list = []
+    need = gen.parse_need_data(result.get("text") or "")
+    if need:
+        fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "")
+        prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched)
+        # bigger output budget: the spec now carries the fetched rows verbatim
+        result = await inference.complete(
+            db, prompt2, task="report_drafting", system=gen.SYSTEM_PROMPT,
+            model_id=payload.model_id, max_tokens=16000,
+        )
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
+        if gen.parse_need_data(result.get("text") or ""):
+            return {"ok": False, "error": "bad_spec:need_data_twice", "model": result.get("model")}
+
     try:
         spec, warnings = gen.parse_spec(result.get("text") or "")
+        warnings = warnings + [w for w in fetch_warnings if w not in warnings]
         if payload.kind in ("excel", "word"):
             spec["kind"] = payload.kind
             if payload.kind == "excel" and "sheets" not in spec:

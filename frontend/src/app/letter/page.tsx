@@ -2574,7 +2574,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v27</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v28</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2619,7 +2619,7 @@ export default function LetterPage() {
             {genOpen && (
               <div style={{ marginTop: 8, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span className="ltr-hint" style={{ fontWeight: 700, color: '#6d28d9' }}>
-                  چه پیوستی ساخته شود؟ (مثلاً: «جدولی بساز با ستون‌های شمارهٔ قرارداد، مبلغ و وضعیت، برای همهٔ تسهیلاتِ این مشتری» یا «توضیحی دربارهٔ وضعیتِ وثایق بنویس»)
+                  چه پیوستی ساخته شود؟ (مثلاً: «جدولِ تسهیلاتِ این مشتری با ستون‌های قرارداد، مبلغ و وضعیت»، «لیستِ املاکِ رهنیِ شعبهٔ X با وضعیتِ بیمه‌نامه و مدیرِ حساب» یا «توضیحی دربارهٔ وضعیتِ وثایق بنویس»)
                 </span>
                 <textarea className="meta-in" rows={2} value={genInstruction} disabled={genBusy}
                   onChange={(e) => setGenInstruction(e.target.value)} style={{ width: '100%', resize: 'vertical', font: 'inherit' }}
@@ -2642,8 +2642,8 @@ export default function LetterPage() {
                     {genBusy ? '⏳ در حالِ ساخت… (ممکن است تا چند دقیقه طول بکشد)' : '🪄 بساز و پیوست کن'}
                   </button>
                   {(general || !acct.trim())
-                    ? <span className="ltr-hint" style={{ color: '#b45309' }}>نامهٔ عمومی — بدونِ داده‌های پایگاه‌داده، فقط از متنِ دستور ساخته می‌شود.</span>
-                    : <span className="ltr-hint">داده‌ها از پروندهٔ حسابِ {acct.trim()} خوانده می‌شود؛ چیزی اختراع نمی‌شود.</span>}
+                    ? <span className="ltr-hint">نامهٔ عمومی — دادهٔ تک‌مشتری ندارد، ولی فهرست‌های سراسری (مثلاً املاک/تسهیلاتِ یک شعبه یا همهٔ مشتریان) از پایگاه‌داده خوانده می‌شود.</span>
+                    : <span className="ltr-hint">داده‌ها از پروندهٔ حسابِ {acct.trim()} (و در صورتِ نیاز فهرست‌های سراسری/شعبه‌ای) خوانده می‌شود؛ چیزی اختراع نمی‌شود.</span>}
                 </div>
                 {genWarnings.length > 0 && (
                   <div style={{ fontSize: 11.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px' }}>
