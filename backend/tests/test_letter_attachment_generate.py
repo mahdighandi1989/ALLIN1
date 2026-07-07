@@ -155,6 +155,52 @@ async def test_generate_attachment_endpoint_stores_marked_file(
     assert wb["املاک"].cell(row=3, column=2).value == "فاقد بیمه‌نامه"
 
 
+async def test_extract_refuses_ai_generated_attachment(
+    client, auth_headers, db_session, monkeypatch,
+):
+    """Server-side circular-write guard: an AI-generated attachment must be
+    refused by the extraction endpoint unless the override flag is explicit —
+    the frontend's default-untick is only UI feedback, the server is the gate."""
+    await _seed_model(db_session)
+
+    async def fake_complete(db, prompt, **kwargs):
+        return {"ok": True, "model": "m", "text": json.dumps({
+            "kind": "excel", "filename": "گزارش", "title": "گزارش",
+            "sheets": [{"name": "برگه", "columns": ["الف"], "rows": [["۱"]]}],
+        }, ensure_ascii=False)}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "LTRX3", "instruction": "جدول گزارش بساز",
+    })
+    assert r.status_code == 200, r.text
+    att_id = r.json()["attachment"]["id"]
+
+    # default: refused with a typed error, nothing staged
+    r2 = await client.post(f"/api/letter-ai/extract-attachment/{att_id}",
+                           headers=auth_headers, json={})
+    assert r2.status_code == 200
+    assert r2.json()["ok"] is False
+    assert r2.json()["error"] == "ai_generated_attachment"
+
+    # explicit override (user deliberately ticked it in the UI) passes the guard
+    from app.services import letter_attachment_extract as lax
+
+    async def fake_extract(*args, **kwargs):
+        return {"ok": True, "model": "m", "facts": [], "chunk_errors": []}
+
+    async def fake_stage(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(lax, "extract_attachment", fake_extract)
+    monkeypatch.setattr(lax, "stage_extraction", fake_stage)
+    r3 = await client.post(f"/api/letter-ai/extract-attachment/{att_id}",
+                           headers=auth_headers, json={"allow_ai_generated": True})
+    assert r3.status_code == 200, r3.text
+    assert r3.json()["ok"] is True
+
+
 async def test_generate_attachment_rejects_bad_spec(client, auth_headers, db_session, monkeypatch):
     await _seed_model(db_session)
 
