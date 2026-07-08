@@ -83,6 +83,11 @@ const INITIAL: Fields = {
   LienAmount: '', NotesPersonal: DEFAULT_PL_NOTES,
 }
 
+// The sheet starts BLANK (owner rule: no data appears until an account number
+// is loaded — then the latest facility + the convenience defaults in INITIAL
+// prefill it). INITIAL stays as the on-load default set.
+const EMPTY: Fields = Object.fromEntries(Object.keys(INITIAL).map((k) => [k, ''])) as Fields
+
 type GuarantorRow = { name: string; account: string }
 
 // Persian-first field labels: what the field is + WHERE it lands on the printed
@@ -136,7 +141,7 @@ const FOOT_EN = 'P.O. BOX: 4182, DUBAI – U.A.E.  TEL: +9714-6035555, FAX: +971
 const FOOT_SWIFT = 'SWIFT CODE : BSIRAEAD'
 
 export default function OfferLetterPage() {
-  const [f, setF] = useState<Fields>(INITIAL)
+  const [f, setF] = useState<Fields>(EMPTY)
   const [acc, setAcc] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -154,6 +159,41 @@ export default function OfferLetterPage() {
   const [guars, setGuars] = useState<GuarantorRow[]>([])
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
+
+  // ---- unfilled-variable highlighting: every variable printed on the letter
+  // BLINKS until its field has a value; once filled the highlight vanishes.
+  // (Print strips the highlight — see the .olv-e print rule.) ----
+  const Blink = ({ v, ph, fa }: { v: string; ph: string; fa: string }) =>
+    v ? <>{v}</> : <span className="olv-e" title={`${fa} — از فرم بالا پر کن`}>{ph}</span>
+  const V = (k: string, ph = '________') =>
+    <Blink v={(f[k] || '').trim()} ph={ph} fa={LABELS[k]?.fa || k} />
+  // like fill(), but unfilled {Key} placeholders become blinking spans
+  const fillN = (t: string): React.ReactNode =>
+    t.split(/(\{\w+\})/g).map((part, i) => {
+      const m = part.match(/^\{(\w+)\}$/)
+      return m ? <React.Fragment key={i}>{V(m[1])}</React.Fragment> : <React.Fragment key={i}>{part}</React.Fragment>
+    })
+  // replace ONE literal token inside a template string with a (blinking) node
+  const replaceNode = (text: string, token: string, node: React.ReactNode): React.ReactNode => {
+    const parts = text.split(token)
+    if (parts.length === 1) return text
+    return parts.map((seg, i) => (
+      <React.Fragment key={i}>{seg}{i < parts.length - 1 ? node : null}</React.Fragment>
+    ))
+  }
+  // the REF number with blinking serial/year (refNumber stays a string for save)
+  const RefNo = () => <>182/4/{V('RefSerial', '____')}/{V('RefYear', '____')}</>
+
+  // ---- double-click layout editing (like the official-letter page): dblclick
+  // any block/variable in the preview → a floating panel adjusts font, align,
+  // direction, spacing and offsets. Overrides are keyed by the element's path
+  // inside its page, stored per TEMPLATE in localStorage, applied after every
+  // render, and saved into the customer snapshot too. ----
+  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number }
+  const [olLayout, setOlLayout] = useState<Record<string, OlBox>>({})
+  const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
+  const olPrevKeys = useRef<string[]>([])
+  const OLKEY = (t: string) => `ol-layout:${t}`
   const toggleCheck = (i: number) => setChecks((c) => c.map((v, idx) => (idx === i ? !v : v)))
   const setGuar = (i: number, k: keyof GuarantorRow) => (e: any) =>
     setGuars((g) => g.map((row, idx) => (idx === i ? { ...row, [k]: e.target.value } : row)))
@@ -252,6 +292,15 @@ export default function OfferLetterPage() {
           .filter((g: GuarantorRow) => g.name.trim())
       )
       if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
+      // restore the per-template layout overrides saved with this customer
+      if (saved.olLayoutMap && typeof saved.olLayoutMap === 'object') {
+        for (const t of ['english', 'personal']) {
+          if (saved.olLayoutMap[t] && typeof saved.olLayoutMap[t] === 'object') {
+            try { localStorage.setItem(OLKEY(t), JSON.stringify(saved.olLayoutMap[t])) } catch { /* in-memory only */ }
+          }
+        }
+        try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { /* keep current */ }
+      }
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setLoading(false) }
@@ -267,9 +316,13 @@ export default function OfferLetterPage() {
       const cleanGuars = guars
         .map((g) => ({ name: g.name.trim(), account: g.account.trim() }))
         .filter((g) => g.name)
+      const layoutMap: Record<string, any> = {}
+      for (const t of ['english', 'personal']) {
+        try { layoutMap[t] = JSON.parse(localStorage.getItem(OLKEY(t)) || '{}') } catch { layoutMap[t] = {} }
+      }
       await crmApi.saveOfferLetterData(a, {
         POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
-        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars },
+        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars, olLayoutMap: layoutMap },
       })
       // A facility type with no name-similar entry in the catalog opens its own
       // place in the DB list (and becomes selectable from now on). Similar
@@ -379,6 +432,84 @@ export default function OfferLetterPage() {
     return () => { window.removeEventListener('resize', on); window.removeEventListener('beforeprint', on); clearTimeout(t) }
   }, [fitPages])
 
+  // ---- layout-override plumbing (path keys resolve inside the current pages) ----
+  const elPath = (el: HTMLElement): string | null => {
+    const page = el.closest('.ol-page') as HTMLElement | null
+    if (!page || !printRef.current) return null
+    const pages = Array.from(printRef.current.querySelectorAll('.ol-page'))
+    const chain: number[] = []
+    let cur: HTMLElement = el
+    while (cur !== page) {
+      const par = cur.parentElement
+      if (!par) return null
+      chain.unshift(Array.from(par.children).indexOf(cur))
+      cur = par
+    }
+    return `${pages.indexOf(page)}|${chain.join('.')}`
+  }
+  const elFromPath = (key: string): HTMLElement | null => {
+    const [pi, chain] = key.split('|')
+    let cur: Element | null | undefined = printRef.current?.querySelectorAll('.ol-page')[Number(pi)]
+    if (!cur) return null
+    for (const i of chain ? chain.split('.') : []) {
+      cur = cur.children[Number(i)]
+      if (!cur) return null
+    }
+    return cur as HTMLElement
+  }
+  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width'] as const
+  // re-apply after EVERY render (React re-creates nodes freely); clear the
+  // previously-touched elements first so removed overrides really reset.
+  useEffect(() => {
+    for (const k of olPrevKeys.current) {
+      const el = elFromPath(k)
+      if (el) OL_PROPS.forEach((p) => { (el.style as any)[p] = '' })
+    }
+    for (const [k, b] of Object.entries(olLayout)) {
+      const el = elFromPath(k)
+      if (!el) continue
+      if (b.fs) el.style.fontSize = `${b.fs}pt`
+      if (b.bold != null) el.style.fontWeight = b.bold ? '700' : '400'
+      if (b.align) el.style.textAlign = b.align
+      if (b.dir) el.style.direction = b.dir
+      if (b.lh) el.style.lineHeight = String(b.lh)
+      if (b.ls) el.style.letterSpacing = `${b.ls}px`
+      if (b.mt) el.style.marginTop = `${b.mt}px`
+      if (b.mis) el.style.marginInlineStart = `${b.mis}px`
+      if (b.w) el.style.width = `${b.w}%`
+    }
+    olPrevKeys.current = Object.keys(olLayout)
+    fitPages()
+  })
+  // per-template persistence (device-local; the snapshot carries it too)
+  useEffect(() => {
+    try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { setOlLayout({}) }
+    setOlSel(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveTpl])
+  useEffect(() => {
+    try { localStorage.setItem(OLKEY(effectiveTpl), JSON.stringify(olLayout)) } catch { /* quota — layout stays in-memory */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [olLayout])
+  const olUpdate = (patch: OlBox) => {
+    if (!olSel) return
+    setOlLayout((s) => ({ ...s, [olSel.key]: { ...(s[olSel.key] || {}), ...patch } }))
+  }
+  const onPreviewDblClick = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement
+    if (!t || t.closest('.olp-panel')) return
+    const el = (t.closest('span,td,th,li,p,div') as HTMLElement) || t
+    const key = elPath(el)
+    if (!key) return
+    e.preventDefault()
+    setOlSel({
+      key,
+      label: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 44) || 'عنصر',
+      x: Math.min(e.clientX, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 300),
+      y: Math.min(e.clientY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 330),
+    })
+  }
+
   const field = 'w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-yellow-50'
   // F is a render *function* (not a nested component) so inputs keep focus while
   // typing. Labels are Persian-first (what the field is + where it prints) with
@@ -429,8 +560,8 @@ export default function OfferLetterPage() {
           <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">U.A.E</span></div>
           <div className="ol-lic">&quot;Licensed by CBUAE&quot;</div>
           <div className="ol-refblock">
-            <div className="ol-refline">REF: {refNumber}</div>
-            <div className="ol-refline">DATE: {f.IssueDate || '____________'}</div>
+            <div className="ol-refline">REF: <RefNo /></div>
+            <div className="ol-refline">DATE: {V('IssueDate', '____________')}</div>
           </div>
         </div>
       </div>
@@ -448,9 +579,9 @@ export default function OfferLetterPage() {
         <div className="ol-head-right ol-head-right--bi">
           <div className="ol-bsi">BSI-ROL-V002-2024</div>
           <table className="ol-hdr-tbl"><tbody>
-            <tr><td className="hdr-en">Date</td><td className="hdr-v">{f.IssueDate || '—'}</td><td className="hdr-ar" dir="rtl">التاريخ</td></tr>
-            <tr><td className="hdr-en">Branch Name &amp; Code</td><td className="hdr-v">{f.Branch || '—'}</td><td className="hdr-ar" dir="rtl">اسم و رقم الفرع</td></tr>
-            <tr><td className="hdr-en">Offer Letter Ref #</td><td className="hdr-v">{refNumber}</td><td className="hdr-ar" dir="rtl">رقم اشعار القرض</td></tr>
+            <tr><td className="hdr-en">Date</td><td className="hdr-v">{V('IssueDate', '—')}</td><td className="hdr-ar" dir="rtl">التاريخ</td></tr>
+            <tr><td className="hdr-en">Branch Name &amp; Code</td><td className="hdr-v">{V('Branch', '—')}</td><td className="hdr-ar" dir="rtl">اسم و رقم الفرع</td></tr>
+            <tr><td className="hdr-en">Offer Letter Ref #</td><td className="hdr-v"><RefNo /></td><td className="hdr-ar" dir="rtl">رقم اشعار القرض</td></tr>
           </tbody></table>
         </div>
       </div>
@@ -473,7 +604,7 @@ export default function OfferLetterPage() {
     )
 
   // Bilingual EN/AR side-by-side line.
-  const Row2 = ({ en, ar, bold }: { en: string; ar: string; bold?: boolean }) => (
+  const Row2 = ({ en, ar, bold }: { en: React.ReactNode; ar: React.ReactNode; bold?: boolean }) => (
     <div className="bi-row2" style={bold ? { fontWeight: 700 } : undefined}><div>{en}</div><div className="ar" dir="rtl">{ar}</div></div>
   )
 
@@ -530,6 +661,27 @@ export default function OfferLetterPage() {
         /* bilingual pages are framed by a full-page border, like the scanned form */
         .ol-page--bordered::before { content:''; position:absolute; top:5mm; left:6mm; right:6mm; bottom:5mm; border:1px solid #111; pointer-events:none; }
         .ol-dots { letter-spacing:1px; }
+        /* unfilled variables blink until their field is filled (never printed) */
+        .olv-e { background:#fde047; border-radius:2px; padding:0 3px; animation:olvB 1.1s ease-in-out infinite; cursor:help; }
+        @keyframes olvB { 0%,100% { background-color:#fef9c3 } 50% { background-color:#fde047 } }
+        /* dblclick layout panel */
+        .olp-panel { position:fixed; z-index:60; width:270px; background:#fff; border:1px solid #cbd5e1; border-radius:12px;
+                     box-shadow:0 10px 30px rgba(0,0,0,.18); padding:10px; font-size:12px; font-family:inherit; }
+        .olp-h { display:flex; justify-content:space-between; align-items:center; font-weight:700; margin-bottom:8px; gap:6px; }
+        .olp-h span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .olp-x { border:0; background:transparent; font-size:16px; cursor:pointer; color:#64748b; }
+        .olp-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+        .olp-row label { flex:1; color:#475569; }
+        .olp-row input { width:64px; border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; }
+        .olp-seg { display:flex; gap:4px; margin-bottom:6px; }
+        .olp-seg button, .olp-row button { flex:1; border:1px solid #cbd5e1; background:#f8fafc; border-radius:6px; padding:3px 4px; cursor:pointer; }
+        .olp-seg button.on, .olp-row button.on { background:#2563eb; color:#fff; border-color:#2563eb; }
+        .olp-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
+        .olp-grid label { display:flex; flex-direction:column; gap:2px; color:#475569; }
+        .olp-grid input { border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; width:100%; }
+        .olp-actions { display:flex; gap:6px; }
+        .olp-actions button { flex:1; border:1px solid #fca5a5; color:#b91c1c; background:#fef2f2; border-radius:6px; padding:4px; cursor:pointer; }
+        .olp-hint { margin-top:6px; color:#94a3b8; font-size:10.5px; line-height:1.6; }
         /* bilingual blocks */
         .bi-row2 { display:flex; justify-content:space-between; gap:6mm; margin:1.2mm 0; }
         .bi-row2 .ar { direction:rtl; text-align:right; font-size:10pt; }
@@ -565,6 +717,8 @@ export default function OfferLetterPage() {
           .ol-tbl, .pl-tbl tr, .ol-sign { page-break-inside: avoid; }
           #ol-controls { display:none !important; }
           .pl-chkbox { cursor:default; }
+          .olp-panel { display:none !important; }
+          .olv-e { animation:none !important; background:none !important; padding:0; }
         }
       `}</style>
 
@@ -575,7 +729,7 @@ export default function OfferLetterPage() {
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
               <h1 className="text-lg font-bold text-gray-900" dir="rtl">Offer Letter — نامهٔ پیشنهادِ تسهیلات</h1>
-              <p className="text-gray-500 text-xs" dir="rtl">شماره‌حساب را وارد کن؛ قالب بر اساس نوع حساب×تسهیلات خودکار انتخاب می‌شود (شخصی‌وام → دوزبانه، بقیه → English). داده‌ها از پروندهٔ مشتری خوانده و هنگام ذخیره/چاپ به آن برمی‌گردد.</p>
+              <p className="text-gray-500 text-xs" dir="rtl">فرم خالی شروع می‌شود؛ با واردکردن شماره‌حساب و «بارگیری»، از آخرین تسهیلاتِ مشتری خودکار پر می‌شود (قالب هم بر اساس نوع حساب×تسهیلات انتخاب می‌شود). متغیرهای پرنشده در متنِ نامه چشمک می‌زنند تا پر شوند، و با دبل‌کلیک روی هر بخشِ نامه پنلِ چینش (فونت/تراز/جهت/فاصله) باز می‌شود.</p>
             </div>
           </div>
 
@@ -738,8 +892,9 @@ export default function OfferLetterPage() {
           </>}
         </div>
 
-        {/* ---------------- printable document ---------------- */}
-        <div id="offer-print" dir="ltr" ref={printRef}>
+        {/* ---------------- printable document ----------------
+            dblclick any block → layout panel (font/align/dir/spacing/offsets) */}
+        <div id="offer-print" dir="ltr" ref={printRef} onDoubleClick={onPreviewDblClick}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
@@ -747,24 +902,24 @@ export default function OfferLetterPage() {
                 <div className="ol-fit">
                   <Letterhead mode="english" />
                   <div className="ol-title">OFFER LETTER</div>
-                  <div className="ol-rcpt">{f.Prefix} {f.CompanyName || '________________'}</div>
-                  <div className="ol-rcpt">ACCOUNT NO: {f.AccountNumber || '____________'}</div>
-                  <div>P.O. Box {f.POBox || '______'}</div>
-                  <div>{f.CityCountry}</div>
+                  <div className="ol-rcpt">{V('Prefix', 'M/S.')} {V('CompanyName', '________________')}</div>
+                  <div className="ol-rcpt">ACCOUNT NO: {V('AccountNumber', '____________')}</div>
+                  <div>P.O. Box {V('POBox', '______')}</div>
+                  <div>{V('CityCountry', '________________')}</div>
                   <div className="ol-p" style={{ fontWeight: 700 }}>Private &amp; Confidential</div>
                   <div className="ol-p">Dear Sir,</div>
-                  <div className="ol-p">With reference to your request via letter Dated: {f.RequestDate || '____________'}, we are pleased to inform you that the below mentioned {f.FacilityType || 'Overdraft'} facility is approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
+                  <div className="ol-p">With reference to your request via letter Dated: {V('RequestDate', '____________')}, we are pleased to inform you that the below mentioned {V('FacilityType', '__________')} facility is approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
                   <table className="ol-tbl">
                     <thead><tr><th>Facility</th><th>Credit Limit (AED)</th><th>Interest Rate</th><th>Remarks</th></tr></thead>
                     <tbody><tr>
-                      <td>{f.FacilityType || '—'}</td>
-                      <td>{f.CreditLimit || '—'}</td>
-                      <td style={{ whiteSpace: 'pre-wrap' }}>{f.InterestRate || '—'}</td>
+                      <td>{V('FacilityType', '—')}</td>
+                      <td>{V('CreditLimit', '—')}</td>
+                      <td style={{ whiteSpace: 'pre-wrap' }}>{V('InterestRate', '—')}</td>
                       <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
                     </tr></tbody>
                   </table>
                   <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
-                  <div className="ol-sec">{f.RequiredSecurities}</div>
+                  <div className="ol-sec">{V('RequiredSecurities', '____________________________')}</div>
                   <div className="ol-sign" style={{ marginTop: 'auto' }}>
                     <span>Head of Credit Facility Department</span>
                     <span>Customer Signature with Stamp</span>
@@ -778,7 +933,7 @@ export default function OfferLetterPage() {
                 <div className="ol-fit">
                   <Letterhead mode="english" />
                   <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
-                  <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
+                  <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fillN(t)}</li>)}</ol>
                   {/* like the source doc: a single bold label at the LEFT, no rule lines */}
                   <div style={{ marginTop: 'auto', fontWeight: 700, fontSize: '9pt' }}>Customer Signature with Stamp</div>
                 </div>
@@ -789,7 +944,7 @@ export default function OfferLetterPage() {
               <div className="ol-page">
                 <div className="ol-fit">
                   <Letterhead mode="english" />
-                  <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
+                  <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fillN(t)}</li>)}</ol>
                   <div className="ol-p">Please read the content of this letter and if you agree kindly sign the original copy and return it to us as confirmation for our records not later than one month from the date of this letter; if not accepted it will be deemed to have lapsed.</div>
                   <div className="ol-p">We trust that you will find the above limits and its terms to your satisfaction and will utilize the same for our mutual benefits. While assuring you of our best service at all times, we appreciate your kind co-operation and prompt reply.</div>
                   <div className="ol-p" style={{ marginTop: '4mm' }}>Yours truly,</div>
@@ -801,8 +956,8 @@ export default function OfferLetterPage() {
                   <div className="ol-dots" style={{ marginTop: '6mm' }}>....................................................................................................................................</div>
                   <div className="ol-p">I read all pages of offer letter and I agreed with the terms and conditions mentioned thereof.</div>
                   <div className="ol-p">Encl: Duplicate of this letter accepted and agreed by</div>
-                  <div>{isCorporate ? 'M/s' : 'Mr.'}: {f.CompanyName || '..............................................................'}</div>
-                  <div>Date: {f.AcceptanceDate || '............................'}</div>
+                  <div>{isCorporate ? 'M/s' : 'Mr.'}: {V('CompanyName', '..............................................................')}</div>
+                  <div>Date: {V('AcceptanceDate', '............................')}</div>
                   <div className="ol-sign" style={{ marginTop: 'auto' }}>
                     <span>Authorized Signature(s)</span>
                     {isCorporate ? <span>Company Stamp</span> : <span>&nbsp;</span>}
@@ -822,10 +977,10 @@ export default function OfferLetterPage() {
                   <div className="bi-conf" dir="rtl"><b>{PL.header.confidential.ar}</b></div>
                   <div className="ol-title">{PL.header.title.en}</div>
                   <div className="ol-title-ar" dir="rtl">{PL.header.title.ar}</div>
-                  <div className="ol-rcpt">{f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{f.CompanyName || '________________'}</div>
-                  <div>P.O. Box: {f.POBox || '______'}</div>
-                  <div>{f.CityCountry}</div>
-                  <Row2 en={`Subject: Personal Loan Application dated: ${f.SubjectDate || '__________'}`} ar={'الموضوع: طلب القرض الشخصي المؤرخ'} bold />
+                  <div className="ol-rcpt">{f.Prefix && f.Prefix !== 'M/S.' ? f.Prefix + ' ' : ''}{V('CompanyName', '________________')}</div>
+                  <div>P.O. Box: {V('POBox', '______')}</div>
+                  <div>{V('CityCountry', '________________')}</div>
+                  <Row2 en={<>Subject: Personal Loan Application dated: {V('SubjectDate', '__________')}</>} ar={'الموضوع: طلب القرض الشخصي المؤرخ'} bold />
                   <Row2 en={PL.dear.en} ar={PL.dear.ar} />
                   <div className="ol-p">{PL.intro.en}</div>
                   <div className="ol-p ar" dir="rtl" style={{ textAlign: 'right' }}>{PL.intro.ar}</div>
@@ -839,19 +994,19 @@ export default function OfferLetterPage() {
                     </tr>
                     <tr>
                       <td className="pl-lbl"><div>{PL.labels.loanAmount.en}</div><div className="ar" dir="rtl">{PL.labels.loanAmount.ar}</div></td>
-                      <td className="pl-val">{f.LoanAmount || '—'}{f.LoanAmount && <span className="pl-tick">✓</span>}</td>
+                      <td className="pl-val">{V('LoanAmount', '—')}{f.LoanAmount && <span className="pl-tick">✓</span>}</td>
                       <td className="pl-lbl"><div>{PL.labels.interestRate.en}</div><div className="ar" dir="rtl">{PL.labels.interestRate.ar}</div></td>
-                      <td className="pl-val">{f.LoanInterestRate || f.InterestRate || '—'}</td>
+                      <td className="pl-val">{(f.LoanInterestRate || f.InterestRate) ? (f.LoanInterestRate || f.InterestRate) : V('LoanInterestRate', '—')}</td>
                     </tr>
                     <tr>
                       <td className="pl-lbl"><div>{PL.labels.tenor.en}</div><div className="ar" dir="rtl">{PL.labels.tenor.ar}</div></td>
-                      <td className="pl-val">{f.LoanTenor || '—'}{f.LoanTenor && <span className="pl-tick">✓</span>}</td>
+                      <td className="pl-val">{V('LoanTenor', '—')}{f.LoanTenor && <span className="pl-tick">✓</span>}</td>
                       <td className="pl-lbl"><div>{PL.labels.installment.en}</div><div className="ar" dir="rtl">{PL.labels.installment.ar}</div></td>
-                      <td className="pl-val">{f.MonthlyInstallment || '—'}</td>
+                      <td className="pl-val">{V('MonthlyInstallment', '—')}</td>
                     </tr>
                     <tr>
                       <td className="pl-lbl"><div>{PL.labels.purpose.en}</div><div className="ar" dir="rtl">{PL.labels.purpose.ar}</div></td>
-                      <td className="pl-val" colSpan={3}>{f.Purpose || '—'}</td>
+                      <td className="pl-val" colSpan={3}>{V('Purpose', '—')}</td>
                     </tr>
                     <tr>
                       <td className="pl-lbl"><div>{PL.processingFees.label.en}</div><div className="ar" dir="rtl">{PL.processingFees.label.ar}</div></td>
@@ -873,11 +1028,11 @@ export default function OfferLetterPage() {
                         {/* Item 7 names the guarantor(s), exactly like the filled sample:
                             "… borrower(s) / -Mr. NAME- A/C NO.124076" */}
                         <td className="pl-val">
-                          {s.en.replace('250,000', f.LienAmount || '________')}
+                          {replaceNode(s.en, '250,000', V('LienAmount', '________'))}
                           {s.n === '7' && guarLine ? <b> {guarLine}</b> : null}
                         </td>
                         <td className="pl-val pl-ar" dir="rtl">
-                          {s.ar.replace('250,000', f.LienAmount || '________')}
+                          {replaceNode(s.ar, '250,000', V('LienAmount', '________'))}
                           {s.n === '7' && guarLine ? <span dir="ltr"> {guarLine}</span> : null}
                         </td>
                       </tr>
@@ -931,8 +1086,8 @@ export default function OfferLetterPage() {
                   </tbody></table>
                   <table className="pl-tbl" style={{ marginTop: 'auto' }}><tbody>
                     <tr><td className="pl-lbl">{PL.borrowerSign[0].en}</td><td className="pl-val">&nbsp;</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[0].ar}</td></tr>
-                    <tr><td className="pl-lbl">{PL.borrowerSign[1].en}</td><td className="pl-val">{f.CompanyName}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[1].ar}</td></tr>
-                    <tr><td className="pl-lbl">{PL.borrowerSign[2].en}</td><td className="pl-val">{f.AcceptanceDate}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[2].ar}</td></tr>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[1].en}</td><td className="pl-val">{V('CompanyName', '________')}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[1].ar}</td></tr>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[2].en}</td><td className="pl-val">{V('AcceptanceDate', '________')}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[2].ar}</td></tr>
                   </tbody></table>
                 </div>
                 <PageFooter mode="bilingual" n={4} total={4} />
@@ -940,6 +1095,46 @@ export default function OfferLetterPage() {
             </>
           )}
         </div>
+
+        {/* ---- floating layout panel (dblclick target), like the letter page's ---- */}
+        {olSel && (() => {
+          const b = olLayout[olSel.key] || {}
+          return (
+            <div className="olp-panel" style={{ left: olSel.x, top: olSel.y }} dir="rtl">
+              <div className="olp-h">
+                <span title={olSel.label}>چینش — {olSel.label}</span>
+                <button className="olp-x" onClick={() => setOlSel(null)}>×</button>
+              </div>
+              <div className="olp-row">
+                <label>اندازهٔ فونت (pt)</label>
+                <input type="number" step="0.5" value={b.fs ?? ''} placeholder="—"
+                  onChange={(e) => olUpdate({ fs: +e.target.value || undefined })} />
+                <button className={b.bold ? 'on' : ''} onClick={() => olUpdate({ bold: !b.bold })}>بولد</button>
+              </div>
+              <div className="olp-seg" title="چینش">
+                {([['right', '≡راست'], ['center', 'وسط'], ['left', 'چپ≡'], ['justify', 'تراز']] as const).map(([a, t]) => (
+                  <button key={a} className={b.align === a ? 'on' : ''} onClick={() => olUpdate({ align: a })}>{t}</button>
+                ))}
+              </div>
+              <div className="olp-seg" title="جهتِ نوشتار">
+                <button className={b.dir === 'rtl' ? 'on' : ''} onClick={() => olUpdate({ dir: 'rtl' })}>راست‑چپ</button>
+                <button className={b.dir === 'ltr' ? 'on' : ''} onClick={() => olUpdate({ dir: 'ltr' })}>چپ‑راست</button>
+              </div>
+              <div className="olp-grid">
+                <label>فاصلهٔ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => olUpdate({ lh: +e.target.value || undefined })} /></label>
+                <label>فاصلهٔ حروف<input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => olUpdate({ ls: +e.target.value || undefined })} /></label>
+                <label>جابه‌جایی عمودی<input type="number" value={b.mt ?? ''} placeholder="px" onChange={(e) => olUpdate({ mt: +e.target.value || undefined })} /></label>
+                <label>جابه‌جایی افقی<input type="number" value={b.mis ?? ''} placeholder="px" onChange={(e) => olUpdate({ mis: +e.target.value || undefined })} /></label>
+                <label>عرض ٪<input type="number" value={b.w ?? ''} placeholder="—" onChange={(e) => olUpdate({ w: +e.target.value || undefined })} /></label>
+              </div>
+              <div className="olp-actions">
+                <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
+                <button onClick={() => { if (confirm('همهٔ چیدمانِ سفارشیِ این قالب پاک شود؟')) { setOlLayout({}); setOlSel(null) } }}>بازنشانیِ همه</button>
+              </div>
+              <div className="olp-hint">تغییرها همان لحظه اعمال و برای این قالب ذخیره می‌شوند (با «ذخیره» در پروندهٔ مشتری هم می‌مانند).</div>
+            </div>
+          )
+        })()}
       </div>
     </Layout>
   )
