@@ -794,7 +794,9 @@ export default function OfferLetterPage() {
                   <div className="ol-p" style={{ marginTop: '4mm' }}>Yours truly,</div>
                   <div style={{ fontWeight: 700 }}>Bank Saderat Iran</div>
                   <div>Credit Facility Department</div>
-                  <div className="ol-sign"><span>Manager Signature &amp; Stamp</span><span>&nbsp;</span></div>
+                  {/* stamp+wet-signature room above the rule; the page's slack is
+                      absorbed by the bottom sign's auto margin, so nothing shifts */}
+                  <div className="ol-sign" style={{ marginTop: '22mm' }}><span>Manager Signature &amp; Stamp</span><span>&nbsp;</span></div>
                   <div className="ol-dots" style={{ marginTop: '6mm' }}>....................................................................................................................................</div>
                   <div className="ol-p">I read all pages of offer letter and I agreed with the terms and conditions mentioned thereof.</div>
                   <div className="ol-p">Encl: Duplicate of this letter accepted and agreed by</div>
