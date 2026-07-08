@@ -214,12 +214,18 @@ export default function OfferLetterPage() {
     return `${Number(int_).toLocaleString('en-US')}/${dec}`
   }
 
-  // "-Mr. NAME- A/C NO.124076 / -Ms. OTHER- A/C NO.99881" — the guarantor line
-  // appended to securities item 7, exactly like the bank's filled sample.
-  const guarLine = guars
+  // Guarantor entries appended to securities item 7. The owner wants them
+  // STACKED (one per line, neatly under each other) rather than run together.
+  const guarItems = guars
     .filter((g) => g.name.trim())
     .map((g) => `-${g.name.trim()}-${g.account.trim() ? ` A/C NO.${g.account.trim()}` : ''}`)
-    .join(' / ')
+  const guarLine = guarItems.join(' / ')   // kept for any single-line consumers
+  const GuarStack = ({ dir }: { dir?: 'ltr' | 'rtl' }) =>
+    guarItems.length ? (
+      <div className="guar-stack" dir={dir || 'ltr'}>
+        {guarItems.map((s, i) => <div key={i} className="guar-line" dir="ltr">{s}</div>)}
+      </div>
+    ) : null
 
   // Department reference number: "182/4/<serial>/<year>" — prefix fixed, serial
   // typed, year auto (current year unless overridden).
@@ -661,6 +667,9 @@ export default function OfferLetterPage() {
         /* bilingual pages are framed by a full-page border, like the scanned form */
         .ol-page--bordered::before { content:''; position:absolute; top:5mm; left:6mm; right:6mm; bottom:5mm; border:1px solid #111; pointer-events:none; }
         .ol-dots { letter-spacing:1px; }
+        /* row-7 guarantors: one per line, neatly stacked (not run together) */
+        .guar-stack { margin-top:1mm; }
+        .guar-line { font-weight:700; line-height:1.5; }
         /* unfilled variables blink until their field is filled (never printed) */
         .olv-e { background:#fde047; border-radius:2px; padding:0 3px; animation:olvB 1.1s ease-in-out infinite; cursor:help; }
         @keyframes olvB { 0%,100% { background-color:#fef9c3 } 50% { background-color:#fde047 } }
@@ -1029,11 +1038,11 @@ export default function OfferLetterPage() {
                             "… borrower(s) / -Mr. NAME- A/C NO.124076" */}
                         <td className="pl-val">
                           {replaceNode(s.en, '250,000', V('LienAmount', '________'))}
-                          {s.n === '7' && guarLine ? <b> {guarLine}</b> : null}
+                          {s.n === '7' && guarItems.length ? <GuarStack /> : null}
                         </td>
                         <td className="pl-val pl-ar" dir="rtl">
                           {replaceNode(s.ar, '250,000', V('LienAmount', '________'))}
-                          {s.n === '7' && guarLine ? <span dir="ltr"> {guarLine}</span> : null}
+                          {s.n === '7' && guarItems.length ? <GuarStack dir="rtl" /> : null}
                         </td>
                       </tr>
                     ))}
@@ -1056,19 +1065,19 @@ export default function OfferLetterPage() {
                 <PageFooter mode="bilingual" n={2} total={4} />
               </div>
 
-              {/* ===== BILINGUAL PAGE 3 — terms 8–13 + bank signature ===== */}
+              {/* ===== BILINGUAL PAGE 3 — terms 8–14 + closing note + bank signature ===== */}
               <div className="ol-page ol-page--bordered">
                 <div className="ol-fit">
                   <Letterhead mode="bilingual" />
                   <table className="pl-tbl"><tbody>
-                    {PL.terms.slice(7, 12).map((t, i) => (
+                    {PL.terms.slice(7, 14).map((t, i) => (
                       <tr key={i}><td className="pl-num">{i + 8}</td><td className="pl-val">{t.en}</td><td className="pl-val pl-ar" dir="rtl">{t.ar}</td></tr>
                     ))}
                   </tbody></table>
-                  <div className="pl-close"><div>{PL.terms[12].en}</div><div className="ar" dir="rtl">{PL.terms[12].ar}</div></div>
+                  <div className="pl-close"><div>{PL.closingNote.en}</div><div className="ar" dir="rtl">{PL.closingNote.ar}</div></div>
                   <Row2 en={PL.closing.yoursSincerely.en} ar={PL.closing.yoursSincerely.ar} />
                   <Row2 en={PL.closing.forBank.en} ar={PL.closing.forBank.ar} />
-                  <div className="ol-sign" style={{ marginTop: 'auto' }}>
+                  <div className="ol-sign" style={{ marginTop: '14mm' }}>
                     <span>{PL.closing.headDept.en}<br />{PL.closing.signStamp.en}</span>
                     <span dir="rtl">{PL.closing.headDept.ar}<br />{PL.closing.signStamp.ar}</span>
                   </div>
@@ -1084,8 +1093,10 @@ export default function OfferLetterPage() {
                   <table className="pl-tbl"><tbody>
                     <tr><td className="pl-val">{PL.declaration.en}</td><td className="pl-val pl-ar" dir="rtl">{PL.declaration.ar}</td></tr>
                   </tbody></table>
-                  <table className="pl-tbl" style={{ marginTop: 'auto' }}><tbody>
-                    <tr><td className="pl-lbl">{PL.borrowerSign[0].en}</td><td className="pl-val">&nbsp;</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[0].ar}</td></tr>
+                  {/* signature block sits right below the declaration with room to
+                      sign (owner: not glued to the very bottom of the page) */}
+                  <table className="pl-tbl" style={{ marginTop: '14mm' }}><tbody>
+                    <tr><td className="pl-lbl">{PL.borrowerSign[0].en}</td><td className="pl-val" style={{ height: '18mm' }}>&nbsp;</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[0].ar}</td></tr>
                     <tr><td className="pl-lbl">{PL.borrowerSign[1].en}</td><td className="pl-val">{V('CompanyName', '________')}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[1].ar}</td></tr>
                     <tr><td className="pl-lbl">{PL.borrowerSign[2].en}</td><td className="pl-val">{V('AcceptanceDate', '________')}</td><td className="pl-lbl pl-ar" dir="rtl">{PL.borrowerSign[2].ar}</td></tr>
                   </tbody></table>

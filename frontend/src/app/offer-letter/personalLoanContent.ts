@@ -173,26 +173,36 @@ export const PL = {
       "ar": "8. يمكن للمقترض (المقترضين) التنازل عن حق 5 أيام فترة التهدئة و الصرف الفوري للقرض من خلال التوقيع على طلب التنازل وفقًا لنموذج البنك."
     },
     {
-      "en": "The above-mentioned facility is valid up to the tenor of the loan subject to full rights of Bank at its sole discretion to cancel/ amend/ reduce the facility limits, change the terms and conditions of this loan advice during the validity should the need arises on reasonable grounds to protect the Bank’s legitimate interests.    In the event of deterioration in the value of assets or securities marked under lien, hypothecated, assigned, pledged or mortgaged by you or any other third party in favor of Bank Saderat Iran - UAE, the Bank reserves the right to demand additional securities.",
-      "ar": "9. القرض المذكور أعلاه ساري المفعول حتى مدة القرض مع مراعاة الحقوق الكاملة للبنك وفقًا لتقديره المطلق لإلغاء / تعديل / تقليل حدود التسهيلات ، وتغيير شروط وأحكام إشعار القرض هذا خلال فترة الصلاحية إذا لزم الأمر على أسس معقولة  تنشأ لحماية المصالح المشروعة للبنك.10- في حالة تدهور قيمة الأصول أو الأوراق المالية التي تم وضع علامة الوديعة أو المرهونة أو المتنازل عنه أو المحجوزة تحت الرهن عليها من قبلك أو من قبل أي طرف ثالث لصالح بنك صادرات إيران - الإمارات العربية المتحدة ، يحتفظ البنك بالحق في طلب أوراق مالية إضافية."
+      "en": "The above-mentioned facility is valid up to the tenor of the loan subject to full rights of Bank at its sole discretion to cancel/ amend/ reduce the facility limits, change the terms and conditions of this loan advice during the validity should the need arises on reasonable grounds to protect the Bank’s legitimate interests.",
+      "ar": "9. القرض المذكور أعلاه ساري المفعول حتى مدة القرض مع مراعاة الحقوق الكاملة للبنك وفقًا لتقديره المطلق لإلغاء / تعديل / تقليل حدود التسهيلات ، وتغيير شروط وأحكام إشعار القرض هذا خلال فترة الصلاحية إذا لزم الأمر على أسس معقولة تنشأ لحماية المصالح المشروعة للبنك."
     },
     {
-      "en": "Bank Saderat Iran - UAE reserves the right to set off outstanding liability under the aforesaid loan facility with any of your other personal accounts maintained with the Bank, including but not limited to deposits of any kind and nature (including fixed deposits, current & saving accounts, bonds and other assets).    In case of default, the Bank has full right to claim and collect the interest as agreed until full settlement.",
-      "ar": "11. يحتفظ بنك صادرات إيران - الإمارات العربية المتحدة بالحق في مقاصة الالتزامات المستحقة بموجب تسهيل القرض سالف الذكر مع أي من حساباتك الشخصية الأخرى المحفوظة لدى البنك ، بما في ذلك على سبيل المثال لا الحصر الودائع من أي نوع وطبيعتها (بما في ذلك الودائع الثابتة و حسابات الجارية و التوفير والسندات والأصول الأخرى).12. في حالة التخلف عن السداد , للبنك الحق الكامل في المطالبة و تحصيلالفائدة على النحو المتفق عليه حتى التسوية الكا ملة."
+      "en": "In the event of deterioration in the value of assets or securities marked under lien, hypothecated, assigned, pledged or mortgaged by you or any other third party in favor of Bank Saderat Iran - UAE, the Bank reserves the right to demand additional securities.",
+      "ar": "10. في حالة تدهور قيمة الأصول أو الأوراق المالية التي تم وضع علامة الوديعة أو المرهونة أو المتنازل عنه أو المحجوزة تحت الرهن عليها من قبلك أو من قبل أي طرف ثالث لصالح بنك صادرات إيران - الإمارات العربية المتحدة ، يحتفظ البنك بالحق في طلب أوراق مالية إضافية."
+    },
+    {
+      "en": "Bank Saderat Iran - UAE reserves the right to set off outstanding liability under the aforesaid loan facility with any of your other personal accounts maintained with the Bank, including but not limited to deposits of any kind and nature (including fixed deposits, current & saving accounts, bonds and other assets).",
+      "ar": "11. يحتفظ بنك صادرات إيران - الإمارات العربية المتحدة بالحق في مقاصة الالتزامات المستحقة بموجب تسهيل القرض سالف الذكر مع أي من حساباتك الشخصية الأخرى المحفوظة لدى البنك ، بما في ذلك على سبيل المثال لا الحصر الودائع من أي نوع وطبيعتها (بما في ذلك الودائع الثابتة و حسابات الجارية و التوفير والسندات والأصول الأخرى)."
+    },
+    {
+      "en": "In case of default, the Bank has full right to claim and collect the interest as agreed until full settlement.",
+      "ar": "12. في حالة التخلف عن السداد , للبنك الحق الكامل في المطالبة و تحصيل الفائدة على النحو المتفق عليه حتى التسوية الكاملة."
     },
     {
       "en": "All securities and guarantees provided in relation to granting loan facility will remain under Bank Saderat Iran – UAE custody or hold until all the outstanding liabilities with respect to loan facility are fully settled.",
-      "ar": "12. ستظل جميع الأوراق المالية والضمانات المقدمة فيما يتعلق بمنح تسهيلات القرض تحت وصاية بنك صادرات إيران - الإمارات العربية المتحدة أو الاحتفاظ بها حتى تتم تسوية جميع الالتزامات المستحقة فيما يتعلق بتسهيلات القرض بالكامل."
+      "ar": "13. ستظل جميع الأوراق المالية والضمانات المقدمة فيما يتعلق بمنح تسهيلات القرض تحت وصاية بنك صادرات إيران - الإمارات العربية المتحدة أو الاحتفاظ بها حتى تتم تسوية جميع الالتزامات المستحقة فيما يتعلق بتسهيلات القرض بالكامل."
     },
     {
       "en": "The laws and non-exclusive jurisdiction of the courts of United Arab Emirates shall govern this facility letter. However, this shall not prejudice the right of the Bank to bring proceedings in any other jurisdiction.",
-      "ar": "13. يخضع خطاب التسهيل هذا للقوانين والاختصاص القضائي غير الحصري لمحاكم الإمارات العربية المتحدة. ومع ذلك ، لا يخل ذلك بحق البنك في رفع دعوى أمام أي اختصاص قضائي آخر."
-    },
-    {
-      "en": "Should you require any further clarification related to documentation or have any additional queries, please feel free to visit the concerned branch in the UAE.We look forward to build an endless trust and have a long and mutual beneficial relationship.",
-      "ar": "إذا كنت بحاجة إلى أي توضيح إضافي يتعلق بالوثائق أو لديك أي استفسارات إضافية ، فلا تتردد في زيارة الفرع المعني في الإمارات العربية المتحدة.نتطلع إلى بناء الثقة و علاقات طويلة الأمد."
+      "ar": "14. يخضع خطاب التسهيل هذا للقوانين والاختصاص القضائي غير الحصري لمحاكم الإمارات العربية المتحدة. ومع ذلك ، لا يخل ذلك بحق البنك في رفع دعوى أمام أي اختصاص قضائي آخر."
     }
   ],
+  // Non-numbered courtesy note printed under the 14 terms (kept verbatim from the
+  // scanned sample — it is NOT one of the 14 conditions).
+  "closingNote": {
+    "en": "Should you require any further clarification related to documentation or have any additional queries, please feel free to visit the concerned branch in the UAE. We look forward to build an endless trust and have a long and mutual beneficial relationship.",
+    "ar": "إذا كنت بحاجة إلى أي توضيح إضافي يتعلق بالوثائق أو لديك أي استفسارات إضافية ، فلا تتردد في زيارة الفرع المعني في الإمارات العربية المتحدة. نتطلع إلى بناء الثقة و علاقات طويلة الأمد."
+  },
   "closing": {
     "yoursSincerely": {
       "en": "Yours Sincerely,",
