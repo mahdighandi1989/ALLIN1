@@ -779,7 +779,8 @@ export default function OfferLetterPage() {
                   <Letterhead mode="english" />
                   <div className="ol-terms-h">TERMS AND CONDITIONS:</div>
                   <ol className="ol-terms">{TERM_TEXTS.slice(0, 17).map((t, i) => <li key={i}>{fill(t)}</li>)}</ol>
-                  <div className="ol-sign" style={{ marginTop: 'auto' }}><span>&nbsp;</span><span>Customer Signature with Stamp</span></div>
+                  {/* like the source doc: a single bold label at the LEFT, no rule lines */}
+                  <div style={{ marginTop: 'auto', fontWeight: 700, fontSize: '9pt' }}>Customer Signature with Stamp</div>
                 </div>
                 <PageFooter mode="english" n={2} total={3} />
               </div>
