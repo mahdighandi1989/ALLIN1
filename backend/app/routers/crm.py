@@ -190,6 +190,43 @@ async def update_task(
 # ---------------------------------------------------------------------------
 # Guarantors (add a guarantor + security cheque to a customer)
 # ---------------------------------------------------------------------------
+def _acct_core(acct: str) -> str:
+    """The stable 6-digit core of an account number, ignoring branch prefix and
+    suffix formatting: "2624-131757-006" → "131757", "131757" → "131757".
+
+    UAE account rows are stored inconsistently across the securities-list imports
+    (some full "branch-core-suffix", some bare core), which is what makes the same
+    guarantor look like two people. When exactly one 6-digit group exists we take
+    it; otherwise (ambiguous) we return "" and fall back to strict matching."""
+    import re
+
+    groups = re.findall(r"\d{6}", str(acct or ""))
+    return groups[0] if len(groups) == 1 else ""
+
+
+def _name_tokens(name: str) -> set:
+    """Alphanumeric name tokens, upper-cased, honorifics/filler dropped."""
+    import re
+
+    drop = {"MR", "MRS", "MS", "MISS", "M/S", "AL", "EL", "BIN", "BINT", "THE"}
+    toks = re.findall(r"[A-Za-z0-9]+", str(name or "").upper())
+    return {t for t in toks if t not in drop and len(t) > 1}
+
+
+def _name_similar(a: set, b: set) -> bool:
+    """Same person heuristic: strong token overlap OR one is a subset of the other
+    (covers "SALWA MOHD YOUSIF JUMA" vs "SALWA MOHAMED YOUSIF JUMA AL MAAZMI").
+    Deliberately conservative — requires ≥2 shared tokens (or subset) so unrelated
+    people never merge."""
+    if not a or not b:
+        return False
+    shared = a & b
+    if a <= b or b <= a:
+        return len(shared) >= 2
+    smaller = min(len(a), len(b))
+    return len(shared) >= max(2, smaller - 1)
+
+
 class GuarantorCreate(BaseModel):
     guarantor_name: str = Field(..., min_length=1, max_length=200)
     guarantor_account: str = ""
@@ -287,6 +324,20 @@ async def add_guarantor(
         if acct_key:
             with_acct = [c for c in matches if (c.guarantor_account or "").strip() in ("", acct_key)]
             matches = with_acct
+        # Conservative second pass (forward-fix for the near-duplicate the owner
+        # reported: "131757" vs "2624-131757-006", "MOHD" vs "MOHAMED"). Only
+        # matches when the 6-digit ACCOUNT CORE is identical AND the names share
+        # a strong token overlap — so genuinely different guarantors never merge.
+        if not matches and acct_key:
+            core = _acct_core(acct_key)
+            if core:
+                new_tokens = _name_tokens(payload.guarantor_name)
+                for c in candidates:
+                    if _acct_core(c.guarantor_account or "") != core:
+                        continue
+                    if _name_similar(new_tokens, _name_tokens(c.guarantor_name or "")):
+                        matches = [c]
+                        break
         if matches:
             g = matches[0]
     created = g is None
