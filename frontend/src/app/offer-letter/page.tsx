@@ -13,7 +13,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Download, Search, Save, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { crmApi, parseApiError } from '@/lib/api'
+import { chargeTariffApi, crmApi, parseApiError } from '@/lib/api'
 import { BANK_LOGO } from '@/app/voucher/logo'
 import { PL } from './personalLoanContent'
 
@@ -157,6 +157,20 @@ export default function OfferLetterPage() {
   // Guarantors printed into security-documents item 7 (and synced to the
   // customer's guarantor records on Save).
   const [guars, setGuars] = useState<GuarantorRow[]>([])
+  // --- MULTI-FACILITY rows (corporate letters like the bank's OD+CD sample):
+  // row 1 stays in f.FacilityType/CreditLimit/InterestRate/Remarks (back-compat);
+  // extra rows live here and print as additional table rows + a Total row. Each
+  // row carries the flags the charge calculator needs (100% FD underlien /
+  // staff facility / temporary). ---
+  type FacRow = { type: string; limit: string; rate: string; remarks: string; fd: boolean; staff: boolean; temp: boolean }
+  const [extraFacs, setExtraFacs] = useState<FacRow[]>([])
+  const [fac1, setFac1] = useState<{ fd: boolean; staff: boolean; temp: boolean }>({ fd: false, staff: false, temp: false })
+  const [autoCharge, setAutoCharge] = useState(true)
+  const [chargeInfo, setChargeInfo] = useState<{ lines: { label: string; base: number; charge: number }[]; warnings: string[] } | null>(null)
+  const setFacRow = (i: number, k: keyof FacRow) => (e: any) => {
+    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    setExtraFacs((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
+  }
   const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
 
@@ -239,6 +253,36 @@ export default function OfferLetterPage() {
   const autoTpl: 'english' | 'personal' = !isCorporate && isLoanType ? 'personal' : 'english'
   const effectiveTpl = tpl === 'auto' ? autoTpl : tpl
 
+  // every facility row (row 1 + extras) as calculator items
+  const facItems = () => [
+    { facility_type: (f.FacilityType || '').trim(), amount: f.CreditLimit || '',
+      covered_by_fd: fac1.fd, staff_facility: fac1.staff, temporary: fac1.temp },
+    ...extraFacs.map((r) => ({ facility_type: r.type.trim(), amount: r.limit,
+      covered_by_fd: r.fd, staff_facility: r.staff, temporary: r.temp })),
+  ].filter((i) => i.facility_type || String(i.amount).trim())
+  // Ask the editable tariff (/charge-tariff) for the processing charges and put
+  // the SUM into ProcessingFee — the one cell term 23 prints (کامیشن جمعی).
+  const computeCharges = async (silent = false) => {
+    const items = facItems()
+    if (!items.length) { if (!silent) toast.error('نوع و مبلغ تسهیلات را وارد کن'); return }
+    try {
+      const r = await chargeTariffApi.compute(isCorporate ? 'corporate' : 'individual', items)
+      setChargeInfo({ lines: r.lines, warnings: r.warnings })
+      const t = Math.round(r.total)
+      setF((s) => ({ ...s, ProcessingFee: t.toLocaleString('en-US') }))
+      if (!silent && r.warnings.length) r.warnings.forEach((w) => toast(w, { icon: '⚠️' }))
+    } catch (e) { if (!silent) toast.error(parseApiError(e)) }
+  }
+  // auto-recompute (debounced) as the facility type/amount rows change
+  useEffect(() => {
+    if (!autoCharge) return
+    const items = facItems()
+    if (!items.some((i) => String(i.amount).trim())) return
+    const t = setTimeout(() => { computeCharges(true) }, 900)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.FacilityType, f.CreditLimit, JSON.stringify(extraFacs), JSON.stringify(fac1), isCorporate, autoCharge])
+
   const loadAccount = async () => {
     const a = acc.trim()
     if (!a) { toast.error('شماره حساب را وارد کنید'); return }
@@ -298,6 +342,13 @@ export default function OfferLetterPage() {
           .filter((g: GuarantorRow) => g.name.trim())
       )
       if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
+      setExtraFacs(Array.isArray(saved.extraFacilities)
+        ? saved.extraFacilities.map((r: any) => ({ type: String(r?.type || ''), limit: String(r?.limit || ''), rate: String(r?.rate || ''), remarks: String(r?.remarks || ''), fd: !!r?.fd, staff: !!r?.staff, temp: !!r?.temp }))
+        : [])
+      setFac1(saved.fac1Flags && typeof saved.fac1Flags === 'object'
+        ? { fd: !!saved.fac1Flags.fd, staff: !!saved.fac1Flags.staff, temp: !!saved.fac1Flags.temp }
+        : { fd: false, staff: false, temp: false })
+      if (typeof saved.autoCharge === 'boolean') setAutoCharge(saved.autoCharge)
       // restore the per-template layout overrides saved with this customer
       if (saved.olLayoutMap && typeof saved.olLayoutMap === 'object') {
         for (const t of ['english', 'personal']) {
@@ -328,7 +379,8 @@ export default function OfferLetterPage() {
       }
       await crmApi.saveOfferLetterData(a, {
         POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
-        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars, olLayoutMap: layoutMap },
+        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars, olLayoutMap: layoutMap,
+                    extraFacilities: extraFacs, fac1Flags: fac1, autoCharge },
       })
       // A facility type with no name-similar entry in the catalog opens its own
       // place in the DB list (and becomes selectable from now on). Similar
@@ -845,6 +897,66 @@ export default function OfferLetterPage() {
               {F('ProcessingFee')}
               {F('AccountSuffix')}
             </div>
+
+            {/* ---- multi-facility rows + automatic processing charges ---- */}
+            <div className="mt-3 border border-amber-200 rounded-lg p-3 bg-amber-50/50">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2" dir="rtl">
+                <span className="text-xs font-bold text-gray-700">
+                  تسهیلاتِ جدول صفحهٔ ۱ — ردیف ۱ همان فیلدهای بالاست؛ برای تسهیلاتِ بیشتر ردیف اضافه کن (جمعِ سقف‌ها در ردیفِ Total چاپ می‌شود)
+                </span>
+                <button type="button" onClick={() => setExtraFacs((r) => [...r, { type: '', limit: '', rate: '', remarks: '', fd: false, staff: false, temp: false }])}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md px-2.5 py-1">+ افزودن ردیف تسهیلات</button>
+              </div>
+              <div className="flex items-center gap-4 text-[11px] text-gray-600 mb-2" dir="rtl">
+                <span className="font-medium">ردیف ۱ ({(f.FacilityType || 'نوع؟')}):</span>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={fac1.fd} onChange={(e) => setFac1((s) => ({ ...s, fd: e.target.checked }))} /> پوشش ۱۰۰٪ سپرده (underlien)</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={fac1.staff} onChange={(e) => setFac1((s) => ({ ...s, staff: e.target.checked }))} /> تسهیلاتِ کارمندی (معاف)</label>
+                <label className="flex items-center gap-1"><input type="checkbox" checked={fac1.temp} onChange={(e) => setFac1((s) => ({ ...s, temp: e.target.checked }))} /> موقت</label>
+              </div>
+              {extraFacs.map((r, i) => (
+                <div key={i} className="mb-2 border border-gray-200 rounded-md p-2 bg-white">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <input value={r.type} onChange={setFacRow(i, 'type')} list="ftype-options" placeholder={`نوع تسهیلات ردیف ${i + 2} — مثلاً Cheque Discount`} className={field} />
+                    <input value={r.limit} onChange={setFacRow(i, 'limit')} placeholder="سقف اعتبار (AED) — 2,800,000/-" className={field} dir="ltr" />
+                    <input value={r.rate} onChange={setFacRow(i, 'rate')} placeholder="نرخ سود — 11%" className={field} dir="ltr" />
+                    <input value={r.remarks} onChange={setFacRow(i, 'remarks')} placeholder="Remarks این ردیف" className={field} dir="ltr" />
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-gray-600 mt-1.5" dir="rtl">
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={r.fd} onChange={setFacRow(i, 'fd')} /> پوشش ۱۰۰٪ سپرده</label>
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={r.staff} onChange={setFacRow(i, 'staff')} /> تسهیلاتِ کارمندی</label>
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={r.temp} onChange={setFacRow(i, 'temp')} /> موقت</label>
+                    <button type="button" onClick={() => setExtraFacs((rows) => rows.filter((_, idx) => idx !== i))}
+                      className="text-red-500 hover:text-red-700 marker:mr-auto" style={{ marginInlineStart: 'auto' }}>✕ حذف ردیف</button>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-3 flex-wrap mt-1" dir="rtl">
+                <button type="button" onClick={() => computeCharges()}
+                  className="text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-md px-3 py-1.5">
+                  محاسبهٔ کارمزد از تعرفه ← ProcessingFee
+                </button>
+                <label className="flex items-center gap-1 text-[11px] text-gray-600">
+                  <input type="checkbox" checked={autoCharge} onChange={(e) => setAutoCharge(e.target.checked)} />
+                  محاسبهٔ خودکار با هر تغییرِ نوع/مبلغ
+                </label>
+                <span className="text-[11px] text-gray-400">تعرفه از «Charge Tariff» در منو قابل‌ویرایش است؛ جمعِ کارمزدِ همهٔ ردیف‌ها در بند ۲۳ می‌نشیند (+VAT).</span>
+              </div>
+              {chargeInfo && (
+                <div className="mt-2 text-[11px] bg-white border border-amber-200 rounded-md p-2" dir="rtl">
+                  {chargeInfo.lines.map((l, i) => (
+                    <div key={i} className="flex justify-between gap-2">
+                      <span>{l.label}</span>
+                      <span dir="ltr" className="font-mono">{l.base.toLocaleString('en-US')} → AED {l.charge.toLocaleString('en-US')}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-2 border-t mt-1 pt-1 font-bold">
+                    <span>جمع (بند ۲۳)</span>
+                    <span dir="ltr" className="font-mono">AED {chargeInfo.lines.reduce((a, l) => a + l.charge, 0).toLocaleString('en-US')} + VAT</span>
+                  </div>
+                  {chargeInfo.warnings.map((w, i) => <div key={i} className="text-amber-700 mt-1">⚠ {w}</div>)}
+                </div>
+              )}
+            </div>
             <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
               {F('Remarks', true)}
               {F('RequiredSecurities', true)}
@@ -917,15 +1029,35 @@ export default function OfferLetterPage() {
                   <div>{V('CityCountry', '________________')}</div>
                   <div className="ol-p" style={{ fontWeight: 700 }}>Private &amp; Confidential</div>
                   <div className="ol-p">Dear Sir,</div>
-                  <div className="ol-p">With reference to your request via letter Dated: {V('RequestDate', '____________')}, we are pleased to inform you that the below mentioned {V('FacilityType', '__________')} facility is approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
+                  <div className="ol-p">With reference to your request via letter Dated: {V('RequestDate', '____________')}, we are pleased to inform you that the below mentioned {extraFacs.length
+                    ? <>{[(f.FacilityType || '').trim(), ...extraFacs.map((r) => r.type.trim())].filter(Boolean).join(' and ') || '__________'} facilities are</>
+                    : <>{V('FacilityType', '__________')} facility is</>} approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
                   <table className="ol-tbl">
                     <thead><tr><th>Facility</th><th>Credit Limit (AED)</th><th>Interest Rate</th><th>Remarks</th></tr></thead>
-                    <tbody><tr>
-                      <td>{V('FacilityType', '—')}</td>
-                      <td>{V('CreditLimit', '—')}</td>
-                      <td style={{ whiteSpace: 'pre-wrap' }}>{V('InterestRate', '—')}</td>
-                      <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
-                    </tr></tbody>
+                    <tbody>
+                      <tr>
+                        <td>{V('FacilityType', '—')}</td>
+                        <td>{V('CreditLimit', '—')}</td>
+                        <td style={{ whiteSpace: 'pre-wrap' }}>{V('InterestRate', '—')}</td>
+                        <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
+                      </tr>
+                      {extraFacs.map((r, i) => (
+                        <tr key={i}>
+                          <td>{r.type || '—'}</td>
+                          <td>{r.limit || '—'}</td>
+                          <td style={{ whiteSpace: 'pre-wrap' }}>{r.rate || '—'}</td>
+                          <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{r.remarks || '—'}</td>
+                        </tr>
+                      ))}
+                      {extraFacs.length > 0 && (
+                        <tr style={{ fontWeight: 700 }}>
+                          <td>Total</td>
+                          <td>{(parseNum(f.CreditLimit) + extraFacs.reduce((a, r) => a + parseNum(r.limit), 0)).toLocaleString('en-US')}/-</td>
+                          <td>-</td>
+                          <td style={{ textAlign: 'left' }}>-</td>
+                        </tr>
+                      )}
+                    </tbody>
                   </table>
                   <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
                   <div className="ol-sec">{V('RequiredSecurities', '____________________________')}</div>

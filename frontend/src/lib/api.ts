@@ -460,6 +460,52 @@ export const crmApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Schedule-of-Charges tariff (editable — tariffs change yearly) + the
+// offer-letter processing-charge calculator.
+// ---------------------------------------------------------------------------
+export interface ChargeRule {
+  id: string
+  segment: 'corporate' | 'individual'
+  rule_key: string
+  label: string
+  method: 'per_mille' | 'percent' | 'flat'
+  rate: number
+  min_charge: number | null
+  max_charge: number | null
+  small_threshold: number | null
+  small_min_charge: number | null
+  notes: string
+  version: string
+  enabled: boolean
+  sort_order: number
+}
+export interface ChargeComputeItem {
+  facility_type: string
+  amount: string
+  covered_by_fd?: boolean
+  staff_facility?: boolean
+  temporary?: boolean
+}
+export const chargeTariffApi = {
+  async list(): Promise<{ rules: ChargeRule[]; rule_keys: string[] }> {
+    const { data } = await api.get('/api/charge-tariff')
+    return data
+  },
+  async save(rule: Partial<ChargeRule>): Promise<{ ok: boolean; created: boolean; rule: ChargeRule }> {
+    const { data } = await api.post('/api/charge-tariff', rule)
+    return data
+  },
+  async remove(id: string): Promise<void> {
+    await api.delete(`/api/charge-tariff/${encodeURIComponent(id)}`)
+  },
+  async compute(segment: 'corporate' | 'individual', items: ChargeComputeItem[]):
+    Promise<{ ok: boolean; total: number; lines: { label: string; base: number; charge: number; rule_key: string; note: string }[]; warnings: string[] }> {
+    const { data } = await api.post('/api/charge-tariff/compute', { segment, items })
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
 // General (non-account) profiles + checklists (A7)
 // ---------------------------------------------------------------------------
 export const generalApi = {

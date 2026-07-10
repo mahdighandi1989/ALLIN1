@@ -9,6 +9,7 @@ import {
   LayoutDashboard, Users, Building, BarChart3, ShieldCheck, Trash2,
   ScrollText, FileSpreadsheet, Settings, LogOut, BookOpen, Building2,
   LayoutGrid, Clock, ListChecks, StickyNote, ClipboardList, Contact, Sparkles,
+  Coins,
 } from 'lucide-react'
 import { BANK_LOGO } from '@/app/voucher/logo'
 
@@ -43,6 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/daily-log', label: 'Daily Log', icon: ClipboardList },
       { href: '/knowledge', label: 'Knowledge Base', icon: BookOpen },
       { href: '/reports', label: 'Reports', icon: BarChart3 },
+      { href: '/charge-tariff', label: 'Charge Tariff', icon: Coins },
       { href: '/import', label: 'Import', icon: FileSpreadsheet },
     ],
   },
