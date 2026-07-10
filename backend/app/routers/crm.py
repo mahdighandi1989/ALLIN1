@@ -957,6 +957,19 @@ async def offer_letter_data(
         "MonthlyInstallment": (str(loan_fac.installments) if loan_fac and loan_fac.installments else ""),
         "Purpose": (str(loan_fac.purpose) if loan_fac and loan_fac.purpose else ""),
         "facilities_count": len(facs),
+        # ALL the account's facilities (largest first) so a multi-facility
+        # sanction (مصوبه) imported into the DB lands as multiple table rows on
+        # the Offer Letter — row 1 = first entry, the rest become extra rows.
+        "Facilities": [
+            {
+                "type": _FTYPE_LABEL.get(_ftv(f2), str(getattr(f2.facility_type, "value", f2.facility_type) or "")),
+                "amount": (f"{float(f2.amount):,.0f}" if f2.amount else ""),
+                "rate": (f"{float(f2.interest_rate):g}% p.a." if f2.interest_rate is not None else ""),
+                "remarks": str(getattr(f2, "notes", "") or getattr(f2, "comments", "") or "")[:300],
+                "status": str(getattr(f2.status, "value", f2.status) or ""),
+            }
+            for f2 in sorted(facs, key=lambda x: float(x.amount or 0), reverse=True)
+        ],
         "Saved": saved,
         # Full parsed profile blob (extracted draft facts live here) so the
         # sanction/مصوبه form can prefill from what was saved earlier.

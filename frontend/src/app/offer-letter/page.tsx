@@ -293,6 +293,20 @@ export default function OfferLetterPage() {
       const saved = (d.Saved && typeof d.Saved === 'object') ? d.Saved : {}
       setIsCorporate(corp)
       const withSlash = (v: any) => (v ? `${v}/-` : '')
+      // FACILITY ROWS: the DB's facilities (what the imported مصوبه just wrote)
+      // WIN over the older snapshot — that's the whole sync the owner wants.
+      // The snapshot's rows are only the fallback when the DB has none, and its
+      // per-row flags (FD-covered/staff/temporary) are re-attached by type so a
+      // reload doesn't lose them.
+      const dbFacs: any[] = Array.isArray(d.Facilities) ? d.Facilities.filter((r: any) => r && (r.type || r.amount)) : []
+      const savedRows: any[] = Array.isArray(saved.extraFacilities) ? saved.extraFacilities : []
+      const savedFlags = (t: string) => {
+        const k = String(t || '').trim().toLowerCase()
+        if (saved.fac1Flags && String(saved.FacilityType || '').trim().toLowerCase() === k)
+          return { fd: !!saved.fac1Flags.fd, staff: !!saved.fac1Flags.staff, temp: !!saved.fac1Flags.temp }
+        const m = savedRows.find((r: any) => String(r?.type || '').trim().toLowerCase() === k)
+        return m ? { fd: !!m.fd, staff: !!m.staff, temp: !!m.temp } : { fd: false, staff: false, temp: false }
+      }
       // Reset from INITIAL — the previous account's values (`s.X` fallbacks)
       // otherwise stayed on the sheet and were saved into the new customer.
       const s = { ...INITIAL } as Fields
@@ -307,9 +321,9 @@ export default function OfferLetterPage() {
         Branch: saved.Branch || fmtBranch(d.Branch) || s.Branch,
         RefSerial: saved.RefSerial || s.RefSerial,
         RefYear: saved.RefYear || THIS_YEAR,
-        FacilityType: saved.FacilityType || d.FacilityType || s.FacilityType,
-        CreditLimit: saved.CreditLimit || withSlash(d.CreditLimit) || s.CreditLimit,
-        InterestRate: saved.InterestRate || d.InterestRate || s.InterestRate,
+        FacilityType: (dbFacs.length ? dbFacs[0].type : '') || saved.FacilityType || d.FacilityType || s.FacilityType,
+        CreditLimit: (dbFacs.length ? withSlash(dbFacs[0].amount) : '') || saved.CreditLimit || withSlash(d.CreditLimit) || s.CreditLimit,
+        InterestRate: (dbFacs.length ? dbFacs[0].rate : '') || saved.InterestRate || d.InterestRate || s.InterestRate,
         ValidUntil: saved.ValidUntil || d.ValidUntil || s.ValidUntil,
         RequiredSecurities: saved.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
         // loan specifics
@@ -342,12 +356,20 @@ export default function OfferLetterPage() {
           .filter((g: GuarantorRow) => g.name.trim())
       )
       if (saved.tpl === 'english' || saved.tpl === 'personal' || saved.tpl === 'auto') setTpl(saved.tpl)
-      setExtraFacs(Array.isArray(saved.extraFacilities)
-        ? saved.extraFacilities.map((r: any) => ({ type: String(r?.type || ''), limit: String(r?.limit || ''), rate: String(r?.rate || ''), remarks: String(r?.remarks || ''), fd: !!r?.fd, staff: !!r?.staff, temp: !!r?.temp }))
-        : [])
-      setFac1(saved.fac1Flags && typeof saved.fac1Flags === 'object'
-        ? { fd: !!saved.fac1Flags.fd, staff: !!saved.fac1Flags.staff, temp: !!saved.fac1Flags.temp }
-        : { fd: false, staff: false, temp: false })
+      if (dbFacs.length) {
+        // rows 2..n come straight from the DB (latest مصوبه); saved flags re-attach by type
+        setExtraFacs(dbFacs.slice(1).map((r: any) => ({
+          type: String(r.type || ''), limit: r.amount ? `${r.amount}/-` : '',
+          rate: String(r.rate || ''), remarks: String(r.remarks || ''),
+          ...savedFlags(r.type),
+        })))
+        setFac1(savedFlags(dbFacs[0].type))
+      } else {
+        setExtraFacs(savedRows.map((r: any) => ({ type: String(r?.type || ''), limit: String(r?.limit || ''), rate: String(r?.rate || ''), remarks: String(r?.remarks || ''), fd: !!r?.fd, staff: !!r?.staff, temp: !!r?.temp })))
+        setFac1(saved.fac1Flags && typeof saved.fac1Flags === 'object'
+          ? { fd: !!saved.fac1Flags.fd, staff: !!saved.fac1Flags.staff, temp: !!saved.fac1Flags.temp }
+          : { fd: false, staff: false, temp: false })
+      }
       if (typeof saved.autoCharge === 'boolean') setAutoCharge(saved.autoCharge)
       // restore the per-template layout overrides saved with this customer
       if (saved.olLayoutMap && typeof saved.olLayoutMap === 'object') {
