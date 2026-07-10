@@ -141,10 +141,11 @@ async def analyze(
         tables_count=(len(payload.tables or []) if "tables" in tools else 0),
     )
 
-    # When the extract-to-DB tool is on, stage the model's db_write proposals
-    # against the live database (resolve target customer + add/update/skip). These
-    # are reviewed like any other change; applying them hits /apply-db.
-    if "db_extract" in tools:
+    # When the extract-to-DB tool is on — or inline in-text prompts may ask to
+    # RECORD data («... این موارد ثبت بشه») — stage the model's db_write
+    # proposals against the live database (resolve target customer +
+    # add/update/skip). Reviewed like any other change; applying hits /apply-db.
+    if "db_extract" in tools or "inline_prompts" in tools:
         raw_writes = la.parse_db_writes(result.get("text") or "")
         if raw_writes:
             primary_name = ""

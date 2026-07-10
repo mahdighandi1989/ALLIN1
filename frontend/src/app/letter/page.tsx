@@ -305,7 +305,7 @@ export default function LetterPage() {
   const designRef = useRef(design); useEffect(() => { designRef.current = design }, [design])
 
   // --- AI assistant («دستیار هوشمند») — propose reviewable edits, apply only ticked ones ---
-  const DEFAULT_TOOLS = ['spelling', 'grammar', 'paragraphs', 'consistency', 'professional']
+  const DEFAULT_TOOLS = ['spelling', 'grammar', 'paragraphs', 'consistency', 'professional', 'complete', 'inline_prompts']
   const [aiOpen, setAiOpen] = useState(false)
   const [aiModels, setAiModels] = useState<LetterAiModel[]>([])
   const [aiTools, setAiTools] = useState<LetterAiTool[]>([])
@@ -325,7 +325,7 @@ export default function LetterPage() {
   const [aiChanges, setAiChanges] = useState<LetterAiChange[]>([])
   const [aiChecked, setAiChecked] = useState<Record<string, boolean>>({})
 
-  const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', db_extract: 'ثبت در پایگاه‌داده', other: 'سایر' }
+  const CAT_FA: Record<string, string> = { spelling: 'املایی', grammar: 'نگارشی', paragraphs: 'پاراگراف', tables: 'جدول', consistency: 'مغایرت', professional: 'حرفه‌ای‌سازی', validation: 'اعتبارسنجی', db_extract: 'ثبت در پایگاه‌داده', complete: 'تکمیلِ ناتمام‌ها', inline_prompts: 'دستورِ داخلِ متن', other: 'سایر' }
 
   // --- Letter attachments (پیوست‌ها) — enabled when the letter says «دارد».
   // Files go through the shared crm attachment endpoint (Drive with traceable
@@ -2574,7 +2574,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v32</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v33</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
