@@ -744,6 +744,14 @@ async def email_summary(
 # Offer-letter prefill: map an account's profile + facility to the Word
 # template's placeholders, so the Offer Letter form fills itself from the file.
 # ---------------------------------------------------------------------------
+def _non_facility_text(text: str) -> bool:
+    """True when a facility row's text marks it as a deposit/summary, not a real
+    facility (shared with the import guard in doc_ingest)."""
+    from app.services.doc_ingest import _NON_FACILITY_RE
+
+    return bool(_NON_FACILITY_RE.search(text or ""))
+
+
 _FTYPE_LABEL = {
     "overdraft": "Overdraft", "loan": "Loan", "lc": "Letter of Credit",
     "lg": "Letter of Guarantee", "cheque_discounting": "Cheque Discount",
@@ -966,6 +974,11 @@ async def offer_letter_data(
         # ALL the account's facilities (largest first) so a multi-facility
         # sanction (مصوبه) imported into the DB lands as multiple table rows on
         # the Offer Letter — row 1 = first entry, the rest become extra rows.
+        # Display guard (same regex as the import's v36 fix): a legacy OTHER-typed
+        # row whose text says it's really a deposit/summary (the pre-v36 phantom
+        # «Credit Facility» rows that may still sit in the DB) is NOT surfaced on
+        # the letter. The DB row itself is untouched (review-first) — delete it
+        # from the Facilities page when convenient.
         "Facilities": [
             {
                 "type": _FTYPE_LABEL.get(_ftv(f2), str(getattr(f2.facility_type, "value", f2.facility_type) or "")),
@@ -975,6 +988,8 @@ async def offer_letter_data(
                 "status": str(getattr(f2.status, "value", f2.status) or ""),
             }
             for f2 in sorted(facs, key=lambda x: float(x.amount or 0), reverse=True)
+            if not (_ftv(f2) in ("", "other") and _non_facility_text(
+                f"{getattr(f2, 'notes', '') or ''} {getattr(f2, 'comments', '') or ''}"))
         ],
         "Saved": saved,
         # Full parsed profile blob (extracted draft facts live here) so the

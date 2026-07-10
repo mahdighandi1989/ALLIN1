@@ -208,6 +208,14 @@ export default function OfferLetterPage() {
   const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
   const olPrevKeys = useRef<string[]>([])
   const OLKEY = (t: string) => `ol-layout:${t}`
+  // ---- SELECTION formatting (like the letter page's floating toolbar): select
+  // part of a sentence in the preview → a small bar applies bold/italic/
+  // underline/size to JUST that range. Marks are stored as text offsets inside
+  // the element's path key and re-applied after every render. ----
+  type OlMark = { s: number; e: number; b?: boolean; i?: boolean; u?: boolean; fs?: number }
+  const [olMarks, setOlMarks] = useState<Record<string, OlMark[]>>({})
+  const [olFmt, setOlFmt] = useState<{ key: string; s: number; e: number; x: number; y: number } | null>(null)
+  const OLMKEY = (t: string) => `ol-marks:${t}`
   const toggleCheck = (i: number) => setChecks((c) => c.map((v, idx) => (idx === i ? !v : v)))
   const setGuar = (i: number, k: keyof GuarantorRow) => (e: any) =>
     setGuars((g) => g.map((row, idx) => (idx === i ? { ...row, [k]: e.target.value } : row)))
@@ -380,6 +388,14 @@ export default function OfferLetterPage() {
         }
         try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { /* keep current */ }
       }
+      if (saved.olMarksMap && typeof saved.olMarksMap === 'object') {
+        for (const t of ['english', 'personal']) {
+          if (saved.olMarksMap[t] && typeof saved.olMarksMap[t] === 'object') {
+            try { localStorage.setItem(OLMKEY(t), JSON.stringify(saved.olMarksMap[t])) } catch { /* in-memory only */ }
+          }
+        }
+        try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { /* keep current */ }
+      }
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setLoading(false) }
@@ -396,12 +412,14 @@ export default function OfferLetterPage() {
         .map((g) => ({ name: g.name.trim(), account: g.account.trim() }))
         .filter((g) => g.name)
       const layoutMap: Record<string, any> = {}
+      const marksMap: Record<string, any> = {}
       for (const t of ['english', 'personal']) {
         try { layoutMap[t] = JSON.parse(localStorage.getItem(OLKEY(t)) || '{}') } catch { layoutMap[t] = {} }
+        try { marksMap[t] = JSON.parse(localStorage.getItem(OLMKEY(t)) || '{}') } catch { marksMap[t] = {} }
       }
       await crmApi.saveOfferLetterData(a, {
         POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
-        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars, olLayoutMap: layoutMap,
+        snapshot: { ...f, RefNumber: refNumber, securitiesChecked: checks, tpl, guarantors: cleanGuars, olLayoutMap: layoutMap, olMarksMap: marksMap,
                     extraFacilities: extraFacs, fac1Flags: fac1, autoCharge },
       })
       // A facility type with no name-similar entry in the catalog opens its own
@@ -559,14 +577,55 @@ export default function OfferLetterPage() {
       if (b.w) el.style.width = `${b.w}%`
     }
     olPrevKeys.current = Object.keys(olLayout)
+    // ---- selection marks: unwrap previous spans, re-wrap current offsets ----
+    printRef.current?.querySelectorAll('span[data-olm]').forEach((sp) => {
+      const parent = sp.parentNode
+      if (!parent) return
+      while (sp.firstChild) parent.insertBefore(sp.firstChild, sp)
+      parent.removeChild(sp)
+      if ((parent as HTMLElement).normalize) (parent as HTMLElement).normalize()
+    })
+    for (const [key, marks] of Object.entries(olMarks)) {
+      const el = elFromPath(key)
+      if (!el) continue
+      for (const m of [...marks].sort((a, b) => a.s - b.s)) {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+        let pos = 0
+        let sN: Node | null = null, sO = 0, eN: Node | null = null, eO = 0
+        let n: Node | null
+        while ((n = walker.nextNode())) {
+          const len = (n.textContent || '').length
+          if (!sN && m.s < pos + len) { sN = n; sO = Math.max(0, m.s - pos) }
+          if (m.e <= pos + len) { eN = n; eO = m.e - pos; break }
+          pos += len
+        }
+        if (!sN || !eN) continue
+        try {
+          const rg = document.createRange()
+          rg.setStart(sN, sO); rg.setEnd(eN, eO)
+          const sp = document.createElement('span')
+          sp.setAttribute('data-olm', '1')
+          if (m.b) sp.style.fontWeight = '700'
+          if (m.i) sp.style.fontStyle = 'italic'
+          if (m.u) sp.style.textDecoration = 'underline'
+          if (m.fs) sp.style.fontSize = `${m.fs}em`
+          rg.surroundContents(sp)
+        } catch { /* range crosses an element boundary — skip this mark */ }
+      }
+    }
     fitPages()
   })
   // per-template persistence (device-local; the snapshot carries it too)
   useEffect(() => {
     try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { setOlLayout({}) }
-    setOlSel(null)
+    try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { setOlMarks({}) }
+    setOlSel(null); setOlFmt(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveTpl])
+  useEffect(() => {
+    try { localStorage.setItem(OLMKEY(effectiveTpl), JSON.stringify(olMarks)) } catch { /* quota */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [olMarks])
   useEffect(() => {
     try { localStorage.setItem(OLKEY(effectiveTpl), JSON.stringify(olLayout)) } catch { /* quota — layout stays in-memory */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -574,6 +633,54 @@ export default function OfferLetterPage() {
   const olUpdate = (patch: OlBox) => {
     if (!olSel) return
     setOlLayout((s) => ({ ...s, [olSel.key]: { ...(s[olSel.key] || {}), ...patch } }))
+  }
+  // text offset of (node, off) inside host — marks survive re-renders via offsets
+  const textOffsetIn = (host: HTMLElement, node: Node, off: number): number => {
+    let total = 0
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+    let n: Node | null
+    while ((n = walker.nextNode())) {
+      if (n === node) return total + off
+      total += (n.textContent || '').length
+    }
+    return total
+  }
+  const onPreviewMouseUp = () => {
+    setTimeout(() => {
+      const sel = typeof window !== 'undefined' ? window.getSelection() : null
+      if (!sel || sel.isCollapsed || !sel.rangeCount || !printRef.current) return
+      const r = sel.getRangeAt(0)
+      if (r.startContainer.nodeType !== 3 || r.endContainer.nodeType !== 3) return
+      const hostEl = (r.commonAncestorContainer.nodeType === 3
+        ? r.commonAncestorContainer.parentElement
+        : (r.commonAncestorContainer as HTMLElement))?.closest('span,td,th,li,p,div') as HTMLElement | null
+      if (!hostEl || !printRef.current.contains(hostEl) || hostEl.closest('.olp-panel,.olf-bar')) return
+      const key = elPath(hostEl)
+      if (!key) return
+      const s = textOffsetIn(hostEl, r.startContainer, r.startOffset)
+      const e = textOffsetIn(hostEl, r.endContainer, r.endOffset)
+      if (e <= s) return
+      const rect = r.getBoundingClientRect()
+      setOlFmt({ key, s, e, x: Math.min(Math.max(rect.left + rect.width / 2 - 130, 8), (window.innerWidth || 1200) - 270), y: Math.max(8, rect.top - 46) })
+    }, 10)
+  }
+  const addMark = (patch: Partial<OlMark>) => {
+    if (!olFmt) return
+    const { key, s, e } = olFmt
+    setOlMarks((prev) => ({ ...prev, [key]: [...(prev[key] || []), { s, e, ...patch }] }))
+    setOlFmt(null)
+    try { window.getSelection()?.removeAllRanges() } catch { /* selection already gone */ }
+  }
+  const clearMarksInRange = () => {
+    if (!olFmt) return
+    const { key, s, e } = olFmt
+    setOlMarks((prev) => {
+      const kept = (prev[key] || []).filter((m) => m.e <= s || m.s >= e)
+      const n = { ...prev }
+      if (kept.length) n[key] = kept; else delete n[key]
+      return n
+    })
+    setOlFmt(null)
   }
   const onPreviewDblClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement
@@ -765,6 +872,12 @@ export default function OfferLetterPage() {
         .olp-actions { display:flex; gap:6px; }
         .olp-actions button { flex:1; border:1px solid #fca5a5; color:#b91c1c; background:#fef2f2; border-radius:6px; padding:4px; cursor:pointer; }
         .olp-hint { margin-top:6px; color:#94a3b8; font-size:10.5px; line-height:1.6; }
+        /* selection format bar */
+        .olf-bar { position:fixed; z-index:70; display:flex; gap:2px; background:#1e293b; border-radius:8px; padding:4px;
+                   box-shadow:0 8px 24px rgba(0,0,0,.3); }
+        .olf-bar button { border:0; background:transparent; color:#e2e8f0; min-width:28px; height:26px; border-radius:6px;
+                          cursor:pointer; font-size:13px; }
+        .olf-bar button:hover { background:#334155; }
         /* bilingual blocks */
         .bi-row2 { display:flex; justify-content:space-between; gap:6mm; margin:1.2mm 0; }
         .bi-row2 .ar { direction:rtl; text-align:right; font-size:10pt; }
@@ -801,6 +914,7 @@ export default function OfferLetterPage() {
           #ol-controls { display:none !important; }
           .pl-chkbox { cursor:default; }
           .olp-panel { display:none !important; }
+          .olf-bar { display:none !important; }
           .olv-e { animation:none !important; background:none !important; padding:0; }
         }
       `}</style>
@@ -1037,7 +1151,7 @@ export default function OfferLetterPage() {
 
         {/* ---------------- printable document ----------------
             dblclick any block → layout panel (font/align/dir/spacing/offsets) */}
-        <div id="offer-print" dir="ltr" ref={printRef} onDoubleClick={onPreviewDblClick}>
+        <div id="offer-print" dir="ltr" ref={printRef} onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
@@ -1261,6 +1375,20 @@ export default function OfferLetterPage() {
           )}
         </div>
 
+        {/* ---- selection format bar (like the letter page's floating toolbar):
+             applies ONLY to the selected part of the sentence, not the block ---- */}
+        {olFmt && (
+          <div className="olf-bar" style={{ left: olFmt.x, top: olFmt.y }}>
+            <button title="توپُر — فقط روی متنِ انتخاب‌شده" style={{ fontWeight: 700 }} onMouseDown={(e) => { e.preventDefault(); addMark({ b: true }) }}>B</button>
+            <button title="کج" style={{ fontStyle: 'italic' }} onMouseDown={(e) => { e.preventDefault(); addMark({ i: true }) }}>I</button>
+            <button title="زیرخط" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); addMark({ u: true }) }}>U</button>
+            <button title="کوچک‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 0.85 }) }}>A−</button>
+            <button title="بزرگ‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 1.18 }) }}>A＋</button>
+            <button title="پاک‌کردنِ قالبِ این بخش" onMouseDown={(e) => { e.preventDefault(); clearMarksInRange() }}>⌫</button>
+            <button title="بستن" onMouseDown={(e) => { e.preventDefault(); setOlFmt(null) }}>×</button>
+          </div>
+        )}
+
         {/* ---- floating layout panel (dblclick target), like the letter page's ---- */}
         {olSel && (() => {
           const b = olLayout[olSel.key] || {}
@@ -1294,7 +1422,7 @@ export default function OfferLetterPage() {
               </div>
               <div className="olp-actions">
                 <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
-                <button onClick={() => { if (confirm('همهٔ چیدمانِ سفارشیِ این قالب پاک شود؟')) { setOlLayout({}); setOlSel(null) } }}>بازنشانیِ همه</button>
+                <button onClick={() => { if (confirm('همهٔ چیدمان و قالب‌بندیِ سفارشیِ این قالب پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
               </div>
               <div className="olp-hint">تغییرها همان لحظه اعمال و برای این قالب ذخیره می‌شوند (با «ذخیره» در پروندهٔ مشتری هم می‌مانند).</div>
             </div>
