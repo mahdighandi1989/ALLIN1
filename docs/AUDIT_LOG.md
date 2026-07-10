@@ -910,3 +910,37 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   دوتسهیلاتی ⇒ دو ردیف + Totalِ 6,300,000 + ProcessingFee خودکارِ 12,200؛ حذفِ
   ردیف ⇒ حذفِ Total و بازمحاسبهٔ ProcessingFee (mockِ حساس به تعدادِ آیتم).
   ۷۸ چکِ نامه سبز؛ type-check/build سبز؛ static سینک. مارکر → reflow-v35.
+
+### 2026-07-10 — گزارشِ مالک از ایمپورتِ واقعی: ردیفِ خیالیِ «Credit Facility»، وثایقِ نیامده، برچسبِ خام — v36
+
+- **[OWNER REPORT + ROOT CAUSE]** بعد از ایمپورتِ مصوبهٔ دوتسهیلاتیِ واقعی، افرلتر
+  سه ردیف نشان داد و متنِ وثایق از مصوبه نیامد. سه علتِ مستقل:
+  (۱) **ردیفِ خیالی:** متنِ سپردهٔ FD underlien («Fixed Deposit 365 days, Ref
+  AJMN FD-2025-73») توسط مدل به‌عنوانِ facility برگشته، در `persist_customer`
+  چون typeاش در whitelist نبود به **other** نگاشت و به‌عنوانِ Facility ساخته شد؛
+  `_FTYPE_LABEL['other'] = "Credit Facility"` هم همان برچسب را چاپ کرد — دوبله‌ثبت
+  نبود، misclassification بود (گاردِ per-type dedup درست کار می‌کند: ایمپورتِ
+  مجددِ همان سند فقط update می‌کند، ردیف نمی‌سازد — در تست هم قفل شد).
+  (۲) **وثایق:** استخراج اصلاً فیلدی برای متنِ REQUIRED SECURITIES نداشت و
+  `loadAccount` هم فقط `saved || defaultِ عمومی` را می‌گذاشت.
+  (۳) «cheque_discounting» خام چاپ می‌شد چون `_FTYPE_LABEL` ناقص بود.
+- **[FIX 1 — دو لایه]** پرامپتِ استخراج: قاعدهٔ صریح «سپرده/FD (حتی underlien)
+  هرگز facility نیست — فقط در security؛ سطرِ Total/سرخطِ خطِ اعتباری/کارمزد هم
+  facility نیستند». + گاردِ قطعیِ سرور (`_NON_FACILITY_RE`): ورودیِ facility با
+  typeِ خالی/other که متنش deposit/FD/سپرده/underlien/total/کارمزد دارد **ساخته
+  نمی‌شود** (شمارنده در خروجی: `facilities_skipped_deposits`). typeهای واقعیِ
+  whitelisted هرگز حذف نمی‌شوند — محافظه‌کار.
+- **[FIX 2 — وثایق از مصوبه]** فیلدِ نو `required_securities` در اسکیمای استخراج
+  (متنِ verbatim، هر قلم یک خط) → روی پروفایل (`RequiredSecurities`؛ هر ایمپورتِ
+  جدید بازنویسی می‌کند — آخرین مصوبه مرجع است) → در پاسخِ `/offer-letter-data` →
+  در `loadAccount` با اولویتِ DB بر snapshot و default.
+- **[FIX 3]** `_FTYPE_LABEL` کامل شد (Cheque Discount، Trust Receipt، LC Sight/
+  Usance، LoG).
+- **[NOTE — دادهٔ موجود]** ردیفِ خیالیِ فعلی در production خودکار پاک نمی‌شود
+  (اصلِ review-first): از صفحهٔ Facilities حذفش کن یا در افرلتر ردیفش را حذف کن؛
+  ایمپورت‌های بعدی دیگر نمی‌سازندش.
+- **[VERIFY]** تستِ end-to-endِ عینِ سناریو: payload با OD+CD+جعلیِ FD ⇒ فقط ۲
+  facility، skipped=1؛ ایمپورتِ مجدد ⇒ added=0/updated=2 (بدونِ دوبله)؛
+  offer-letter-data ⇒ دقیقاً دو ردیف با برچسبِ درست + متنِ وثایقِ مصوبه.
+  ماژول ۲۲/۲۲؛ suiteِ کامل پایین‌تر؛ ۳۳+۷۸ چکِ E2E سبز؛ type-check/build سبز؛
+  static سینک. مارکر → reflow-v36.

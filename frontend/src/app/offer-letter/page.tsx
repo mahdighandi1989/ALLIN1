@@ -325,7 +325,7 @@ export default function OfferLetterPage() {
         CreditLimit: (dbFacs.length ? withSlash(dbFacs[0].amount) : '') || saved.CreditLimit || withSlash(d.CreditLimit) || s.CreditLimit,
         InterestRate: (dbFacs.length ? dbFacs[0].rate : '') || saved.InterestRate || d.InterestRate || s.InterestRate,
         ValidUntil: saved.ValidUntil || d.ValidUntil || s.ValidUntil,
-        RequiredSecurities: saved.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
+        RequiredSecurities: d.RequiredSecurities || saved.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
         // loan specifics
         LoanAmount: saved.LoanAmount || withSlash(d.LoanAmount) || s.LoanAmount,
         LoanInterestRate: saved.LoanInterestRate || d.LoanInterestRate || s.LoanInterestRate,

@@ -746,7 +746,10 @@ async def email_summary(
 # ---------------------------------------------------------------------------
 _FTYPE_LABEL = {
     "overdraft": "Overdraft", "loan": "Loan", "lc": "Letter of Credit",
-    "lg": "Letter of Guarantee", "other": "Credit Facility",
+    "lg": "Letter of Guarantee", "cheque_discounting": "Cheque Discount",
+    "trust_receipt": "Trust Receipt", "lc_sight": "LC Sight",
+    "lc_usance": "LC Usance", "log": "Letter of Guarantee",
+    "other": "Credit Facility",
 }
 
 # ---------------------------------------------------------------------------
@@ -946,6 +949,9 @@ async def offer_letter_data(
         "Rating": (getattr(prof, "rating", "") or "") if prof else "",
         "BusinessType": ((getattr(prof, "business_type", "") or "") if prof else "") or pget("BusinessType"),
         "FacilityType": _FTYPE_LABEL.get(ftype, "Overdraft"),
+        # The latest imported sanction's REQUIRED SECURITIES / DOCUMENTS list
+        # (verbatim) — the Offer Letter prefills this over its generic default.
+        "RequiredSecurities": pget("RequiredSecurities"),
         "CreditLimit": (f"{float(fac.amount):,.0f}" if fac and fac.amount else ""),
         "InterestRate": rate or "",
         "ExpiryDate": (str(fac.expiry_date) if fac and getattr(fac, "expiry_date", None) else ""),

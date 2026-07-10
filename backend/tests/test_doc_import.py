@@ -418,3 +418,43 @@ def test_split_pdf_and_offset():
     gen = list(doc_ingest.pdf_chunks(buf.getvalue(), max_bytes=10_000_000, max_pages=2))
     assert [c[0] for c in gen] == [1, 3, 5]
     assert doc_ingest.offset_pages("1-2", 2) == "3-4"
+
+
+async def test_persist_facilities_deposit_guard_and_required_securities(db_session, client, auth_headers):
+    """The owner's real regression: the sanction's FD-underlien text came back
+    as a third 'facility' (type → other) and surfaced on the Offer Letter as a
+    phantom «Credit Facility» row; and the REQUIRED SECURITIES list never
+    reached the letter. The guard drops deposit/summary pseudo-facilities,
+    required_securities lands on the profile, re-import stays deduped, and
+    /offer-letter-data serves both (proper type labels included)."""
+    payload = {
+        "account_no": "2900-301408-010", "name": "Al Ain Glass & Mirrors", "account_type": "corporate",
+        "facilities": [
+            {"facility_type": "overdraft", "amount": "3500000", "interest_rate": "5.25"},
+            {"facility_type": "cheque_discounting", "amount": "2800000", "interest_rate": "11"},
+            # the junk that caused the phantom row — a deposit posing as a facility
+            {"facility_type": "credit facility", "amount": "3500000",
+             "notes": "Fixed Deposit 365 days, Ref AJMN FD-2025-73, start 29NOV25"},
+        ],
+        "required_securities": "Signed undertaking form for total facility amount from the borrower.\nRenewed letter of lien and authority to set off for advances against fixed deposit amounting to AED 3,500,000/- held underlien in same account.",
+    }
+    r1 = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r1["ok"]
+    assert r1["facilities_added"] == 2                    # OD + CD only
+    assert r1["facilities_skipped_deposits"] == 1         # the FD junk was dropped
+    await db_session.commit()
+
+    # re-import the SAME sanction → matched per type, nothing duplicated
+    r2 = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r2["facilities_added"] == 0 and r2["facilities_updated"] == 2
+    assert r2["facilities_skipped_deposits"] == 1
+    await db_session.commit()
+
+    # the Offer Letter sees exactly TWO rows, proper labels, and the sanction's securities text
+    r = await client.get("/api/crm/offer-letter-data/301408", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    facs = body["Facilities"]
+    assert len(facs) == 2
+    assert {f["type"] for f in facs} == {"Overdraft", "Cheque Discount"}   # no raw snake_case
+    assert "held underlien" in body["RequiredSecurities"]
