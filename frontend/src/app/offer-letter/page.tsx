@@ -140,6 +140,20 @@ const FOOT_AR = 'ص.ب : ٤١٨٢ ، دبي – إ.ع.م.  تليفون : ٦٠٣
 const FOOT_EN = 'P.O. BOX: 4182, DUBAI – U.A.E.  TEL: +9714-6035555, FAX: +9714-2215961'
 const FOOT_SWIFT = 'SWIFT CODE : BSIRAEAD'
 
+// Safety net around the preview: if ANY render/commit error slips through
+// (e.g. a future DOM collision with imperative marks), the boundary clears the
+// stored selection formatting and remounts the preview instead of white-
+// screening the whole app.
+class OlSafe extends React.Component<{ onCrash: () => void; children: React.ReactNode }, { gen: number }> {
+  state = { gen: 0 }
+  static getDerivedStateFromError() { return {} }
+  componentDidCatch() {
+    this.props.onCrash()
+    this.setState((s) => ({ gen: s.gen + 1 }))
+  }
+  render() { return <React.Fragment key={this.state.gen}>{this.props.children}</React.Fragment> }
+}
+
 export default function OfferLetterPage() {
   const [f, setF] = useState<Fields>(EMPTY)
   const [acc, setAcc] = useState('')
@@ -684,6 +698,15 @@ export default function OfferLetterPage() {
     })
     setOlFmt(null)
   }
+  const onPreviewCrash = () => {
+    // drop the selection formatting that caused the render error and recover
+    setOlMarks({}); setOlFmt(null)
+    try {
+      localStorage.removeItem(OLMKEY('english'))
+      localStorage.removeItem(OLMKEY('personal'))
+    } catch { /* storage unavailable */ }
+    toast('قالب‌بندیِ انتخابی به‌دلیلِ خطا بازنشانی شد — صفحه ادامه می‌دهد', { icon: '🛟' })
+  }
   const onPreviewDblClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement
     if (!t || t.closest('.olp-panel')) return
@@ -1153,6 +1176,7 @@ export default function OfferLetterPage() {
 
         {/* ---------------- printable document ----------------
             dblclick any block → layout panel (font/align/dir/spacing/offsets) */}
+        <OlSafe onCrash={onPreviewCrash}>
         <div id="offer-print" dir="ltr" ref={printRef}
           /* CRASH GUARD: while selection marks exist, remount the whole preview
              on every render (fresh tree = React never reconciles against the
@@ -1383,6 +1407,7 @@ export default function OfferLetterPage() {
             </>
           )}
         </div>
+        </OlSafe>
 
         {/* ---- selection format bar (like the letter page's floating toolbar):
              applies ONLY to the selected part of the sentence, not the block ---- */}
