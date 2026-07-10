@@ -97,6 +97,7 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
                        "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "", "insurance_expiry": ""} ],
       "security": [ {"type": "Underlien Deposits | Cheques | Collaterals | <as printed>", "for_facility": "",
                      "aed": "", "usd": "", "irr": "", "other": ""} ],
+      "required_securities": "<the REQUIRED SECURITIES / DOCUMENTS list exactly as printed, one item per line>",
       "review": {
         "date_of_review": "", "credit_application_no": "", "purpose": "",
         "proposed_rating": "", "rating_notes": "", "cru_recommendation": ""
@@ -116,6 +117,8 @@ Rules:
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
+- A FIXED DEPOSIT / سپرده — even one held UNDER LIEN to secure a facility — is a SECURITY, NOT a facility: report it ONLY inside "security" (type "Underlien Deposits"), NEVER as an entry in "facilities". Likewise never output the overall "credit facility line" heading, a TOTAL/summary row, or a processing-charges row as a facility.
+- "required_securities" = the document's REQUIRED SECURITIES / DOCUMENTS (or securities/documents to be obtained) list, copied essentially verbatim, one item per line — the Offer Letter reuses this text as-is.
 - "grade" = the customer's history grade (VERY GOOD / GOOD / AVERAGE / POOR). "rating" = the credit risk rating GRADE ONLY (e.g. "C", "BB"), without any surrounding words. "call_report" and "previous_files" (No. of Previous Files) come from the summary header. "undertaking_from" = who gives undertaking forms (e.g. "Guarantor/s", "Partner/s"). Fill these whenever the file shows them.
 - IDENTITY DATES MATTER: for the trade licence, passport, Emirates ID, visa and tenancy, look hard for BOTH the issue date AND the expiry date — they are printed on the document/card, its copy, or the KYC summary table. Do not leave a date blank if it appears anywhere in the file. An issue/expiry value must be a real DATE (e.g. 10/03/2027) — the PLACE of issue (e.g. "Abu Dhabi", "Dubai") is NOT a date, so never put a city/emirate in an issue_date or expiry field.
 - Only include fields you actually find; omit unknowns (do NOT invent values). Give CLEAN values (just the value, not surrounding labels/words).
@@ -298,6 +301,15 @@ def _apply_extracted_fields(cp, fields: dict) -> None:
             setattr(cp, col, str(v)[:ml] if ml else str(v))
 
 
+# Text that marks an extracted "facility" as actually being a deposit/security
+# or a summary row — never a credit facility (see the guard in persist_customer).
+_NON_FACILITY_RE = re.compile(
+    r"fixed\s*deposit|\bF\.?D\b|under\s*-?\s*lien|underlien|سپرده|deposit|"
+    r"total|جمع|credit\s*facility\s*line|processing\s*(fee|charge)",
+    re.IGNORECASE,
+)
+
+
 async def persist_customer(db: AsyncSession, cust: dict, username: str, source: str = "import_ai") -> dict:
     """Apply one extracted customer dict to the DB (deduped). Returns a summary."""
     from app.routers.crm import _upsert_credit_review  # shared helper
@@ -324,6 +336,12 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         customer.branch = branch[:100]
 
     fields = {k: v for k, v in (cust.get("fields") or {}).items() if v not in (None, "")}
+    # The sanction's REQUIRED SECURITIES / DOCUMENTS list, verbatim — stored on
+    # the profile so the Offer Letter prefills it; each new import overwrites
+    # (the LATEST sanction is the truth the letter must follow).
+    rs = str(cust.get("required_securities") or "").strip()
+    if rs:
+        fields["RequiredSecurities"] = rs[:4000]
 
     cp = (await db.execute(select(CustomerProfile).where(CustomerProfile.account_no == acc))).scalar_one_or_none()
     if cp is None:
@@ -473,7 +491,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     # reads (so Facility Details fills in). Matched by (customer, facility_type);
     # amounts/rate/expiry are fill-empty (a curated amount is never clobbered) and
     # a NEW record is only created when an amount is present (no phantom limits).
-    f_added = f_updated = 0
+    f_added = f_updated = f_skipped_deposits = 0
     if customer is not None:
         from app.models.facility import Facility, FacilityType, FacilityStatus
         valid_ft = {t.value for t in FacilityType}
@@ -484,6 +502,17 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
                 continue
             ft_raw = (fc.get("facility_type") or "").strip().lower().replace(" ", "_")
             ft = ft_raw if ft_raw in valid_ft else ("other" if ft_raw else "")
+            # Deterministic guard behind the prompt rule (owner's real case: the
+            # FD-underlien text came back as a "facility", was persisted as
+            # OTHER, and surfaced on the Offer Letter as a phantom «Credit
+            # Facility» row). A deposit/summary entry whose type is NOT a real
+            # whitelisted facility type is dropped here — it belongs to the
+            # security matrix, which is persisted separately.
+            if ft in ("", "other") and _NON_FACILITY_RE.search(
+                f"{fc.get('facility_type') or ''} {fc.get('notes') or ''}"
+            ):
+                f_skipped_deposits += 1
+                continue
             amt = _num_bounded(fc.get("amount"), 1e13)        # Numeric(15,2)
             rate = _num_bounded(fc.get("interest_rate"), 1e3)  # Numeric(5,2) → < 1000
             # A typeless extraction is persisted as OTHER, so it must also be
@@ -524,6 +553,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "guarantors_added": g_added, "guarantors_updated": g_updated,
             "partners_added": pt_added, "partners_updated": pt_updated,
             "facilities_added": f_added, "facilities_updated": f_updated,
+            "facilities_skipped_deposits": f_skipped_deposits,
             "properties_added": p_added, "properties_updated": p_updated,
             "security_added": sec_added}
 
