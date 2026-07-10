@@ -220,3 +220,37 @@ def test_build_user_prompt_table_fill_is_db_aware():
     assert "نامهٔ عمومی/بدونِ حساب" in p                     # fact-less letters ⇒ say so
     # the tables tool guide itself also carries the DB-only rule
     assert "حقایقِ پایگاه‌داده" in la.TOOLS["tables"]["guide"]
+
+
+# ---------------- new tools: complete / inline_prompts (owner request) ----------------
+
+def test_new_tools_registered_with_binding_guides():
+    """The formalize/complete/inline-prompt behaviors the owner asked for are
+    encoded in the tool guides the model actually receives."""
+    assert "complete" in la.TOOLS and "inline_prompts" in la.TOOLS
+    # professional now explicitly covers FULL and PARTIAL colloquial rewriting
+    assert "عامیانه" in la.TOOLS["professional"]["guide"]
+    assert "وسطِ متنِ رسمی" in la.TOOLS["professional"]["guide"]
+    # complete recognizes the lone «؟» as a stuck-sentence placeholder
+    g = la.TOOLS["complete"]["guide"]
+    assert "؟" in g and "نیمه‌کاره" in g and "تکرار" in g
+    # inline prompts: execute in-text instructions, DB-facts-only, db_write on «ثبت»
+    gi = la.TOOLS["inline_prompts"]["guide"]
+    assert "دستور" in gi and "حقایقِ پایگاه‌داده" in gi and "db_write" in gi
+
+
+def test_new_categories_survive_validation():
+    out = _call([
+        {"op": "text_replace", "field": "body", "category": "complete",
+         "title": "تکمیل جمله", "find": "اعطا گردید", "replace": "اعطا گردیده است."},
+        {"op": "text_replace", "field": "body", "category": "inline_prompts",
+         "title": "اجرای دستور", "find": "با سلام و احترام،", "replace": "با سلام و احترام؛"},
+    ])
+    assert [c["category"] for c in out] == ["complete", "inline_prompts"]
+    assert all(c["applicable"] for c in out)
+
+
+def test_build_user_prompt_carries_new_tool_guides():
+    p = la.build_user_prompt(FIELDS, {}, ["complete", "inline_prompts"])
+    assert "علامتِ سؤالِ تنها" in p or "علامتِ سؤال" in p
+    assert "دستورِ نویسنده خطاب به تو" in p or "دستور" in p

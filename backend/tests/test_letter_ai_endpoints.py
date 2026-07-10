@@ -122,6 +122,59 @@ async def test_analyze_stages_db_writes(client, auth_headers, db_session, monkey
     assert any("شناسایی نشد" in c["title"] for c in notes)  # unknown customer surfaced
 
 
+async def test_analyze_inline_prompts_rewrites_and_stages_db_write(
+    client, auth_headers, db_session, monkeypatch,
+):
+    """Owner scenario end-to-end: an in-text INSTRUCTION («... این موارد ثبت بشه»)
+    plus a lone «؟» placeholder. With the inline_prompts + complete tools on
+    (and WITHOUT db_extract), the analyze wiring must: carry both tool guides,
+    keep the instruction-replacement + completion changes, and stage the
+    db_write the instruction asked for."""
+    await _seed_usable_model(db_session)
+    db_session.add(Customer(account_no="790100", name="Alpha LLC", account_type="corporate"))
+    await db_session.commit()
+
+    body_html = ("<div>احتراماً به استحضار می‌رساند حساب جاری مشتری فعال است ؟</div>"
+                 "<div>اینجا یه جمله بنویس که ایمیل جدید مشتری info@alpha.co اعلام و ثبت بشه</div>")
+
+    async def fake_complete(db, prompt, **kwargs):
+        # both new tool guides must reach the model
+        assert "علامتِ سؤال" in prompt          # complete tool guide
+        assert "دستورِ نویسنده خطاب به تو" in prompt  # inline_prompts guide
+        return {"ok": True, "model": "m", "error": None, "text": json.dumps({"changes": [
+            {"op": "text_replace", "field": "body", "category": "complete",
+             "title": "تکمیل جملهٔ ناتمام",
+             "find": "حساب جاری مشتری فعال است ؟",
+             "replace": "حساب جاری مشتری فعال بوده و گردش آن مطلوب ارزیابی می‌گردد.",
+             "severity": "medium"},
+            {"op": "text_replace", "field": "body", "category": "inline_prompts",
+             "title": "اجرای دستور داخل متن",
+             "find": "اینجا یه جمله بنویس که ایمیل جدید مشتری info@alpha.co اعلام و ثبت بشه",
+             "replace": "بدین‌وسیله نشانی پست الکترونیکی جدید مشتری info@alpha.co اعلام می‌گردد.",
+             "severity": "medium"},
+            {"op": "db_write", "account_no": "790100", "customer_name": "Alpha LLC",
+             "key": "email", "value": "info@alpha.co"},
+        ]}, ensure_ascii=False)}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "account_no": "790100", "fields": {"body": body_html},
+        "tools": ["complete", "inline_prompts"],   # db_extract NOT ticked
+    })
+    assert r.status_code == 200, r.text
+    changes = r.json()["changes"]
+    cats = {c["category"] for c in changes}
+    assert "complete" in cats and "inline_prompts" in cats
+    # the completion + instruction-replacement survive the find-guard
+    replaces = [c for c in changes if c["op"] == "text_replace"]
+    assert len(replaces) == 2 and all(c["applicable"] for c in replaces)
+    # and the requested DB record is STAGED even without db_extract ticked
+    dbw = [c for c in changes if c["op"] == "db_write"]
+    assert any(c["key"] == "email" and c["account_no"] == "790100" for c in dbw)
+
+
 async def test_analyze_no_model_is_friendly(client, auth_headers, db_session, monkeypatch):
     # No model configured → inference returns no_model; endpoint stays 200 + ok:false.
     async def fake_complete(db, prompt, **kwargs):
