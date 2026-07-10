@@ -117,19 +117,75 @@ export function useDocLayout(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lay])
 
+  const skipClick = useRef(false)
+  const panelPos = useRef<{ x: number; y: number } | null>(null)
   const openAt = (e: React.MouseEvent) => {
+    if (skipClick.current) { skipClick.current = false; return }  // it was a drag
     const t = e.target as HTMLElement
     if (!t || t.closest('.dlp-panel')) return
     const el = (t.closest(PICK) as HTMLElement) || t
     const key = elPath(el)
     if (!key) return
     e.preventDefault()
+    // open OUT OF THE WAY (screen edge, or wherever the user last dragged it)
+    const pos = panelPos.current || {
+      x: Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 300),
+      y: 90,
+    }
     setSel({
       key,
       label: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 44) || 'عنصر',
-      x: Math.min(e.clientX, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 300),
-      y: Math.min(e.clientY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 330),
+      ...pos,
     })
+  }
+  // design-mode DRAG: press a block and pull — moves via the same mt/mis
+  // offsets the panel edits; a real drag suppresses the click-opens-panel.
+  const onDragStart = (e: React.PointerEvent) => {
+    if (!design || e.button !== 0) return
+    const t = e.target as HTMLElement
+    if (!t || t.closest('.dlp-panel')) return
+    const el = (t.closest(PICK) as HTMLElement) || null
+    if (!el || !printRef.current?.contains(el)) return
+    const key = elPath(el)
+    if (!key) return
+    const b = eff[key] || {}
+    const drag = {
+      key, sx: e.clientX, sy: e.clientY,
+      mt0: b.mt || 0, mis0: b.mis || 0,
+      rtl: getComputedStyle(el).direction === 'rtl',
+      moved: false,
+    }
+    const mv = (ev: PointerEvent) => {
+      const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+      drag.moved = true
+      setLay((s) => ({
+        ...s,
+        [drag.key]: { ...(s[drag.key] || {}), mt: Math.round(drag.mt0 + dy), mis: Math.round(drag.mis0 + (drag.rtl ? -dx : dx)) },
+      }))
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv)
+      document.removeEventListener('pointerup', up)
+      if (drag.moved) skipClick.current = true
+    }
+    document.addEventListener('pointermove', mv)
+    document.addEventListener('pointerup', up)
+    e.preventDefault()
+  }
+  const startPanelDrag = (e: React.PointerEvent) => {
+    const s0 = sel
+    if (!s0) return
+    const ox = e.clientX - s0.x, oy = e.clientY - s0.y
+    const mv = (ev: PointerEvent) => {
+      const x = Math.max(0, ev.clientX - ox), y = Math.max(0, ev.clientY - oy)
+      panelPos.current = { x, y }
+      setSel((s) => (s ? { ...s, x, y } : s))
+    }
+    const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
+    document.addEventListener('pointermove', mv)
+    document.addEventListener('pointerup', up)
+    e.preventDefault()
   }
   const clearHover = () => {
     const el = hover.current
@@ -152,9 +208,10 @@ export function useDocLayout(opts: {
   const containerProps = {
     onDoubleClick: openAt,
     onClick: design ? openAt : undefined,
+    onPointerDown: design ? onDragStart : undefined,
     onMouseOver: design ? onHover : undefined,
     onMouseLeave: design ? clearHover : undefined,
-    style: design ? ({ cursor: 'pointer' } as React.CSSProperties) : undefined,
+    style: design ? ({ cursor: 'move' } as React.CSSProperties) : undefined,
   }
 
   const update = (patch: DlBox) => {
@@ -181,9 +238,9 @@ export function useDocLayout(opts: {
     const b = eff[sel.key] || {}
     return (
       <div className="dlp-panel" style={{ left: sel.x, top: sel.y }} dir="rtl">
-        <div className="dlp-h">
+        <div className="dlp-h" onPointerDown={startPanelDrag} title="برای جابه‌جاییِ پنل بکشید" style={{ cursor: 'move', touchAction: 'none' }}>
           <span title={sel.label}>چینش — {sel.label}</span>
-          <button className="dlp-x" onClick={() => setSel(null)}>×</button>
+          <button className="dlp-x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setSel(null)}>×</button>
         </div>
         <div className="dlp-row">
           <label>اندازهٔ فونت (pt)</label>
