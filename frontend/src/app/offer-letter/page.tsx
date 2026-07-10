@@ -227,6 +227,19 @@ export default function OfferLetterPage() {
   // remount sequence for the preview when marks are active (see key below)
   const olRenderSeq = useRef(0)
   const OLKEY = (t: string) => `ol-layout:${t}`
+  // ---- layout SCOPE (owner rule): once the document belongs to an account
+  // (loaded or even just typed, saved or not), layout/format edits apply to
+  // THAT ACCOUNT ONLY — the base template stays untouched. Only on a pristine
+  // form (no account) do edits update the base template itself. The preview
+  // shows base-template overrides UNDER the account's own (account wins).
+  const olAcct = (acc || f.AccountNumber).trim()
+  const olScopeOf = (t: string) => (olAcct ? `${t}::${olAcct}` : t)
+  const [olBase, setOlBase] = useState<Record<string, OlBox>>({})
+  const [olMarksBase, setOlMarksBase] = useState<Record<string, OlMark[]>>({})
+  // global «چیدمان» mode (like the official-letter page's toolbar toggle):
+  // hover highlights the block under the cursor, a single click opens the panel.
+  const [olDesign, setOlDesign] = useState(false)
+  const olHoverEl = useRef<HTMLElement | null>(null)
   // ---- SELECTION formatting (like the letter page's floating toolbar): select
   // part of a sentence in the preview → a small bar applies bold/italic/
   // underline/size to JUST that range. Marks are stored as text offsets inside
@@ -398,23 +411,31 @@ export default function OfferLetterPage() {
           : { fd: false, staff: false, temp: false })
       }
       if (typeof saved.autoCharge === 'boolean') setAutoCharge(saved.autoCharge)
-      // restore the per-template layout overrides saved with this customer
+      // restore the layout overrides saved with this customer — into the
+      // ACCOUNT-scoped stores (this customer's own look), never the template.
+      // Old snapshots (pre-scoping) restore the same way: they were edits made
+      // while this customer was loaded, so account scope is their true home.
       if (saved.olLayoutMap && typeof saved.olLayoutMap === 'object') {
         for (const t of ['english', 'personal']) {
-          if (saved.olLayoutMap[t] && typeof saved.olLayoutMap[t] === 'object') {
-            try { localStorage.setItem(OLKEY(t), JSON.stringify(saved.olLayoutMap[t])) } catch { /* in-memory only */ }
+          if (saved.olLayoutMap[t] && typeof saved.olLayoutMap[t] === 'object' && Object.keys(saved.olLayoutMap[t]).length) {
+            try { localStorage.setItem(OLKEY(`${t}::${a}`), JSON.stringify(saved.olLayoutMap[t])) } catch { /* in-memory only */ }
           }
         }
-        try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { /* keep current */ }
       }
       if (saved.olMarksMap && typeof saved.olMarksMap === 'object') {
         for (const t of ['english', 'personal']) {
-          if (saved.olMarksMap[t] && typeof saved.olMarksMap[t] === 'object') {
-            try { localStorage.setItem(OLMKEY(t), JSON.stringify(saved.olMarksMap[t])) } catch { /* in-memory only */ }
+          if (saved.olMarksMap[t] && typeof saved.olMarksMap[t] === 'object' && Object.keys(saved.olMarksMap[t]).length) {
+            try { localStorage.setItem(OLMKEY(`${t}::${a}`), JSON.stringify(saved.olMarksMap[t])) } catch { /* in-memory only */ }
           }
         }
-        try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { /* keep current */ }
       }
+      // load the restored account stores into state NOW — the scope effect only
+      // re-fires when the account/template actually changes, and here the
+      // account was already typed before the click (same scope, fresh keys).
+      try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(`${effectiveTpl}::${a}`)) || '{}')) } catch { /* keep current */ }
+      try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(`${effectiveTpl}::${a}`)) || '{}')) } catch { /* keep current */ }
+      try { setOlBase(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { setOlBase({}) }
+      try { setOlMarksBase(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { setOlMarksBase({}) }
       toast.success(`«${d.CompanyName || a}» — ${corp ? 'حقوقی' : 'حقیقی'} · ${d.facilities_count || 0} تسهیلات${d.Saved && Object.keys(d.Saved).length ? ' · بازیابی از ذخیره' : ''}`)
     } catch (e) { toast.error(parseApiError(e)) }
     finally { setLoading(false) }
@@ -430,11 +451,13 @@ export default function OfferLetterPage() {
       const cleanGuars = guars
         .map((g) => ({ name: g.name.trim(), account: g.account.trim() }))
         .filter((g) => g.name)
+      // the snapshot carries the ACCOUNT's own overrides (its scoped stores) —
+      // the base template belongs to the device/template, not to this customer.
       const layoutMap: Record<string, any> = {}
       const marksMap: Record<string, any> = {}
       for (const t of ['english', 'personal']) {
-        try { layoutMap[t] = JSON.parse(localStorage.getItem(OLKEY(t)) || '{}') } catch { layoutMap[t] = {} }
-        try { marksMap[t] = JSON.parse(localStorage.getItem(OLMKEY(t)) || '{}') } catch { marksMap[t] = {} }
+        try { layoutMap[t] = JSON.parse(localStorage.getItem(OLKEY(`${t}::${a}`)) || '{}') } catch { layoutMap[t] = {} }
+        try { marksMap[t] = JSON.parse(localStorage.getItem(OLMKEY(`${t}::${a}`)) || '{}') } catch { marksMap[t] = {} }
       }
       await crmApi.saveOfferLetterData(a, {
         POBox: f.POBox, CityCountry: f.CityCountry, Salutation: f.Prefix, Branch: f.Branch,
@@ -577,12 +600,16 @@ export default function OfferLetterPage() {
   const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width'] as const
   // re-apply after EVERY render (React re-creates nodes freely); clear the
   // previously-touched elements first so removed overrides really reset.
+  // effective maps: on a pristine form these are just the template stores; with
+  // an account, the account's overrides sit ON TOP of the template's (per key).
+  const olEffLayout: Record<string, OlBox> = olAcct ? { ...olBase, ...olLayout } : olLayout
+  const olEffMarks: Record<string, OlMark[]> = olAcct ? { ...olMarksBase, ...olMarks } : olMarks
   useEffect(() => {
     for (const k of olPrevKeys.current) {
       const el = elFromPath(k)
       if (el) OL_PROPS.forEach((p) => { (el.style as any)[p] = '' })
     }
-    for (const [k, b] of Object.entries(olLayout)) {
+    for (const [k, b] of Object.entries(olEffLayout)) {
       const el = elFromPath(k)
       if (!el) continue
       if (b.fs) el.style.fontSize = `${b.fs}pt`
@@ -595,7 +622,7 @@ export default function OfferLetterPage() {
       if (b.mis) el.style.marginInlineStart = `${b.mis}px`
       if (b.w) el.style.width = `${b.w}%`
     }
-    olPrevKeys.current = Object.keys(olLayout)
+    olPrevKeys.current = Object.keys(olEffLayout)
     // ---- selection marks: unwrap previous spans, re-wrap current offsets ----
     printRef.current?.querySelectorAll('span[data-olm]').forEach((sp) => {
       const parent = sp.parentNode
@@ -604,7 +631,7 @@ export default function OfferLetterPage() {
       parent.removeChild(sp)
       if ((parent as HTMLElement).normalize) (parent as HTMLElement).normalize()
     })
-    for (const [key, marks] of Object.entries(olMarks)) {
+    for (const [key, marks] of Object.entries(olEffMarks)) {
       const el = elFromPath(key)
       if (!el) continue
       for (const m of [...marks].sort((a, b) => a.s - b.s)) {
@@ -634,19 +661,37 @@ export default function OfferLetterPage() {
     }
     fitPages()
   })
-  // per-template persistence (device-local; the snapshot carries it too)
+  // per-scope persistence (device-local; the snapshot carries the account's too).
+  // Scope = template when the form is pristine, template::account once the
+  // document belongs to an account. On scope change, load that scope's store
+  // and (with an account) the template store as the read-only base layer.
   useEffect(() => {
-    try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { setOlLayout({}) }
-    try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { setOlMarks({}) }
+    const sc = olScopeOf(effectiveTpl)
+    try { setOlLayout(JSON.parse(localStorage.getItem(OLKEY(sc)) || '{}')) } catch { setOlLayout({}) }
+    try { setOlMarks(JSON.parse(localStorage.getItem(OLMKEY(sc)) || '{}')) } catch { setOlMarks({}) }
+    if (olAcct) {
+      try { setOlBase(JSON.parse(localStorage.getItem(OLKEY(effectiveTpl)) || '{}')) } catch { setOlBase({}) }
+      try { setOlMarksBase(JSON.parse(localStorage.getItem(OLMKEY(effectiveTpl)) || '{}')) } catch { setOlMarksBase({}) }
+    } else { setOlBase({}); setOlMarksBase({}) }
     setOlSel(null); setOlFmt(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveTpl])
+  }, [effectiveTpl, olAcct])
+  // write-back: empty stores REMOVE their key (typing an account number digit by
+  // digit must not litter localStorage with junk scope keys)
   useEffect(() => {
-    try { localStorage.setItem(OLMKEY(effectiveTpl), JSON.stringify(olMarks)) } catch { /* quota */ }
+    try {
+      const s = JSON.stringify(olMarks)
+      if (s === '{}') localStorage.removeItem(OLMKEY(olScopeOf(effectiveTpl)))
+      else localStorage.setItem(OLMKEY(olScopeOf(effectiveTpl)), s)
+    } catch { /* quota */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [olMarks])
   useEffect(() => {
-    try { localStorage.setItem(OLKEY(effectiveTpl), JSON.stringify(olLayout)) } catch { /* quota — layout stays in-memory */ }
+    try {
+      const s = JSON.stringify(olLayout)
+      if (s === '{}') localStorage.removeItem(OLKEY(olScopeOf(effectiveTpl)))
+      else localStorage.setItem(OLKEY(olScopeOf(effectiveTpl)), s)
+    } catch { /* quota — layout stays in-memory */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [olLayout])
   const olUpdate = (patch: OlBox) => {
@@ -703,12 +748,33 @@ export default function OfferLetterPage() {
   }
   const onPreviewCrash = () => {
     // drop the selection formatting that caused the render error and recover
-    setOlMarks({}); setOlFmt(null)
+    // (both layers: the account-scoped stores AND the template bases)
+    setOlMarks({}); setOlMarksBase({}); setOlFmt(null)
     try {
       localStorage.removeItem(OLMKEY('english'))
       localStorage.removeItem(OLMKEY('personal'))
+      if (olAcct) {
+        localStorage.removeItem(OLMKEY(`english::${olAcct}`))
+        localStorage.removeItem(OLMKEY(`personal::${olAcct}`))
+      }
     } catch { /* storage unavailable */ }
     toast('قالب‌بندیِ انتخابی به‌دلیلِ خطا بازنشانی شد — صفحه ادامه می‌دهد', { icon: '🛟' })
+  }
+  // design-mode hover: outline the block a click would edit (cleared on leave/off)
+  const clearOlHover = () => {
+    const el = olHoverEl.current
+    if (el) { el.style.outline = ''; el.style.outlineOffset = ''; olHoverEl.current = null }
+  }
+  const onPreviewHover = (e: React.MouseEvent) => {
+    const t = e.target as HTMLElement
+    const el = (t?.closest('span,td,th,li,p,div') as HTMLElement) || null
+    if (!el || !printRef.current?.contains(el) || el.closest('.olp-panel,.olf-bar')) { clearOlHover(); return }
+    if (olHoverEl.current !== el) {
+      clearOlHover()
+      olHoverEl.current = el
+      el.style.outline = '2px dashed #f59e0b'
+      el.style.outlineOffset = '1px'
+    }
   }
   const onPreviewDblClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement
@@ -940,6 +1006,8 @@ export default function OfferLetterPage() {
           .olp-panel { display:none !important; }
           .olf-bar { display:none !important; }
           .olv-e { animation:none !important; background:none !important; padding:0; }
+          /* design-mode hover outline must never reach paper */
+          #offer-print * { outline:none !important; }
         }
       `}</style>
 
@@ -982,6 +1050,18 @@ export default function OfferLetterPage() {
               className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Download size={15} /> Print / PDF
             </button>
+            {/* page-wide layout mode, like the official-letter page's toolbar
+                toggle — hover highlights a block, one click opens its layout
+                panel (double-click keeps working without this mode too) */}
+            <button onClick={() => { setOlDesign((d) => !d); setOlSel(null); clearOlHover() }} type="button"
+              className={`flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium text-white ${olDesign ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-500 hover:bg-amber-600'}`}>
+              {olDesign ? '✓ پایانِ چیدمان' : 'چیدمان'}
+            </button>
+            <span className="text-[11px] text-gray-500 self-center" dir="rtl">
+              {olAcct
+                ? <>چینش فقط برای حسابِ <b dir="ltr">{olAcct}</b> ذخیره می‌شود — قالبِ اصلی دست‌نخورده می‌ماند</>
+                : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کند'}
+            </span>
           </div>
 
           {/* Draft (مصوبه) drop zone → smart extract into the fields + customer DB */}
@@ -1182,8 +1262,12 @@ export default function OfferLetterPage() {
              text nodes our mark spans moved → no removeChild crash); with no
              marks the key is stable and nothing changes. Marks + overrides are
              re-applied by the after-render effect either way. */
-          key={Object.keys(olMarks).length ? `mk-${++olRenderSeq.current}` : 'stable'}
-          onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}>
+          key={Object.keys(olEffMarks).length ? `mk-${++olRenderSeq.current}` : 'stable'}
+          onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
+          onClick={olDesign ? onPreviewDblClick : undefined}
+          onMouseOver={olDesign ? onPreviewHover : undefined}
+          onMouseLeave={olDesign ? clearOlHover : undefined}
+          style={olDesign ? { cursor: 'pointer' } : undefined}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
@@ -1424,7 +1508,9 @@ export default function OfferLetterPage() {
 
         {/* ---- floating layout panel (dblclick target), like the letter page's ---- */}
         {olSel && (() => {
-          const b = olLayout[olSel.key] || {}
+          // show the EFFECTIVE value (template base + this account's override);
+          // edits always write to the current scope's store
+          const b = olEffLayout[olSel.key] || {}
           return (
             <div className="olp-panel" style={{ left: olSel.x, top: olSel.y }} dir="rtl">
               <div className="olp-h">
@@ -1455,9 +1541,13 @@ export default function OfferLetterPage() {
               </div>
               <div className="olp-actions">
                 <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
-                <button onClick={() => { if (confirm('همهٔ چیدمان و قالب‌بندیِ سفارشیِ این قالب پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
+                <button onClick={() => { if (confirm(olAcct ? `همهٔ چینش/قالب‌بندیِ سفارشیِ حسابِ ${olAcct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چیدمان و قالب‌بندیِ سفارشیِ قالبِ اصلی پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
               </div>
-              <div className="olp-hint">تغییرها همان لحظه اعمال و برای این قالب ذخیره می‌شوند (با «ذخیره» در پروندهٔ مشتری هم می‌مانند).</div>
+              <div className="olp-hint">
+                {olAcct
+                  ? <>تغییرها فقط برای حسابِ <b dir="ltr">{olAcct}</b> اعمال و ذخیره می‌شوند؛ قالبِ اصلی تغییری نمی‌کند (با «ذخیره» در پروندهٔ مشتری هم می‌مانند).</>
+                  : 'فرم به حسابی تعلق ندارد — این تغییرها قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کنند.'}
+              </div>
             </div>
           )
         })()}

@@ -11,6 +11,7 @@ import Layout from '@/components/Layout'
 import { Printer, Download, Search, Save, Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { crmApi, parseApiError } from '@/lib/api'
+import { useDocLayout, DocLayoutStyles } from '@/lib/docLayout'
 import { BANK_LOGO } from '@/app/voucher/logo'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -161,6 +162,9 @@ export default function SanctionPage() {
 
   // Auto-fit each printed page (shrink if content overflows A4).
   const printRef = useRef<HTMLDivElement>(null)
+  // dblclick/«چیدمان» layout overrides (offer-letter pattern): scoped to the
+  // current account when one is typed/loaded, else they edit the base template.
+  const dl = useDocLayout({ docKey: 'sanction', account: acc || f.AccountNumber, printRef, pageSel: '.sn-page' })
   const fitPages = useCallback(() => {
     const root = printRef.current
     if (!root) return
@@ -245,12 +249,14 @@ export default function SanctionPage() {
             <button onClick={printDoc} type="button" className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Download size={15} /> Print / PDF
             </button>
+            {dl.designButton}
+            {dl.scopeHint}
           </div>
           <p className="text-[11px] text-gray-400 mt-2">همهٔ سلول‌های زرد قابل ویرایش‌اند. ردیف‌های جدول (تسهیلات، ضامن‌ها، بانک‌ها) با + اضافه و با × حذف می‌شوند.</p>
         </div>
 
         {/* ===== printable document ===== */}
-        <div ref={printRef} dir="ltr">
+        <div ref={printRef} dir="ltr" {...dl.containerProps}>
           {/* -------- PAGE 1 -------- */}
           <div className="sn-page">
             <div className="sn-fit">
@@ -432,6 +438,8 @@ export default function SanctionPage() {
           </div>
         </div>
       </div>
+      <DocLayoutStyles />
+      {dl.panel}
     </Layout>
   )
 }

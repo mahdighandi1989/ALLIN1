@@ -5,6 +5,7 @@ import Layout from '@/components/Layout'
 import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
 import { AmtInput, PctInput, WrapInput, DraftDrop, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
+import { useDocLayout, DocLayoutStyles } from '@/lib/docLayout'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -75,6 +76,9 @@ export default function CreditFileRetailPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const sheetRef = useRef<HTMLDivElement>(null)
+  // dblclick/«چیدمان» layout overrides (offer-letter pattern): scoped to the
+  // current account when one is typed/loaded, else they edit the base template.
+  const dl = useDocLayout({ docKey: 'credit-file-retail', account: a.accountNumber || acc, printRef: sheetRef, pageSel: '#cf-sheet' })
 
   const set = (k: keyof Acct) => (e: any) => setA((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
   const setFac = (id: string, k: keyof FacRow) => (e: any) => setFacRows((rows) => rows.map((r) => (r.uid === id ? { ...r, [k]: e.target.value } : r)))
@@ -354,13 +358,15 @@ export default function CreditFileRetailPage() {
           <button onClick={() => loadAccount()} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
+          {dl.designButton}
+          {dl.scopeHint}
           <div style={{ flexBasis: '100%', fontSize: 11, color: '#64748b' }}>
-            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. مبالغ خودکار کاما می‌گیرند. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است.
+            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. مبالغ خودکار کاما می‌گیرند. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است. با دبل‌کلیک (یا دکمهٔ «چیدمان» + کلیک) روی هر بخشِ برگه، پنلِ چینش باز می‌شود.
           </div>
           <DraftDrop accountNo={a.accountNumber || acc} onExtracted={handleExtract} />
         </div>
 
-        <div id="cf-sheet" ref={sheetRef}>
+        <div id="cf-sheet" ref={sheetRef} {...dl.containerProps}>
           <div className="cf-row-top">
             <div className="cf-logo"><b>بانک صادرات ایران — BANK SADERAT IRAN</b><span>U.A.E. · Credit Facility Dept.</span></div>
             <div className="cf-date"><div className="l">Date</div><input value={a.date} onChange={set('date')} /></div>
@@ -508,6 +514,8 @@ export default function CreditFileRetailPage() {
             <div className="cf-sign" style={{ textAlign: 'right' }}>Authorized:<div className="line">&nbsp;</div></div>
           </div>
         </div>
+        <DocLayoutStyles />
+        {dl.panel}
       </div>
     </Layout>
   )
