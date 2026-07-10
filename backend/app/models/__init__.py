@@ -17,6 +17,7 @@ from app.models.exposure_snapshot import ExposureSnapshot
 from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY
 from app.models.ai_config import AIProvider, AIModel, AITaskRoute
 from app.models.customer_link_rel import CustomerLink
+from app.models.charge_tariff import ChargeRule
 
 __all__ = [
     "User",
