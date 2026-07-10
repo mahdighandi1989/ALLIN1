@@ -70,3 +70,36 @@ async def test_chequeless_resave_keeps_cheque_no(client, auth_headers, db_sessio
     assert r2.json()["created"] is False
     assert r2.json()["cheque_no"] == "CHQ900"
     assert r2.json()["guarantor_account"] == "777123"
+
+
+async def test_offer_letter_data_returns_all_facilities_for_multi_row_sync(
+    client, auth_headers, db_session,
+):
+    """A multi-facility sanction imported into the DB must reach the Offer
+    Letter as MULTIPLE rows: /offer-letter-data returns a Facilities array
+    (largest first — row 1) with type label, formatted amount and rate."""
+    from app.models.facility import Facility
+
+    db_session.add(Customer(account_no="910500", name="Multi Fac LLC", account_type="corporate"))
+    await db_session.commit()
+    cust_id = (await client.get("/api/crm/offer-letter-data/910500", headers=auth_headers)).json()
+    # seed two facilities like the owner's sample letter (OD 3.5M + CD 2.8M)
+    from sqlalchemy import select as _sel
+    from app.models.customer import Customer as _C
+    cid = (await db_session.execute(_sel(_C).where(_C.account_no == "910500"))).scalar_one().id
+    db_session.add(Facility(id="F-910500-1", customer_id=cid, facility_type="overdraft",
+                            amount=3500000, currency="AED", interest_rate=5.25, status="active"))
+    db_session.add(Facility(id="F-910500-2", customer_id=cid, facility_type="loan",
+                            amount=2800000, currency="AED", interest_rate=11, status="active"))
+    await db_session.commit()
+
+    r = await client.get("/api/crm/offer-letter-data/910500", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    facs = body["Facilities"]
+    assert len(facs) == 2
+    # largest first (matches the legacy single-facility row-1 behavior)
+    assert facs[0]["amount"] == "3,500,000" and "5.25%" in facs[0]["rate"]
+    assert facs[1]["amount"] == "2,800,000" and "11%" in facs[1]["rate"]
+    assert facs[0]["type"] and facs[1]["type"]
+    assert body["facilities_count"] == 2
