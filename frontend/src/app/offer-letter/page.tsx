@@ -223,7 +223,7 @@ export default function OfferLetterPage() {
   // dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel —
   // zero effect on siblings); wx = absolute width (px, edge-resize); txt =
   // rewrite the element's text (leaf elements only). mt/mis kept for legacy.
-  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean }
+  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean; font?: string; list?: string }
   const [olLayout, setOlLayout] = useState<Record<string, OlBox>>({})
   const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
   const olPrevKeys = useRef<string[]>([])
@@ -600,7 +600,7 @@ export default function OfferLetterPage() {
     }
     return cur as HTMLElement
   }
-  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor'] as const
+  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor', 'fontFamily'] as const
   // re-apply after EVERY render (React re-creates nodes freely); clear the
   // previously-touched elements first so removed overrides really reset.
   // effective maps: on a pristine form these are just the template stores; with
@@ -609,7 +609,7 @@ export default function OfferLetterPage() {
   const olEffMarks: Record<string, OlMark[]> = olAcct ? { ...olMarksBase, ...olMarks } : olMarks
   // text rewrites mutate React-owned text nodes — engage the same remount
   // guard as selection marks so reconciliation never trips over them
-  const olHasTxt = Object.values(olEffLayout).some((b) => b.txt != null)
+  const olHasTxt = Object.values(olEffLayout).some((b) => b.txt != null || !!b.list)
   useEffect(() => {
     for (const k of olPrevKeys.current) {
       const el = elFromPath(k)
@@ -619,6 +619,17 @@ export default function OfferLetterPage() {
       const el = elFromPath(k)
       if (!el) continue
       if (b.txt != null && el.children.length === 0) el.textContent = b.txt
+      if (b.list && el.children.length === 0) {
+        // Word-style list markers: prefix every non-empty LINE of this block
+        let n = 0
+        el.textContent = (el.textContent || '').split('\n').map((ln) => {
+          if (!ln.trim()) return ln
+          n++
+          const pre = b.list === 'num' ? `${n}. ` : b.list === 'check' ? '\u2713 ' : b.list === 'dash' ? '\u2013 ' : '\u2022 '
+          return ln.replace(/^\s*/, (m) => m + pre)
+        }).join('\n')
+      }
+      if (b.font) el.style.fontFamily = b.font
       if (b.fs) el.style.fontSize = `${b.fs}pt`
       if (b.bold != null) el.style.fontWeight = b.bold ? '700' : '400'
       if (b.align) el.style.textAlign = b.align
@@ -766,6 +777,22 @@ export default function OfferLetterPage() {
     setOlFmt(null)
     try { window.getSelection()?.removeAllRanges() } catch { /* selection already gone */ }
   }
+  // block-level ops from the SELECTION bar: they land on the block hosting
+  // the selection via the same layout-override store (scoped + resettable)
+  const hostUpdate = (patch: OlBox) => {
+    if (!olFmt) return
+    const key = olFmt.key
+    setOlLayout((s) => ({ ...s, [key]: { ...(s[key] || {}), ...patch } }))
+  }
+  const hostLh = (d: number) => {
+    if (!olFmt) return
+    const key = olFmt.key
+    setOlLayout((s) => {
+      const cur = s[key] || {}
+      const base = cur.lh ?? 1.2   // the page's default line-height
+      return { ...s, [key]: { ...cur, lh: Math.max(0.8, Math.round((base + d) * 10) / 10) } }
+    })
+  }
   const clearMarksInRange = () => {
     if (!olFmt) return
     const { key, s, e } = olFmt
@@ -798,6 +825,7 @@ export default function OfferLetterPage() {
   const olSkipClick = useRef(false)
   const olPanelPos = useRef<{ x: number; y: number } | null>(null)
   const onPreviewPointerDown = (e: React.PointerEvent) => {
+    olSkipClick.current = false   // new gesture — a stale flag must not eat it
     if ((!olDesign && !olSel) || e.button !== 0) return
     const t = e.target as HTMLElement
     if (!t || t.closest('.olp-panel,.olf-bar')) return
@@ -855,8 +883,11 @@ export default function OfferLetterPage() {
       el.style.outlineOffset = '1px'
     }
   }
-  const onPreviewDblClick = (e: React.MouseEvent) => {
+  const onPreviewClick = (e: React.MouseEvent) => {
     if (olSkipClick.current) { olSkipClick.current = false; return }  // it was a drag
+    onPreviewDblClick(e)
+  }
+  const onPreviewDblClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement
     if (!t || t.closest('.olp-panel')) return
     const el = (t.closest('span,td,th,li,p,div') as HTMLElement) || t
@@ -982,7 +1013,10 @@ export default function OfferLetterPage() {
     <Layout>
       <style>{`
         .ol-page { box-sizing: border-box; width: 210mm; min-height: 297mm; background:#fff; margin:0 auto 8mm;
-                   padding: 9mm 13mm 13mm; color:#111; font-family: "Times New Roman", Georgia, serif;
+                   padding: 9mm 13mm 13mm; color:#111;
+                   /* mixed-script default: Latin resolves in Times, Persian/Arabic
+                      falls through to B Nazanin (per-character font fallback) */
+                   font-family: "Times New Roman", "B Nazanin", "Traditional Arabic", Georgia, serif;
                    font-size: 9.3pt; line-height: 1.2; box-shadow: 0 1px 6px rgba(0,0,0,.12); position:relative; }
         .ol-fit { transform-origin: top left; display:flex; flex-direction:column; min-height:255mm; }
         .ol-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:2mm; }
@@ -1063,6 +1097,7 @@ export default function OfferLetterPage() {
         .olp-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
         .olp-grid label { display:flex; flex-direction:column; gap:2px; color:#475569; }
         .olp-grid input { border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; width:100%; }
+        .olp-font { flex:1; border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; max-width:170px; }
         .olp-txt { display:block; color:#475569; margin-bottom:6px; }
         .olp-txt textarea { display:block; width:100%; height:56px; margin-top:2px; border:1px solid #cbd5e1; border-radius:6px; padding:4px 6px; font-size:11px; resize:vertical; }
         .olp-actions { display:flex; gap:6px; }
@@ -1370,7 +1405,7 @@ export default function OfferLetterPage() {
              re-applied by the after-render effect either way. */
           key={Object.keys(olEffMarks).length || olHasTxt ? `mk-${++olRenderSeq.current}` : 'stable'}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
-          onClick={olDesign ? onPreviewDblClick : undefined}
+          onClick={olDesign ? onPreviewClick : undefined}
           onPointerDown={olDesign || olSel ? onPreviewPointerDown : undefined}
           onMouseOver={olDesign ? onPreviewHover : undefined}
           onMouseLeave={olDesign ? clearOlHover : undefined}
@@ -1611,6 +1646,12 @@ export default function OfferLetterPage() {
             <button title="زیرخط" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); addMark({ u: true }) }}>U</button>
             <button title="کوچک‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 0.85 }) }}>A−</button>
             <button title="بزرگ‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 1.18 }) }}>A＋</button>
+            <button title="فاصلهٔ خطِ کمتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(-0.1) }}>خ−</button>
+            <button title="فاصلهٔ خطِ بیشتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(+0.1) }}>خ＋</button>
+            <button title="شماره‌گذاریِ خطوطِ این بند (مثل Word)" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'num' }); setOlFmt(null) }}>1.</button>
+            <button title="بولتِ ابتدای خطوط" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'bullet' }); setOlFmt(null) }}>•</button>
+            <button title="تیکِ ابتدای خطوط" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'check' }); setOlFmt(null) }}>✓</button>
+            <button title="برداشتنِ نشانه‌های لیست" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: undefined }); setOlFmt(null) }}>↺</button>
             <button title="پاک‌کردنِ قالبِ این بخش" onMouseDown={(e) => { e.preventDefault(); clearMarksInRange() }}>⌫</button>
             <button title="بستن" onMouseDown={(e) => { e.preventDefault(); setOlFmt(null) }}>×</button>
           </div>
@@ -1641,6 +1682,25 @@ export default function OfferLetterPage() {
               <div className="olp-seg" title="جهتِ نوشتار">
                 <button className={b.dir === 'rtl' ? 'on' : ''} onClick={() => olUpdate({ dir: 'rtl' })}>راست‑چپ</button>
                 <button className={b.dir === 'ltr' ? 'on' : ''} onClick={() => olUpdate({ dir: 'ltr' })}>چپ‑راست</button>
+              </div>
+              <div className="olp-row">
+                <label>فونت</label>
+                <select className="olp-font" value={b.font ?? ''} onChange={(e) => olUpdate({ font: e.target.value || undefined })}>
+                  <option value="">پیش‌فرض (EN: Times / FA: B Nazanin)</option>
+                  <option value='"B Nazanin", "Times New Roman", serif'>B Nazanin</option>
+                  <option value='"Times New Roman", "B Nazanin", serif'>Times New Roman</option>
+                  <option value='Arial, "B Nazanin", sans-serif'>Arial</option>
+                  <option value='"Traditional Arabic", "Times New Roman", serif'>Traditional Arabic</option>
+                  <option value='Georgia, "B Nazanin", serif'>Georgia</option>
+                  <option value='Tahoma, "B Nazanin", sans-serif'>Tahoma</option>
+                </select>
+              </div>
+              <div className="olp-seg" title="نشانهٔ ابتدای هر خطِ این بلوک (مثل Word)">
+                <button className={!b.list ? 'on' : ''} onClick={() => olUpdate({ list: undefined })}>بدون</button>
+                <button className={b.list === 'num' ? 'on' : ''} onClick={() => olUpdate({ list: 'num' })}>1.2.3</button>
+                <button className={b.list === 'bullet' ? 'on' : ''} onClick={() => olUpdate({ list: 'bullet' })}>•</button>
+                <button className={b.list === 'check' ? 'on' : ''} onClick={() => olUpdate({ list: 'check' })}>✓</button>
+                <button className={b.list === 'dash' ? 'on' : ''} onClick={() => olUpdate({ list: 'dash' })}>–</button>
               </div>
               <div className="olp-grid">
                 <label>فاصلهٔ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => olUpdate({ lh: +e.target.value || undefined })} /></label>

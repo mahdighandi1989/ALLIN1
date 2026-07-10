@@ -20,9 +20,9 @@ import React, { useEffect, useRef, useState } from 'react'
 
 // dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel);
 // wx = absolute width in px (edge-resize); txt = rewrite a leaf element's text.
-export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean }
+export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean; font?: string; list?: string }
 
-const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor'] as const
+const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor', 'fontFamily'] as const
 const PICK = 'span,td,th,li,p,div,h1,h2,h3,b'
 
 export function useDocLayout(opts: {
@@ -87,6 +87,17 @@ export function useDocLayout(opts: {
       const el = elFromPath(k)
       if (!el) continue
       if (b.txt != null && el.children.length === 0) el.textContent = b.txt
+      if (b.list && el.children.length === 0) {
+        // Word-style list markers: prefix every non-empty LINE of this block
+        let n = 0
+        el.textContent = (el.textContent || '').split('\n').map((ln) => {
+          if (!ln.trim()) return ln
+          n++
+          const pre = b.list === 'num' ? `${n}. ` : b.list === 'check' ? '\u2713 ' : b.list === 'dash' ? '\u2013 ' : '\u2022 '
+          return ln.replace(/^\s*/, (m) => m + pre)
+        }).join('\n')
+      }
+      if (b.font) el.style.fontFamily = b.font
       if (b.fs) el.style.fontSize = `${b.fs}pt`
       if (b.bold != null) el.style.fontWeight = b.bold ? '700' : '400'
       if (b.align) el.style.textAlign = b.align
@@ -143,8 +154,11 @@ export function useDocLayout(opts: {
 
   const skipClick = useRef(false)
   const panelPos = useRef<{ x: number; y: number } | null>(null)
-  const openAt = (e: React.MouseEvent) => {
+  const clickOpen = (e: React.MouseEvent) => {
     if (skipClick.current) { skipClick.current = false; return }  // it was a drag
+    openAt(e)
+  }
+  const openAt = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement
     if (!t || t.closest('.dlp-panel')) return
     const el = (t.closest(PICK) as HTMLElement) || t
@@ -165,6 +179,7 @@ export function useDocLayout(opts: {
   // design-mode DRAG: press a block and pull — moves via the same mt/mis
   // offsets the panel edits; a real drag suppresses the click-opens-panel.
   const onDragStart = (e: React.PointerEvent) => {
+    skipClick.current = false   // new gesture — a stale flag must not eat it
     if ((!design && !sel) || e.button !== 0) return
     const t = e.target as HTMLElement
     if (!t || t.closest('.dlp-panel')) return
@@ -239,7 +254,7 @@ export function useDocLayout(opts: {
   // spread onto the printable root
   const containerProps = {
     onDoubleClick: openAt,
-    onClick: design ? openAt : undefined,
+    onClick: design ? clickOpen : undefined,
     onPointerDown: design || sel ? onDragStart : undefined,
     onMouseOver: design ? onHover : undefined,
     onMouseLeave: design ? clearHover : undefined,
@@ -288,6 +303,25 @@ export function useDocLayout(opts: {
         <div className="dlp-seg" title="جهتِ نوشتار">
           <button className={b.dir === 'rtl' ? 'on' : ''} onClick={() => update({ dir: 'rtl' })}>راست‑چپ</button>
           <button className={b.dir === 'ltr' ? 'on' : ''} onClick={() => update({ dir: 'ltr' })}>چپ‑راست</button>
+        </div>
+        <div className="dlp-row">
+          <label>فونت</label>
+          <select className="dlp-font" value={b.font ?? ''} onChange={(e) => update({ font: e.target.value || undefined })}>
+            <option value="">پیش‌فرض</option>
+            <option value='"B Nazanin", "Times New Roman", serif'>B Nazanin</option>
+            <option value='"Times New Roman", "B Nazanin", serif'>Times New Roman</option>
+            <option value='Arial, "B Nazanin", sans-serif'>Arial</option>
+            <option value='"Traditional Arabic", "Times New Roman", serif'>Traditional Arabic</option>
+            <option value='Georgia, "B Nazanin", serif'>Georgia</option>
+            <option value='Tahoma, "B Nazanin", sans-serif'>Tahoma</option>
+          </select>
+        </div>
+        <div className="dlp-seg" title="نشانهٔ ابتدای هر خطِ این بلوک (مثل Word)">
+          <button className={!b.list ? 'on' : ''} onClick={() => update({ list: undefined })}>بدون</button>
+          <button className={b.list === 'num' ? 'on' : ''} onClick={() => update({ list: 'num' })}>1.2.3</button>
+          <button className={b.list === 'bullet' ? 'on' : ''} onClick={() => update({ list: 'bullet' })}>•</button>
+          <button className={b.list === 'check' ? 'on' : ''} onClick={() => update({ list: 'check' })}>✓</button>
+          <button className={b.list === 'dash' ? 'on' : ''} onClick={() => update({ list: 'dash' })}>–</button>
         </div>
         <div className="dlp-grid">
           <label>فاصلهٔ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => update({ lh: +e.target.value || undefined })} /></label>
@@ -342,6 +376,7 @@ export const DocLayoutStyles = () => (
     .dlp-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
     .dlp-grid label { display:flex; flex-direction:column; gap:2px; color:#475569; }
     .dlp-grid input { border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; width:100%; }
+    .dlp-font { flex:1; border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; max-width:170px; }
     .dlp-txt { display:block; color:#475569; margin-bottom:6px; }
     .dlp-txt textarea { display:block; width:100%; height:56px; margin-top:2px; border:1px solid #cbd5e1; border-radius:6px; padding:4px 6px; font-size:11px; resize:vertical; }
     .dlp-actions { display:flex; gap:6px; margin-bottom:6px; }
