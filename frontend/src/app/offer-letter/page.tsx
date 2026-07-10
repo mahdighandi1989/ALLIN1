@@ -14,7 +14,10 @@ import Layout from '@/components/Layout'
 import { Printer, Download, Search, Save, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { chargeTariffApi, crmApi, parseApiError } from '@/lib/api'
-import { BANK_LOGO } from '@/app/voucher/logo'
+// Verbatim letterhead assets extracted from the official Word letter template
+// (same ground truth the official-letter page prints): blue emblem + REGIONAL
+// OFFICE, blue bank wordmark + "Licensed by CBUAE", blue address/SWIFT banner.
+import { LH_LOGO, LH_NAME, LH_FOOTER } from '@/app/letter/letterhead'
 import { PL } from './personalLoanContent'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -759,18 +762,11 @@ export default function OfferLetterPage() {
   const Letterhead = ({ mode }: { mode: 'english' | 'bilingual' }) =>
     mode === 'english' ? (
       <div className="ol-head ol-head--en">
-        <div className="ol-head-left">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BANK_LOGO} alt="Bank Saderat Iran" className="ol-logo" />
-          <div className="ol-ro">
-            <div className="ol-ro-ar" dir="rtl">المكتب الاقليمي</div>
-            <div className="ol-ro-en">REGIONAL OFFICE</div>
-          </div>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={LH_LOGO} alt="Bank Saderat Iran — المكتب الاقليمي REGIONAL OFFICE" className="ol-logo-lh" />
         <div className="ol-head-right ol-head-right--en">
-          <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
-          <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">U.A.E</span></div>
-          <div className="ol-lic">&quot;Licensed by CBUAE&quot;</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LH_NAME} alt={'بنك صادرات ايران إ.ع.م. BANK SADERAT IRAN U.A.E "Licensed by CBUAE"'} className="ol-name-lh" />
           <div className="ol-refblock">
             <div className="ol-refline">REF: <RefNo /></div>
             <div className="ol-refline">DATE: {V('IssueDate', '____________')}</div>
@@ -781,12 +777,9 @@ export default function OfferLetterPage() {
       <div className="ol-head ol-head--bi">
         <div className="ol-head-left">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BANK_LOGO} alt="Bank Saderat Iran" className="ol-logo" />
-          <div>
-            <div className="ol-bank-ar" dir="rtl">بنك صادرات ايـران إ.ع.م.</div>
-            <div className="ol-bank-en">BANK SADERAT IRAN <span className="ol-uae">s.a.e</span></div>
-            <div className="ol-lic-bi">Licensed by the Central Bank of the U.A.E</div>
-          </div>
+          <img src={LH_LOGO} alt="Bank Saderat Iran — المكتب الاقليمي REGIONAL OFFICE" className="ol-logo-lh ol-logo-lh--bi" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LH_NAME} alt={'بنك صادرات ايران إ.ع.م. BANK SADERAT IRAN U.A.E "Licensed by CBUAE"'} className="ol-name-lh ol-name-lh--bi" />
         </div>
         <div className="ol-head-right ol-head-right--bi">
           <div className="ol-bsi">BSI-ROL-V002-2024</div>
@@ -806,9 +799,8 @@ export default function OfferLetterPage() {
       <div className="ol-foot ol-foot--en">
         <div className="ol-foot-pg">{n} | Page</div>
         <div className="ol-foot-addr">
-          <div className="ol-foot-ar" dir="rtl">{FOOT_AR}</div>
-          <div className="ol-foot-en">{FOOT_EN}</div>
-          <div className="ol-foot-swift">{FOOT_SWIFT}</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LH_FOOTER} alt={`${FOOT_AR} — ${FOOT_EN} — ${FOOT_SWIFT}`} className="ol-foot-img" />
         </div>
       </div>
     ) : (
@@ -830,7 +822,12 @@ export default function OfferLetterPage() {
         .ol-head { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:2mm; }
         .ol-head--en { margin-bottom:4mm; align-items:center; }
         .ol-head-left { display:flex; gap:3mm; align-items:center; }
-        .ol-logo { height:12mm; width:auto; object-fit:contain; }
+        .ol-logo { height:12mm; width:auto; object-fit:contain; } /* legacy (quarantined) */
+        /* verbatim letterhead images (real-letter proportions: emblem ~28x27mm, wordmark ~65x20mm) */
+        .ol-logo-lh { height:26mm; width:auto; object-fit:contain; }
+        .ol-name-lh { display:block; width:64mm; height:auto; margin:0 0 1.5mm auto; }
+        .ol-logo-lh--bi { height:16mm; }
+        .ol-name-lh--bi { width:44mm; margin:0; }
         .ol-ro { text-align:center; line-height:1.2; }
         .ol-ro-ar { font-size:8.5pt; color:#222; text-align:center; }
         .ol-ro-en { font-family:Arial, sans-serif; font-size:7.6pt; letter-spacing:1px; color:#222; text-align:center; }
@@ -863,10 +860,12 @@ export default function OfferLetterPage() {
         .ol-terms-h { font-weight:800; text-decoration:underline; margin:2.5mm 0 1.5mm; }
         ol.ol-terms { margin:0; padding-left:6mm; } ol.ol-terms li { margin:0.8mm 0; text-align:justify; }
         .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; border-top:0.8px solid #555; padding-top:1.2mm; }
-        .ol-foot--en { display:flex; align-items:flex-end; gap:4mm; }
+        /* english footer = verbatim blue banner image (it carries its own blue top rule) */
+        .ol-foot--en { display:flex; align-items:flex-end; gap:4mm; border-top:0; padding-top:0; }
         .ol-foot-pg { font-family:Georgia,serif; font-size:9pt; white-space:nowrap; }
         .ol-foot-addr { flex:1; text-align:center; line-height:1.25; }
-        .ol-foot-ar { font-size:8pt; color:#111; }
+        .ol-foot-img { display:inline-block; width:100%; max-width:152mm; height:auto; }
+        .ol-foot-ar { font-size:8pt; color:#111; }  /* legacy (quarantined) */
         .ol-foot-en { font-style:italic; font-size:8pt; color:#111; }
         .ol-foot-swift { font-style:italic; font-size:8pt; color:#111; }
         .ol-foot--bi { text-align:right; font-family:Arial, sans-serif; font-weight:700; font-size:8.5pt; bottom:7mm; }
