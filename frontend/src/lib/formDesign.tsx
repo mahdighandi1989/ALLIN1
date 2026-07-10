@@ -23,19 +23,48 @@ export type DesignState = {
   save: () => void
   reset: () => void
   _ref: React.MutableRefObject<Record<string, Boxn>>
+  acct: string
 }
 
-export function useFormDesign(storageKey: string): DesignState {
-  const [layout, setLayout] = useState<Record<string, Boxn>>({})
+// SCOPING (owner rule): pass the current account number as `account`. While
+// the form belongs to an account (loaded or just typed, saved or not), edits
+// live in `<storageKey>::<account>` and the base template (`<storageKey>`)
+// stays untouched; only on a pristine form do edits update the base template.
+// The rendered layout is base + the account's own tweaks (account wins per
+// field, merged per property so a base font tweak survives an account offset).
+export function useFormDesign(storageKey: string, account?: string): DesignState {
+  const acct = (account || '').trim()
+  const KEY = acct ? `${storageKey}::${acct}` : storageKey
+  const [own, setOwn] = useState<Record<string, Boxn>>({})
+  const [base, setBase] = useState<Record<string, Boxn>>({})
   const [design, setDesign] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const layout: Record<string, Boxn> = acct
+    ? (() => { const m: Record<string, Boxn> = { ...base }; for (const k in own) m[k] = { ...(base[k] || {}), ...own[k] }; return m })()
+    : own
   const _ref = useRef(layout)
-  useEffect(() => { _ref.current = layout }, [layout])
-  useEffect(() => { try { const r = localStorage.getItem(storageKey); if (r) setLayout(JSON.parse(r)) } catch { /* ignore */ } }, [storageKey])
-  const setBox = (id: string, patch: Partial<Boxn>) => setLayout((p) => ({ ...p, [id]: { ...p[id], ...patch } }))
-  const save = () => { try { localStorage.setItem(storageKey, JSON.stringify(layout)); alert('چیدمان ذخیره شد') } catch { /* ignore */ } }
-  const reset = () => { if (confirm('بازگشت به چیدمانِ پیش‌فرض؟ همهٔ جابه‌جایی‌ها پاک می‌شوند.')) { setLayout({}); setEditing(null); localStorage.removeItem(storageKey) } }
-  return { layout, design, editing, setDesign, setEditing, setBox, save, reset, _ref }
+  useEffect(() => { _ref.current = layout })
+  useEffect(() => {
+    try { const r = localStorage.getItem(KEY); setOwn(r ? JSON.parse(r) : {}) } catch { setOwn({}) }
+    if (acct) { try { const r = localStorage.getItem(storageKey); setBase(r ? JSON.parse(r) : {}) } catch { setBase({}) } }
+    else setBase({})
+    setEditing(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, acct])
+  const setBox = (id: string, patch: Partial<Boxn>) => setOwn((p) => ({ ...p, [id]: { ...p[id], ...patch } }))
+  const save = () => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(own))
+      alert(acct ? `چیدمان فقط برای حسابِ ${acct} ذخیره شد — قالبِ اصلی دست‌نخورده ماند` : 'چیدمانِ قالبِ اصلی ذخیره شد')
+    } catch { /* ignore */ }
+  }
+  const reset = () => {
+    if (confirm(acct ? `چیدمانِ سفارشیِ حسابِ ${acct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'بازگشت به چیدمانِ پیش‌فرض؟ همهٔ جابه‌جایی‌ها پاک می‌شوند.')) {
+      setOwn({}); setEditing(null)
+      try { localStorage.removeItem(KEY) } catch { /* ignore */ }
+    }
+  }
+  return { layout, design, editing, setDesign, setEditing, setBox, save, reset, _ref, acct }
 }
 
 function hasTweak(b?: Boxn) { return !!b && !!(b.dx || b.dy || (b.scale && b.scale !== 1) || b.fontPt || b.ls) }
@@ -97,6 +126,13 @@ export function DesignControls({ d, onPrint }: { d: DesignState; onPrint?: () =>
       {d.design && <button type="button" onClick={d.save} className="mv-btn blue">ذخیرهٔ چیدمان</button>}
       {d.design && <button type="button" onClick={d.reset} className="mv-btn gray">↺ بازنشانی</button>}
       {onPrint && <button type="button" onClick={onPrint} className="mv-btn blue">🖨 پرینت</button>}
+      {d.design && (
+        <span className="mv-scope" dir="rtl">
+          {d.acct
+            ? <>چینش فقط برای حسابِ <b dir="ltr">{d.acct}</b> — قالبِ اصلی دست‌نخورده می‌ماند</>
+            : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی را به‌روز می‌کند'}
+        </span>
+      )}
     </span>
   )
 }
@@ -111,6 +147,7 @@ export function DesignPanel({ d }: { d: DesignState }) {
         .mv-controls{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
         .mv-btn{padding:6px 10px;border-radius:6px;font-weight:600;cursor:pointer;border:0;color:#fff;font-size:13px}
         .mv-btn.amber{background:#d97706}.mv-btn.green{background:#16a34a}.mv-btn.blue{background:#2563eb}.mv-btn.gray{background:#475569}
+        .mv-scope{font-size:11px;color:#64748b}
         .mv-wrap.mv-dz{outline:1px dashed #93c5fd;cursor:move}
         .mv-wrap.mv-sel{outline:2px solid #2563eb;background:rgba(37,99,235,.06)}
         .mv-tag{position:absolute;top:-13px;right:0;font-size:8px;line-height:1;color:#2563eb;background:#eff6ff;padding:1px 3px;border-radius:3px;white-space:nowrap;font-family:sans-serif;pointer-events:none;z-index:5}

@@ -97,7 +97,9 @@ export default function VoucherPage() {
   const [saving, setSaving] = useState(false)
   const previewRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const d = useFormDesign('voucherLayout_v1')
+  // scoped: with an account typed/loaded, layout tweaks belong to THAT account
+  // only; on a pristine form they update the base voucher template.
+  const d = useFormDesign('voucherLayout_v1', acNo)
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Live customer count for the helper text (instead of the bundled 556).
