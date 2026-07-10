@@ -223,7 +223,7 @@ export default function OfferLetterPage() {
   // dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel —
   // zero effect on siblings); wx = absolute width (px, edge-resize); txt =
   // rewrite the element's text (leaf elements only). mt/mis kept for legacy.
-  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string }
+  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean }
   const [olLayout, setOlLayout] = useState<Record<string, OlBox>>({})
   const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
   const olPrevKeys = useRef<string[]>([])
@@ -600,7 +600,7 @@ export default function OfferLetterPage() {
     }
     return cur as HTMLElement
   }
-  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display'] as const
+  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor'] as const
   // re-apply after EVERY render (React re-creates nodes freely); clear the
   // previously-touched elements first so removed overrides really reset.
   // effective maps: on a pristine form these are just the template stores; with
@@ -636,8 +636,24 @@ export default function OfferLetterPage() {
         el.style.transformOrigin = 'center center'
         if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block'
       }
+      if (b.hide) {
+        // removed from the letter; in layout mode it stays as a ghost so it
+        // can be clicked and brought back
+        if (olDesign) { el.style.opacity = '0.3'; el.style.outline = '1.5px dashed #dc2626'; el.style.outlineOffset = '1px' }
+        else el.style.display = 'none'
+      }
     }
-    olPrevKeys.current = Object.keys(olEffLayout)
+    // the panel's target stays visibly selected and draggable even outside
+    // layout mode (dblclick → drag/resize directly, like the letter page)
+    if (olSel) {
+      const el = elFromPath(olSel.key)
+      if (el && !(olEffLayout[olSel.key] || {}).hide) {
+        el.style.outline = '2px solid #2563eb'
+        el.style.outlineOffset = '1px'
+        el.style.cursor = 'move'
+      }
+    }
+    olPrevKeys.current = [...Object.keys(olEffLayout), ...(olSel ? [olSel.key] : [])]
     // ---- selection marks: unwrap previous spans, re-wrap current offsets ----
     printRef.current?.querySelectorAll('span[data-olm]').forEach((sp) => {
       const parent = sp.parentNode
@@ -782,13 +798,15 @@ export default function OfferLetterPage() {
   const olSkipClick = useRef(false)
   const olPanelPos = useRef<{ x: number; y: number } | null>(null)
   const onPreviewPointerDown = (e: React.PointerEvent) => {
-    if (!olDesign || e.button !== 0) return
+    if ((!olDesign && !olSel) || e.button !== 0) return
     const t = e.target as HTMLElement
     if (!t || t.closest('.olp-panel,.olf-bar')) return
     const el = (t.closest('span,td,th,li,p,div') as HTMLElement) || null
     if (!el || !printRef.current?.contains(el)) return
     const key = elPath(el)
     if (!key) return
+    // outside layout mode only the dblclicked (selected) element is draggable
+    if (!olDesign && key !== olSel?.key) return
     const b = olEffLayout[key] || {}
     const r = el.getBoundingClientRect()
     // press near a side edge ⇒ resize that side; anywhere else ⇒ FREE move
@@ -1353,7 +1371,7 @@ export default function OfferLetterPage() {
           key={Object.keys(olEffMarks).length || olHasTxt ? `mk-${++olRenderSeq.current}` : 'stable'}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
           onClick={olDesign ? onPreviewDblClick : undefined}
-          onPointerDown={olDesign ? onPreviewPointerDown : undefined}
+          onPointerDown={olDesign || olSel ? onPreviewPointerDown : undefined}
           onMouseOver={olDesign ? onPreviewHover : undefined}
           onMouseLeave={olDesign ? clearOlHover : undefined}
           style={olDesign ? { cursor: 'move' } : undefined}>
@@ -1640,6 +1658,10 @@ export default function OfferLetterPage() {
                   onChange={(e) => olUpdate({ txt: e.target.value === '' ? undefined : e.target.value })} />
               </label>
               <div className="olp-actions">
+                <button style={b.hide ? undefined : { color: '#dc2626' }}
+                  onClick={() => olUpdate({ hide: !b.hide || undefined })}>
+                  {b.hide ? 'نمایشِ دوباره' : 'حذف از برگه'}
+                </button>
                 <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
                 <button onClick={() => { if (confirm(olAcct ? `همهٔ چینش/قالب‌بندیِ سفارشیِ حسابِ ${olAcct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چیدمان و قالب‌بندیِ سفارشیِ قالبِ اصلی پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
               </div>
