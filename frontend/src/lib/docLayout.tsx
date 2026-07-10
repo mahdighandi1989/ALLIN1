@@ -20,9 +20,9 @@ import React, { useEffect, useRef, useState } from 'react'
 
 // dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel);
 // wx = absolute width in px (edge-resize); txt = rewrite a leaf element's text.
-export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string }
+export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string; hide?: boolean }
 
-const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display'] as const
+const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display', 'opacity', 'outline', 'outlineOffset', 'cursor'] as const
 const PICK = 'span,td,th,li,p,div,h1,h2,h3,b'
 
 export function useDocLayout(opts: {
@@ -103,8 +103,22 @@ export function useDocLayout(opts: {
         el.style.transformOrigin = 'center center'
         if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block'
       }
+      if (b.hide) {
+        // removed from the sheet; in layout mode it stays as a clickable ghost
+        if (design) { el.style.opacity = '0.3'; el.style.outline = '1.5px dashed #dc2626'; el.style.outlineOffset = '1px' }
+        else el.style.display = 'none'
+      }
     }
-    prev.current = Object.keys(eff)
+    // the panel's target stays selected and draggable even outside layout mode
+    if (sel) {
+      const el = elFromPath(sel.key)
+      if (el && !(eff[sel.key] || {}).hide) {
+        el.style.outline = '2px solid #2563eb'
+        el.style.outlineOffset = '1px'
+        el.style.cursor = 'move'
+      }
+    }
+    prev.current = [...Object.keys(eff), ...(sel ? [sel.key] : [])]
     opts.onApplied?.()
   })
 
@@ -151,13 +165,15 @@ export function useDocLayout(opts: {
   // design-mode DRAG: press a block and pull — moves via the same mt/mis
   // offsets the panel edits; a real drag suppresses the click-opens-panel.
   const onDragStart = (e: React.PointerEvent) => {
-    if (!design || e.button !== 0) return
+    if ((!design && !sel) || e.button !== 0) return
     const t = e.target as HTMLElement
     if (!t || t.closest('.dlp-panel')) return
     const el = (t.closest(PICK) as HTMLElement) || null
     if (!el || !printRef.current?.contains(el)) return
     const key = elPath(el)
     if (!key) return
+    // outside layout mode only the dblclicked (selected) element is draggable
+    if (!design && key !== sel?.key) return
     const b = eff[key] || {}
     const r = el.getBoundingClientRect()
     // press near a side edge => resize that side; anywhere else => FREE move
@@ -224,7 +240,7 @@ export function useDocLayout(opts: {
   const containerProps = {
     onDoubleClick: openAt,
     onClick: design ? openAt : undefined,
-    onPointerDown: design ? onDragStart : undefined,
+    onPointerDown: design || sel ? onDragStart : undefined,
     onMouseOver: design ? onHover : undefined,
     onMouseLeave: design ? clearHover : undefined,
     style: design ? ({ cursor: 'move' } as React.CSSProperties) : undefined,
@@ -289,6 +305,10 @@ export function useDocLayout(opts: {
             onChange={(e) => update({ txt: e.target.value === '' ? undefined : e.target.value })} />
         </label>
         <div className="dlp-actions">
+          <button style={b.hide ? undefined : { color: '#dc2626' }}
+            onClick={() => update({ hide: !b.hide || undefined })}>
+            {b.hide ? 'نمایشِ دوباره' : 'حذف از برگه'}
+          </button>
           <button onClick={() => setLay((s) => { const n = { ...s }; delete n[sel.key]; return n })}>بازنشانیِ این عنصر</button>
           <button onClick={() => { if (confirm(account ? `همهٔ چینشِ سفارشیِ حسابِ ${account} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چینشِ سفارشیِ قالبِ اصلی پاک شود؟')) { setLay({}); setSel(null) } }}>بازنشانیِ همه</button>
         </div>
