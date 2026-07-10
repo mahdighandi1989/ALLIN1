@@ -86,3 +86,20 @@ useEffect(() => {   // after EVERY render: clear previous, apply current, refit
 
 - مرتبط: [paginated-doc-fixed-footer-cliff-slide-dont-push]
 - مرتبط: [form-state-reset-on-entity-switch]
+
+## Update 2026-07-10 — قالب‌بندیِ «فقط متنِ انتخاب‌شده» روی پیش‌نمایشِ Reactرندر
+
+کاربر انتظارِ رفتارِ ادیتور را دارد: انتخابِ بخشی از جمله + بولد = فقط همان بخش.
+در سندِ contentEditable این با execCommand ساده است؛ در پیش‌نمایشِ Reactرندر نه.
+الگوی کارا: **markهای آفستی** — `{pathKey → [{s, e, styles}]}` که s/e آفستِ متنی
+داخلِ عنصرند؛ در همان effectِ بعدِ-هر-رندرِ overrideها: اول همهٔ spanهای
+نشانه‌دار unwrap (+normalize)، بعد بازه‌ها با TreeWalker پیدا و با
+Range.surroundContents در try/catch دوباره wrap می‌شوند (بازهٔ عبوری از مرزِ
+عنصر ⇒ skip امن). نکته‌ها:
+- unwrap-قبل-از-apply همان قاعدهٔ «پاک‌سازی قبل از اعمال» است؛ بدونش reset و
+  جابه‌جاییِ آفست خراب می‌شود.
+- خطرِ برخورد با reconciliation: فقط بازه‌هایی که هر دو سرشان text-node است
+  بپذیر و از wrapکردنِ عناصرِ دارای فرزندِ ساختاریِ متغیر پرهیز کن؛ تغییرِ متنِ
+  عنصر آفست‌ها را جابه‌جا می‌کند (محدودیتِ پذیرفته — کاربر دوباره اعمال می‌کند).
+- ماندگاری/بازنشانی/چاپ را عینِ overrideهای چیدمان ببر (per-template +
+  snapshot؛ «بازنشانیِ همه» هر دو را پاک کند).
