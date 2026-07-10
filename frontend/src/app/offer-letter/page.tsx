@@ -760,6 +760,45 @@ export default function OfferLetterPage() {
     } catch { /* storage unavailable */ }
     toast('قالب‌بندیِ انتخابی به‌دلیلِ خطا بازنشانی شد — صفحه ادامه می‌دهد', { icon: '🛟' })
   }
+  // design-mode DRAG (like the official-letter page): press a block and pull —
+  // it moves via the same mt/mis offsets the panel edits (scoped per account/
+  // template like every other layout change). A real drag suppresses the
+  // click-opens-panel that follows; a plain click still opens the panel.
+  const olSkipClick = useRef(false)
+  const olPanelPos = useRef<{ x: number; y: number } | null>(null)
+  const onPreviewPointerDown = (e: React.PointerEvent) => {
+    if (!olDesign || e.button !== 0) return
+    const t = e.target as HTMLElement
+    if (!t || t.closest('.olp-panel,.olf-bar')) return
+    const el = (t.closest('span,td,th,li,p,div') as HTMLElement) || null
+    if (!el || !printRef.current?.contains(el)) return
+    const key = elPath(el)
+    if (!key) return
+    const b = olEffLayout[key] || {}
+    const drag = {
+      key, sx: e.clientX, sy: e.clientY,
+      mt0: b.mt || 0, mis0: b.mis || 0,
+      rtl: getComputedStyle(el).direction === 'rtl',
+      moved: false,
+    }
+    const mv = (ev: PointerEvent) => {
+      const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+      drag.moved = true
+      setOlLayout((s) => ({
+        ...s,
+        [drag.key]: { ...(s[drag.key] || {}), mt: Math.round(drag.mt0 + dy), mis: Math.round(drag.mis0 + (drag.rtl ? -dx : dx)) },
+      }))
+    }
+    const up = () => {
+      document.removeEventListener('pointermove', mv)
+      document.removeEventListener('pointerup', up)
+      if (drag.moved) olSkipClick.current = true   // consumed by the next click
+    }
+    document.addEventListener('pointermove', mv)
+    document.addEventListener('pointerup', up)
+    e.preventDefault()
+  }
   // design-mode hover: outline the block a click would edit (cleared on leave/off)
   const clearOlHover = () => {
     const el = olHoverEl.current
@@ -777,18 +816,39 @@ export default function OfferLetterPage() {
     }
   }
   const onPreviewDblClick = (e: React.MouseEvent) => {
+    if (olSkipClick.current) { olSkipClick.current = false; return }  // it was a drag
     const t = e.target as HTMLElement
     if (!t || t.closest('.olp-panel')) return
     const el = (t.closest('span,td,th,li,p,div') as HTMLElement) || t
     const key = elPath(el)
     if (!key) return
     e.preventDefault()
+    // the panel opens OUT OF THE WAY (screen edge, or wherever the user last
+    // dragged it) instead of on top of the text being adjusted
+    const pos = olPanelPos.current || {
+      x: Math.max(8, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 300),
+      y: 90,
+    }
     setOlSel({
       key,
       label: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 44) || 'عنصر',
-      x: Math.min(e.clientX, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 300),
-      y: Math.min(e.clientY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 330),
+      ...pos,
     })
+  }
+  // the panel itself is draggable by its header; the position sticks
+  const startPanelDrag = (e: React.PointerEvent) => {
+    const sel = olSel
+    if (!sel) return
+    const ox = e.clientX - sel.x, oy = e.clientY - sel.y
+    const mv = (ev: PointerEvent) => {
+      const x = Math.max(0, ev.clientX - ox), y = Math.max(0, ev.clientY - oy)
+      olPanelPos.current = { x, y }
+      setOlSel((s) => (s ? { ...s, x, y } : s))
+    }
+    const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
+    document.addEventListener('pointermove', mv)
+    document.addEventListener('pointerup', up)
+    e.preventDefault()
   }
 
   const field = 'w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-yellow-50'
@@ -923,6 +983,10 @@ export default function OfferLetterPage() {
         .ol-sec { white-space:pre-wrap; font-size:9pt; margin:1mm 0 2mm; }
         .ol-sign { display:flex; justify-content:space-between; margin-top:9mm; font-weight:700; font-size:9pt; }
         .ol-sign span { border-top:1px solid #000; padding-top:1mm; width:70mm; text-align:center; }
+        /* page-1 signatures: stacked left, underlined, stamp room between */
+        .ol-sign-stack { font-weight:700; font-size:9.5pt; text-align:left; }
+        .ol-sign-stack > div { text-decoration:underline; }
+        .ol-sign-stack-gap { margin-top:16mm; }
         .ol-terms-h { font-weight:800; text-decoration:underline; margin:2.5mm 0 1.5mm; }
         ol.ol-terms { margin:0; padding-left:6mm; } ol.ol-terms li { margin:0.8mm 0; text-align:justify; }
         .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; border-top:0.8px solid #555; padding-top:1.2mm; }
@@ -1265,9 +1329,10 @@ export default function OfferLetterPage() {
           key={Object.keys(olEffMarks).length ? `mk-${++olRenderSeq.current}` : 'stable'}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
           onClick={olDesign ? onPreviewDblClick : undefined}
+          onPointerDown={olDesign ? onPreviewPointerDown : undefined}
           onMouseOver={olDesign ? onPreviewHover : undefined}
           onMouseLeave={olDesign ? clearOlHover : undefined}
-          style={olDesign ? { cursor: 'pointer' } : undefined}>
+          style={olDesign ? { cursor: 'move' } : undefined}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
@@ -1313,9 +1378,12 @@ export default function OfferLetterPage() {
                   </table>
                   <div className="ol-terms-h">REQUIRED SECURITIES / DOCUMENTS</div>
                   <div className="ol-sec">{V('RequiredSecurities', '____________________________')}</div>
-                  <div className="ol-sign" style={{ marginTop: 'auto' }}>
-                    <span>Head of Credit Facility Department</span>
-                    <span>Customer Signature with Stamp</span>
+                  {/* page-1 signatures: stacked LEFT (head above, customer below),
+                      underlined labels with stamp room between — like the real
+                      letter, NOT one row split left/right */}
+                  <div className="ol-sign-stack" style={{ marginTop: 'auto' }}>
+                    <div>Head of Credit Facility Department</div>
+                    <div className="ol-sign-stack-gap">Customer Signature with Stamp</div>
                   </div>
                 </div>
                 <PageFooter mode="english" n={1} total={3} />
@@ -1513,9 +1581,9 @@ export default function OfferLetterPage() {
           const b = olEffLayout[olSel.key] || {}
           return (
             <div className="olp-panel" style={{ left: olSel.x, top: olSel.y }} dir="rtl">
-              <div className="olp-h">
+              <div className="olp-h" onPointerDown={startPanelDrag} title="برای جابه‌جاییِ پنل بکشید" style={{ cursor: 'move', touchAction: 'none' }}>
                 <span title={olSel.label}>چینش — {olSel.label}</span>
-                <button className="olp-x" onClick={() => setOlSel(null)}>×</button>
+                <button className="olp-x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setOlSel(null)}>×</button>
               </div>
               <div className="olp-row">
                 <label>اندازهٔ فونت (pt)</label>
