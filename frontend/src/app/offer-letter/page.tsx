@@ -115,7 +115,7 @@ const LABELS: Record<string, { fa: string; en: string }> = {
   MonthlyInstallment: { fa: 'قسط ماهانه (خالی = دکمهٔ محاسبه)', en: 'Monthly Installment' },
   Purpose: { fa: 'هدف / مصرف وام', en: 'Purpose' },
   LienAmount: { fa: 'مبلغ وثیقهٔ تودیع — درهم (بند ۴ مدارک)', en: 'Lien Amount (AED)' },
-  Remarks: { fa: 'ملاحظات — ستون Remarks جدول تسهیلات', en: 'Remarks' },
+  Remarks: { fa: 'ملاحظات ردیف ۱ تسهیلات (ستون Remarks جدول)', en: 'Remarks (row 1)' },
   RequiredSecurities: { fa: 'وثایق و مدارک موردنیاز (متن صفحهٔ ۱)', en: 'Required Securities / Documents' },
   NotesPersonal: { fa: 'یادداشت‌های زیر جدول مدارک (Note 1, 2, …)', en: 'Notes under securities table' },
 }
@@ -207,6 +207,8 @@ export default function OfferLetterPage() {
   const [olLayout, setOlLayout] = useState<Record<string, OlBox>>({})
   const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
   const olPrevKeys = useRef<string[]>([])
+  // remount sequence for the preview when marks are active (see key below)
+  const olRenderSeq = useRef(0)
   const OLKEY = (t: string) => `ol-layout:${t}`
   // ---- SELECTION formatting (like the letter page's floating toolbar): select
   // part of a sentence in the preview → a small bar applies bold/italic/
@@ -1049,6 +1051,7 @@ export default function OfferLetterPage() {
                 <label className="flex items-center gap-1"><input type="checkbox" checked={fac1.staff} onChange={(e) => setFac1((s) => ({ ...s, staff: e.target.checked }))} /> تسهیلاتِ کارمندی (معاف)</label>
                 <label className="flex items-center gap-1"><input type="checkbox" checked={fac1.temp} onChange={(e) => setFac1((s) => ({ ...s, temp: e.target.checked }))} /> موقت</label>
               </div>
+              <div className="mb-2">{F('Remarks', true)}</div>
               {extraFacs.map((r, i) => (
                 <div key={i} className="mb-2 border border-gray-200 rounded-md p-2 bg-white">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -1093,8 +1096,7 @@ export default function OfferLetterPage() {
                 </div>
               )}
             </div>
-            <div className="grid md:grid-cols-2 gap-2.5 mt-2.5">
-              {F('Remarks', true)}
+            <div className="grid md:grid-cols-1 gap-2.5 mt-2.5">
               {F('RequiredSecurities', true)}
             </div>
           </>}
@@ -1151,7 +1153,14 @@ export default function OfferLetterPage() {
 
         {/* ---------------- printable document ----------------
             dblclick any block → layout panel (font/align/dir/spacing/offsets) */}
-        <div id="offer-print" dir="ltr" ref={printRef} onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}>
+        <div id="offer-print" dir="ltr" ref={printRef}
+          /* CRASH GUARD: while selection marks exist, remount the whole preview
+             on every render (fresh tree = React never reconciles against the
+             text nodes our mark spans moved → no removeChild crash); with no
+             marks the key is stable and nothing changes. Marks + overrides are
+             re-applied by the after-render effect either way. */
+          key={Object.keys(olMarks).length ? `mk-${++olRenderSeq.current}` : 'stable'}
+          onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}>
           {effectiveTpl === 'english' ? (
             <>
               {/* ===== ENGLISH PAGE 1 ===== */}
