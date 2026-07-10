@@ -18,9 +18,11 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 
-export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number }
+// dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel);
+// wx = absolute width in px (edge-resize); txt = rewrite a leaf element's text.
+export type DlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string }
 
-const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width'] as const
+const DL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display'] as const
 const PICK = 'span,td,th,li,p,div,h1,h2,h3,b'
 
 export function useDocLayout(opts: {
@@ -84,6 +86,7 @@ export function useDocLayout(opts: {
     for (const [k, b] of Object.entries(eff)) {
       const el = elFromPath(k)
       if (!el) continue
+      if (b.txt != null && el.children.length === 0) el.textContent = b.txt
       if (b.fs) el.style.fontSize = `${b.fs}pt`
       if (b.bold != null) el.style.fontWeight = b.bold ? '700' : '400'
       if (b.align) el.style.textAlign = b.align
@@ -92,7 +95,14 @@ export function useDocLayout(opts: {
       if (b.ls) el.style.letterSpacing = `${b.ls}px`
       if (b.mt) el.style.marginTop = `${b.mt}px`
       if (b.mis) el.style.marginInlineStart = `${b.mis}px`
-      if (b.w) el.style.width = `${b.w}%`
+      if (b.wx) el.style.width = `${b.wx}px`
+      else if (b.w) el.style.width = `${b.w}%`
+      if (b.dx || b.dy || b.rot) {
+        // free float: siblings keep their place, the element glides/rotates
+        el.style.transform = `translate(${b.dx || 0}px, ${b.dy || 0}px) rotate(${b.rot || 0}deg)`
+        el.style.transformOrigin = 'center center'
+        if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block'
+      }
     }
     prev.current = Object.keys(eff)
     opts.onApplied?.()
@@ -149,20 +159,26 @@ export function useDocLayout(opts: {
     const key = elPath(el)
     if (!key) return
     const b = eff[key] || {}
+    const r = el.getBoundingClientRect()
+    // press near a side edge => resize that side; anywhere else => FREE move
+    const EDGE = 8
+    const mode: 'move' | 'r' | 'l' = e.clientX > r.right - EDGE ? 'r' : e.clientX < r.left + EDGE ? 'l' : 'move'
     const drag = {
-      key, sx: e.clientX, sy: e.clientY,
-      mt0: b.mt || 0, mis0: b.mis || 0,
-      rtl: getComputedStyle(el).direction === 'rtl',
+      key, sx: e.clientX, sy: e.clientY, mode,
+      dx0: b.dx || 0, dy0: b.dy || 0, w0: b.wx || r.width,
       moved: false,
     }
     const mv = (ev: PointerEvent) => {
       const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy
-      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return
       drag.moved = true
-      setLay((s) => ({
-        ...s,
-        [drag.key]: { ...(s[drag.key] || {}), mt: Math.round(drag.mt0 + dy), mis: Math.round(drag.mis0 + (drag.rtl ? -dx : dx)) },
-      }))
+      setLay((s) => {
+        const cur: DlBox = { ...(s[drag.key] || {}) }
+        if (drag.mode === 'move') { cur.dx = Math.round(drag.dx0 + dx); cur.dy = Math.round(drag.dy0 + dy) }
+        else if (drag.mode === 'r') cur.wx = Math.max(24, Math.round(drag.w0 + dx))
+        else { cur.wx = Math.max(24, Math.round(drag.w0 - dx)); cur.dx = Math.round(drag.dx0 + dx) }
+        return { ...s, [drag.key]: cur }
+      })
     }
     const up = () => {
       document.removeEventListener('pointermove', mv)
@@ -263,7 +279,15 @@ export function useDocLayout(opts: {
           <label>جابه‌جایی عمودی<input type="number" value={b.mt ?? ''} placeholder="px" onChange={(e) => update({ mt: +e.target.value || undefined })} /></label>
           <label>جابه‌جایی افقی<input type="number" value={b.mis ?? ''} placeholder="px" onChange={(e) => update({ mis: +e.target.value || undefined })} /></label>
           <label>عرض ٪<input type="number" value={b.w ?? ''} placeholder="—" onChange={(e) => update({ w: +e.target.value || undefined })} /></label>
+          <label>X آزاد (px)<input type="number" value={b.dx ?? ''} placeholder="—" onChange={(e) => update({ dx: e.target.value === '' ? undefined : +e.target.value })} /></label>
+          <label>Y آزاد (px)<input type="number" value={b.dy ?? ''} placeholder="—" onChange={(e) => update({ dy: e.target.value === '' ? undefined : +e.target.value })} /></label>
+          <label>چرخش (درجه)<input type="number" step="1" value={b.rot ?? ''} placeholder="0" onChange={(e) => update({ rot: e.target.value === '' ? undefined : +e.target.value })} /></label>
+          <label>عرض (px)<input type="number" value={b.wx ?? ''} placeholder="—" onChange={(e) => update({ wx: +e.target.value || undefined })} /></label>
         </div>
+        <label className="dlp-txt">متنِ این عنصر (بازنویسی — فقط بلوکِ متنِ ساده)
+          <textarea value={b.txt ?? ''} placeholder="— متنِ اصلی —" dir="auto"
+            onChange={(e) => update({ txt: e.target.value === '' ? undefined : e.target.value })} />
+        </label>
         <div className="dlp-actions">
           <button onClick={() => setLay((s) => { const n = { ...s }; delete n[sel.key]; return n })}>بازنشانیِ این عنصر</button>
           <button onClick={() => { if (confirm(account ? `همهٔ چینشِ سفارشیِ حسابِ ${account} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چینشِ سفارشیِ قالبِ اصلی پاک شود؟')) { setLay({}); setSel(null) } }}>بازنشانیِ همه</button>
@@ -298,6 +322,8 @@ export const DocLayoutStyles = () => (
     .dlp-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
     .dlp-grid label { display:flex; flex-direction:column; gap:2px; color:#475569; }
     .dlp-grid input { border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; width:100%; }
+    .dlp-txt { display:block; color:#475569; margin-bottom:6px; }
+    .dlp-txt textarea { display:block; width:100%; height:56px; margin-top:2px; border:1px solid #cbd5e1; border-radius:6px; padding:4px 6px; font-size:11px; resize:vertical; }
     .dlp-actions { display:flex; gap:6px; margin-bottom:6px; }
     .dlp-actions button { flex:1; }
     .dlp-hint { color:#64748b; font-size:11px; line-height:1.6; }

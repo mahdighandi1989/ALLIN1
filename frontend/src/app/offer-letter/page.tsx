@@ -220,7 +220,10 @@ export default function OfferLetterPage() {
   // direction, spacing and offsets. Overrides are keyed by the element's path
   // inside its page, stored per TEMPLATE in localStorage, applied after every
   // render, and saved into the customer snapshot too. ----
-  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number }
+  // dx/dy/rot = FREE move/rotate via CSS transform (Word "behind text" feel —
+  // zero effect on siblings); wx = absolute width (px, edge-resize); txt =
+  // rewrite the element's text (leaf elements only). mt/mis kept for legacy.
+  type OlBox = { fs?: number; bold?: boolean; align?: string; dir?: string; lh?: number; ls?: number; mt?: number; mis?: number; w?: number; dx?: number; dy?: number; rot?: number; wx?: number; txt?: string }
   const [olLayout, setOlLayout] = useState<Record<string, OlBox>>({})
   const [olSel, setOlSel] = useState<{ key: string; label: string; x: number; y: number } | null>(null)
   const olPrevKeys = useRef<string[]>([])
@@ -597,13 +600,16 @@ export default function OfferLetterPage() {
     }
     return cur as HTMLElement
   }
-  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width'] as const
+  const OL_PROPS = ['fontSize', 'fontWeight', 'textAlign', 'direction', 'lineHeight', 'letterSpacing', 'marginTop', 'marginInlineStart', 'width', 'transform', 'transformOrigin', 'display'] as const
   // re-apply after EVERY render (React re-creates nodes freely); clear the
   // previously-touched elements first so removed overrides really reset.
   // effective maps: on a pristine form these are just the template stores; with
   // an account, the account's overrides sit ON TOP of the template's (per key).
   const olEffLayout: Record<string, OlBox> = olAcct ? { ...olBase, ...olLayout } : olLayout
   const olEffMarks: Record<string, OlMark[]> = olAcct ? { ...olMarksBase, ...olMarks } : olMarks
+  // text rewrites mutate React-owned text nodes — engage the same remount
+  // guard as selection marks so reconciliation never trips over them
+  const olHasTxt = Object.values(olEffLayout).some((b) => b.txt != null)
   useEffect(() => {
     for (const k of olPrevKeys.current) {
       const el = elFromPath(k)
@@ -612,6 +618,7 @@ export default function OfferLetterPage() {
     for (const [k, b] of Object.entries(olEffLayout)) {
       const el = elFromPath(k)
       if (!el) continue
+      if (b.txt != null && el.children.length === 0) el.textContent = b.txt
       if (b.fs) el.style.fontSize = `${b.fs}pt`
       if (b.bold != null) el.style.fontWeight = b.bold ? '700' : '400'
       if (b.align) el.style.textAlign = b.align
@@ -620,7 +627,15 @@ export default function OfferLetterPage() {
       if (b.ls) el.style.letterSpacing = `${b.ls}px`
       if (b.mt) el.style.marginTop = `${b.mt}px`
       if (b.mis) el.style.marginInlineStart = `${b.mis}px`
-      if (b.w) el.style.width = `${b.w}%`
+      if (b.wx) el.style.width = `${b.wx}px`
+      else if (b.w) el.style.width = `${b.w}%`
+      if (b.dx || b.dy || b.rot) {
+        // transform = free float, Word-style: siblings keep their place, the
+        // element glides/rotates over the page with no flow constraints
+        el.style.transform = `translate(${b.dx || 0}px, ${b.dy || 0}px) rotate(${b.rot || 0}deg)`
+        el.style.transformOrigin = 'center center'
+        if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block'
+      }
     }
     olPrevKeys.current = Object.keys(olEffLayout)
     // ---- selection marks: unwrap previous spans, re-wrap current offsets ----
@@ -775,20 +790,27 @@ export default function OfferLetterPage() {
     const key = elPath(el)
     if (!key) return
     const b = olEffLayout[key] || {}
+    const r = el.getBoundingClientRect()
+    // press near a side edge ⇒ resize that side; anywhere else ⇒ FREE move
+    // (transform-based, Word "behind text": no flow resistance, any direction)
+    const EDGE = 8
+    const mode: 'move' | 'r' | 'l' = e.clientX > r.right - EDGE ? 'r' : e.clientX < r.left + EDGE ? 'l' : 'move'
     const drag = {
-      key, sx: e.clientX, sy: e.clientY,
-      mt0: b.mt || 0, mis0: b.mis || 0,
-      rtl: getComputedStyle(el).direction === 'rtl',
+      key, sx: e.clientX, sy: e.clientY, mode,
+      dx0: b.dx || 0, dy0: b.dy || 0, w0: b.wx || r.width,
       moved: false,
     }
     const mv = (ev: PointerEvent) => {
       const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy
-      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 4) return
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return
       drag.moved = true
-      setOlLayout((s) => ({
-        ...s,
-        [drag.key]: { ...(s[drag.key] || {}), mt: Math.round(drag.mt0 + dy), mis: Math.round(drag.mis0 + (drag.rtl ? -dx : dx)) },
-      }))
+      setOlLayout((s) => {
+        const cur: OlBox = { ...(s[drag.key] || {}) }
+        if (drag.mode === 'move') { cur.dx = Math.round(drag.dx0 + dx); cur.dy = Math.round(drag.dy0 + dy) }
+        else if (drag.mode === 'r') cur.wx = Math.max(24, Math.round(drag.w0 + dx))
+        else { cur.wx = Math.max(24, Math.round(drag.w0 - dx)); cur.dx = Math.round(drag.dx0 + dx) }
+        return { ...s, [drag.key]: cur }
+      })
     }
     const up = () => {
       document.removeEventListener('pointermove', mv)
@@ -1023,6 +1045,8 @@ export default function OfferLetterPage() {
         .olp-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px; }
         .olp-grid label { display:flex; flex-direction:column; gap:2px; color:#475569; }
         .olp-grid input { border:1px solid #cbd5e1; border-radius:6px; padding:2px 6px; width:100%; }
+        .olp-txt { display:block; color:#475569; margin-bottom:6px; }
+        .olp-txt textarea { display:block; width:100%; height:56px; margin-top:2px; border:1px solid #cbd5e1; border-radius:6px; padding:4px 6px; font-size:11px; resize:vertical; }
         .olp-actions { display:flex; gap:6px; }
         .olp-actions button { flex:1; border:1px solid #fca5a5; color:#b91c1c; background:#fef2f2; border-radius:6px; padding:4px; cursor:pointer; }
         .olp-hint { margin-top:6px; color:#94a3b8; font-size:10.5px; line-height:1.6; }
@@ -1326,7 +1350,7 @@ export default function OfferLetterPage() {
              text nodes our mark spans moved → no removeChild crash); with no
              marks the key is stable and nothing changes. Marks + overrides are
              re-applied by the after-render effect either way. */
-          key={Object.keys(olEffMarks).length ? `mk-${++olRenderSeq.current}` : 'stable'}
+          key={Object.keys(olEffMarks).length || olHasTxt ? `mk-${++olRenderSeq.current}` : 'stable'}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
           onClick={olDesign ? onPreviewDblClick : undefined}
           onPointerDown={olDesign ? onPreviewPointerDown : undefined}
@@ -1606,7 +1630,15 @@ export default function OfferLetterPage() {
                 <label>جابه‌جایی عمودی<input type="number" value={b.mt ?? ''} placeholder="px" onChange={(e) => olUpdate({ mt: +e.target.value || undefined })} /></label>
                 <label>جابه‌جایی افقی<input type="number" value={b.mis ?? ''} placeholder="px" onChange={(e) => olUpdate({ mis: +e.target.value || undefined })} /></label>
                 <label>عرض ٪<input type="number" value={b.w ?? ''} placeholder="—" onChange={(e) => olUpdate({ w: +e.target.value || undefined })} /></label>
+                <label>X آزاد (px)<input type="number" value={b.dx ?? ''} placeholder="—" onChange={(e) => olUpdate({ dx: e.target.value === '' ? undefined : +e.target.value })} /></label>
+                <label>Y آزاد (px)<input type="number" value={b.dy ?? ''} placeholder="—" onChange={(e) => olUpdate({ dy: e.target.value === '' ? undefined : +e.target.value })} /></label>
+                <label>چرخش (درجه)<input type="number" step="1" value={b.rot ?? ''} placeholder="0" onChange={(e) => olUpdate({ rot: e.target.value === '' ? undefined : +e.target.value })} /></label>
+                <label>عرض (px)<input type="number" value={b.wx ?? ''} placeholder="—" onChange={(e) => olUpdate({ wx: +e.target.value || undefined })} /></label>
               </div>
+              <label className="olp-txt">متنِ این عنصر (بازنویسی — فقط بلوکِ متنِ ساده)
+                <textarea value={b.txt ?? ''} placeholder="— متنِ اصلی —" dir="auto"
+                  onChange={(e) => olUpdate({ txt: e.target.value === '' ? undefined : e.target.value })} />
+              </label>
               <div className="olp-actions">
                 <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
                 <button onClick={() => { if (confirm(olAcct ? `همهٔ چینش/قالب‌بندیِ سفارشیِ حسابِ ${olAcct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چیدمان و قالب‌بندیِ سفارشیِ قالبِ اصلی پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
