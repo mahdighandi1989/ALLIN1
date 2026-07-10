@@ -103,3 +103,26 @@ async def test_offer_letter_data_returns_all_facilities_for_multi_row_sync(
     assert facs[1]["amount"] == "2,800,000" and "11%" in facs[1]["rate"]
     assert facs[0]["type"] and facs[1]["type"]
     assert body["facilities_count"] == 2
+
+
+async def test_offer_letter_data_hides_legacy_phantom_deposit_rows(client, auth_headers, db_session):
+    """Pre-v36 imports left OTHER-typed «deposit» rows in production. The letter
+    must not surface them (display guard) while the DB row stays untouched."""
+    from app.models.facility import Facility
+
+    db_session.add(Customer(account_no="910600", name="Guarded Co", account_type="corporate"))
+    await db_session.commit()
+    from sqlalchemy import select as _sel
+    cid = (await db_session.execute(_sel(Customer).where(Customer.account_no == "910600"))).scalar_one().id
+    db_session.add(Facility(id="F-910600-1", customer_id=cid, facility_type="overdraft",
+                            amount=3500000, currency="AED", interest_rate=5.25, status="active"))
+    db_session.add(Facility(id="F-910600-2", customer_id=cid, facility_type="other",
+                            amount=3500000, currency="AED", interest_rate=3.25, status="active",
+                            notes="Fixed Deposit 365 days, Ref AJMN FD-2025-73, start 29NOV25"))
+    await db_session.commit()
+
+    r = await client.get("/api/crm/offer-letter-data/910600", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    facs = r.json()["Facilities"]
+    assert [f["type"] for f in facs] == ["Overdraft"]      # phantom hidden from the letter
+    assert r.json()["facilities_count"] == 2               # DB row untouched (review-first)
