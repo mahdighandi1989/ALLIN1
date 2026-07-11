@@ -464,6 +464,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         chunks = _di.chunk_text(table_text, 60000)
         merged: dict = {}
         model_name = None
+        last_model_text = ""
         import asyncio as _aio
         for ci, ch in enumerate(chunks):
             prompt = (_di.EXTRACTION_PROMPT +
@@ -488,6 +489,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                 hint = " مدل در مهلتِ پاسخ جواب نداد — دوباره امتحان کن یا از فهرستِ بالای صفحه مدلِ دیگری (مثلاً یک مدلِ سریع‌تر) انتخاب کن." if "timed out" in err else ""
                 raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}.{hint}")
             model_name = res.get("model")
+            last_model_text = res.get("text", "")
             for c in (doc_ingest.parse_model_json(res.get("text", "")).get("customers") or []):
                 acc = doc_ingest._acc_of(c)
                 if not acc:
@@ -498,7 +500,17 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                     merged[acc] = c
         customers = list(merged.values())
         if not customers:
-            raise HTTPException(status_code=422, detail="هیچ حساب/مشتری از جدول استخراج نشد.")
+            # the model answered but produced nothing usable — fall back to the
+            # DETERMINISTIC header-mapped parser (account/name/property columns)
+            customers = _di.table_fallback_customers(table_text)
+            if customers:
+                model_name = f"{model_name or 'مدل'} + استخراج قطعی جدول"
+        if not customers:
+            sample = re.sub(r"\s+", " ", str(last_model_text or ""))[:180]
+            raise HTTPException(status_code=422, detail=(
+                "هیچ حساب/مشتری از جدول استخراج نشد. "
+                + (f"نمونهٔ پاسخ مدل: «{sample}…» — " if sample else "")
+                + "مدلِ دیگری را از فهرست انتخاب کن یا ساختار ستون‌ها (ستون شماره حساب) را چک کن."))
     elif mime == _DOCX_MIME or lower.endswith(".docx"):
         # Word drafts: use the deterministic parser (no AI needed).
         from app.services.draft_extract import extract_from_docx

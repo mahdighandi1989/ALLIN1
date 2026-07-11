@@ -136,6 +136,69 @@ Rules:
 EXTRACTION_PROMPT = build_extraction_prompt()
 
 
+def table_fallback_customers(table_text: str) -> list[dict]:
+    """Deterministic extraction for spreadsheets whose header names an ACCOUNT
+    column — the safety net when the model returns nothing usable. Maps only
+    what the headers state (no guessing): the 6-digit account core, the name
+    column, and property columns (deed/plate, city, type, status→remarks) when
+    present. Rows sharing an account merge into one customer."""
+    import csv as _csv
+    import io as _io
+
+    ACC_RE = re.compile(r"شماره\s*حساب|account|\ba\/?c\b|حساب", re.I)
+    NAME_RE = re.compile(r"نام|name", re.I)
+    DEED_RE = re.compile(r"سند|پلاک|deed|plate", re.I)
+    CITY_RE = re.compile(r"شهر|city", re.I)
+    TYPE_RE = re.compile(r"^نوع|\btype\b", re.I)
+    STATUS_RE = re.compile(r"وضعیت|status", re.I)
+
+    merged: dict[str, dict] = {}
+    for section in table_text.split("## Sheet:"):
+        lines = [ln for ln in section.splitlines() if ln.strip()]
+        if len(lines) < 2:
+            continue
+        # first CSV line with an account-ish header = the header row
+        header, start = None, 0
+        for i, ln in enumerate(lines[:5]):
+            cells = next(_csv.reader(_io.StringIO(ln)), [])
+            if any(ACC_RE.search(c or "") for c in cells):
+                header, start = cells, i + 1
+                break
+        if not header:
+            continue
+        def _col(rx):
+            for i, h in enumerate(header):
+                if rx.search(h or ""):
+                    return i
+            return -1
+        c_acc = _col(ACC_RE)
+        c_name = next((i for i, h in enumerate(header)
+                       if NAME_RE.search(h or "") and not DEED_RE.search(h or "")), -1)
+        c_deed, c_city, c_type, c_status = _col(DEED_RE), _col(CITY_RE), _col(TYPE_RE), _col(STATUS_RE)
+        for ln in lines[start:]:
+            cells = next(_csv.reader(_io.StringIO(ln)), [])
+            if c_acc >= len(cells):
+                continue
+            m = re.search(r"\b(\d{6})\b", str(cells[c_acc] or ""))
+            if not m:
+                continue
+            acc = m.group(1)
+            cust = merged.setdefault(acc, {"account_no": acc, "fields": {}})
+            name = str(cells[c_name]).strip() if 0 <= c_name < len(cells) else ""
+            if name and not cust.get("name"):
+                cust["name"] = re.sub(r"\s{2,}", " ", name)
+            deed = str(cells[c_deed]).strip() if 0 <= c_deed < len(cells) else ""
+            city = str(cells[c_city]).strip() if 0 <= c_city < len(cells) else ""
+            ptype = str(cells[c_type]).strip() if 0 <= c_type < len(cells) else ""
+            status = str(cells[c_status]).strip() if 0 <= c_status < len(cells) else ""
+            if deed or (city and ptype):
+                cust.setdefault("properties", []).append({
+                    "mortgage_deed_no": deed, "city": city, "prop_type": ptype,
+                    "remarks": status,
+                })
+    return list(merged.values())
+
+
 def parse_model_json(text: str) -> dict:
     """Best-effort parse of the model's JSON reply (tolerates code fences/prose)."""
     if not text:
@@ -476,6 +539,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         _set_prop(prow, "country", p.get("country"))
         _set_prop(prow, "plate_no", plate)
         _set_prop(prow, "mortgage_deed_no", deed)
+        _set_prop(prow, "remarks", p.get("remarks"))
         _set_prop(prow, "mortgage_date", p.get("mortgage_date"))
         _set_prop(prow, "insurance_expiry", p.get("insurance_expiry"))
         _set_prop(prow, "valuation_currency", p.get("valuation_currency"))
