@@ -187,6 +187,11 @@ export default function OfferLetterPage() {
   const [chargeInfo, setChargeInfo] = useState<{ lines: { label: string; base: number; charge: number }[]; warnings: string[] } | null>(null)
   // the LATEST sanction's securities text from the DB — offered, never forced
   const [dbReqSec, setDbReqSec] = useState('')
+  // in-place text editing: dblclick a simple text block → edit INSIDE the
+  // letter (contentEditable); committed to the same scoped txt override on blur
+  const [olEdit, setOlEdit] = useState<string | null>(null)
+  const olEditRef = useRef<string | null>(null)
+  useEffect(() => { olEditRef.current = olEdit }, [olEdit])
   const setFacRow = (i: number, k: keyof FacRow) => (e: any) => {
     let v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     if (k === 'limit' && typeof v === 'string') v = commaize(v)
@@ -683,6 +688,34 @@ export default function OfferLetterPage() {
         el.style.cursor = 'move'
       }
     }
+    // in-place editing: make the dblclicked block editable INSIDE the letter;
+    // commit to the scoped txt override on blur (Escape cancels, Enter commits)
+    if (olEdit) {
+      const editKey = olEdit
+      const el = elFromPath(editKey)
+      if (el && el.contentEditable !== 'true') {
+        el.contentEditable = 'true'
+        el.style.outline = '2px solid #16a34a'
+        el.style.outlineOffset = '1px'
+        el.style.cursor = 'text'
+        const before = el.textContent || ''
+        const commit = () => {
+          const t = el.textContent || ''
+          el.contentEditable = 'false'
+          setOlEdit(null)
+          // only a REAL edit becomes an override — a plain dblclick+blur must
+          // not bake decorations (list markers/marks) into the stored text
+          if (t !== before) setOlLayout((s) => ({ ...s, [editKey]: { ...(s[editKey] || {}), txt: t } }))
+        }
+        const onKey = (ev: KeyboardEvent) => {
+          if (ev.key === 'Escape') { ev.preventDefault(); el.contentEditable = 'false'; setOlEdit(null) }
+          else if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); el.blur() }
+        }
+        el.addEventListener('blur', commit, { once: true })
+        el.addEventListener('keydown', onKey)
+        setTimeout(() => el.focus(), 0)
+      }
+    }
     olPrevKeys.current = [...Object.keys(olEffLayout), ...(olSel ? [olSel.key] : [])]
     // ---- selection marks: unwrap previous spans, re-wrap current offsets ----
     printRef.current?.querySelectorAll('span[data-olm]').forEach((sp) => {
@@ -692,7 +725,12 @@ export default function OfferLetterPage() {
       parent.removeChild(sp)
       if ((parent as HTMLElement).normalize) (parent as HTMLElement).normalize()
     })
-    for (const [key, marks] of Object.entries(olEffMarks)) {
+    // while the selection bar is open, keep the picked range visibly
+    // highlighted (the remount guard destroys the native blue selection)
+    const marksToApply: Record<string, OlMark[]> = olFmt
+      ? { ...olEffMarks, [olFmt.key]: [...(olEffMarks[olFmt.key] || []), { s: olFmt.s, e: olFmt.e, selHint: true } as any] }
+      : olEffMarks
+    for (const [key, marks] of Object.entries(marksToApply)) {
       const el = elFromPath(key)
       if (!el) continue
       for (const m of [...marks].sort((a, b) => a.s - b.s)) {
@@ -712,6 +750,7 @@ export default function OfferLetterPage() {
           rg.setStart(sN, sO); rg.setEnd(eN, eO)
           const sp = document.createElement('span')
           sp.setAttribute('data-olm', '1')
+          if ((m as any).selHint) { sp.setAttribute('data-olsel', '1'); sp.style.background = '#b3d4fc' }
           if (m.b) sp.style.fontWeight = '700'
           if (m.i) sp.style.fontStyle = 'italic'
           if (m.u) sp.style.textDecoration = 'underline'
@@ -854,6 +893,8 @@ export default function OfferLetterPage() {
     if (!key) return
     // outside layout mode only the dblclicked (selected) element is draggable
     if (!olDesign && key !== olSel?.key) return
+    // never hijack the caret while the block is being edited in place
+    if (olEditRef.current && key === olEditRef.current) return
     const b = olEffLayout[key] || {}
     const r = el.getBoundingClientRect()
     // press near a side edge ⇒ resize that side; anywhere else ⇒ FREE move
@@ -913,6 +954,9 @@ export default function OfferLetterPage() {
     const key = elPath(el)
     if (!key) return
     e.preventDefault()
+    // a simple text block becomes editable RIGHT IN the letter (the panel
+    // still opens at the edge for layout/format changes)
+    if (el.children.length === 0 || el.querySelector('span[data-olm]')) setOlEdit(key)
     // the panel opens OUT OF THE WAY (screen edge, or wherever the user last
     // dragged it) instead of on top of the text being adjusted
     const pos = olPanelPos.current || {
@@ -1168,6 +1212,7 @@ export default function OfferLetterPage() {
           .olv-e { animation:none !important; background:none !important; padding:0; }
           /* design-mode hover outline must never reach paper */
           #offer-print * { outline:none !important; }
+          [data-olsel] { background:none !important; }
         }
       `}</style>
 
@@ -1432,7 +1477,7 @@ export default function OfferLetterPage() {
              text nodes our mark spans moved → no removeChild crash); with no
              marks the key is stable and nothing changes. Marks + overrides are
              re-applied by the after-render effect either way. */
-          key={Object.keys(olEffMarks).length || olHasTxt ? `mk-${++olRenderSeq.current}` : 'stable'}
+          key={Object.keys(olEffMarks).length || olHasTxt || olFmt || olEdit ? `mk-${++olRenderSeq.current}` : 'stable'}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
           onClick={olDesign ? onPreviewClick : undefined}
           onPointerDown={olDesign || olSel ? onPreviewPointerDown : undefined}
