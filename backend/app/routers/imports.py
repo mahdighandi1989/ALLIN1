@@ -459,20 +459,34 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
             raise HTTPException(status_code=422, detail=f"جدول قابلِ خواندن نبود: {exc}")
         if not (table_text or "").strip():
             raise HTTPException(status_code=422, detail="جدول خالی است.")
-        chunks = _di.chunk_text(table_text, 100000)
+        # Smaller chunks keep each model call comfortably inside the deadline
+        # (a 100k chunk + 8k-token output regularly blew the old 60s timeout).
+        chunks = _di.chunk_text(table_text, 60000)
         merged: dict = {}
         model_name = None
+        import asyncio as _aio
         for ci, ch in enumerate(chunks):
             prompt = (_di.EXTRACTION_PROMPT +
                       f"\n\nThe content below is a SPREADSHEET/TABLE (part {ci+1} of {len(chunks)}). "
                       "Each row is usually ONE account/customer; extract EVERY row and attribute it "
                       "to the correct account. There are no page images — ignore the 'documents' array.\n\n"
                       "TABLE CONTENT:\n" + ch)
-            res = await inference.complete(db, prompt, task="document_extraction", model_id=model_id, max_tokens=8000)
+            # Long extraction deadline (matches the PDF/vision path) + ONE retry on
+            # a timeout/transient network failure before giving up — a slow model
+            # minute is not a reason to fail the whole import.
+            res = await inference.complete(db, prompt, task="document_extraction", model_id=model_id,
+                                           max_tokens=8000, timeout=180.0)
+            err0 = str(res.get("error") or "")
+            if not res.get("ok") and ("timed out" in err0 or "connection failed" in err0 or "429" in err0):
+                await _aio.sleep(3)
+                res = await inference.complete(db, prompt, task="document_extraction", model_id=model_id,
+                                               max_tokens=8000, timeout=180.0)
             if not res.get("ok"):
                 if res.get("error") == "no_model":
                     raise HTTPException(status_code=400, detail="هیچ مدلی در تنظیمات فعال نیست.")
-                raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {res.get('error')}")
+                err = str(res.get("error") or "")
+                hint = " مدل در مهلتِ پاسخ جواب نداد — دوباره امتحان کن یا از فهرستِ بالای صفحه مدلِ دیگری (مثلاً یک مدلِ سریع‌تر) انتخاب کن." if "timed out" in err else ""
+                raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}.{hint}")
             model_name = res.get("model")
             for c in (doc_ingest.parse_model_json(res.get("text", "")).get("customers") or []):
                 acc = doc_ingest._acc_of(c)

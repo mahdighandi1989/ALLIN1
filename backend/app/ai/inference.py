@@ -85,6 +85,7 @@ async def complete(
     max_tokens: int = 1024,
     temperature: Optional[float] = None,
     model_id: Optional[int] = None,
+    timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Resolve ``task`` (or an explicit ``model_id``) to a model and complete ``prompt``.
 
@@ -167,8 +168,12 @@ async def complete(
         if temp is not None:
             payload["temperature"] = temp
 
+    # Long extractions (big spreadsheet chunks + 8k-token outputs) legitimately
+    # take longer than a chat turn — callers may raise the deadline; the default
+    # stays 60s so every existing path behaves exactly as before.
+    deadline = timeout or _TIMEOUT
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=deadline) as client:
             resp = await client.post(url, headers=headers, json=payload)
             # Some newer models (e.g. Claude Opus 4.8 reasoning) reject an explicit
             # `temperature` with a 400 ("temperature is deprecated/unsupported for
@@ -178,7 +183,7 @@ async def complete(
                 _strip_temperature(payload)
                 resp = await client.post(url, headers=headers, json=payload)
     except httpx.TimeoutException:
-        return {"ok": False, "error": f"timed out after {int(_TIMEOUT)}s", "text": "", "model": resolved.display_name}
+        return {"ok": False, "error": f"timed out after {int(deadline)}s", "text": "", "model": resolved.display_name}
     except Exception as exc:  # network/DNS/TLS
         return {"ok": False, "error": f"connection failed: {type(exc).__name__}", "text": "", "model": resolved.display_name}
 

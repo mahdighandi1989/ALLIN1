@@ -124,7 +124,7 @@ async def extract_attachment(
                 "There are no page images — ignore the 'documents' array.\n\nTEXT CONTENT:\n" + ch,
             )
             res = await inference.complete(db, prompt, task="document_extraction",
-                                           model_id=model_id, max_tokens=8000)
+                                           model_id=model_id, max_tokens=8000, timeout=180.0)
             if not res.get("ok"):
                 if res.get("error") == "no_model":
                     return {"ok": False, "error": "no_model"}
@@ -145,7 +145,7 @@ async def extract_attachment(
                 "Extract EVERY row, attributing each to its account.\n\nTABLE CONTENT:\n" + ch,
             )
             res = await inference.complete(db, prompt, task="document_extraction",
-                                           model_id=model_id, max_tokens=8000)
+                                           model_id=model_id, max_tokens=8000, timeout=180.0)
             if not res.get("ok"):
                 if res.get("error") == "no_model":
                     return {"ok": False, "error": "no_model"}
