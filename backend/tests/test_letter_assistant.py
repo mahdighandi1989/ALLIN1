@@ -254,3 +254,12 @@ def test_build_user_prompt_carries_new_tool_guides():
     p = la.build_user_prompt(FIELDS, {}, ["complete", "inline_prompts"])
     assert "علامتِ سؤالِ تنها" in p or "علامتِ سؤال" in p
     assert "دستورِ نویسنده خطاب به تو" in p or "دستور" in p
+
+
+def test_find_guard_accepts_arabic_yeh_kaf_and_zwnj_variants():
+    """v51: the model often emits Arabic ي/ك or plain spaces where the letter
+    has Persian ی/ک or ZWNJ — the find-guard must still locate the snippet."""
+    from app.services.letter_assistant import _norm_ws
+    letter = "بیمه‌نامه‌های املاک رهنی مرتبط با حساب‌های شعب"
+    model_find = "بيمه نامه هاي املاك رهني مرتبط با حساب هاي شعب"
+    assert _norm_ws(model_find) in _norm_ws(letter)

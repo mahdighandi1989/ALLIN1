@@ -95,7 +95,10 @@ TOOLS: Dict[str, Dict[str, str]] = {
             "مجاور را با مترادف‌های اداری تنوع بده، عبارت‌های زائد و حشو را حذف کن، جمله‌های بلند و "
             "درهم را به جمله‌های روان بشکن، و پیوندِ منطقیِ جمله‌ها (لذا، در همین راستا، شایان ذکر "
             "است…) را طبیعی کن. برای هر جمله/پاراگرافِ قابل‌بهبود یک text_replace با نسخهٔ شیوایِ "
-            "کامل بده — معنا، اعداد و تعهدها را عوض نکن (category=professional)."
+            "کامل بده — معنا، اعداد و تعهدها را عوض نکن. در تعدادِ پیشنهادها محافظه‌کار نباش: "
+            "همهٔ پاراگراف‌ها را یکی‌یکی ارزیابی کن و هر پاراگرافی که می‌تواند بهتر خوانده شود، "
+            "بازنویسیِ کاملِ خودش را بگیرد؛ یک نامهٔ کوتاهِ اداری معمولاً چند پیشنهادِ بازنویسیِ "
+            "جمله/پاراگراف می‌خواهد، نه فقط یکی (category=professional)."
         ),
     },
     "complete": {
@@ -284,7 +287,11 @@ def html_to_text(s: Optional[str]) -> str:
 
 
 def _norm_ws(s: str) -> str:
-    return _WS_RE.sub(" ", (s or "").replace("‌", " ")).strip()
+    # whitespace/ZWNJ collapse + Arabic-vs-Persian yeh/kaf canonicalization —
+    # the model often emits ي/ك or plain spaces where the letter has ی/ک/ZWNJ
+    s = (s or "").replace("‌", " ").replace("\u00a0", " ")
+    s = s.replace("\u064a", "\u06cc").replace("\u0643", "\u06a9")
+    return _WS_RE.sub(" ", s).strip()
 
 
 def build_facts(customer: Any, profile_data: Dict[str, Any], facilities: List[Any],
