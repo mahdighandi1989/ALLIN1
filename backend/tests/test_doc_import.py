@@ -484,3 +484,40 @@ async def test_analyze_xlsx_timeout_retries_then_succeeds(client, auth_headers, 
     assert job["status"] == "done", job
     assert calls["n"] == 2                              # timed out once, retried, succeeded
     assert all(t == 180.0 for t in calls["timeouts"])   # long extraction deadline on both
+
+
+def test_table_fallback_customers_maps_accounts_and_properties():
+    """Deterministic safety net for account-column spreadsheets (v49): rows
+    group per 6-digit account; property columns map by their Persian headers."""
+    txt = ("## Sheet: 2624\n"
+           "شماره,شعبه,شماره حساب,نام مشتری,شماره سند/ پلاک ثبتی,شهر,نوع,وضعیت ملک\n"
+           "1,2624,111150,ALL CHEM  INTL,25/28,شیراز,باغ,در رهن می باشد\n"
+           "2,2624,111150,ALL CHEM  INTL,25/29,شیراز,ویلا,فک رهن شده است\n"
+           "3,2624,111714,PETROPOL,5128,تهران,ویلا,در رهن می باشد\n")
+    cs = doc_ingest.table_fallback_customers(txt)
+    assert {c["account_no"] for c in cs} == {"111150", "111714"}
+    c1 = next(c for c in cs if c["account_no"] == "111150")
+    assert c1["name"] == "ALL CHEM INTL"
+    assert len(c1["properties"]) == 2
+    assert c1["properties"][0]["mortgage_deed_no"] == "25/28"
+    assert c1["properties"][1]["remarks"] == "فک رهن شده است"
+    # a sheet with no account column yields nothing (no guessing)
+    assert doc_ingest.table_fallback_customers("## Sheet: x\na,b\n1,2\n") == []
+
+
+async def test_analyze_xlsx_model_garbage_falls_back_to_table(client, auth_headers, db_session, import_inline, monkeypatch):
+    """When the model answers but returns nothing parseable, the deterministic
+    table parser still imports the accounts instead of failing the job."""
+    from app.ai import inference as inf
+
+    async def fake_complete(db, prompt, **kw):
+        return {"ok": True, "model": "M", "error": None, "text": "sorry, I cannot help with that"}
+
+    monkeypatch.setattr(inf, "complete", fake_complete)
+    files = {"file": ("book.xlsx", _xlsx_bytes(),
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    assert "قطعی" in str(job.get("result", {}).get("model") or job.get("result", ""))  # fallback engaged
