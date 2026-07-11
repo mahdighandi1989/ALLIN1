@@ -216,6 +216,50 @@ function applyTextReplaceHtml(value: string, find: string, replace: string, occu
       if (idx !== -1) { node.textContent = text.slice(0, idx) + replace + text.slice(idx + find.length); applied++; break }
     }
   }
+  // FUZZY fallback (v51): the model's snippet often differs from the letter in
+  // ways invisible to the eye — Arabic ي/ك vs Persian ی/ک, ZWNJ vs space,
+  // doubled spaces — or spans SEVERAL text nodes (a whole-paragraph rewrite
+  // crossing a <b>/<br>). Match on a canonical, space-collapsed view of the
+  // WHOLE field with an index map back to the original characters, then splice
+  // across the affected nodes (replacement lands in the first one).
+  if (applied === 0) {
+    const canon = (c: string) =>
+      c === 'ي' ? 'ی' : c === 'ك' ? 'ک'
+        : /[\s‌‎‏ ]/.test(c) ? ' ' : c
+    const build = (src: string): { out: string; map: number[] } => {
+      let out = ''
+      const map: number[] = []
+      let prevSpace = true
+      for (let i = 0; i < src.length; i++) {
+        const c = canon(src[i])
+        if (c === ' ') { if (prevSpace) continue; prevSpace = true } else prevSpace = false
+        out += c
+        map.push(i)
+      }
+      while (out.endsWith(' ')) { out = out.slice(0, -1); map.pop() }
+      return { out, map }
+    }
+    const full = nodes.map((nd) => nd.textContent || '').join('')
+    const H = build(full)
+    const F = build(find).out
+    const at = F ? H.out.indexOf(F) : -1
+    if (at !== -1) {
+      const s = H.map[at]
+      const e = H.map[at + F.length - 1] + 1
+      let off = 0
+      let inserted = false
+      for (const node of nodes) {
+        const t = node.textContent || ''
+        const ns = off, ne = off + t.length
+        off = ne
+        if (ne <= s || ns >= e) continue
+        const ls = Math.max(0, s - ns), le = Math.min(t.length, e - ns)
+        node.textContent = t.slice(0, ls) + (inserted ? '' : replace) + t.slice(le)
+        inserted = true
+      }
+      if (inserted) applied = 1
+    }
+  }
   return [isHtml ? container.innerHTML : (container.textContent || ''), applied]
 }
 
@@ -2574,7 +2618,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v48</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v51</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>

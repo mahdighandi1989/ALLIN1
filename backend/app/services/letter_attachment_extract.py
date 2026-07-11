@@ -137,31 +137,33 @@ async def extract_attachment(
             table_text = doc_ingest.workbook_to_text(data, filename)
         except Exception as exc:
             return {"ok": False, "error": f"جدول قابلِ خواندن نبود: {exc}"}
-        chunks = doc_ingest.chunk_text(table_text, 100000)[:_MAX_CHUNKS]
-        for ci, ch in enumerate(chunks):
-            prompt = build_prompt(
-                letter_ctx,
-                f"The content below is a SPREADSHEET/TABLE (part {ci+1} of {len(chunks)}). "
-                "Extract EVERY row, attributing each to its account.\n\nTABLE CONTENT:\n" + ch,
-            )
-            res = await inference.complete(db, prompt, task="document_extraction",
-                                           model_id=model_id, max_tokens=8000, timeout=180.0)
-            if not res.get("ok"):
-                if res.get("error") == "no_model":
-                    return {"ok": False, "error": "no_model"}
-                chunk_errors.append(str(res.get("error")))
-                continue
-            model_name = res.get("model")
-            _fold(doc_ingest.parse_model_json(res.get("text", "")))
-        if not customers_merged:
-            # model answered but produced nothing usable — same deterministic
-            # header-mapped safety net as the Import page (v49)
-            for c in doc_ingest.table_fallback_customers(table_text):
-                acc = doc_ingest._acc_of(c)
-                if acc:
-                    customers_merged[acc] = c
-            if customers_merged:
-                model_name = f"{model_name or 'مدل'} + استخراج قطعی جدول"
+        # DETERMINISTIC FIRST for tables: an account-column sheet maps instantly
+        # and this endpoint runs INLINE in the HTTP request — a long model call
+        # here blew the platform gateway timeout and surfaced as a bare 502.
+        # The model pass stays available for sheets the parser cannot map.
+        for c in doc_ingest.table_fallback_customers(table_text):
+            acc = doc_ingest._acc_of(c)
+            if acc:
+                customers_merged[acc] = c
+        if customers_merged:
+            model_name = "استخراج قطعی جدول"
+        else:
+            chunks = doc_ingest.chunk_text(table_text, 100000)[:_MAX_CHUNKS]
+            for ci, ch in enumerate(chunks):
+                prompt = build_prompt(
+                    letter_ctx,
+                    f"The content below is a SPREADSHEET/TABLE (part {ci+1} of {len(chunks)}). "
+                    "Extract EVERY row, attributing each to its account.\n\nTABLE CONTENT:\n" + ch,
+                )
+                res = await inference.complete(db, prompt, task="document_extraction",
+                                               model_id=model_id, max_tokens=8000, timeout=75.0)
+                if not res.get("ok"):
+                    if res.get("error") == "no_model":
+                        return {"ok": False, "error": "no_model"}
+                    chunk_errors.append(str(res.get("error")))
+                    continue
+                model_name = res.get("model")
+                _fold(doc_ingest.parse_model_json(res.get("text", "")))
     elif mimetype == _DOCX_MIME or lower.endswith(".docx"):
         from app.services.draft_extract import extract_from_docx
         try:
