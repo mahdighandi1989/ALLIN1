@@ -6,6 +6,7 @@ import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
 import { customersApi, crmApi, auditApi, parseApiError } from '@/lib/api'
+import { dmySlash } from '@/lib/dates'
 import { useFormDesign, Movable, DesignControls, DesignPanel, DesignState } from '@/lib/formDesign'
 import toast from 'react-hot-toast'
 
@@ -384,7 +385,7 @@ export default function VoucherPage() {
                 <span className="text-gray-600">ارز / تاریخ</span>
                 <div className="flex gap-2">
                   <input className={field} value={currency} onChange={(e) => setCurrency(e.target.value)} />
-                  <input className={field} value={date} onChange={(e) => setDate(e.target.value)} />
+                  <input className={field} value={date} onChange={(e) => setDate(e.target.value)} onBlur={(e) => setDate(dmySlash(e.target.value))} />
                 </div>
               </label>
             </div>

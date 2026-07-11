@@ -14,6 +14,7 @@ import Layout from '@/components/Layout'
 import { Printer, Download, Search, Save, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { chargeTariffApi, crmApi, parseApiError } from '@/lib/api'
+import { dmySlash } from '@/lib/dates'
 // Verbatim letterhead assets extracted from the official Word letter template
 // (same ground truth the official-letter page prints): blue emblem + REGIONAL
 // OFFICE, blue bank wordmark + "Licensed by CBUAE", blue address/SWIFT banner.
@@ -184,18 +185,29 @@ export default function OfferLetterPage() {
   const [fac1, setFac1] = useState<{ fd: boolean; staff: boolean; temp: boolean }>({ fd: false, staff: false, temp: false })
   const [autoCharge, setAutoCharge] = useState(true)
   const [chargeInfo, setChargeInfo] = useState<{ lines: { label: string; base: number; charge: number }[]; warnings: string[] } | null>(null)
+  // the LATEST sanction's securities text from the DB — offered, never forced
+  const [dbReqSec, setDbReqSec] = useState('')
   const setFacRow = (i: number, k: keyof FacRow) => (e: any) => {
-    const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    let v = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    if (k === 'limit' && typeof v === 'string') v = commaize(v)
     setExtraFacs((rows) => rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)))
   }
-  const set = (k: string) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
-  const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => f[k] || '________')
+  // amount fields get English thousands-commas as you type; anything that is
+  // not a plain number (e.g. '3,500,000/-', '13% p.a.') is left untouched
+  const MONEY_KEYS = new Set(['ProcessingFee', 'CreditLimit', 'LoanAmount', 'LienAmount'])
+  const commaize = (v: string) => (/^[\d,]{1,15}$/.test(v) ? v.replace(/,/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',') : v)
+  const set = (k: string) => (e: any) => {
+    const raw = e.target.value
+    const v = MONEY_KEYS.has(k) ? commaize(raw) : raw
+    setF((s) => ({ ...s, [k]: v }))
+  }
+  const fill = (t: string) => t.replace(/\{(\w+)\}/g, (_, k) => dmySlash(f[k]) || '________')
 
   // ---- unfilled-variable highlighting: every variable printed on the letter
   // BLINKS until its field has a value; once filled the highlight vanishes.
   // (Print strips the highlight — see the .olv-e print rule.) ----
   const Blink = ({ v, ph, fa }: { v: string; ph: string; fa: string }) =>
-    v ? <>{v}</> : <span className="olv-e" title={`${fa} — از فرم بالا پر کن`}>{ph}</span>
+    v ? <>{dmySlash(v)}</> : <span className="olv-e" title={`${fa} — از فرم بالا پر کن`}>{ph}</span>
   const V = (k: string, ph = '________') =>
     <Blink v={(f[k] || '').trim()} ph={ph} fa={LABELS[k]?.fa || k} />
   // like fill(), but unfilled {Key} placeholders become blinking spans
@@ -368,7 +380,10 @@ export default function OfferLetterPage() {
         CreditLimit: (dbFacs.length ? withSlash(dbFacs[0].amount) : '') || saved.CreditLimit || withSlash(d.CreditLimit) || s.CreditLimit,
         InterestRate: (dbFacs.length ? dbFacs[0].rate : '') || saved.InterestRate || d.InterestRate || s.InterestRate,
         ValidUntil: saved.ValidUntil || d.ValidUntil || s.ValidUntil,
-        RequiredSecurities: d.RequiredSecurities || saved.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
+        // the USER'S saved letter text wins — the imported sanction's version
+        // must never silently overwrite his edits (it's offered via the
+        // «از آخرین مصوبه» button + a toast when the two differ).
+        RequiredSecurities: saved.RequiredSecurities || d.RequiredSecurities || (corp ? SECURITIES_CORPORATE : SECURITIES_PERSONAL),
         // loan specifics
         LoanAmount: saved.LoanAmount || withSlash(d.LoanAmount) || s.LoanAmount,
         LoanInterestRate: saved.LoanInterestRate || d.LoanInterestRate || s.LoanInterestRate,
@@ -389,6 +404,10 @@ export default function OfferLetterPage() {
           ? saved.securitiesChecked
           : PL.securities.map(() => true)
       )
+      setDbReqSec(String(d.RequiredSecurities || ''))
+      if (saved.RequiredSecurities && d.RequiredSecurities && String(saved.RequiredSecurities).trim() !== String(d.RequiredSecurities).trim()) {
+        toast('متنِ وثایقِ آخرین مصوبه با متنِ ذخیره‌شدهٔ نامه فرق دارد — اگر خواستی با دکمهٔ «از آخرین مصوبه» جایگزینش کن', { icon: 'ℹ️', duration: 7000 })
+      }
       // Guarantors: last saved snapshot wins; otherwise the customer's recorded
       // guarantors from the DB prefill the section.
       const savedGuars = Array.isArray(saved.guarantors) ? saved.guarantors : null
@@ -1341,6 +1360,16 @@ export default function OfferLetterPage() {
             </div>
             <div className="grid md:grid-cols-1 gap-2.5 mt-2.5">
               {F('RequiredSecurities', true)}
+              {dbReqSec.trim() && dbReqSec.trim() !== (f.RequiredSecurities || '').trim() && (
+                <div className="flex items-center gap-2 text-[11px] text-gray-600" dir="rtl">
+                  <span>متنِ وثایقِ آخرین مصوبهٔ ثبت‌شده با متنِ فعلیِ نامه فرق دارد.</span>
+                  <button type="button"
+                    onClick={() => { if (confirm('متنِ فعلیِ «وثایق و مدارک» با متنِ آخرین مصوبه جایگزین شود؟')) setF((s) => ({ ...s, RequiredSecurities: dbReqSec })) }}
+                    className="shrink-0 border border-gray-300 rounded-md px-2 py-1 text-xs bg-white hover:bg-blue-50 text-blue-700">
+                    از آخرین مصوبه
+                  </button>
+                </div>
+              )}
             </div>
           </>}
 
@@ -1425,7 +1454,7 @@ export default function OfferLetterPage() {
                   <div className="ol-p">Dear Sir,</div>
                   <div className="ol-p">With reference to your request via letter Dated: {V('RequestDate', '____________')}, we are pleased to inform you that the below mentioned {extraFacs.length
                     ? <>{[(f.FacilityType || '').trim(), ...extraFacs.map((r) => r.type.trim())].filter(Boolean).join(' and ') || '__________'} facilities are</>
-                    : <>{V('FacilityType', '__________')} facility is</>} approved/renewed{f.ValidUntil ? ` for a period expiring on ${f.ValidUntil}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
+                    : <>{V('FacilityType', '__________')} facility is</>} approved/renewed{f.ValidUntil ? ` for a period expiring on ${dmySlash(f.ValidUntil)}` : ''} subject to the terms and conditions set out in this offer letter which forms an integral part of it and its provision:</div>
                   <table className="ol-tbl">
                     <thead><tr><th>Facility</th><th>Credit Limit (AED)</th><th>Interest Rate</th><th>Remarks</th></tr></thead>
                     <tbody>
@@ -1433,14 +1462,14 @@ export default function OfferLetterPage() {
                         <td>{V('FacilityType', '—')}</td>
                         <td>{V('CreditLimit', '—')}</td>
                         <td style={{ whiteSpace: 'pre-wrap' }}>{V('InterestRate', '—')}</td>
-                        <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{f.Remarks || '—'}</td>
+                        <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{dmySlash(f.Remarks) || '—'}</td>
                       </tr>
                       {extraFacs.map((r, i) => (
                         <tr key={i}>
                           <td>{r.type || '—'}</td>
                           <td>{r.limit || '—'}</td>
                           <td style={{ whiteSpace: 'pre-wrap' }}>{r.rate || '—'}</td>
-                          <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{r.remarks || '—'}</td>
+                          <td style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>{dmySlash(r.remarks) || '—'}</td>
                         </tr>
                       ))}
                       {extraFacs.length > 0 && (
@@ -1576,7 +1605,7 @@ export default function OfferLetterPage() {
                       </tr>
                     ))}
                   </tbody></table>
-                  <div className="pl-note" style={{ whiteSpace: 'pre-wrap' }}>{f.NotesPersonal}</div>
+                  <div className="pl-note" style={{ whiteSpace: 'pre-wrap' }}>{dmySlash(f.NotesPersonal)}</div>
                 </div>
                 <PageFooter mode="bilingual" n={1} total={4} />
               </div>

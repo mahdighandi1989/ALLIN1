@@ -11,6 +11,7 @@ import Layout from '@/components/Layout'
 import { Printer, Download, Search, Save, Plus, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { crmApi, parseApiError } from '@/lib/api'
+import { dmySlash } from '@/lib/dates'
 import { useDocLayout, DocLayoutStyles } from '@/lib/docLayout'
 import { BANK_LOGO } from '@/app/voucher/logo'
 
@@ -71,9 +72,12 @@ const fmtBranch = (c?: string) => {
 // Bordered editable cell. Defined at module scope (stable identity) so inputs
 // keep focus while typing.
 function CI({ v, on, area }: { v: string; on: (e: any) => void; area?: boolean }) {
+  // owner rule: dates typed with '-' become DD/MM/YYYY with slashes (on blur,
+  // so typing is never interrupted); non-date text passes through untouched
+  const norm = (e: any) => { const nv = dmySlash(e.target.value); if (nv !== e.target.value) on({ target: { value: nv } }) }
   return area
-    ? <textarea value={v} onChange={on} className="sn-in sn-area" rows={2} />
-    : <input value={v} onChange={on} className="sn-in" />
+    ? <textarea value={v} onChange={on} onBlur={norm} className="sn-in sn-area" rows={2} />
+    : <input value={v} onChange={on} onBlur={norm} className="sn-in" />
 }
 
 export default function SanctionPage() {
