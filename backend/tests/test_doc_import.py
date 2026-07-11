@@ -458,3 +458,29 @@ async def test_persist_facilities_deposit_guard_and_required_securities(db_sessi
     assert len(facs) == 2
     assert {f["type"] for f in facs} == {"Overdraft", "Cheque Discount"}   # no raw snake_case
     assert "held underlien" in body["RequiredSecurities"]
+
+
+async def test_analyze_xlsx_timeout_retries_then_succeeds(client, auth_headers, db_session, import_inline, monkeypatch):
+    """A slow model minute must not fail the import: the Excel path uses the
+    long extraction deadline (180s) and retries a timed-out call ONCE."""
+    from app.ai import inference as inf
+
+    calls = {"n": 0, "timeouts": []}
+
+    async def fake_complete(db, prompt, **kw):
+        calls["n"] += 1
+        calls["timeouts"].append(kw.get("timeout"))
+        if calls["n"] == 1:
+            return {"ok": False, "error": "timed out after 180s", "text": "", "model": "M"}
+        return {"ok": True, "model": "M", "error": None,
+                "text": '{"customers": [{"account_no": "440022", "name": "Alpha Co", "fields": {}}], "documents": []}'}
+
+    monkeypatch.setattr(inf, "complete", fake_complete)
+    files = {"file": ("book.xlsx", _xlsx_bytes(),
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+    r = await client.post("/api/imports/analyze", headers=auth_headers, files=files)
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    assert calls["n"] == 2                              # timed out once, retried, succeeded
+    assert all(t == 180.0 for t in calls["timeouts"])   # long extraction deadline on both
