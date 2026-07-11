@@ -140,7 +140,7 @@ async def test_analyze_inline_prompts_rewrites_and_stages_db_write(
     async def fake_complete(db, prompt, **kwargs):
         # both new tool guides must reach the model
         assert "علامتِ سؤال" in prompt          # complete tool guide
-        assert "دستورِ نویسنده خطاب به تو" in prompt  # inline_prompts guide
+        assert "دستور یا خواستهٔ نویسنده" in prompt  # inline_prompts guide
         return {"ok": True, "model": "m", "error": None, "text": json.dumps({"changes": [
             {"op": "text_replace", "field": "body", "category": "complete",
              "title": "تکمیل جملهٔ ناتمام",
