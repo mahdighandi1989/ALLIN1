@@ -6,6 +6,7 @@ import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
 import { AmtInput, PctInput, WrapInput, DraftDrop, CountryInput, CountryDataList, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import { useDocLayout, DocLayoutStyles } from '@/lib/docLayout'
+import { dmySlash } from '@/lib/dates'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -408,7 +409,7 @@ export default function CreditFileCorporatePage() {
         <div id="cf-sheet" ref={sheetRef} {...dl.containerProps}>
           <div className="cf-row-top">
             <div className="cf-logo"><b>بانک صادرات ایران — BANK SADERAT IRAN</b><span>U.A.E. · Credit Facility Dept.</span></div>
-            <div className="cf-date"><div className="l">Date</div><input value={a.date} onChange={set('date')} /></div>
+            <div className="cf-date"><div className="l">Date</div><input value={a.date} onChange={set('date')} onBlur={(e) => { const nv = dmySlash(e.target.value); if (nv !== e.target.value) setA((s) => ({ ...s, date: nv })) }} /></div>
           </div>
           <div className="cf-title">CREDIT FILE SUMMARY (Corporate)</div>
           <div className="cf-branch">Branch Code and Name:&nbsp;
