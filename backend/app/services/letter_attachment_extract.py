@@ -153,6 +153,15 @@ async def extract_attachment(
                 continue
             model_name = res.get("model")
             _fold(doc_ingest.parse_model_json(res.get("text", "")))
+        if not customers_merged:
+            # model answered but produced nothing usable — same deterministic
+            # header-mapped safety net as the Import page (v49)
+            for c in doc_ingest.table_fallback_customers(table_text):
+                acc = doc_ingest._acc_of(c)
+                if acc:
+                    customers_merged[acc] = c
+            if customers_merged:
+                model_name = f"{model_name or 'مدل'} + استخراج قطعی جدول"
     elif mimetype == _DOCX_MIME or lower.endswith(".docx"):
         from app.services.draft_extract import extract_from_docx
         try:

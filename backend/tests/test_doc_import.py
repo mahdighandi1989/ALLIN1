@@ -521,3 +521,23 @@ async def test_analyze_xlsx_model_garbage_falls_back_to_table(client, auth_heade
     job = await _poll(client, auth_headers, r.json()["job_id"])
     assert job["status"] == "done", job
     assert "قطعی" in str(job.get("result", {}).get("model") or job.get("result", ""))  # fallback engaged
+
+
+async def test_letter_attachment_excel_falls_back_to_table(db_session, monkeypatch):
+    """The letter-assistant attachment extraction gets the same deterministic
+    table safety net as the Import page (v50)."""
+    from app.ai import inference as inf
+    from app.services import letter_attachment_extract as lax
+
+    async def fake_complete(db, prompt, **kw):
+        return {"ok": True, "model": "M", "error": None, "text": "cannot extract"}
+
+    monkeypatch.setattr(inf, "complete", fake_complete)
+    res = await lax.extract_attachment(
+        db_session, data=_xlsx_bytes(), filename="book.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        letter_ctx={})
+    assert res["ok"], res
+    accs = {c["account_no"] for c in res["customers"]}
+    assert "440022" in accs
+    assert "قطعی" in str(res.get("model"))
