@@ -1905,7 +1905,13 @@ export default function LetterPage() {
   const contY = L.body.contY ?? (Math.max(L.logo.y + (L.logo.h || 0), L.name.y + (L.name.h || 0)) + m(6))
   const gap = m(4)
   const pageNumLimit = (L.pagenum?.y ?? m(270)) - gap
-  const closingTop = Math.min(L.sender.y, L.copyto.y, L.action.y) - gap
+  // The reserved closing zone starts at the TOPMOST closing field — but only
+  // fields that are visible AND actually sit inside/below the body region.
+  // A closing box dragged ABOVE the body start (or hidden) must not shrink
+  // the text region: it collapsed the last page's capacity to ~zero, so even
+  // a half-empty letter banished the whole closing block to a fresh page.
+  const closingYs = CLOSING.map((k) => L[k]).filter((b) => b && !b.hidden && b.y >= L.body.y).map((b) => b.y)
+  const closingTop = (closingYs.length ? Math.min(...closingYs) : pageNumLimit + gap) - gap
   // available body height on page `pi` (isLast pages reserve room for the closing block)
   const regionTop = (pi: number) => (pi === 0 ? L.body.y : contY)
   const regionAvail = (pi: number, isLast: boolean) => {
@@ -2618,7 +2624,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v51</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v53</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
