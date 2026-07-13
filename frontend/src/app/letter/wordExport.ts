@@ -57,6 +57,12 @@ const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; it
     underline: o.underline ? {} : undefined,
   })
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
+// like plainText but keeps <br>/<div>/<p> boundaries as separate lines (multi-recipient رونوشت)
+const plainLines = (h: string) => {
+  const d = document.createElement('div')
+  d.innerHTML = (h || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n')
+  return (d.textContent || '').split('\n').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean)
+}
 
 // ---------- inline images: bake the imgcrop window onto a canvas ----------
 type ImgMap = Map<HTMLElement, { bytes: Uint8Array; w: number; h: number }>
@@ -325,9 +331,12 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   }
 
   // -- closing --
+  const copyLines = plainLines(a.f.copyTo)
   const closing = [
     P(a.f.sender || '', { bold: true, align: AlignmentType.CENTER, font: TITR, pt: 13 }),
-    P(`${lbl('copyto')}${plainText(a.f.copyTo)}`, { pt: 10 }),
+    P(`${lbl('copyto')}${copyLines[0] || ''}`, { pt: 10 }),
+    // extra recipients: one paragraph each, stacked under the first
+    ...copyLines.slice(1).map((li) => P(li, { pt: 10 })),
     P(`${lbl('action')}${plainText(a.f.actionName)} ${lbl('actionExt')}`, { pt: 10, ltrValue: a.f.actionExt || '' }),
   ]
 
