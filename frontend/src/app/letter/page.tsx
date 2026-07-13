@@ -265,8 +265,8 @@ function applyTextReplaceHtml(value: string, find: string, replace: string, occu
 
 // An inline, auto-sizing, rich (contentEditable) field. Stores HTML so bold/underline
 // can be applied to SELECTED words only (via the floating toolbar). Caret-preserving.
-function RichSpan({ value, onChange, placeholder, dir, className, style }:
-  { value: string; onChange: (h: string) => void; placeholder?: string; dir?: 'ltr' | 'rtl'; className?: string; style?: React.CSSProperties }) {
+function RichSpan({ value, onChange, placeholder, dir, className, style, multiline }:
+  { value: string; onChange: (h: string) => void; placeholder?: string; dir?: 'ltr' | 'rtl'; className?: string; style?: React.CSSProperties; multiline?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null)
   useIso(() => {
     const el = ref.current; if (!el) return
@@ -279,7 +279,11 @@ function RichSpan({ value, onChange, placeholder, dir, className, style }:
     }
   }, [value])
   return <span ref={ref} className={`rich ${className || ''}`} contentEditable suppressContentEditableWarning dir={dir}
-    data-ph={placeholder || ''} onInput={() => { const el = ref.current; if (el) onChange(el.innerHTML) }} style={style} />
+    data-ph={placeholder || ''} onInput={() => { const el = ref.current; if (el) onChange(el.innerHTML) }} style={style}
+    onKeyDown={multiline ? (e) => {
+      // uniform multi-line: Enter always inserts a <br> (never a nested <div>)
+      if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertLineBreak'); const el = ref.current; if (el) onChange(el.innerHTML) }
+    } : undefined} />
 }
 
 type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; underline?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number; contY?: number; hidden?: boolean }
@@ -2098,7 +2102,8 @@ export default function LetterPage() {
           const inner = document.createElement('div')
           inner.style.cssText = `width:${b.w}px;font-size:${b.size}pt;line-height:1.25;white-space:normal${b.font ? `;font-family:${b.font}` : ''}`
           inner.innerHTML = k === 'sender' ? escapeHtml(f.sender || 'x')
-            : k === 'copyto' ? (labels.copyto || '') + (f.copyTo || 'x')
+            // mirror the hanging-flex layout (multi-line recipients under the first one)
+            : k === 'copyto' ? `<span style="display:flex;align-items:baseline"><span style="white-space:pre;flex:0 0 auto">${labels.copyto || ''}</span><span style="flex:1 1 auto;min-width:0">${f.copyTo || 'x'}</span></span>`
             : (labels.action || '') + (f.actionName || 'x') + (labels.actionExt || '') + escapeHtml(f.actionExt || 'x')
           tmp.appendChild(inner)
           closingBottom = Math.max(closingBottom, b.y + inner.offsetHeight)
@@ -2320,7 +2325,7 @@ export default function LetterPage() {
             mode it sits at its TRUE designed spot so dragging isn't confusing) */}
         {isLast && (() => { const cs = design ? 0 : closingShift; return <>
           {Box({ k: 'sender', style: cs ? { top: L.sender.y + cs } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <>{Lbl({ k: 'copyto' })}<RichSpan value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------" /></> })}
+          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندهٔ بعدی)" /></span></span> })}
           {Box({ k: 'action', style: cs ? { top: L.action.y + cs } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </> })()}
 
@@ -2355,7 +2360,7 @@ export default function LetterPage() {
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
           {P('sender', f.sender, closingShift ? { top: L.sender.y + closingShift } : undefined)}
-          {P('copyto', <>{H(labels.copyto)}{H(f.copyTo)}</>, closingShift ? { top: L.copyto.y + closingShift } : undefined)}
+          {P('copyto', <span className="hangfld"><span className="hlbl">{H(labels.copyto)}</span><span className="hval">{H(f.copyTo)}</span></span>, closingShift ? { top: L.copyto.y + closingShift } : undefined)}
           {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift ? { top: L.action.y + closingShift } : undefined)}
         </>}
         {repImg('footer', LH_FOOTER)}
@@ -2419,6 +2424,11 @@ export default function LetterPage() {
            inner img is offset by margins — the img may exceed the window on purpose */
         .bcell .imgcrop,.psheet .imgcrop,.measure .imgcrop{display:inline-block;overflow:hidden;max-width:100%;vertical-align:middle}
         .bcell .imgcrop img,.psheet .imgcrop img,.measure .imgcrop img{display:block;max-width:none!important}
+        /* hanging field (رونوشت): label fixed at the RTL start, value column grows —
+           every extra line (<br>) aligns under the FIRST recipient, not the label */
+        .hangfld{display:flex;align-items:baseline;width:100%}
+        .hangfld .hlbl{white-space:pre;flex:0 0 auto}
+        .hangfld .hval{flex:1 1 auto;min-width:0}
         /* inline rich fields (labels + values) — bold/underline per selected word */
         #ltr-edit .rich{display:inline;outline:none;text-align:inherit;letter-spacing:inherit;white-space:normal;overflow-wrap:break-word}
         #ltr-edit .rich:empty::before{content:attr(data-ph);color:#c7cfdb}
@@ -2629,7 +2639,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v56</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v57</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
