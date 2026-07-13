@@ -262,6 +262,12 @@ def test_prose_quality_rules_reach_the_model():
     assert "جهت انجام اقدامات لازم" in sp   # the banned empty filler, shown explicitly
     assert "حداکثر یک بار" in sp            # one «خواهشمند است» per letter
     assert "بد:" in sp and "خوب:" in sp     # few-shot exemplars actually present
+    # v56: punctuation / closed sentences / paragraph discipline (owner: run-on
+    # sentences without periods, missing commas, paragraphs mashed together)
+    assert "نقطه‌گذاری" in sp and "با نقطه بسته می‌شود" in sp
+    assert "ویرگولِ فارسی" in sp
+    assert "اقدامات لازم مقتضی" in sp       # stacked-filler ban, shown explicitly
+    assert "ادغام نکن" in sp                # replaces must not merge paragraphs
 
 
 def test_new_categories_survive_validation():
