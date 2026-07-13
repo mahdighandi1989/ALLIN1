@@ -255,6 +255,13 @@ def test_prose_quality_rules_reach_the_model():
     assert "مقتضی است" in sp  # named as the form FORBIDDEN toward superiors
     # lexical-variety rule on the final result exists at system level too
     assert "تنوعِ واژگانی" in sp
+    # v55: the craft-of-request rules with bad=>good exemplars (owner: childish
+    # passive chains, empty filler, doubled request openers)
+    assert "هنرِ درخواستِ اداری" in sp
+    assert "اعلام گردد که" in sp            # the banned nested-passive chain, shown explicitly
+    assert "جهت انجام اقدامات لازم" in sp   # the banned empty filler, shown explicitly
+    assert "حداکثر یک بار" in sp            # one «خواهشمند است» per letter
+    assert "بد:" in sp and "خوب:" in sp     # few-shot exemplars actually present
 
 
 def test_new_categories_survive_validation():
