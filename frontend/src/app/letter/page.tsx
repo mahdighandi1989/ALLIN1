@@ -2409,6 +2409,11 @@ export default function LetterPage() {
         .bcell td,.bcell th,.psheet td,.psheet th,.measure td,.measure th{border:0.6px solid #222;padding:2px 5px;vertical-align:top;white-space:normal;word-break:normal;overflow-wrap:break-word;line-height:1.35;text-indent:0!important}
         .bcell td *,.bcell th *,.psheet td *,.psheet th *,.measure td *,.measure th *{text-indent:0!important;margin:0}
         .bcell th,.psheet th,.measure th{font-weight:700;text-align:center;background:#f3f4f6}
+        /* Persian underline: the default underline position cuts through the
+           descenders/dots of Arabic-script glyphs. Draw it UNDER the script,
+           continuous (no ink-skip gaps), slightly thin — everywhere the letter
+           renders: editor cells, print sheets, the measurer and rich fields. */
+        .bcell u,.psheet u,.measure u,#ltr-edit .rich u{text-underline-position:under;text-underline-offset:1px;text-decoration-thickness:.8px;text-decoration-skip-ink:none}
         .bcell img,.psheet img{max-width:100%}
         /* uniform image holder: resize scales it, crop shrinks the window while the
            inner img is offset by margins — the img may exceed the window on purpose */
@@ -2624,7 +2629,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v53</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v56</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
