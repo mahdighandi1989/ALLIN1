@@ -239,6 +239,24 @@ def test_new_tools_registered_with_binding_guides():
     assert "دستور" in gi and "حقایقِ پایگاه‌داده" in gi and "db_write" in gi
 
 
+def test_prose_quality_rules_reach_the_model():
+    """Owner complaints (v54): repeated words in the final letter, wrong register
+    toward a SUPERIOR office, and dry/unpleasant prose. The counter-rules must be
+    in the guides/system prompt the model actually receives."""
+    gp = la.TOOLS["professional"]["guide"]
+    # anti-repetition judged on the ASSEMBLED final text, across paragraphs
+    assert "متنِ نهاییِ سرهم‌شده" in gp and "بین‌پاراگرافی" in gp
+    # pleasant, seasoned prose — not stacked boilerplate
+    assert "دلنشین" in gp and "نامه‌نگارِ باسابقه" in gp
+    # hierarchy-aware register: deferential to superiors, directive only downward
+    sp = la.SYSTEM_PROMPT
+    assert "سلسله‌مراتبِ مخاطب" in sp
+    assert "خواهشمند است دستور فرمایید" in sp and "به استحضار می‌رساند" in sp
+    assert "مقتضی است" in sp  # named as the form FORBIDDEN toward superiors
+    # lexical-variety rule on the final result exists at system level too
+    assert "تنوعِ واژگانی" in sp
+
+
 def test_new_categories_survive_validation():
     out = _call([
         {"op": "text_replace", "field": "body", "category": "complete",
