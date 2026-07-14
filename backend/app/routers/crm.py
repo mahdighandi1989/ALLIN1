@@ -519,6 +519,7 @@ class ProfileUpdate(BaseModel):
     business_type: Optional[str] = None
     rating: Optional[str] = None
     customer_status: Optional[str] = None
+    national_id: Optional[str] = None
     trade_license_no: Optional[str] = None
     trade_license_issue: Optional[str] = None
     trade_license_expiry: Optional[str] = None
