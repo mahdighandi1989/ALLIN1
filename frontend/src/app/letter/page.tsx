@@ -31,6 +31,22 @@ const latin = (stack?: string) => stack ? `'LtrMix',${stack}` : stack
 const MM = 96 / 25.4 // px per mm at 96dpi
 const m = (v: number) => Math.round(v * MM)
 const fa =(n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
+// Persian digits inside a rich (HTML) value — text nodes only, so tags/attrs
+// (style="font-size:12px") are never touched. Used for the SUBJECT field: an
+// account number typed there must default to Persian digits, not Latin ones.
+const faDigitsHtml = (h: string) => {
+  if (!/[0-9٠-٩]/.test(h || '')) return h
+  const d = document.createElement('div')
+  d.innerHTML = h || ''
+  const walk = document.createTreeWalker(d, NodeFilter.SHOW_TEXT)
+  let n: Node | null
+  while ((n = walk.nextNode())) {
+    n.nodeValue = (n.nodeValue || '')
+      .replace(/[0-9]/g, (c) => '۰۱۲۳۴۵۶۷۸۹'[+c])
+      .replace(/[٠-٩]/g, (c) => '۰۱۲۳۴۵۶۷۸۹'[c.charCodeAt(0) - 0x0660])
+  }
+  return d.innerHTML
+}
 const useIso = typeof document !== 'undefined' ? useLayoutEffect : useEffect
 
 // An input that shrinks/grows to exactly fit its text (so adjacent words don't leave gaps).
@@ -336,6 +352,8 @@ export default function LetterPage() {
   const [sel, setSel] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [sepGeom, setSepGeom] = useState<{ x: number; w: number } | null>(null)
+  const [subjFit, setSubjFit] = useState<number | null>(null)  // shrunk-to-one-line subject font (pt)
+  const [sepShift, setSepShift] = useState(0)                  // separator pushed below a WRAPPED subject
   const [fmt, setFmt] = useState<{ x: number; y: number } | null>(null)        // floating bold/underline toolbar
   const [tbl, setTbl] = useState<{ x: number; y: number } | null>(null)        // floating table toolbar (caret in a cell)
   const [colRz, setColRz] = useState<{ top: number; height: number; left: number; width: number; hdrUid: string; bounds: { x: number; i: number }[]; rowBounds: { y: number; uid: string; topEdge?: boolean }[] } | null>(null) // column/row/edge resize handles
@@ -2145,15 +2163,32 @@ export default function LetterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.body, f.sender, f.copyTo, f.actionName, f.actionExt, labels, L])
 
-  // ---- Subject separator length follows the subject (capped at one full line) ----
+  // ---- Subject: (1) shrink-to-fit ONE line (down to 75% of the set size, so it
+  // never gets unreadably tiny), (2) separator length follows the subject, and
+  // (3) if it still has to wrap, slide the separator BELOW the wrapped text so
+  // the line never crosses the subject's words. ----
   useEffect(() => {
     const el = subjRef.current
     if (!el) return
-    el.textContent = plain(labels.subject) + plain(f.subject)
+    const S = L.subject.size || 12
     const full = L.subject.w
+    el.style.whiteSpace = 'nowrap'; el.style.width = ''; el.style.fontSize = `${S}pt`
+    el.textContent = plain(labels.subject) + plain(f.subject)
+    const natural = el.offsetWidth + 4
+    let fit = S
+    if (natural > full) fit = Math.max(S * 0.75, (S * full) / natural)
+    setSubjFit(fit < S ? Math.round(fit * 100) / 100 : null)
+    el.style.fontSize = `${fit}pt`
     const w = Math.max(m(15), Math.min(el.offsetWidth + 4, full))
     setSepGeom({ x: (L.subject.x + L.subject.w) - w, w })
-  }, [labels.subject, f.subject, L.subject])
+    // wrapped height at the fitted size → keep the separator clear of the text
+    el.style.whiteSpace = 'normal'; el.style.width = `${full}px`
+    const hWrapped = el.offsetHeight
+    el.style.whiteSpace = 'nowrap'; el.style.width = ''
+    const sepY = L.separator?.y ?? m(107)
+    const bottom = L.subject.y + hWrapped + m(2)
+    setSepShift(bottom > sepY ? Math.ceil(bottom - sepY) : 0)
+  }, [labels.subject, f.subject, L.subject, L.separator])
 
   // replace one page's chunk and rebuild the whole body (chunks are consecutive slices)
   const onBody = (pi: number) => (val: string) => setF((s) => { const next = pages.slice(); next[pi] = val; return { ...s, body: next.join('') } })
@@ -2310,8 +2345,8 @@ export default function LetterPage() {
           {Box({ k: 'recName', children: <RichSpan value={f.recipientName} onChange={(h) => setF((s) => ({ ...s, recipientName: h }))} placeholder="سرکار خانم / جناب آقای …" /> })}
           {Box({ k: 'recTitle', children: <><RichSpan value={f.recipientTitle} onChange={(h) => setF((s) => ({ ...s, recipientTitle: h }))} placeholder="رئیس محترم" /> <RichSpan value={f.recipientDept} onChange={(h) => setF((s) => ({ ...s, recipientDept: h }))} placeholder="اداره کل خارجه" /></> })}
           {Box({ k: 'classification', children: <>{Lbl({ k: 'classification' })}<select className="fld" value={f.classification} onChange={set('classification')}>{CLASSES.map((c) => <option key={c}>{c}</option>)}</select></> })}
-          {Box({ k: 'subject', children: <>{Lbl({ k: 'subject' })}<RichSpan value={f.subject} onChange={(h) => setF((s) => ({ ...s, subject: h }))} placeholder="موضوعِ نامه…" /></> })}
-          {Box({ k: 'separator', children: <div className="sep-line" /> })}
+          {Box({ k: 'subject', style: subjFit ? { fontSize: `${subjFit}pt` } : undefined, children: <>{Lbl({ k: 'subject' })}<RichSpan value={f.subject} onChange={(h) => setF((s) => ({ ...s, subject: faDigitsHtml(h) }))} placeholder="موضوعِ نامه…" /></> })}
+          {Box({ k: 'separator', style: !design && sepShift ? { top: L.separator.y + sepShift } : undefined, children: <div className="sep-line" /> })}
         </>}
 
         {/* body chunk for this page — page 1 box is draggable/resizable; others fill the region */}
@@ -2354,8 +2389,8 @@ export default function LetterPage() {
           {P('recName', H(f.recipientName))}
           {P('recTitle', <>{H(f.recipientTitle)} {H(f.recipientDept)}</>)}
           {P('classification', <>{H(labels.classification)}{f.classification}</>)}
-          {P('subject', <>{H(labels.subject)}{H(f.subject)}</>)}
-          {P('separator', <div className="sep-line" />)}
+          {P('subject', <>{H(labels.subject)}{H(f.subject)}</>, subjFit ? { fontSize: `${subjFit}pt` } : undefined)}
+          {P('separator', <div className="sep-line" />, sepShift ? { top: L.separator.y + sepShift } : undefined)}
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
@@ -2639,7 +2674,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v57</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v60</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
