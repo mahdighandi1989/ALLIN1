@@ -113,3 +113,49 @@ def test_parse_kb_writes_filters_and_dedups():
     out = la.parse_kb_writes(raw)
     assert len(out) == 1
     assert out[0]["topic"] == "قواعد ترهین املاک" and out[0]["category"] == "وثایق"
+
+
+@pytest.mark.asyncio
+async def test_analyze_full_pipeline_v61(client, auth_headers, monkeypatch):
+    """TRUE end-to-end wiring check (stubbed model): attachment content reaches
+    the prompt (with db_extract too, not only full_check), the model's sender
+    set_field survives validation, and its kb_write is staged reviewable."""
+    import json
+    from app.routers import letter_ai as mod
+
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["prompt"] = prompt
+        return {"ok": True, "model": "stub", "error": None, "text": json.dumps({
+            "changes": [
+                {"op": "set_field", "category": "consistency", "field": "sender",
+                 "title": "امضاکنندهٔ درست", "detail": "گیرنده بیرونی است",
+                 "severity": "high", "before": "دایره تسهیلات اعطایی",
+                 "after": "سرپرستی منطقه خلیج فارس", "applicable": True},
+                {"op": "kb_write", "topic": "قواعد تمدید بیمه‌نامهٔ املاک رهنی",
+                 "category": "وثایق",
+                 "content": "بیمه‌نامهٔ ملکِ در رهن باید پیش از انقضا تمدید و نسخهٔ آن به بانک ارائه شود.",
+                 "source_note": "پیوست policy.pdf"},
+            ],
+        }, ensure_ascii=False)}
+
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "fields": {"body": "متن نامه", "sender": "دایره تسهیلات اعطایی",
+                   "recipientTitle": "رئیس محترم", "recipientDept": "اداره کل خارجه"},
+        "tools": ["db_extract"],   # deliberately WITHOUT full_check
+        "attachments_text": [{"name": "policy.pdf", "text": "متن بیمه‌نامه شماره INS-991"}],
+        "attachment_tables": [],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    # attachment content reached the model even with db_extract alone
+    assert "policy.pdf" in seen["prompt"] and "INS-991" in seen["prompt"]
+    ops = {c["op"] for c in body["changes"]}
+    assert "set_field" in ops and "kb_write" in ops
+    sf = next(c for c in body["changes"] if c["op"] == "set_field")
+    assert sf["field"] == "sender" and sf["after"] == "سرپرستی منطقه خلیج فارس"
+    kb = next(c for c in body["changes"] if c["op"] == "kb_write")
+    assert kb["topic"].startswith("قواعد تمدید") and kb["applicable"] is True

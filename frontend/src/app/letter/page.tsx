@@ -670,8 +670,11 @@ export default function LetterPage() {
       // are transcribed one bounded request each (never persisted).
       const fcNotes: LetterAiChange[] = []   // read-failures surfaced AFTER analyze (never lost)
       const fcAttTexts: { name: string; text: string }[] = []
-      const fcAttTables = letterTools.includes('full_check') ? attTables.map((t) => t.html) : []
-      if (letterTools.includes('full_check') && letterAtts.length) {
+      // attachment content is needed by full_check (consistency/conformity) AND
+      // by db_extract (KB harvest from the attachments' general material)
+      const wantsAttContent = letterTools.includes('full_check') || letterTools.includes('db_extract')
+      const fcAttTables = wantsAttContent ? attTables.map((t) => t.html) : []
+      if (wantsAttContent && letterAtts.length) {
         const fcAtts = letterAtts.filter((a) => attSelected(a))
         for (let i = 0; i < fcAtts.length; i++) {
           const att = fcAtts[i]
@@ -3081,7 +3084,7 @@ export default function LetterPage() {
                   ) : null })()}
 
                   {/* Which attachments to extract — pick exactly the ones you need */}
-                  {(aiSelTools.includes(ATT_TOOL) || aiSelTools.includes('full_check')) && letterAtts.length > 0 && (
+                  {(aiSelTools.includes(ATT_TOOL) || aiSelTools.includes('full_check') || aiSelTools.includes('db_extract')) && letterAtts.length > 0 && (
                     <div className="lai-attpick">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <span className="lai-lbl">کدام پیوست‌ها استخراج شوند؟</span>
@@ -3172,6 +3175,13 @@ export default function LetterPage() {
                           {/* link: profile↔profile relationship with its exact reason */}
                           {c.op === 'link' && (
                             <div className="lai-dbtarget">🔗 <b>{c.customer_name || c.account_no}</b> <span dir="ltr">({c.account_no})</span> ↔ <b>{c.related_name || c.related_account}</b> <span dir="ltr">({c.related_account})</span> — در هر دو پروفایل با ذکرِ علت ثبت می‌شود</div>
+                          )}
+                          {/* kb_write: the EXACT content going into the Knowledge Base, under its topic */}
+                          {c.op === 'kb_write' && (
+                            <div className="lai-dbtarget">📚 پایگاه دانش ← موضوعِ <b>{c.topic}</b>{c.kb_category ? ` (${c.kb_category})` : ''}
+                              <div style={{ marginTop: 4, whiteSpace: 'pre-wrap', color: '#334155' }}>{c.content}</div>
+                              {c.source_note && <div className="lai-hint" style={{ marginTop: 2 }}>منبع: {c.source_note}</div>}
+                            </div>
                           )}
                           {c.detail && <div className="lai-detail">{c.detail}</div>}
                           {c.applicable && (c.op === 'text_replace' || c.op === 'set_field') && (

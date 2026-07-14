@@ -121,10 +121,12 @@ async def analyze(
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
         tables=(payload.tables or []) if "tables" in tools else [],
-        # attachment content feeds the full consistency/conformity pass; it is
-        # harmless to other tools (its section explains it is not replaceable)
-        attachments_text=(payload.attachments_text or []) if "full_check" in tools else [],
-        attachment_tables=(payload.attachment_tables or []) if "full_check" in tools else [],
+        # attachment content feeds the full consistency/conformity pass AND the
+        # KB harvest (db_extract may lift general/educational material out of
+        # the attachments too); harmless to other tools (its section explains
+        # it is not replaceable).
+        attachments_text=(payload.attachments_text or []) if ({"full_check", "db_extract"} & set(tools)) else [],
+        attachment_tables=(payload.attachment_tables or []) if ({"full_check", "db_extract"} & set(tools)) else [],
     )
 
     result = await inference.complete(

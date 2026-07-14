@@ -98,7 +98,7 @@ export default function KnowledgePage() {
   const { user } = useAuth()
   const [query, setQuery] = useState('')
   const [dyn, setDyn] = useState<KbTopic[]>([])
-  const canEdit = user && ['admin', 'manager', 'editor'].includes((user as any).role || '')
+  const canEdit = user && ['admin', 'editor'].includes((user as any).role || '')
   const loadDyn = () => knowledgeApi.list().then((r) => setDyn(r.topics || [])).catch(() => setDyn([]))
   useEffect(() => { loadDyn() }, [])
   const visible = useMemo(() => SECTIONS.filter((s) => sectionMatches(s, query)), [query])
