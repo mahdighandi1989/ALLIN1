@@ -22,6 +22,7 @@ class Guarantor(Base):
     customer_name = Column(String(200))
     guarantor_name = Column(String(200))
     guarantor_account = Column(String(50))
+    national_id = Column(String(40))         # کد ملی ضامن
     cheque_no = Column(String(50))
     cheque_amount = Column(Numeric(15, 2))
     issuing_bank = Column(String(50))

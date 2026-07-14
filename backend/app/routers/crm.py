@@ -236,6 +236,7 @@ class GuarantorCreate(BaseModel):
     pim_ref: str = ""
     facility_id: str = ""
     branch: str = ""
+    national_id: str = ""
     id: str = ""  # when set, update that record (else match by account+cheque_no)
 
 
@@ -246,7 +247,7 @@ def _guarantor_out(g) -> dict:
         "guarantor_name": g.guarantor_name, "guarantor_account": g.guarantor_account,
         "cheque_no": g.cheque_no,
         "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
-        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref,
+        "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref, "national_id": g.national_id,
         "facility_id": g.facility_id, "branch": g.branch, "date_added": g.date_added,
     }
 
@@ -366,6 +367,8 @@ async def add_guarantor(
         g.facility_id = payload.facility_id[:60]
     if (payload.branch or "").strip():
         g.branch = payload.branch[:20]
+    if (payload.national_id or "").strip():
+        g.national_id = payload.national_id.strip()[:40]
     if customer and getattr(customer, "name", None) and not g.customer_name:
         g.customer_name = customer.name
 
@@ -1594,7 +1597,9 @@ async def _delete_child(db, model, item_id, user=None, entity_type=None, label=N
 _PROPERTY_FIELDS = {
     "facility_id", "customer_name", "country", "plate_no", "mortgage_deed_no",
     "city", "address", "prop_type", "building_age", "land_area", "cnbc",
-    "valuation", "valuation_currency", "insurance_expiry", "insurance_no",
+    "zone", "infra_area", "owner", "owner_national_id", "postal_code",
+    "valuation", "valuation_currency", "insurance_expiry", "insurance_issue",
+    "insurance_no", "insurance_computer_code",
     "last_valuation_date", "mortgage_date", "mortgage_amount", "mortgage_currency", "remarks",
 }
 
@@ -1610,10 +1615,17 @@ class PropertyCreate(BaseModel):
     building_age: str = ""
     land_area: str = ""
     cnbc: str = ""
+    zone: str = ""
+    infra_area: str = ""
+    owner: str = ""
+    owner_national_id: str = ""
+    postal_code: str = ""
     valuation: Optional[float] = None
     valuation_currency: str = "AED"
     insurance_expiry: str = ""
+    insurance_issue: str = ""
     insurance_no: str = ""
+    insurance_computer_code: str = ""
     last_valuation_date: str = ""
     mortgage_date: str = ""
     mortgage_amount: Optional[float] = None
@@ -1632,10 +1644,17 @@ class PropertyUpdate(BaseModel):
     building_age: Optional[str] = None
     land_area: Optional[str] = None
     cnbc: Optional[str] = None
+    zone: Optional[str] = None
+    infra_area: Optional[str] = None
+    owner: Optional[str] = None
+    owner_national_id: Optional[str] = None
+    postal_code: Optional[str] = None
     valuation: Optional[float] = None
     valuation_currency: Optional[str] = None
     insurance_expiry: Optional[str] = None
+    insurance_issue: Optional[str] = None
     insurance_no: Optional[str] = None
+    insurance_computer_code: Optional[str] = None
     last_valuation_date: Optional[str] = None
     mortgage_date: Optional[str] = None
     mortgage_amount: Optional[float] = None
@@ -1737,13 +1756,22 @@ async def delete_fixed_deposit(
 
 
 # ---- Partners / shareholders ----
-_PARTNER_FIELDS = {"facility_id", "customer_name", "name", "nationality", "share", "remarks"}
+_PARTNER_FIELDS = {"facility_id", "customer_name", "name", "role", "nationality", "national_id",
+                   "passport_no", "passport_issue", "passport_expiry",
+                   "emirates_id_no", "emirates_id_expiry", "share", "remarks"}
 
 
 class PartnerCreate(BaseModel):
     facility_id: str = ""
     name: str = Field(..., min_length=1, max_length=200)
+    role: str = ""
     nationality: str = ""
+    national_id: str = ""
+    passport_no: str = ""
+    passport_issue: str = ""
+    passport_expiry: str = ""
+    emirates_id_no: str = ""
+    emirates_id_expiry: str = ""
     share: str = ""
     remarks: str = ""
 
@@ -1751,7 +1779,14 @@ class PartnerCreate(BaseModel):
 class PartnerUpdate(BaseModel):
     facility_id: Optional[str] = None
     name: Optional[str] = None
+    role: Optional[str] = None
     nationality: Optional[str] = None
+    national_id: Optional[str] = None
+    passport_no: Optional[str] = None
+    passport_issue: Optional[str] = None
+    passport_expiry: Optional[str] = None
+    emirates_id_no: Optional[str] = None
+    emirates_id_expiry: Optional[str] = None
     share: Optional[str] = None
     remarks: Optional[str] = None
 

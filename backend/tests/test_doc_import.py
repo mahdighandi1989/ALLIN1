@@ -541,3 +541,78 @@ async def test_letter_attachment_excel_falls_back_to_table(db_session, monkeypat
     accs = {c["account_no"] for c in res["customers"]}
     assert "440022" in accs
     assert "قطعی" in str(res.get("model"))
+
+
+# ---------------- v58: person-identity + full property fields ----------------
+
+def test_extraction_prompt_asks_for_identity_and_property_details():
+    """Owner requirement (v58): manager/partner national IDs + passports with
+    dates, guarantor national ID, property owner + owner national ID, postal
+    code, areas, and the insurance policy number + computer code + issue/expiry
+    must all be asked of the model."""
+    p = doc_ingest.EXTRACTION_PROMPT
+    for k in ("\"role\"", "\"national_id\"", "\"passport_issue\"", "\"passport_expiry\"",
+              "\"emirates_id_no\"", "\"emirates_id_expiry\"",
+              "\"owner\"", "\"owner_national_id\"", "\"postal_code\"",
+              "\"land_area\"", "\"infra_area\"", "\"building_age\"", "\"zone\"",
+              "\"insurance_no\"", "\"insurance_computer_code\"", "\"insurance_issue\"",
+              "\"last_valuation_date\""):
+        assert k in p, k
+    # the guidance rules for these facts reach the model too
+    assert "PERSON IDENTITY NUMBERS MATTER" in p
+    assert "کد ملی" in p
+    # the customer's own national_id column is schema-driven into the prompt
+    assert "national_id" in doc_ingest.extractable_profile_fields()
+
+
+async def test_persist_person_identity_and_property_details(db_session):
+    payload = {
+        "account_no": "701001", "name": "Identity Co LLC", "account_type": "corporate",
+        "fields": {"national_id": "0012345678"},
+        "partners": [{"name": "Ali Rezaei", "role": "Manager", "nationality": "Iranian",
+                      "national_id": "0087654321", "passport_no": "P1234567",
+                      "passport_issue": "01/01/2020", "passport_expiry": "01/01/2030",
+                      "emirates_id_no": "784-1980-1234567-1", "emirates_id_expiry": "05/05/2027",
+                      "share": "50"}],
+        "guarantors": [{"name": "Hasan Karimi", "account": "701002", "national_id": "0055512345"}],
+        "properties": [{"prop_type": "Villa", "address": "Street 5, Dubai", "city": "Dubai",
+                        "postal_code": "12345", "owner": "Ali Rezaei", "owner_national_id": "0087654321",
+                        "land_area": "500", "infra_area": "320", "building_age": "8", "zone": "A",
+                        "valuation": "2500000", "last_valuation_date": "10/06/2026",
+                        "mortgage_amount": "1500000", "plate_no": "638/140", "mortgage_deed_no": "12345",
+                        "insurance_no": "INS-991", "insurance_computer_code": "CC-77821",
+                        "insurance_issue": "01/03/2026", "insurance_expiry": "01/03/2027"}],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"]
+    await db_session.commit()
+
+    from app.models.crm import CustomerProfile
+    from app.models.profile_entities import Partner, MortgagedProperty
+    from app.models.guarantor import Guarantor
+    from sqlalchemy import select
+
+    cp = (await db_session.execute(select(CustomerProfile).where(
+        CustomerProfile.account_no == "701001"))).scalar_one()
+    assert cp.national_id == "0012345678"
+
+    pt = (await db_session.execute(select(Partner).where(
+        Partner.account_no == "701001"))).scalars().one()
+    assert pt.role == "Manager" and pt.national_id == "0087654321"
+    assert pt.passport_no == "P1234567" and pt.passport_issue == "01/01/2020"
+    assert pt.passport_expiry == "01/01/2030"
+    assert pt.emirates_id_no == "784-1980-1234567-1" and pt.emirates_id_expiry == "05/05/2027"
+
+    g = (await db_session.execute(select(Guarantor).where(
+        Guarantor.account_no == "701001"))).scalars().one()
+    assert g.national_id == "0055512345"
+
+    pr = (await db_session.execute(select(MortgagedProperty).where(
+        MortgagedProperty.account_no == "701001"))).scalars().one()
+    assert pr.owner == "Ali Rezaei" and pr.owner_national_id == "0087654321"
+    assert pr.postal_code == "12345" and pr.land_area == "500" and pr.infra_area == "320"
+    assert pr.building_age == "8" and pr.zone == "A"
+    assert pr.insurance_no == "INS-991" and pr.insurance_computer_code == "CC-77821"
+    assert pr.insurance_issue == "01/03/2026" and pr.insurance_expiry == "01/03/2027"
+    assert pr.last_valuation_date == "10/06/2026"
+    assert float(pr.valuation) == 2500000.0 and float(pr.mortgage_amount) == 1500000.0
