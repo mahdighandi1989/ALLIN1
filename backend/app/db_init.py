@@ -31,6 +31,7 @@ from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
 from app.models.offer_letter import OfferStatus, RepaymentType, CollateralType
 from app.models.guarantor import Guarantor  # noqa: F401  (register table for create_all)
+from app.models.kb import KnowledgeTopic, KnowledgeEntry  # noqa: F401  (register for create_all)
 from app.models.security import Security  # noqa: F401  (register table for create_all)
 from app.models.credit_review import CreditReview  # noqa: F401  (register table for create_all)
 from app.models.import_job import ImportJob  # noqa: F401  (register table for create_all)

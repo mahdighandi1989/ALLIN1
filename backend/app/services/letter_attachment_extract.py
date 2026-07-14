@@ -291,3 +291,73 @@ async def stage_extraction(
             "detail": reason, "severity": "medium", "applicable": True,
         })
     return staged
+
+
+# ---------------------------------------------------------------------------
+# Attachment TEXT (v61): a bounded, non-persisting transcription of ONE
+# attachment so the letter assistant can cross-check the letter against its
+# attachments and run the full consistency pass. Deterministic wherever
+# possible (txt/Excel/CSV/docx); PDF/image go through ONE bounded multimodal
+# transcription call (the frontend runs attachments sequentially, one HTTP
+# request each, so every call stays under the gateway limit).
+# ---------------------------------------------------------------------------
+_TEXT_CAP = 20000          # chars returned per attachment (prompt budget)
+_TRANSCRIBE_MAX_BYTES = 12 * 1024 * 1024
+
+
+async def attachment_text(
+    db: AsyncSession, *, data: bytes, filename: str, mimetype: str,
+    model_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Return ``{ok, text, model?}`` — the attachment's readable content.
+    NEVER writes anything; errors come back as {ok: False, error}."""
+    lower = (filename or "").lower()
+    is_pdf = mimetype == "application/pdf" or lower.endswith(".pdf")
+
+    if lower.endswith(_TEXT_EXT) or mimetype == "text/plain":
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("cp1256", errors="replace")
+        return {"ok": True, "text": text[:_TEXT_CAP]}
+
+    if lower.endswith(_EXCEL_EXT) or mimetype in ("text/csv",):
+        try:
+            return {"ok": True, "text": doc_ingest.workbook_to_text(data, filename)[:_TEXT_CAP]}
+        except Exception as exc:
+            return {"ok": False, "error": f"جدول قابلِ خواندن نبود: {exc}"}
+
+    if mimetype == _DOCX_MIME or lower.endswith(".docx"):
+        try:
+            import io
+            from docx import Document
+            doc = Document(io.BytesIO(data))
+            parts = [p.text for p in doc.paragraphs if (p.text or "").strip()]
+            for tb in doc.tables:
+                for row in tb.rows:
+                    parts.append(" | ".join((c.text or "").strip() for c in row.cells))
+            return {"ok": True, "text": "\n".join(parts)[:_TEXT_CAP]}
+        except Exception as exc:
+            return {"ok": False, "error": f"فایل Word قابلِ خواندن نبود: {exc}"}
+
+    if is_pdf or (mimetype or "").startswith("image/"):
+        if len(data) > _TRANSCRIBE_MAX_BYTES:
+            return {"ok": False, "error": "فایل برای رونویسیِ سریع بزرگ است — از «استخراجِ کامل از پیوست‌ها» استفاده کن."}
+        rr = await inference.resolve_multimodal(db, [{"mimetype": mimetype}], model_id=model_id)
+        if not rr.get("ok"):
+            return {"ok": False, "error": rr.get("error")}
+        prompt = (
+            "Transcribe ALL the text of the attached document faithfully, page by page, "
+            "top to bottom — every heading, paragraph, table (as pipe-separated rows), "
+            "reference number, date and amount, exactly as printed. Persian stays Persian, "
+            "English stays English. Output ONLY the transcription, no commentary."
+        )
+        res = await inference.send_multimodal(
+            rr["resolved"], prompt,
+            [{"filename": filename, "mimetype": mimetype, "data": data}], max_tokens=8000)
+        if not res.get("ok"):
+            return {"ok": False, "error": str(res.get("error"))}
+        return {"ok": True, "text": (res.get("text") or "")[:_TEXT_CAP],
+                "model": rr["resolved"].display_name}
+
+    return {"ok": False, "error": "فرمتِ این پیوست پشتیبانی نمی‌شود (PDF/تصویر/Excel/CSV/Word/متن)."}

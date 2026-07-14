@@ -371,7 +371,7 @@ export default function LetterPage() {
   const designRef = useRef(design); useEffect(() => { designRef.current = design }, [design])
 
   // --- AI assistant («دستیار هوشمند») — propose reviewable edits, apply only ticked ones ---
-  const DEFAULT_TOOLS = ['spelling', 'grammar', 'paragraphs', 'consistency', 'professional', 'complete', 'inline_prompts']
+  const DEFAULT_TOOLS = ['spelling', 'grammar', 'paragraphs', 'consistency', 'professional', 'complete', 'inline_prompts', 'full_check']
   const [aiOpen, setAiOpen] = useState(false)
   const [aiModels, setAiModels] = useState<LetterAiModel[]>([])
   const [aiTools, setAiTools] = useState<LetterAiTool[]>([])
@@ -664,6 +664,32 @@ export default function LetterPage() {
       // the model gets full control over exactly these, nothing else.
       const pickedTables = letterTools.includes('tables') ? getBodyTables().filter((t) => tblSelected(t.uid)) : []
       sentTableUidsRef.current = pickedTables.map((t) => ({ uid: t.uid, attId: t.attId }))
+      // full_check: gather the attachments' CONTENT so the model can check the
+      // letter AND its attachments against the DB and against each other.
+      // In-flow attachment tables come from the letter itself; attached FILES
+      // are transcribed one bounded request each (never persisted).
+      const fcNotes: LetterAiChange[] = []   // read-failures surfaced AFTER analyze (never lost)
+      const fcAttTexts: { name: string; text: string }[] = []
+      const fcAttTables = letterTools.includes('full_check') ? attTables.map((t) => t.html) : []
+      if (letterTools.includes('full_check') && letterAtts.length) {
+        const fcAtts = letterAtts.filter((a) => attSelected(a))
+        for (let i = 0; i < fcAtts.length; i++) {
+          const att = fcAtts[i]
+          setExtracting2(`خواندنِ پیوست برای بررسیِ کامل (${fa(i + 1)} از ${fa(fcAtts.length)}): ${att.original_name}…`)
+          try {
+            const tx = await letterAiApi.attachmentText(att.id, { model_id: aiModelId === '' ? undefined : Number(aiModelId) })
+            if (tx.ok && (tx.text || '').trim()) fcAttTexts.push({ name: att.original_name, text: tx.text || '' })
+            else if (!tx.ok) fcNotes.push({ id: `fcerr-${att.id}`, op: 'note', category: 'consistency', field: '',
+              title: `پیوست «${att.original_name}» برای بررسیِ کامل خوانده نشد`, detail: aiErrorText(tx.error),
+              severity: 'medium', applicable: false })
+          } catch (e) {
+            fcNotes.push({ id: `fcerr-${att.id}`, op: 'note', category: 'consistency', field: '',
+              title: `پیوست «${att.original_name}» برای بررسیِ کامل خوانده نشد`, detail: parseApiError(e),
+              severity: 'medium', applicable: false })
+          }
+        }
+        setExtracting2('')
+      }
       if (letterTools.length) {
         const r = await letterAiApi.analyze({
           account_no: general ? undefined : (acct.trim() || undefined),
@@ -671,11 +697,13 @@ export default function LetterPage() {
           instruction: aiInstruction.trim() || undefined,
           selections: aiSelections.length ? aiSelections : undefined,
           tables: pickedTables.length ? pickedTables.map((t) => t.html) : undefined,
+          attachment_tables: fcAttTables.length ? fcAttTables : undefined,
+          attachments_text: fcAttTexts.length ? fcAttTexts : undefined,
           model_id: aiModelId === '' ? undefined : Number(aiModelId),
         })
         setAiFactsUsed(!!r.facts_used)
         if (!r.ok) { setAiError(aiErrorText(r.error)); setAiRan(true); setAiChanges([]); return }
-        all = r.changes || []
+        all = (r.changes || []).concat(fcNotes)
         modelUsed = r.model || ''
       }
       // Deep extraction from the letter's attachments — only the ones the user
@@ -743,6 +771,7 @@ export default function LetterPage() {
     // db_write/link items go to the DB via the server (not onto the letter).
     const dbItems: { id: string; account_no: string; customer_name: string; key: string; value: string }[] = []
     const linkItems: { id: string; account_no: string; related_account: string; kind: string; reason: string }[] = []
+    const kbItems: { id: string; topic: string; content: string; category: string; source_note: string; account_no: string }[] = []
     for (const ch of aiChanges) {
       if (!aiChecked[ch.id] || !ch.applicable) continue
       if (ch.op === 'db_write') {
@@ -751,6 +780,10 @@ export default function LetterPage() {
       }
       if (ch.op === 'link') {
         if (ch.account_no && ch.related_account) linkItems.push({ id: ch.id, account_no: ch.account_no, related_account: ch.related_account, kind: ch.kind || 'other', reason: ch.reason || ch.detail || '' })
+        continue
+      }
+      if (ch.op === 'kb_write') {
+        if (ch.topic && ch.content) kbItems.push({ id: ch.id, topic: ch.topic, content: ch.content, category: ch.kb_category || '', source_note: ch.source_note || '', account_no: general ? '' : (acct.trim() || '') })
         continue
       }
       if (ch.op === 'table_replace') {
@@ -795,12 +828,13 @@ export default function LetterPage() {
     if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
-    // Persist the approved extracted facts + profile↔profile links.
-    if (dbItems.length || linkItems.length) {
+    // Persist the approved extracted facts + profile↔profile links + KB items.
+    if (dbItems.length || linkItems.length || kbItems.length) {
       try {
         const r = await letterAiApi.applyDb({
           items: dbItems.map(({ id, ...rest }) => rest),
           links: linkItems.map(({ id, ...rest }) => rest),
+          kb_items: kbItems.map(({ id, ...rest }) => rest),
           source_ref: letterId || '',
         })
         const c = r.counts || { added: 0, updated: 0, skipped: 0, profiles_created: 0 }
@@ -809,13 +843,14 @@ export default function LetterPage() {
         if (c.updated) parts.push(`${fa(c.updated)} به‌روزرسانی`)
         if (c.profiles_created) parts.push(`${fa(c.profiles_created)} پروفایلِ نو`)
         if (r.links_created) parts.push(`${fa(r.links_created)} لینکِ پروفایلی`)
+        if (r.kb_added) parts.push(`${fa(r.kb_added)} مطلب در پایگاه دانش`)
         if (c.skipped) parts.push(`${fa(c.skipped)} تکراری/کهنه رد شد`)
         toast.success('در پایگاه‌داده: ' + (parts.join(' · ') || 'بدون تغییر') + ' — در لاگ‌ها ثبت شد')
-        appliedIds.push(...dbItems.map((d) => d.id), ...linkItems.map((d) => d.id))
+        appliedIds.push(...dbItems.map((d) => d.id), ...linkItems.map((d) => d.id), ...kbItems.map((d) => d.id))
       } catch (e) { toast.error('ثبت در پایگاه‌داده ناموفق: ' + parseApiError(e)) }
     }
 
-    if (!applied && !notLocated && !dbItems.length && !linkItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
+    if (!applied && !notLocated && !dbItems.length && !linkItems.length && !kbItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
     // drop applied rows; keep the rest so the user can iterate
     setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
   }
@@ -2674,7 +2709,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v60</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v61</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -3046,7 +3081,7 @@ export default function LetterPage() {
                   ) : null })()}
 
                   {/* Which attachments to extract — pick exactly the ones you need */}
-                  {aiSelTools.includes(ATT_TOOL) && letterAtts.length > 0 && (
+                  {(aiSelTools.includes(ATT_TOOL) || aiSelTools.includes('full_check')) && letterAtts.length > 0 && (
                     <div className="lai-attpick">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <span className="lai-lbl">کدام پیوست‌ها استخراج شوند؟</span>

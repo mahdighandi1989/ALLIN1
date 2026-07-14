@@ -616,3 +616,17 @@ async def test_persist_person_identity_and_property_details(db_session):
     assert pr.insurance_issue == "01/03/2026" and pr.insurance_expiry == "01/03/2027"
     assert pr.last_valuation_date == "10/06/2026"
     assert float(pr.valuation) == 2500000.0 and float(pr.mortgage_amount) == 1500000.0
+
+
+async def test_attachment_text_deterministic_paths(db_session):
+    """v61: the full_check pass reads attachments as TEXT without any model or
+    DB write — Excel/CSV and plain text are fully deterministic."""
+    from app.services import letter_attachment_extract as lax
+    r = await lax.attachment_text(db_session, data=_xlsx_bytes(), filename="t.xlsx",
+                                  mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    assert r["ok"] and "440022" in r["text"]
+    r2 = await lax.attachment_text(db_session, data="سلام دنیا".encode("utf-8"),
+                                   filename="a.txt", mimetype="text/plain")
+    assert r2["ok"] and "سلام" in r2["text"]
+    r3 = await lax.attachment_text(db_session, data=b"junk", filename="x.zzz", mimetype="")
+    assert not r3["ok"]
