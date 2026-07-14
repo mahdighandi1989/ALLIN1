@@ -211,8 +211,9 @@ function CustomerDetailInner() {
       toast.success('Facility added')
     } catch (e) { toast.error(parseApiError(e)) }
   }
-  // [title, numberKey, expiryKey, [ [extraKey, label], ... ]]
+  // [title, numberKey, expiryKey, [ [extraKey, label], ... ]] — an empty expiryKey means "no expiry" (e.g. کد ملی)
   const KYC_DOCS: [string, string, string, [string, string][]][] = [
+    ['National ID (کد ملی)', 'national_id', '', []],
     ['Trade License', 'trade_license_no', 'trade_license_expiry', [['trade_license_issue', 'Issue date'], ['trade_license_remarks', 'Remarks']]],
     ['Passport', 'passport_no', 'passport_expiry', [['passport_issue', 'Issue date'], ['passport_nationality', 'Nationality'], ['passport_remarks', 'Remarks']]],
     ['Emirates ID', 'emirates_id_no', 'emirates_id_expiry', [['emirates_id_issue', 'Issue date'], ['emirates_id_golden', 'Golden (Yes/No)'], ['emirates_id_remarks', 'Remarks']]],
@@ -222,7 +223,7 @@ function CustomerDetailInner() {
   const startKycEdit = () => {
     const f: any = { business_type: profile?.business_type || '', rating: profile?.rating || '' }
     KYC_DOCS.forEach(([, nk, ek, extras]) => {
-      f[nk] = profile?.[nk] || ''; f[ek] = profile?.[ek] || ''
+      f[nk] = profile?.[nk] || ''; if (ek) f[ek] = profile?.[ek] || ''
       extras.forEach(([k]) => { f[k] = profile?.[k] || '' })
     })
     setKycForm(f); setKycEdit(true)
@@ -497,8 +498,8 @@ function CustomerDetailInner() {
                   <>
                     <input value={kycForm[nk] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [nk]: e.target.value }))}
                       placeholder="Number" className="w-full border border-gray-300 rounded px-2 py-1 text-sm mt-1" />
-                    <input value={kycForm[ek] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [ek]: e.target.value }))}
-                      placeholder="Expiry (YYYY-MM-DD)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />
+                    {ek && <input value={kycForm[ek] || ''} onChange={(e) => setKycForm((s: any) => ({ ...s, [ek]: e.target.value }))}
+                      placeholder="Expiry (YYYY-MM-DD)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1" />}
                     {extras.map(([k, ph]) => {
                       // Nationality / country sub-fields get the searchable country list.
                       const isCountry = k.endsWith('nationality') || k === 'country'
@@ -513,7 +514,7 @@ function CustomerDetailInner() {
                 ) : (
                   <>
                     <div className="font-medium text-sm">{val(profile?.[nk])}</div>
-                    <div className="text-xs text-gray-500 mt-1">Expiry: {val(profile?.[ek])}</div>
+                    {ek && <div className="text-xs text-gray-500 mt-1">Expiry: {val(profile?.[ek])}</div>}
                     {extras.filter(([k]) => profile?.[k]).map(([k, ph]) => (
                       <div key={k} className="text-xs text-gray-500 mt-0.5">{ph}: {val(profile?.[k])}</div>
                     ))}
@@ -559,7 +560,7 @@ function CustomerDetailInner() {
       {tab === 'guarantors' && (
         <Section title={`Guarantors & Security Cheques (${guarantors.length})`}>
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 mb-4">
-            {[['guarantor_name', 'Guarantor name'], ['guarantor_account', 'Account'], ['cheque_no', 'Cheque No'], ['cheque_amount', 'Amount'], ['issuing_bank', 'Bank']].map(([k, ph]) => (
+            {[['guarantor_name', 'Guarantor name'], ['guarantor_account', 'Account'], ['national_id', 'National ID (کد ملی)'], ['cheque_no', 'Cheque No'], ['cheque_amount', 'Amount'], ['issuing_bank', 'Bank']].map(([k, ph]) => (
               <input key={k} value={ng[k] || ''} onChange={(e) => setNg((s: any) => ({ ...s, [k]: e.target.value }))}
                 placeholder={ph} inputMode={k === 'cheque_amount' ? 'numeric' : undefined}
                 className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -574,7 +575,7 @@ function CustomerDetailInner() {
           {guarantors.length === 0 ? <Empty>No guarantors</Empty> : (
             <div className="overflow-auto">
               <table className="w-full text-sm whitespace-nowrap">
-                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Guarantor', 'Account', 'Cheque No', 'Amount', 'Bank', 'Ref'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
+                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Guarantor', 'Account', 'National ID', 'Cheque No', 'Amount', 'Bank', 'Ref'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
                 <tbody className="divide-y">
                   {guarantors.map((g: any) => (
                     <tr key={g.id}>
@@ -584,6 +585,7 @@ function CustomerDetailInner() {
                         ) : val(g.guarantor_name)}
                       </td>
                       <td className="px-3 py-1.5">{val(g.guarantor_account)}</td>
+                      <td className="px-3 py-1.5 tabular-nums">{val(g.national_id)}</td>
                       <td className="px-3 py-1.5">{val(g.cheque_no)}</td>
                       <td className="px-3 py-1.5">{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td>
                       <td className="px-3 py-1.5">{val(g.issuing_bank)}</td>
@@ -709,9 +711,13 @@ function CustomerDetailInner() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {([
                     ['plate_no', 'Plate / Reg No'], ['mortgage_deed_no', 'Mortgage Deed No'], ['city', 'City'], ['country', 'Country (UAE/Iran)'],
-                    ['address', 'Address'], ['prop_type', 'Type'], ['building_age', 'Building Age'], ['land_area', 'Land Area (m²)'],
+                    ['address', 'Address'], ['postal_code', 'Postal Code (کد پستی)'], ['prop_type', 'Type'], ['zone', 'Zone'],
+                    ['owner', 'Owner / Mortgagor (مالک/راهن)'], ['owner_national_id', 'Owner National ID (کد ملی مالک)'],
+                    ['building_age', 'Building Age'], ['land_area', 'Land Area (m²)'], ['infra_area', 'Built-up Area (m²)'],
                     ['cnbc', 'CNBC'], ['valuation', 'Valuation'], ['valuation_currency', 'Val. Currency'], ['mortgage_amount', 'Mortgage Amount'],
-                    ['mortgage_date', 'Mortgage Date'], ['last_valuation_date', 'Last Valuation Date'], ['insurance_no', 'Insurance No'], ['insurance_expiry', 'Insurance Expiry'],
+                    ['mortgage_date', 'Mortgage Date'], ['last_valuation_date', 'Last Valuation Date'],
+                    ['insurance_no', 'Insurance No (شماره بیمه‌نامه)'], ['insurance_computer_code', 'Insurance Computer Code (کد رایانه)'],
+                    ['insurance_issue', 'Insurance Issue'], ['insurance_expiry', 'Insurance Expiry'],
                   ] as [string, string][]).map(([k, ph]) => (
                     <input key={k} value={np[k] || ''} onChange={(e) => setNp((s: any) => ({ ...s, [k]: e.target.value }))}
                       placeholder={ph} inputMode={(k === 'valuation' || k === 'mortgage_amount') ? 'numeric' : undefined}
@@ -739,7 +745,7 @@ function CustomerDetailInner() {
               <div className="overflow-auto">
                 <table className="w-full text-sm whitespace-nowrap">
                   <thead className="bg-gray-50"><tr className="text-left text-gray-500">
-                    {['Plate', 'Deed No', 'City', 'Type', 'Valuation', 'Mortgage Amt', 'Insurance Expiry', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}
+                    {['Plate', 'Deed No', 'City', 'Type', 'Owner (مالک/راهن)', 'Owner NID', 'Postal', 'Area L/B (m²)', 'Valuation', 'Mortgage Amt', 'Insurance No · Code', 'Ins. Issue → Expiry', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}
                   </tr></thead>
                   <tbody className="divide-y">
                     {properties.map((p: any) => (
@@ -747,10 +753,15 @@ function CustomerDetailInner() {
                         <td className="px-3 py-1.5">{val(p.plate_no)}</td>
                         <td className="px-3 py-1.5">{val(p.mortgage_deed_no)}</td>
                         <td className="px-3 py-1.5">{val(p.city)}{p.country ? ` · ${p.country}` : ''}</td>
-                        <td className="px-3 py-1.5">{val(p.prop_type)}</td>
+                        <td className="px-3 py-1.5">{val(p.prop_type)}{p.zone ? ` · ${p.zone}` : ''}</td>
+                        <td className="px-3 py-1.5">{val(p.owner)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{val(p.owner_national_id)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{val(p.postal_code)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{p.land_area || p.infra_area ? `${p.land_area || '—'} / ${p.infra_area || '—'}` : '—'}</td>
                         <td className="px-3 py-1.5 tabular-nums">{p.valuation != null ? `${p.valuation_currency || 'AED'} ${Number(p.valuation).toLocaleString()}` : '—'}</td>
                         <td className="px-3 py-1.5 tabular-nums">{p.mortgage_amount != null ? Number(p.mortgage_amount).toLocaleString() : '—'}</td>
-                        <td className="px-3 py-1.5">{val(p.insurance_expiry)}</td>
+                        <td className="px-3 py-1.5">{p.insurance_no || p.insurance_computer_code ? `${p.insurance_no || '—'} · ${p.insurance_computer_code || '—'}` : '—'}</td>
+                        <td className="px-3 py-1.5">{p.insurance_issue || p.insurance_expiry ? `${p.insurance_issue || '—'} → ${p.insurance_expiry || '—'}` : '—'}</td>
                         <td className="px-3 py-1.5"><button onClick={() => removeProperty(p.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
                       </tr>
                     ))}
@@ -762,7 +773,10 @@ function CustomerDetailInner() {
 
           <Section title={`Partners / Shareholders (${partnerList.length})`}>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
-              {[['name', 'Partner name'], ['nationality', 'Nationality'], ['share', 'Share %']].map(([k, ph]) => (
+              {[['name', 'Partner / Manager name'], ['role', 'Role (Partner / Manager / …)'], ['nationality', 'Nationality'],
+                ['national_id', 'National ID (کد ملی)'], ['share', 'Share %'],
+                ['passport_no', 'Passport No'], ['passport_issue', 'Passport Issue'], ['passport_expiry', 'Passport Expiry'],
+                ['emirates_id_no', 'Emirates ID No'], ['emirates_id_expiry', 'EID Expiry']].map(([k, ph]) => (
                 <input key={k} value={npt[k] || ''} onChange={(e) => setNpt((s: any) => ({ ...s, [k]: e.target.value }))}
                   placeholder={ph} className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
               ))}
@@ -779,12 +793,16 @@ function CustomerDetailInner() {
             {partnerRows.length > 0 ? (
               <div className="overflow-auto">
                 <table className="w-full text-sm whitespace-nowrap">
-                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Name', 'Nationality', 'Share %', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}</tr></thead>
+                  <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Name', 'Role', 'Nationality', 'National ID', 'Passport (No · Issue → Expiry)', 'Emirates ID (No · Expiry)', 'Share %', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}</tr></thead>
                   <tbody className="divide-y">
                     {partnerRows.map((p: any) => (
                       <tr key={p.id}>
                         <td className="px-3 py-1.5">{val(p.name)}</td>
+                        <td className="px-3 py-1.5">{val(p.role)}</td>
                         <td className="px-3 py-1.5">{val(p.nationality)}</td>
+                        <td className="px-3 py-1.5 tabular-nums">{val(p.national_id)}</td>
+                        <td className="px-3 py-1.5">{p.passport_no ? `${p.passport_no}${p.passport_issue || p.passport_expiry ? ` · ${p.passport_issue || '—'} → ${p.passport_expiry || '—'}` : ''}` : '—'}</td>
+                        <td className="px-3 py-1.5">{p.emirates_id_no ? `${p.emirates_id_no}${p.emirates_id_expiry ? ` · ${p.emirates_id_expiry}` : ''}` : '—'}</td>
                         <td className="px-3 py-1.5">{val(p.share)}</td>
                         <td className="px-3 py-1.5"><button onClick={() => removePartner(p.id)} type="button" className="text-xs text-red-600 hover:underline">Remove</button></td>
                       </tr>
