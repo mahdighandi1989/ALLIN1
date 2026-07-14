@@ -37,11 +37,15 @@ class MortgagedProperty(Base):
     cnbc = Column(String(80))                # بررسی زیرساخت (CNBC)
     zone = Column(String(40))                # منطقه
     infra_area = Column(String(40))          # مساحت زیربنا (م²)
-    owner = Column(String(200))              # مالک
+    owner = Column(String(200))              # مالک / راهن
+    owner_national_id = Column(String(40))   # کد ملی مالک/راهن
+    postal_code = Column(String(20))         # کد پستی ملک
     valuation = Column(Numeric(18, 2))       # ارزیابی / برآورد
     valuation_currency = Column(String(10), default="AED")
     insurance_expiry = Column(String(30))    # تاریخ انقضای بیمه‌نامه
+    insurance_issue = Column(String(30))     # تاریخ صدور بیمه‌نامه
     insurance_no = Column(String(80))        # شماره بیمه‌نامه
+    insurance_computer_code = Column(String(80))  # کد رایانهٔ بیمه
     last_valuation_date = Column(String(30)) # تاریخ آخرین ارزیابی
     mortgage_date = Column(String(30))       # تاریخ ترهین
     mortgage_amount = Column(Numeric(18, 2)) # مبلغ ترهین
@@ -95,7 +99,14 @@ class Partner(Base):
     facility_id = Column(String(60), index=True)
     customer_name = Column(String(200))
     name = Column(String(200))
+    role = Column(String(80))                # سمت: Partner / Manager / Director / Authorized Signatory …
     nationality = Column(String(80))
+    national_id = Column(String(40))         # کد ملی
+    passport_no = Column(String(80))
+    passport_issue = Column(String(30))
+    passport_expiry = Column(String(30))
+    emirates_id_no = Column(String(80))
+    emirates_id_expiry = Column(String(30))
     share = Column(String(40))               # share % (text: '25', '25%')
     remarks = Column(String(400))
     created_by = Column(String(80))

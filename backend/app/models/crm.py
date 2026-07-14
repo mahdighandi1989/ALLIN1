@@ -22,6 +22,7 @@ class CustomerProfile(Base):
     rating = Column(String(10))
     customer_status = Column(String(50))
     # KYC documents — number + expiry (for the KYC panel and expiry alerts).
+    national_id = Column(String(40))          # کد ملی صاحب حساب (schema-driven ⇒ auto-extracted)
     trade_license_no = Column(String(80))
     trade_license_expiry = Column(String(30))
     passport_no = Column(String(80))

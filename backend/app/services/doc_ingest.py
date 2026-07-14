@@ -88,13 +88,19 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
         + _build_fields_block()
         + """
       },
-      "guarantors": [ {"name": "", "account": "", "branch": ""} ],
-      "partners": [ {"name": "", "nationality": "", "share": "", "remarks": ""} ],
+      "guarantors": [ {"name": "", "account": "", "branch": "", "national_id": ""} ],
+      "partners": [ {"name": "", "role": "Partner | Manager | Director | Authorized Signatory | <as printed>",
+                     "nationality": "", "national_id": "", "passport_no": "", "passport_issue": "", "passport_expiry": "",
+                     "emirates_id_no": "", "emirates_id_expiry": "", "share": "", "remarks": ""} ],
       "facilities": [ {"facility_type": "overdraft | loan | cheque_discounting | trust_receipt | lc_sight | lc_usance | lc | lg | log | other",
                        "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "notes": ""} ],
-      "properties": [ {"prop_type": "", "address": "", "city": "", "country": "",
-                       "valuation": "", "valuation_currency": "AED", "mortgage_amount": "", "mortgage_currency": "AED",
-                       "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "", "insurance_expiry": ""} ],
+      "properties": [ {"prop_type": "", "address": "", "city": "", "country": "", "postal_code": "",
+                       "owner": "", "owner_national_id": "",
+                       "land_area": "", "infra_area": "", "building_age": "", "zone": "",
+                       "valuation": "", "valuation_currency": "AED", "last_valuation_date": "",
+                       "mortgage_amount": "", "mortgage_currency": "AED",
+                       "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "",
+                       "insurance_no": "", "insurance_computer_code": "", "insurance_issue": "", "insurance_expiry": ""} ],
       "security": [ {"type": "Underlien Deposits | Cheques | Collaterals | <as printed>", "for_facility": "",
                      "aed": "", "usd": "", "irr": "", "other": ""} ],
       "required_securities": "<the REQUIRED SECURITIES / DOCUMENTS list exactly as printed, one item per line>",
@@ -113,9 +119,11 @@ Rules:
 - Extract EVERY field listed under "fields" that the document actually contains — including the small ones officers often miss: every ID's issue date AND expiry date, visa number/issue/expiry/type, tenancy number/issue/expiry/address, whether the Emirates ID is "golden" (Yes/No), etc.
 - RECONCILE DUPLICATES & CONFLICTS: the file often states the SAME thing in several places or across several documents (two partner lists, an old + a renewed licence, two ID copies). For EVERY field and EVERY list (partners, guarantors, facilities, properties, IDs, …), when entries refer to the SAME real entity, output it ONCE, taking the value from the MOST AUTHORITATIVE and MOST RECENT source (prefer official/government documents and the latest date). Do NOT output the same entity twice, do NOT add up or blend conflicting numbers, and do NOT drop a genuinely distinct entity. Treat slightly different spellings of the same name as the same person.
 - Partner/share percentages are real percentages between 0 and 100 and should sum to about 100. A value that cannot be a percentage (e.g. a capital amount such as 3,300,000) is an extraction error — omit it. Likewise sanity-check every number against its meaning (an interest rate is not thousands of percent).
-- "partners" = the company's shareholders/partners (name, nationality, share %). "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
+- "partners" = the company's shareholders/partners AND its managers/directors/authorized signatories — set "role" to what is printed (Partner, Manager, Director, Authorized Signatory, …). A person who is both partner and manager gets ONE entry with the fuller role. "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
+- PERSON IDENTITY NUMBERS MATTER: for EVERY partner/manager/guarantor and for the property owner, capture the national ID (کد ملی — the 10-digit Iranian code — or the local equivalent) plus, for partners/managers, the passport number with its ISSUE and EXPIRY dates and the Emirates ID number with its expiry, whenever the document shows them. Copy ID numbers digit-for-digit; never guess or pad them.
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
+- For each mortgaged property also hunt for: the OWNER/mortgagor's name and national ID (کد ملی مالک/راهن), the postal code, the land area and built-up area (متراژ زمین/زیربنا) with the building age and zone, the valuation with its DATE, and the INSURANCE POLICY: policy number ("insurance_no"), the insurer's computer/system code (کد رایانه — "insurance_computer_code"), and the policy's issue and expiry dates. These appear on the title deed, the mortgage deed, the valuation report and the insurance policy pages — read all of them.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
 - A FIXED DEPOSIT / سپرده — even one held UNDER LIEN to secure a facility — is a SECURITY, NOT a facility: report it ONLY inside "security" (type "Underlien Deposits"), NEVER as an entry in "facilities". Likewise never output the overall "credit facility line" heading, a TOTAL/summary row, or a processing-charges row as a facility.
 - "required_securities" = the document's REQUIRED SECURITIES / DOCUMENTS (or securities/documents to be obtained) list, copied essentially verbatim, one item per line — the Offer Letter reuses this text as-is.
@@ -471,6 +479,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             row.guarantor_account = gacc[:50]
         if g.get("branch"):
             row.branch = str(g["branch"])[:20]
+        _set_prop(row, "national_id", g.get("national_id"))
         if customer is not None and customer.name and not row.customer_name:
             row.customer_name = customer.name
 
@@ -499,7 +508,14 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         else:
             pt_updated += 1
         prow.name = pname[:200]
+        _set_prop(prow, "role", pt.get("role"))
         _set_prop(prow, "nationality", pt.get("nationality"))
+        _set_prop(prow, "national_id", pt.get("national_id"))
+        _set_prop(prow, "passport_no", pt.get("passport_no"))
+        _set_prop(prow, "passport_issue", pt.get("passport_issue"))
+        _set_prop(prow, "passport_expiry", pt.get("passport_expiry"))
+        _set_prop(prow, "emirates_id_no", pt.get("emirates_id_no"))
+        _set_prop(prow, "emirates_id_expiry", pt.get("emirates_id_expiry"))
         _set_prop(prow, "share", _clean_pct(pt.get("share")))  # drops impossible % (e.g. 3300000)
         _set_prop(prow, "remarks", pt.get("remarks"))
         if customer is not None and customer.name and not prow.customer_name:
@@ -541,6 +557,17 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         _set_prop(prow, "mortgage_deed_no", deed)
         _set_prop(prow, "remarks", p.get("remarks"))
         _set_prop(prow, "mortgage_date", p.get("mortgage_date"))
+        _set_prop(prow, "owner", p.get("owner"))
+        _set_prop(prow, "owner_national_id", p.get("owner_national_id"))
+        _set_prop(prow, "postal_code", p.get("postal_code"))
+        _set_prop(prow, "land_area", p.get("land_area"))
+        _set_prop(prow, "infra_area", p.get("infra_area"))
+        _set_prop(prow, "building_age", p.get("building_age"))
+        _set_prop(prow, "zone", p.get("zone"))
+        _set_prop(prow, "last_valuation_date", p.get("last_valuation_date"))
+        _set_prop(prow, "insurance_no", p.get("insurance_no"))
+        _set_prop(prow, "insurance_computer_code", p.get("insurance_computer_code"))
+        _set_prop(prow, "insurance_issue", p.get("insurance_issue"))
         _set_prop(prow, "insurance_expiry", p.get("insurance_expiry"))
         _set_prop(prow, "valuation_currency", p.get("valuation_currency"))
         _set_prop(prow, "mortgage_currency", p.get("mortgage_currency"))
