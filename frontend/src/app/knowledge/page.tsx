@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
-import { BookOpen, Search, ListTree } from 'lucide-react'
+import { BookOpen, Search, ListTree, Sparkles, Trash2 } from 'lucide-react'
 import { SECTIONS, KB_TITLE, KB_SUBTITLE, type Block, type Section } from './content'
+import { knowledgeApi, type KbTopic } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 
 function blockText(b: Block): string {
   switch (b.type) {
@@ -86,9 +88,35 @@ function BlockView({ b }: { b: Block }) {
   }
 }
 
+function topicMatches(t: KbTopic, q: string): boolean {
+  if (!q) return true
+  const hay = (t.title + ' ' + t.category + ' ' + t.entries.map((e) => e.content + ' ' + (e.source_ref || '')).join(' ')).toLowerCase()
+  return hay.includes(q.toLowerCase())
+}
+
 export default function KnowledgePage() {
+  const { user } = useAuth()
   const [query, setQuery] = useState('')
+  const [dyn, setDyn] = useState<KbTopic[]>([])
+  const canEdit = user && ['admin', 'manager', 'editor'].includes((user as any).role || '')
+  const loadDyn = () => knowledgeApi.list().then((r) => setDyn(r.topics || [])).catch(() => setDyn([]))
+  useEffect(() => { loadDyn() }, [])
   const visible = useMemo(() => SECTIONS.filter((s) => sectionMatches(s, query)), [query])
+  const dynVisible = useMemo(() => dyn.filter((t) => topicMatches(t, query)), [dyn, query])
+  // the LIVE index of the dynamic part: categories in first-seen order
+  const dynCats = useMemo(() => {
+    const out: { cat: string; topics: KbTopic[] }[] = []
+    for (const t of dynVisible) {
+      const g = out.find((c) => c.cat === (t.category || 'عمومی'))
+      if (g) g.topics.push(t)
+      else out.push({ cat: t.category || 'عمومی', topics: [t] })
+    }
+    return out
+  }, [dynVisible])
+  const removeEntry = async (id: string) => {
+    if (!confirm('این مطلب از پایگاه دانش حذف شود؟')) return
+    try { await knowledgeApi.deleteEntry(id); loadDyn() } catch { /* keep page usable */ }
+  }
 
   return (
     <Layout>
@@ -133,7 +161,25 @@ export default function KnowledgePage() {
                     {s.title}
                   </a>
                 ))}
-                {visible.length === 0 && (
+                {dynCats.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-violet-700 px-3 pb-1">
+                      <Sparkles size={13} /> مطالبِ برداشت‌شده از نامه‌ها
+                    </div>
+                    {dynCats.map((c) => (
+                      <div key={c.cat}>
+                        <div className="text-[11px] text-gray-400 px-3 pt-1">{c.cat}</div>
+                        {c.topics.map((t) => (
+                          <a key={t.id} href={`#kb-${t.id}`}
+                            className="block text-sm text-gray-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg px-3 py-1.5 transition-colors">
+                            {t.title}
+                          </a>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {visible.length === 0 && dynVisible.length === 0 && (
                   <p className="text-sm text-gray-400 px-3 py-1.5">موردی یافت نشد.</p>
                 )}
               </nav>
@@ -154,7 +200,37 @@ export default function KnowledgePage() {
                 {s.blocks.map((b, i) => <BlockView key={i} b={b} />)}
               </section>
             ))}
-            {visible.length === 0 && (
+            {/* دانشِ برداشت‌شده از نامه‌ها/پیوست‌ها (پویا — دستیارِ هوشمند پرش می‌کند) */}
+            {dynCats.map((c) => (
+              <div key={c.cat} className="space-y-5">
+                {c.topics.map((t) => (
+                  <section key={t.id} id={`kb-${t.id}`}
+                    className="bg-white border border-violet-200 rounded-xl p-5 lg:p-6 scroll-mt-20">
+                    <div className="flex items-center justify-between gap-2 mb-4 pb-2 border-b border-gray-100">
+                      <h2 className="text-lg font-bold text-violet-800 flex items-center gap-2">
+                        <Sparkles size={16} /> {t.title}
+                      </h2>
+                      <span className="text-xs bg-violet-50 text-violet-700 rounded-full px-2.5 py-1">{t.category}</span>
+                    </div>
+                    {t.entries.map((e) => (
+                      <div key={e.id} className="mb-4 last:mb-0">
+                        <p className="text-gray-700 leading-8 whitespace-pre-wrap">{e.content}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[11px] text-gray-400" dir="rtl">
+                            منبع: {e.source_ref || '—'}{e.account_no ? ` · حساب ${e.account_no}` : ''}{e.created_at ? ` · ${e.created_at.slice(0, 10)}` : ''}
+                          </span>
+                          {canEdit && (
+                            <button onClick={() => removeEntry(e.id)} type="button" title="حذفِ این مطلب"
+                              className="text-red-400 hover:text-red-600"><Trash2 size={13} /></button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                ))}
+              </div>
+            ))}
+            {visible.length === 0 && dynVisible.length === 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-gray-400">
                 نتیجه‌ای برای «{query}» پیدا نشد.
               </div>

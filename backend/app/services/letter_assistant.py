@@ -152,7 +152,7 @@ TOOLS: Dict[str, Dict[str, str]] = {
         "guide": "موردِ انتخاب‌شده را در برابر «حقایق پایگاه‌داده» راستی‌آزمایی کن؛ اگر درست است note با severity=low و اگر غلط است اصلاحِ text_replace/set_field پیشنهاد بده (category=validation).",
     },
     "db_extract": {
-        "label": "استخراج و ثبتِ داده‌های مفید در پروفایلِ مشتری(ها)",
+        "label": "استخراج و ثبتِ داده‌های مفید در پروفایلِ مشتری(ها) و پایگاه دانش",
         "guide": (
             "داده‌های مفیدِ پروفایلی را از متنِ نامه استخراج کن و برای هرکدام یک تغییر با "
             "op=\"db_write\" بده. **با نهایت دقت**: یک نامه ممکن است چند مشتری را نام ببرد؛ هر "
@@ -161,7 +161,34 @@ TOOLS: Dict[str, Dict[str, str]] = {
             "همان مشتری)، key (نامِ فیلدِ کوتاهِ snake_case از این فهرست یا مشابهش: "
             + ", ".join(CANONICAL_KEYS) + ")، value (مقدارِ استخراج‌شده). "
             "فقط واقعیت‌های صریحِ متن؛ چیزی از خودت نساز. اگر واقعیتی به مشتریِ اصلیِ نامه ربط "
-            "ندارد، account_no/customer_name همان مشتریِ دیگر را بگذار. (category=db_extract)"
+            "ندارد، account_no/customer_name همان مشتریِ دیگر را بگذار. (category=db_extract)\n"
+            "  پایگاه دانش: جدا از واقعیت‌های پروفایلی، اگر در نامه یا پیوست‌ها محتوایی با "
+            "ارزشِ عمومی/آموزشی هست (قاعده، رویه، بخشنامه، ضابطهٔ محاسبه، درسِ عملیاتی — نه "
+            "دادهٔ خصوصیِ یک مشتری)، برای هر موضوع یک تغییر با op=\"kb_write\" بده با کلیدهای: "
+            "topic (عنوانِ عام و ماندگارِ موضوع — محتوای مشابه باید ذیلِ یک عنوان جمع شود، نه "
+            "هر جمله یک ردیف)، category (دسته: رویه/بخشنامه/محاسبات/وثایق/…)، content (متنِ "
+            "منظم و کاملِ آموزشی — بازنویسیِ تمیزِ همان محتوا، بدونِ نامِ مشتری و دادهٔ خصوصی)، "
+            "source_note (ارجاعِ دقیق: کدام نامه/پیوست و کدام بخش). فقط وقتی ارزشِ عمومیِ "
+            "واقعی دارد؛ برای محتوای صرفاً موردی kb_write نده. (category=db_extract)"
+        ),
+    },
+    "full_check": {
+        "label": "بررسیِ کاملِ نامه و پیوست‌ها با پایگاه‌داده",
+        "guide": (
+            "بازرسِ مغایرت باش — همهٔ فیلدهای نامه، متنِ کاملِ نامه، جدول‌های پیوستِ داخلِ "
+            "نامه و «محتوای پیوست‌ها» (اگر داده شده) را جزءبه‌جزء با «حقایقِ پایگاه‌داده» و با "
+            "همدیگر مقایسه کن: مبالغ، نرخ‌ها، شماره‌حساب‌ها، نام‌ها، تاریخ‌ها، شماره‌نامه‌ها و "
+            "ارجاع‌ها. هر مغایرت یک تغییرِ جدا: اگر اصلاح در متنِ نامه ممکن است text_replace "
+            "با مقدارِ درست؛ اگر مغایرت در پیوست یا پایگاه‌داده است (متنِ نامه درست است یا "
+            "منبعِ حقیقت نامشخص است) note با شرحِ دقیقِ دو مقدار و محلِ هرکدام — کاربر خودش "
+            "تصمیم می‌گیرد کدام درست است. "
+            "انطباقِ نامه با پیوست‌ها را هم بسنج: وقتی نامه بازتاب/انعکاسِ نامهٔ دیگری است، "
+            "شماره و تاریخِ نامهٔ ارجاع‌شده، نامِ فرستنده/گیرندهٔ آن، مبالغ و خواسته‌ها باید "
+            "عیناً با آنچه در پیوست آمده بخواند و توضیحِ نامه باید مفهومِ پیوست را کامل و "
+            "درست منتقل کند — هر ناسازگاری (شمارهٔ نامهٔ غلط، تاریخِ ناهم‌خوان، خلاصهٔ "
+            "ناقص/گمراه‌کننده) را با ذکرِ هر دو مقدار گزارش کن. اگر پیوستی داده نشده، فقط "
+            "نامه را با پایگاه‌داده بسنج و در یک note کوتاه بگو پیوست‌ها در دسترس نبودند. "
+            "(category=consistency)"
         ),
     },
 }
@@ -445,7 +472,19 @@ SYSTEM_PROMPT = (
     "در یک جمله) یکی‌اش حذف شود.\n"
     "  ت) پاراگراف‌بندی را حفظ کن: هر پاراگراف یک کار (استناد/زمینه، ایفادِ پیوست، درخواست، "
     "پایان‌بندی). find و replace هر پیشنهاد باید داخلِ مرزِ همان پاراگراف بماند — هرگز چند "
-    "پاراگراف را در یک replace ادغام نکن و متنِ پاراگراف‌های مجاور را در یک جملهٔ واحد نچسبان."
+    "پاراگراف را در یک replace ادغام نکن و متنِ پاراگراف‌های مجاور را در یک جملهٔ واحد نچسبان.\n"
+    "13) درستیِ امضاکننده (sender): این نامه‌ها از «بانک صادرات — سرپرستی منطقه خلیج فارس» و "
+    "شعب/دوایرِ زیرمجموعه‌اش صادر می‌شوند و فیلد sender فقط دو مقدارِ مجاز دارد. قاعدهٔ کلی: "
+    "اگر گیرنده بیرون از این مجموعه است (ادارهٔ کل/سازمان/شرکت/بانکِ دیگر، نهادِ دولتی، "
+    "بیمه، مشتری…) امضاکنندهٔ درست «سرپرستی منطقه خلیج فارس» است؛ اگر مکاتبهٔ داخلیِ خودِ "
+    "مجموعه است (بین شعب و دوایرِ همین سرپرستی) امضاکنندهٔ درست «دایره تسهیلات اعطایی» است. "
+    "اگر sender فعلی با این قاعده نمی‌خواند، یک پیشنهادِ op=set_field برای field=sender با "
+    "مقدارِ درست بده (category=consistency, severity=high) و در detail دلیل را بنویس؛ چون "
+    "استثنا ممکن است، این فقط پیشنهاد است و کاربر تصمیم می‌گیرد. اگر جایگاهِ گیرنده مبهم بود، "
+    "به‌جای set_field یک note بده.\n"
+    "14) op=\"kb_write\" فقط وقتی ابزارِ استخراج فعال است مجاز است: ثبتِ محتوای عمومی/آموزشی "
+    "در پایگاه دانش با کلیدهای topic/category/content/source_note (شرحِ کامل در راهنمای همان "
+    "ابزار). دادهٔ خصوصیِ مشتری هرگز در kb_write نمی‌آید."
 )
 
 MAX_CHANGES = 60
@@ -457,7 +496,9 @@ MAX_SELECTIONS = 12
 def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List[str],
                       instruction: str = "", selection: str = "",
                       selections: Optional[List[str]] = None,
-                      tables: Optional[List[str]] = None) -> str:
+                      tables: Optional[List[str]] = None,
+                      attachments_text: Optional[List[Dict[str, str]]] = None,
+                      attachment_tables: Optional[List[str]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -499,6 +540,21 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
             parts.append(f"{i}. «{s}»")
 
     # The user's SELECTED tables (raw HTML) — full AI control over these only.
+    # Attachment CONTENT (for the full_check tool): in-flow attachment tables +
+    # extracted text of attached files — the material the letter must agree with.
+    atts = [a for a in (attachments_text or []) if isinstance(a, dict) and (a.get("text") or "").strip()][:10]
+    att_tbls = [t for t in (attachment_tables or []) if (t or "").strip()][:MAX_TABLES]
+    if atts or att_tbls:
+        parts.append(
+            "\n### محتوای پیوست‌های نامه (برای بررسیِ مغایرت با پایگاه‌داده و انطباق با متنِ نامه — "
+            "این‌ها قابلِ text_replace نیستند؛ مغایرت‌شان را با note/اصلاحِ متنِ نامه گزارش کن):"
+        )
+        for i, t in enumerate(att_tbls, 1):
+            parts.append(f"[جدولِ پیوست {i} — صفحهٔ پیوستِ داخلِ خودِ نامه]\n{t[:15000]}")
+        for a in atts:
+            nm = str(a.get("name") or "پیوست")[:120]
+            parts.append(f"[فایلِ پیوست: {nm}]\n{str(a.get('text'))[:20000]}")
+
     tbls = [t for t in (tables or []) if (t or "").strip()][:MAX_TABLES]
     if tbls:
         parts.append(
@@ -661,6 +717,38 @@ def _norm_key(k: str) -> str:
     k = (k or "").strip().lower().replace(" ", "_").replace("-", "_")
     k = _KEY_RE.sub("", k)
     return k[:60]
+
+
+def parse_kb_writes(raw_text: str) -> List[Dict[str, Any]]:
+    """Pull the model's op=="kb_write" proposals — general/educational content
+    for the Knowledge Base. Raw dicts (topic/category/content/source_note),
+    de-duped by (topic, content); persistence/grouping happens in kb_store."""
+    data = _loose_json(raw_text)
+    changes = data.get("changes") if isinstance(data, dict) else None
+    if not isinstance(changes, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    for ch in changes:
+        if not isinstance(ch, dict) or str(ch.get("op") or "").strip() != "kb_write":
+            continue
+        topic = str(ch.get("topic") or "").strip()
+        content = str(ch.get("content") or "").strip()
+        if len(topic) < 2 or len(content) < 10:
+            continue
+        dedup = (topic.casefold(), content[:120].casefold())
+        if dedup in seen:
+            continue
+        seen.add(dedup)
+        out.append({
+            "topic": topic[:300],
+            "category": str(ch.get("category") or "").strip()[:120],
+            "content": content[:8000],
+            "source_note": str(ch.get("source_note") or "").strip()[:400],
+            "title": str(ch.get("title") or "").strip() or f"پایگاه دانش: {topic[:60]}",
+            "detail": str(ch.get("detail") or "").strip(),
+        })
+    return out[:20]
 
 
 def parse_db_writes(raw_text: str) -> List[Dict[str, Any]]:

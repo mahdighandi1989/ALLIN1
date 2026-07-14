@@ -55,6 +55,10 @@ class AnalyzeRequest(BaseModel):
     selection: str = ""                                    # back-compat (single)
     selections: List[str] = Field(default_factory=list)    # the gathered snippets
     tables: List[str] = Field(default_factory=list)        # user-selected tables' HTML
+    # v61 (full_check): attachment CONTENT the letter must agree with —
+    # in-flow attachment tables' HTML + per-file transcribed/extracted text.
+    attachment_tables: List[str] = Field(default_factory=list)
+    attachments_text: List[Dict[str, str]] = Field(default_factory=list)  # [{name, text}]
     model_id: Optional[int] = None
 
 
@@ -117,6 +121,10 @@ async def analyze(
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
         tables=(payload.tables or []) if "tables" in tools else [],
+        # attachment content feeds the full consistency/conformity pass; it is
+        # harmless to other tools (its section explains it is not replaceable)
+        attachments_text=(payload.attachments_text or []) if "full_check" in tools else [],
+        attachment_tables=(payload.attachment_tables or []) if "full_check" in tools else [],
     )
 
     result = await inference.complete(
@@ -156,6 +164,18 @@ async def analyze(
             )
             changes.extend(staged)
 
+    # Knowledge-Base proposals (general/educational content) — staged like any
+    # other change; the user ticks them and /apply-db persists via kb_store.
+    if "db_extract" in tools:
+        for i, kb in enumerate(la.parse_kb_writes(result.get("text") or ""), 1):
+            changes.append({
+                "id": f"kb-{i}", "op": "kb_write", "category": "db_extract",
+                "field": "", "severity": "low", "applicable": True,
+                "title": kb["title"], "detail": kb["detail"] or kb["source_note"],
+                "topic": kb["topic"], "kb_category": kb["category"],
+                "content": kb["content"], "source_note": kb["source_note"],
+            })
+
     await record_audit(
         action="analyze", entity_type="letter_ai", entity_id=None,
         account_no=(payload.account_no or None),
@@ -186,9 +206,18 @@ class LinkItem(BaseModel):
     reason: str
 
 
+class KbWriteItem(BaseModel):
+    topic: str
+    content: str
+    category: str = ""
+    source_note: str = ""
+    account_no: str = ""
+
+
 class ApplyDbRequest(BaseModel):
     items: List[DbWriteItem] = Field(default_factory=list)
     links: List[LinkItem] = Field(default_factory=list)
+    kb_items: List[KbWriteItem] = Field(default_factory=list)
     source_ref: str = ""
 
 
@@ -240,6 +269,37 @@ async def apply_db(
                     user=user, request=request, db=db,
                 )
     result["links_created"] = links_created
+
+    # Knowledge-Base items — grouped under topics with provenance (kb_store owns
+    # grouping/dedup; the index/categories derive live, nothing else to update).
+    kb_added = kb_skipped = 0
+    if payload.kb_items:
+        from app.services import kb_store
+        username = getattr(user, "username", "") or ""
+        for k in payload.kb_items:
+            src = (k.source_note or "").strip()
+            if payload.source_ref:
+                src = f"{src} — {payload.source_ref}".strip(" —")
+            r = await kb_store.upsert_entry(
+                db, topic_title=k.topic, content=k.content, category=k.category,
+                source_kind="letter_ai", source_ref=src,
+                account_no=k.account_no or "", username=username,
+            )
+            if r.get("ok") and r.get("created_entry"):
+                kb_added += 1
+            else:
+                kb_skipped += 1
+        await db.commit()
+        if kb_added:
+            await record_audit(
+                action="create", entity_type="knowledge", entity_id=None,
+                account_no=None,
+                detail=f"پایگاه دانش: {kb_added} مطلبِ تأییدشده از دستیارِ نامه ثبت شد"
+                       + (f" ({payload.source_ref})" if payload.source_ref else ""),
+                user=user, request=request, db=db,
+            )
+    result["kb_added"] = kb_added
+    result["kb_skipped"] = kb_skipped
     return result
 
 
@@ -349,6 +409,62 @@ async def extract_attachment_endpoint(
     )
     return {"ok": True, "changes": staged, "model": extraction.get("model"),
             "chunk_errors": extraction.get("chunk_errors", []), "file": fname}
+
+
+class AttachmentTextRequest(BaseModel):
+    model_id: Optional[int] = None
+
+
+@router.post("/attachment-text/{attachment_id}")
+async def attachment_text_endpoint(
+    attachment_id: str,
+    payload: AttachmentTextRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Readable TEXT of one attachment for the full_check pass — deterministic
+    for Excel/CSV/Word/plain text, one bounded transcription call for PDF/image.
+    Writes NOTHING (unlike extract-attachment, which stages DB facts)."""
+    from app.models.crm import Attachment
+    from app.services import attachments as attachments_store
+    from app.services import letter_attachment_extract as lax
+
+    a = (await db.execute(select(Attachment).where(Attachment.id == attachment_id))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    data: bytes = b""
+    if a.drive_file_id:
+        from app.services import drive_sync
+        try:
+            data = await drive_sync.download_attachment(a.drive_file_id)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"دانلود از Drive ناموفق: {exc}")
+    else:
+        path = attachments_store.resolve(a.file_path or "")
+        if path is None:
+            raise HTTPException(status_code=404, detail="فایل روی دیسک یافت نشد")
+        data = path.read_bytes()
+
+    import mimetypes
+    fname = a.original_name or a.file_name or "file"
+    mime = mimetypes.guess_type(fname)[0] or ""
+    if not mime:
+        head = data[:12]
+        if head.startswith(b"%PDF-"):
+            mime = "application/pdf"
+        elif head.startswith(b"\x89PNG"):
+            mime = "image/png"
+        elif head.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+        else:
+            mime = "application/octet-stream"
+
+    r = await lax.attachment_text(db, data=data, filename=fname, mimetype=mime,
+                                  model_id=payload.model_id)
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("error"), "file": fname}
+    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model")}
 
 
 class GenerateAttachmentRequest(BaseModel):

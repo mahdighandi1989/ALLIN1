@@ -769,7 +769,7 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'kb_write'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
@@ -780,7 +780,25 @@ export type LetterAiChange = {
   action?: 'add' | 'update'; resolution?: string; exists?: boolean
   // link only — profile↔profile relationship proposal (kind + exact reason)
   related_account?: string; related_name?: string; kind?: string; reason?: string
+  // kb_write only — general/educational content grouped under a KB topic
+  topic?: string; kb_category?: string; content?: string; source_note?: string
   source_file?: string
+}
+export type KbEntry = { id: string; content: string; source_kind: string; source_ref: string; account_no?: string; created_by?: string; created_at?: string }
+export type KbTopic = { id: string; title: string; category: string; entries: KbEntry[] }
+export const knowledgeApi = {
+  async list(): Promise<{ topics: KbTopic[]; categories: string[]; count: number }> {
+    const { data } = await api.get('/api/knowledge/')
+    return data
+  },
+  async addEntry(body: { topic_title: string; content: string; category?: string; source_ref?: string }): Promise<any> {
+    const { data } = await api.post('/api/knowledge/entries', body)
+    return data
+  },
+  async deleteEntry(id: string): Promise<any> {
+    const { data } = await api.delete(`/api/knowledge/entries/${encodeURIComponent(id)}`)
+    return data
+  },
 }
 export type LetterAiDbOutcome = { account_no: string; key: string; outcome: string; profile_created?: boolean; reason?: string }
 export const letterAiApi = {
@@ -788,14 +806,20 @@ export const letterAiApi = {
     const { data } = await api.get('/api/letter-ai/models')
     return data
   },
-  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; tables?: string[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
-    const { data } = await api.post('/api/letter-ai/analyze', body)
+  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; tables?: string[]; attachment_tables?: string[]; attachments_text?: { name: string; text: string }[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[] }> {
+    const { data } = await api.post('/api/letter-ai/analyze', body, { timeout: 300000 })
     return data
   },
   // Persist the user-approved extracted facts into the right customer profile(s)
-  // + create approved profile↔profile links (kind + exact reason).
-  async applyDb(body: { items: { account_no: string; customer_name?: string; key: string; value: string }[]; links?: { account_no: string; related_account: string; kind: string; reason: string }[]; source_ref?: string }): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number }; links_created?: number }> {
+  // + create approved profile↔profile links (kind + exact reason) + approved
+  // Knowledge-Base items (grouped under topics with provenance).
+  async applyDb(body: { items: { account_no: string; customer_name?: string; key: string; value: string }[]; links?: { account_no: string; related_account: string; kind: string; reason: string }[]; kb_items?: { topic: string; content: string; category?: string; source_note?: string; account_no?: string }[]; source_ref?: string }): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number }; links_created?: number; kb_added?: number; kb_skipped?: number }> {
     const { data } = await api.post('/api/letter-ai/apply-db', body)
+    return data
+  },
+  // Readable TEXT of one attachment (full_check pass) — never writes anything.
+  async attachmentText(attachmentId: string, body: { model_id?: number | null } = {}): Promise<{ ok: boolean; error?: string; file?: string; text?: string; model?: string }> {
+    const { data } = await api.post(`/api/letter-ai/attachment-text/${encodeURIComponent(attachmentId)}`, body, { timeout: 300000 })
     return data
   },
   // Deep extraction from ONE letter attachment (UI runs them sequentially).
