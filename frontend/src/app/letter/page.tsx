@@ -814,6 +814,8 @@ export default function LetterPage() {
     const dbItems: { id: string; account_no: string; customer_name: string; key: string; value: string }[] = []
     const linkItems: { id: string; account_no: string; related_account: string; kind: string; reason: string }[] = []
     const kbItems: { id: string; topic: string; content: string; category: string; source_note: string; account_no: string }[] = []
+    // table_insert results: collected here and committed once after the loop.
+    const newAttTables: AttTable[] = []
     for (const ch of aiChanges) {
       if (!aiChecked[ch.id] || !ch.applicable) continue
       if (ch.op === 'db_write') {
@@ -826,6 +828,26 @@ export default function LetterPage() {
       }
       if (ch.op === 'kb_write') {
         if (ch.topic && ch.content) kbItems.push({ id: ch.id, topic: ch.topic, content: ch.content, category: ch.kb_category || '', source_note: ch.source_note || '', account_no: general ? '' : (acct.trim() || '') })
+        continue
+      }
+      if (ch.op === 'table_insert') {
+        // A brand-new AI-authored table (whitelist-sanitized server-side):
+        // placement 'attachment' → its own پیوست page after the letter (the
+        // page auto-handles landscape/font-fit); 'body' → appended to the text
+        // flow with the same markup the manual جدول button produces.
+        const wrap = document.createElement('div')
+        wrap.innerHTML = ch.html || ''
+        normalizeTables(wrap)   // stable data-r ids for toolbar/pagination
+        const newTbl = wrap.querySelector('table')
+        if (!newTbl) { notLocated++; continue }
+        if (ch.placement === 'attachment') {
+          newAttTables.push({ id: uid(), title: ch.table_title || '', html: newTbl.outerHTML })
+          if (nf.attachment !== 'دارد') nf.attachment = 'دارد'
+        } else {
+          const title = ch.table_title ? `<div style="font-weight:700;text-align:center;text-indent:0">${escapeHtml(ch.table_title)}</div>` : ''
+          nf.body = `${normalizeBodyHtml(nf.body || '')}${title}${newTbl.outerHTML}<div><br></div>`
+        }
+        applied++; appliedIds.push(ch.id)
         continue
       }
       if (ch.op === 'table_replace') {
@@ -867,6 +889,7 @@ export default function LetterPage() {
         else notLocated++
       }
     }
+    if (newAttTables.length) setAttTables((list) => [...list, ...newAttTables])
     if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
@@ -2751,7 +2774,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v65</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v68</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -3283,8 +3306,8 @@ export default function LetterPage() {
                               <span className="lai-after">{c.value || c.after || '—'}</span>
                             </div>
                           )}
-                          {/* table_replace: live preview of the redesigned table (server-sanitized HTML) */}
-                          {c.op === 'table_replace' && c.html && (
+                          {/* table_replace / table_insert: live preview of the (re)designed table (server-sanitized HTML) */}
+                          {(c.op === 'table_replace' || c.op === 'table_insert') && c.html && (
                             <div className="lai-tblprev" dir="rtl" dangerouslySetInnerHTML={{ __html: c.html }} />
                           )}
                         </div>

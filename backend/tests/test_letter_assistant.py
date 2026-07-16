@@ -8,6 +8,8 @@ proposals are safe to hand to the client. These tests lock that behavior:
 - malformed / unknown ops are dropped,
 - html_to_text + build_facts produce the plain context the guard relies on.
 """
+import json
+
 from app.services import letter_assistant as la
 
 
@@ -213,9 +215,9 @@ def test_build_user_prompt_table_fill_is_db_aware():
                              instruction="جدول را با مشخصات تسهیلات پر کن",
                              tables=["<table><tr><td>a</td></tr></table>"])
     assert "پر کردن/تکمیلِ محتوای جدول" in p
-    assert "تنها منبعِ مجازِ داده" in p and "«حقایقِ پایگاه‌داده»" in p
+    assert "منابعِ مجازِ داده" in p and "«حقایقِ پایگاه‌داده»" in p
     assert "customer/facilities/guarantors/profile" in p     # where to look things up
-    assert "اگر یافت نشد، خانه را «—» بگذار" in p            # missing ⇒ blank, not invented
+    assert "اگر هیچ‌جا یافت نشد، خانه را «—» بگذار" in p       # missing ⇒ blank, not invented
     assert "هرگز عدد، تاریخ، نام یا مبلغی را حدس نزن" in p   # anti-hallucination
     assert "نامهٔ عمومی/بدونِ حساب" in p                     # fact-less letters ⇒ say so
     # the tables tool guide itself also carries the DB-only rule
@@ -345,3 +347,43 @@ def test_parse_need_logs_and_rule15():
     # the facts header advertises the protocol
     p = la.build_user_prompt(FIELDS, {}, ["validation"], instruction="")
     assert "need_logs" in p
+
+
+def test_table_insert_validation_and_sanitizer():
+    """v68: the model can CREATE a new table (op=table_insert) — no pre-existing
+    or selected table needed; HTML passes the same whitelist sanitizer."""
+    raw = json.dumps({"changes": [
+        {"op": "table_insert", "category": "tables", "title": "جدول اقساط",
+         "html": "<table><tr><th>ماه</th></tr><tr><td>فروردین<script>x()</script></td></tr></table>",
+         "table_title": "ج" * 200, "placement": "attachment"},
+        {"op": "table_insert", "title": "پیش‌فرض بدنه",
+         "html": "<table><tr><td>الف</td></tr></table>", "placement": "بی‌معنا"},
+        {"op": "table_insert", "title": "غیرجدول", "html": "<div>نه جدول</div>"},
+    ]}, ensure_ascii=False)
+    out = la.parse_and_validate(raw, {"body": "<div>متن</div>"}, tables_count=0)
+    ins = [c for c in out if c["op"] == "table_insert"]
+    assert len(ins) == 2  # the non-table html is dropped
+    att, body = ins[0], ins[1]
+    assert att["placement"] == "attachment"
+    assert "<script>" not in att["html"] and "فروردین" in att["html"]
+    assert len(att["table_title"]) == 120  # clamped
+    assert att["applicable"] is True and "پیوستِ نامه" in att["after"]
+    assert body["placement"] == "body"  # unknown placement → body
+
+
+def test_table_insert_and_attachment_source_rules_reach_prompt():
+    """v68 prompt wiring: creation rules ride with ANY non-empty instruction
+    (zero tables needed), and attachment content is a legit fill source."""
+    assert "table_insert" in la.SYSTEM_PROMPT
+    assert "table_insert" in la.TOOLS["tables"]["guide"]
+    p = la.build_user_prompt(FIELDS, {}, ["tables"], instruction="یک جدول اقساط بساز",
+                             attachments_text=[{"name": "sanction.pdf", "text": "مبلغ ۵۰۰۰۰"}])
+    assert "ساختِ جدولِ جدید" in p and "table_insert" in p
+    assert "منبعِ مجازِ داده" in p            # attachments section grants fill access
+    # without an instruction the creation block stays out (no op advertised for free)
+    p2 = la.build_user_prompt(FIELDS, {}, ["tables"], instruction="")
+    assert "ساختِ جدولِ جدید" not in p2
+    # the fill rules (selected tables) now allow the attachments as a source
+    p3 = la.build_user_prompt(FIELDS, {}, ["tables"], instruction="جدول را پر کن",
+                              tables=["<table><tr><td>x</td></tr></table>"])
+    assert "محتوای پیوست‌های نامه» (اگر در همین پیام هست)" in p3

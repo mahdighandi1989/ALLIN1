@@ -20,7 +20,7 @@ EXPECTED_ROUTE_PAGES = [
     "audit/page.tsx",
     "trash/page.tsx",
     "import/page.tsx",
-    "offer-letters/page.tsx",
+    "offer-letter/page.tsx",
     "customer-detail/page.tsx",
     "facility-detail/page.tsx",
     "profile/page.tsx",
