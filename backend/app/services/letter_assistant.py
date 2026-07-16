@@ -367,7 +367,9 @@ def build_facts(customer: Any, profile_data: Dict[str, Any], facilities: List[An
                 guarantors: List[Any], properties: Optional[List[Any]] = None,
                 property_events: Optional[List[Any]] = None,
                 fixed_deposits: Optional[List[Any]] = None,
-                partners: Optional[List[Any]] = None) -> Dict[str, Any]:
+                partners: Optional[List[Any]] = None,
+                audit_logs: Optional[List[Any]] = None,
+                journal_entries: Optional[List[Any]] = None) -> Dict[str, Any]:
     """Compact, authoritative DB snapshot for the letter's account — the ground
     truth the model validates the letter against. Only plain, non-secret facts."""
     def ev(v):
@@ -438,6 +440,23 @@ def build_facts(customer: Any, profile_data: Dict[str, Any], facilities: List[An
         facts["fixed_deposits"] = [_row_facts(fd) for fd in fixed_deposits[:20]]
     if partners:
         facts["partners"] = [_row_facts(pt) for pt in partners[:20]]
+    # The account's ACTIVITY LOGS — so a request like «آخرین کارهای انجام‌شده
+    # روی این حساب را فهرست کن» can be answered from the DB, not invented.
+    # account_activity_log = audit trail rows (who did what, newest first);
+    # journal_log = per-customer workflow/daily-log lines routed to the account.
+    if audit_logs:
+        facts["account_activity_log"] = [
+            {
+                "when": str(getattr(a, "created_at", "") or ""),
+                "user": getattr(a, "username", "") or "",
+                "action": getattr(a, "action", "") or "",
+                "entity": getattr(a, "entity_type", "") or "",
+                "detail": _norm_ws(str(getattr(a, "detail", "") or ""))[:300],
+            }
+            for a in audit_logs[:40]
+        ]
+    if journal_entries:
+        facts["journal_log"] = [_row_facts(j) for j in journal_entries[:40]]
     # A curated slice of the profile blob (avoid dumping 290 raw fields).
     if isinstance(profile_data, dict) and profile_data:
         keep = {}
@@ -568,7 +587,9 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     parts.append("\n### متنِ نامه (body):")
     parts.append(body_txt or "(خالی)")
 
-    parts.append("\n### حقایقِ پایگاه‌داده (منبعِ حقیقت برای اعتبارسنجی):")
+    parts.append("\n### حقایقِ پایگاه‌داده (منبعِ حقیقت برای اعتبارسنجی؛ کلیدهای "
+                 "account_activity_log/journal_log = لاگِ کارهای همین حساب — جدیدترین اول؛ "
+                 "اگر دستورِ کاربر به «لاگ‌ها/کارهای انجام‌شده» اشاره دارد از همین‌ها استخراج کن):")
     parts.append(json.dumps(facts, ensure_ascii=False, indent=1) if facts else "(بدون رکورد مرتبط)")
 
     parts.append("\n### ابزارهای درخواستی (فقط روی این‌ها تمرکز کن):")

@@ -294,3 +294,41 @@ def test_find_guard_accepts_arabic_yeh_kaf_and_zwnj_variants():
     letter = "بیمه‌نامه‌های املاک رهنی مرتبط با حساب‌های شعب"
     model_find = "بيمه نامه هاي املاك رهني مرتبط با حساب هاي شعب"
     assert _norm_ws(model_find) in _norm_ws(letter)
+
+
+def test_build_facts_includes_account_activity_logs():
+    """v66: the account's audit trail + journal lines land in the facts, capped
+    and newest-first as given, so «از لاگ‌ها استخراج کن» works from the DB."""
+    from app.models.crm import JournalEntry
+
+    class C:
+        name = "شرکت نمونه"; name_ar = ""; account_no = "123456"
+        account_type = "corporate"; branch = "2624"
+
+    class A:
+        def __init__(self, i):
+            self.created_at = f"2026-07-1{i % 5} 12:00"
+            self.username = "mahdi"; self.action = "update"
+            self.entity_type = "letter"; self.detail = "ویرایش   نامهٔ  رسمی" + "x" * 400
+
+    j = JournalEntry(id="j1", account_no="123456", category="letters",
+                     item="صدور نامه", status="done", date="2026-07-14",
+                     user="mahdi", notes="نامهٔ ترهین")
+    facts = la.build_facts(C(), {}, [], [], audit_logs=[A(i) for i in range(45)],
+                           journal_entries=[j])
+    log = facts["account_activity_log"]
+    assert len(log) == 40  # capped
+    assert log[0]["user"] == "mahdi" and log[0]["action"] == "update"
+    assert "ویرایش نامهٔ رسمی" in log[0]["detail"]  # whitespace normalized
+    assert len(log[0]["detail"]) <= 300  # truncated
+    jl = facts["journal_log"]
+    assert jl[0]["item"] == "صدور نامه" and jl[0]["status"] == "done"
+    # absent logs → keys absent (facts stay compact)
+    lean = la.build_facts(C(), {}, [], [])
+    assert "account_activity_log" not in lean and "journal_log" not in lean
+
+
+def test_build_user_prompt_explains_log_keys():
+    p = la.build_user_prompt(FIELDS, {"account_activity_log": [{"action": "update"}]},
+                             ["validation"], instruction="")
+    assert "account_activity_log" in p and "لاگِ کارهای همین حساب" in p

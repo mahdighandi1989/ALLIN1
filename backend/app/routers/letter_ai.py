@@ -115,6 +115,31 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
             select(Partner).where(Partner.account_no == acc, Partner.is_deleted == False)  # noqa: E712
         )
     ).scalars().all()
+    # The account's activity logs (audit trail + journal/daily-log lines) —
+    # newest first, capped — so «از لاگ‌ها استخراج کن» requests work everywhere
+    # the AI reads the DB. Best-effort: a missing table must not kill analyze.
+    audit_rows: list = []
+    journal_rows: list = []
+    try:
+        from app.models.audit_log import AuditLog
+        audit_rows = (
+            await db.execute(
+                select(AuditLog).where(AuditLog.account_no == acc)
+                .order_by(AuditLog.created_at.desc()).limit(40)
+            )
+        ).scalars().all()
+    except Exception:
+        audit_rows = []
+    try:
+        from app.models.crm import JournalEntry
+        journal_rows = (
+            await db.execute(
+                select(JournalEntry).where(JournalEntry.account_no == acc)
+                .order_by(JournalEntry.created_at.desc()).limit(40)
+            )
+        ).scalars().all()
+    except Exception:
+        journal_rows = []
     # Profile blob (extracted facts / offer-letter snapshot live here).
     profile_data: Dict[str, Any] = {}
     try:
@@ -132,7 +157,8 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
         profile_data = {}
     return la.build_facts(customer, profile_data, list(facilities), list(guarantors),
                           properties=list(properties), property_events=list(property_events),
-                          fixed_deposits=list(fixed_deposits), partners=list(partners))
+                          fixed_deposits=list(fixed_deposits), partners=list(partners),
+                          audit_logs=list(audit_rows), journal_entries=list(journal_rows))
 
 
 @router.post("/analyze")
