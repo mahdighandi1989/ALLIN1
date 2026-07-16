@@ -828,10 +828,21 @@ export const letterAiApi = {
     const { data } = await api.post(`/api/letter-ai/extract-attachment/${encodeURIComponent(attachmentId)}`, body, { timeout: 420000 })
     return data
   },
-  // AI builds a REAL file attachment (Excel/Word) from an instruction — data
-  // only from the DB facts; stored like a manual upload, marked ai_generated.
-  async generateAttachment(body: { letter_id: string; account_no?: string; instruction: string; kind?: 'excel' | 'word'; subject?: string; recipient?: string; body_excerpt?: string; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; kind?: string; warnings?: string[]; attachment?: LetterAttachment }> {
+  // AI builds a REAL file attachment (Excel/Word) from an instruction and/or a
+  // TEMPLATE file's text — data only from the DB facts; stored like a manual
+  // upload, marked ai_generated.
+  async generateAttachment(body: { letter_id: string; account_no?: string; instruction: string; kind?: 'excel' | 'word'; subject?: string; recipient?: string; body_excerpt?: string; model_id?: number | null; template_text?: string; template_name?: string }): Promise<{ ok: boolean; error?: string; model?: string; kind?: string; warnings?: string[]; attachment?: LetterAttachment }> {
     const { data } = await api.post('/api/letter-ai/generate-attachment', body, { timeout: 420000 })
+    return data
+  },
+  // Readable TEXT of a local TEMPLATE/SAMPLE file (any format) — nothing stored.
+  async templateText(file: File, modelId?: number | null): Promise<{ ok: boolean; error?: string; file?: string; text?: string; model?: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    if (modelId != null) form.append('model_id', String(modelId))
+    const { data } = await api.post('/api/letter-ai/template-text', form, {
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+    })
     return data
   },
 }
