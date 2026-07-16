@@ -555,8 +555,29 @@ SYSTEM_PROMPT = (
     "به‌جای set_field یک note بده.\n"
     "14) op=\"kb_write\" فقط وقتی ابزارِ استخراج فعال است مجاز است: ثبتِ محتوای عمومی/آموزشی "
     "در پایگاه دانش با کلیدهای topic/category/content/source_note (شرحِ کامل در راهنمای همان "
-    "ابزار). دادهٔ خصوصیِ مشتری هرگز در kb_write نمی‌آید."
+    "ابزار). دادهٔ خصوصیِ مشتری هرگز در kb_write نمی‌آید.\n"
+    "15) جستجوی کاملِ لاگ‌ها (need_logs): کلیدهای account_activity_log/journal_log در «حقایقِ "
+    "پایگاه‌داده» فقط برشِ اخیرند. اگر دستورِ کاربر به لاگ‌ها/کارهای انجام‌شده اشاره دارد و این برش "
+    "کافی نیست (قدیمی‌تر، کاربر/بازهٔ خاص، حسابِ دیگر یا کلِ سیستم)، به‌جای خروجیِ معمول فقط این JSON "
+    "را برگردان تا سرور روی «کلِ» لاگ‌ها جستجو کند و نتیجه را بدهد:\n"
+    "{\"need_logs\": {\"scope\": \"audit\"|\"journal\"|\"both\", \"account_no\": \"\", \"text\": \"\", "
+    "\"user\": \"\", \"action\": \"\", \"date_from\": \"YYYY-MM-DD\", \"date_to\": \"YYYY-MM-DD\"}}\n"
+    "همهٔ فیلترها اختیاری‌اند (خالی = همه). این فرصت فقط یک بار است: در نوبتِ بعد «نتایجِ جستجوی "
+    "لاگ‌ها» را می‌گیری و باید خروجیِ نهایی را بدهی؛ اگر شمارِ یافته‌ها از سقفِ ارسال بیشتر بود در "
+    "warnings همان پیام آمده — فیلتر را در همان نوبتِ اول درست انتخاب کن. هرگز به‌جای need_logs "
+    "دادهٔ لاگ نساز."
 )
+
+
+def parse_need_logs(raw_text: str) -> Optional[Dict[str, str]]:
+    """Detect a need_logs request in the model's reply (rule 15) — None when
+    the reply is a normal changes payload. The returned query is sanitized."""
+    data = _loose_json(raw_text or "")
+    need = data.get("need_logs") if isinstance(data, dict) else None
+    if not isinstance(need, dict):
+        return None
+    from app.services.log_search import sanitize_query
+    return sanitize_query(need)
 
 MAX_CHANGES = 60
 
@@ -589,7 +610,8 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
 
     parts.append("\n### حقایقِ پایگاه‌داده (منبعِ حقیقت برای اعتبارسنجی؛ کلیدهای "
                  "account_activity_log/journal_log = لاگِ کارهای همین حساب — جدیدترین اول؛ "
-                 "اگر دستورِ کاربر به «لاگ‌ها/کارهای انجام‌شده» اشاره دارد از همین‌ها استخراج کن):")
+                 "اگر دستورِ کاربر به «لاگ‌ها/کارهای انجام‌شده» اشاره دارد از همین‌ها استخراج کن و "
+                 "اگر این برشِ اخیر کافی نیست، با need_logs (قاعدهٔ ۱۵) کلِ لاگ‌ها را جستجو کن):")
     parts.append(json.dumps(facts, ensure_ascii=False, indent=1) if facts else "(بدون رکورد مرتبط)")
 
     parts.append("\n### ابزارهای درخواستی (فقط روی این‌ها تمرکز کن):")

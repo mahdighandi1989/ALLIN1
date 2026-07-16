@@ -456,3 +456,32 @@ async def test_fetch_datasets_logs(db_session):
     # branch filter → only the matched account's rows
     data2, _ = await gen.fetch_datasets(db_session, ["audit_logs"], "sheikh zayed")
     assert [r["account_no"] for r in data2["audit_logs"]] == ["ACC1"]
+
+
+async def test_need_data_logs_filter_full_table_search(db_session):
+    """v67: the logs datasets run through the UNLIMITED search (whole table,
+    filterable) — need_data carries logs_filter and old rows stay reachable."""
+    from datetime import datetime
+    from app.models.audit_log import AuditLog
+
+    await _seed_branch_data(db_session)
+    db_session.add(AuditLog(id="new1", username="u1", action="update", entity_type="letter",
+                            account_no="ACC1", detail="کار جدید",
+                            created_at=datetime(2026, 7, 15, 12, 0, 0)))
+    db_session.add(AuditLog(id="old1", username="u2", action="print", entity_type="letter",
+                            account_no="ACC1", detail="چاپ نامهٔ ترهین بسیار قدیمی",
+                            created_at=datetime(2024, 3, 1, 12, 0, 0)))
+    await db_session.commit()
+
+    # parse_need_data keeps a sanitized logs_filter (rule 8)
+    need = gen.parse_need_data(json.dumps({"need_data": {
+        "datasets": ["audit_logs"], "logs_filter": {"text": "ترهین", "junk": "x"}}}))
+    assert need and need["logs_filter"] == {"text": "ترهین"}
+    assert "logs_filter" in gen.SYSTEM_PROMPT
+
+    # the filter reaches the search: only the OLD matching row comes back
+    data, _ = await gen.fetch_datasets(db_session, need["datasets"], "",
+                                       logs_filter=need["logs_filter"])
+    rows = data["audit_logs"]
+    assert len(rows) == 1 and "قدیمی" in rows[0]["detail"]
+    assert rows[0]["customer_name"] == "شرکت الف"
