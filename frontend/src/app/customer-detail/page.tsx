@@ -49,6 +49,7 @@ function CustomerDetailInner() {
   const [newTaskDate, setNewTaskDate] = useState('')
   const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
   const [nf, setNf] = useState<any>({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
+  const [npe, setNpe] = useState<any>({ property_id: '', event_type: 'valuation', event_date: '', amount: '', currency: 'AED', remarks: '' })
   const [kycEdit, setKycEdit] = useState(false)
   const [kycForm, setKycForm] = useState<any>({})
   const [newNote, setNewNote] = useState('')
@@ -316,7 +317,6 @@ function CustomerDetailInner() {
     valuation: 'ارزیابی', mortgage: 'ترهین', remortgage: 'ترهین مجدد',
     additional_mortgage: 'ترهین مازاد', release: 'فک رهن', insurance: 'بیمه‌نامه', other: 'سایر',
   }
-  const [npe, setNpe] = useState<any>({ property_id: '', event_type: 'valuation', event_date: '', amount: '', currency: 'AED', remarks: '' })
   const addPropertyEvent = async () => {
     if (!npe.property_id) { toast.error('ملک را انتخاب کن'); return }
     if (!npe.event_date.trim() && !npe.amount) { toast.error('تاریخ یا مبلغِ رویداد لازم است'); return }

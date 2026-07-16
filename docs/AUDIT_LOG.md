@@ -1673,3 +1673,10 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   build_facts با تاریخچه و ستون‌های schema-driven — ماژول ۳۲/۳۲ سبز؛
   letter ۱۰۱/۱۰۱، offer ۷۴/۷۴؛ pytest کامل در گیت؛ type-check/build سبز؛
   static سینک. مارکر همان reflow-v63 (صفحهٔ نامه تغییری نکرد).
+- **[FOLLOW-UP همان تسک]** حین گیت، build فرانت‌اند بی‌صدا شکست
+  (`>/dev/null` خطای ESLint را بلعید و static از خروجیِ کهنه سینک شد؛
+  کامیتِ اول بدونِ خروجیِ build رفت): useState تایم‌لاین بعد از early
+  returnِ صفحه بود (نقضِ rules-of-hooks). state به بالای کامپوننت منتقل و
+  build واقعی سبز شد؛ درس: در گیت، خروجیِ build را هرگز به /dev/null نده —
+  «BUILD_OK» باید دیده شود، و staticِ سینک‌شده باید diff داشته باشد وگرنه
+  از خروجیِ کهنه کپی شده.
