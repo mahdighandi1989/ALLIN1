@@ -59,7 +59,7 @@ export function useFormDesign(storageKey: string, account?: string): DesignState
     } catch { /* ignore */ }
   }
   const reset = () => {
-    if (confirm(acct ? `چیدمانِ سفارشیِ حسابِ ${acct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'بازگشت به چیدمانِ پیش‌فرض؟ همهٔ جابه‌جایی‌ها پاک می‌شوند.')) {
+    if (confirm(acct ? `چیدمانِ سفارشیِ حسابِ ${acct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'بازگشت به چیدمانِ پیش‌فرض؟ همۀ جابه‌جایی‌ها پاک می‌شوند.')) {
       setOwn({}); setEditing(null)
       try { localStorage.removeItem(KEY) } catch { /* ignore */ }
     }
@@ -123,7 +123,7 @@ export function DesignControls({ d, onPrint }: { d: DesignState; onPrint?: () =>
       {!d.design
         ? <button type="button" onClick={() => d.setDesign(true)} className="mv-btn amber">✥ چیدمان</button>
         : <button type="button" onClick={() => { d.setDesign(false); d.setEditing(null) }} className="mv-btn green">✓ پایانِ چیدمان</button>}
-      {d.design && <button type="button" onClick={d.save} className="mv-btn blue">ذخیرهٔ چیدمان</button>}
+      {d.design && <button type="button" onClick={d.save} className="mv-btn blue">ذخیرۀ چیدمان</button>}
       {d.design && <button type="button" onClick={d.reset} className="mv-btn gray">↺ بازنشانی</button>}
       {onPrint && <button type="button" onClick={onPrint} className="mv-btn blue">🖨 پرینت</button>}
       {d.design && (
@@ -172,7 +172,7 @@ export function DesignPanel({ d }: { d: DesignState }) {
           <div className="r"><label>اندازه ٪</label><input type="number" step="5" value={Math.round((b.scale || 1) * 100)} onChange={(e) => d.setBox(id, { scale: Math.max(0.4, (+e.target.value || 100) / 100) })} /></div>
           <div className="two">
             <div className="r"><label>فونت (pt)</label><input type="number" step="0.5" value={b.fontPt || ''} placeholder="—" onChange={(e) => d.setBox(id, { fontPt: +e.target.value || undefined })} /></div>
-            <div className="r"><label>فاصلهٔ حروف</label><input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => d.setBox(id, { ls: e.target.value === '' ? undefined : +e.target.value })} /></div>
+            <div className="r"><label>فاصلۀ حروف</label><input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => d.setBox(id, { ls: e.target.value === '' ? undefined : +e.target.value })} /></div>
           </div>
           <button className="rm" onClick={() => { d.setBox(id, { dx: 0, dy: 0, scale: 1, fontPt: undefined, ls: undefined }); }}>پاک‌کردنِ تنظیمِ این فیلد</button>
         </div>

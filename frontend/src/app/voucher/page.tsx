@@ -332,7 +332,7 @@ export default function VoucherPage() {
               </label>
               {guarantors.length > 0 && (
                 <label className="col-span-2 text-sm">
-                  <span className="text-gray-600">چک‌های ثبت‌شدهٔ این حساب (برای پر کردن انتخاب کن)</span>
+                  <span className="text-gray-600">چک‌های ثبت‌شدۀ این حساب (برای پر کردن انتخاب کن)</span>
                   <select className={field} value={selectedGid} onChange={(e) => pickGuarantor(e.target.value)}>
                     <option value="">— چک جدید —</option>
                     {guarantors.map((g) => (
@@ -399,10 +399,10 @@ export default function VoucherPage() {
                 <Printer size={18} /> چاپ (Print)
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-2 text-center">در پنجرهٔ چاپ، Scale را روی «Default / 100%» و Margins را «Default» بگذارید تا دقیق فیت شود.</p>
+            <p className="text-xs text-gray-400 mt-2 text-center">در پنجرۀ چاپ، Scale را روی «Default / 100%» و Margins را «Default» بگذارید تا دقیق فیت شود.</p>
             <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
               <DesignControls d={d} />
-              <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرهٔ چیدمان».' : 'برای جابه‌جایی/اندازهٔ فیلدهای سند روی «چیدمان» بزن.'}</span>
+              <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرۀ چیدمان».' : 'برای جابه‌جایی/اندازۀ فیلدهای سند روی «چیدمان» بزن.'}</span>
             </div>
           </div>
 

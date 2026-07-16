@@ -57,7 +57,7 @@ export default function StaffDirectoryPage() {
         <div className="flex items-center gap-3 mb-1">
           <div className="bg-blue-600 text-white rounded-xl p-2.5"><Contact size={22} /></div>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">دفترچهٔ کارکنان (Staff Directory)</h1>
+            <h1 className="text-2xl font-bold text-gray-900">دفترچۀ کارکنان (Staff Directory)</h1>
             <p className="text-gray-500 text-sm">اسامیِ کارمندان، اداره، تلفن/داخلی، فکس و ایمیل. هر فیلد قابلِ ویرایش است (افراد جابه‌جا یا حذف می‌شوند). «نام فارسی» را هم می‌توانید ثبت کنید تا بدونِ غلطِ املایی استفاده شود.</p>
           </div>
           <button onClick={() => setForm({ ...BLANK })} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm whitespace-nowrap"><Plus size={16} /> افزودنِ کارمند</button>
@@ -70,11 +70,11 @@ export default function StaffDirectoryPage() {
               className="w-full pr-8 pl-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <select value={region} onChange={(e) => setRegion(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
-            <option value="">همهٔ مناطق</option>
+            <option value="">همۀ مناطق</option>
             {REGIONS.map((r) => <option key={r} value={r}>{r === 'Persian Gulf' ? 'منطقه خلیج فارس' : 'ایران'}</option>)}
           </select>
           <select value={dept} onChange={(e) => setDept(e.target.value)} className="px-3 py-2 border rounded-lg text-sm max-w-[260px]">
-            <option value="">همهٔ ادارات</option>
+            <option value="">همۀ ادارات</option>
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>

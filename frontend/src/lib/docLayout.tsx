@@ -277,7 +277,7 @@ export function useDocLayout(opts: {
     <span className="text-[11px] text-gray-500 self-center" dir="rtl">
       {account
         ? <>چینش فقط برای حسابِ <b dir="ltr">{account}</b> ذخیره می‌شود — قالبِ اصلی دست‌نخورده می‌ماند</>
-        : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کند'}
+        : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی (پیش‌فرضِ همۀ حساب‌ها) را به‌روز می‌کند'}
     </span>
   )
 
@@ -290,7 +290,7 @@ export function useDocLayout(opts: {
           <button className="dlp-x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setSel(null)}>×</button>
         </div>
         <div className="dlp-row">
-          <label>اندازهٔ فونت (pt)</label>
+          <label>اندازۀ فونت (pt)</label>
           <input type="number" step="0.5" value={b.fs ?? ''} placeholder="—"
             onChange={(e) => update({ fs: +e.target.value || undefined })} />
           <button className={b.bold ? 'on' : ''} onClick={() => update({ bold: !b.bold })}>بولد</button>
@@ -316,7 +316,7 @@ export function useDocLayout(opts: {
             <option value='Tahoma, "B Nazanin", sans-serif'>Tahoma</option>
           </select>
         </div>
-        <div className="dlp-seg" title="نشانهٔ ابتدای هر خطِ این بلوک (مثل Word)">
+        <div className="dlp-seg" title="نشانۀ ابتدای هر خطِ این بلوک (مثل Word)">
           <button className={!b.list ? 'on' : ''} onClick={() => update({ list: undefined })}>بدون</button>
           <button className={b.list === 'num' ? 'on' : ''} onClick={() => update({ list: 'num' })}>1.2.3</button>
           <button className={b.list === 'bullet' ? 'on' : ''} onClick={() => update({ list: 'bullet' })}>•</button>
@@ -324,8 +324,8 @@ export function useDocLayout(opts: {
           <button className={b.list === 'dash' ? 'on' : ''} onClick={() => update({ list: 'dash' })}>–</button>
         </div>
         <div className="dlp-grid">
-          <label>فاصلهٔ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => update({ lh: +e.target.value || undefined })} /></label>
-          <label>فاصلهٔ حروف<input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => update({ ls: +e.target.value || undefined })} /></label>
+          <label>فاصلۀ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => update({ lh: +e.target.value || undefined })} /></label>
+          <label>فاصلۀ حروف<input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => update({ ls: +e.target.value || undefined })} /></label>
           <label>جابه‌جایی عمودی<input type="number" value={b.mt ?? ''} placeholder="px" onChange={(e) => update({ mt: +e.target.value || undefined })} /></label>
           <label>جابه‌جایی افقی<input type="number" value={b.mis ?? ''} placeholder="px" onChange={(e) => update({ mis: +e.target.value || undefined })} /></label>
           <label>عرض ٪<input type="number" value={b.w ?? ''} placeholder="—" onChange={(e) => update({ w: +e.target.value || undefined })} /></label>
@@ -344,12 +344,12 @@ export function useDocLayout(opts: {
             {b.hide ? 'نمایشِ دوباره' : 'حذف از برگه'}
           </button>
           <button onClick={() => setLay((s) => { const n = { ...s }; delete n[sel.key]; return n })}>بازنشانیِ این عنصر</button>
-          <button onClick={() => { if (confirm(account ? `همهٔ چینشِ سفارشیِ حسابِ ${account} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چینشِ سفارشیِ قالبِ اصلی پاک شود؟')) { setLay({}); setSel(null) } }}>بازنشانیِ همه</button>
+          <button onClick={() => { if (confirm(account ? `همۀ چینشِ سفارشیِ حسابِ ${account} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همۀ چینشِ سفارشیِ قالبِ اصلی پاک شود؟')) { setLay({}); setSel(null) } }}>بازنشانیِ همه</button>
         </div>
         <div className="dlp-hint">
           {account
             ? <>تغییرها فقط برای حسابِ <b dir="ltr">{account}</b> اعمال و ذخیره می‌شوند؛ قالبِ اصلی تغییری نمی‌کند.</>
-            : 'فرم به حسابی تعلق ندارد — این تغییرها قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کنند.'}
+            : 'فرم به حسابی تعلق ندارد — این تغییرها قالبِ اصلی (پیش‌فرضِ همۀ حساب‌ها) را به‌روز می‌کنند.'}
         </div>
       </div>
     )

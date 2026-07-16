@@ -147,9 +147,9 @@ export default function CleanupPage() {
         </div>
       </div>
       <p className="text-sm text-gray-500 mb-6" dir="rtl">
-        «تکراریِ قطعی» = شناسه و مقادیر یکسان (امن برای حذف). «نیازمندِ بررسی» = شناسهٔ یکسان ولی مقداری
+        «تکراریِ قطعی» = شناسه و مقادیر یکسان (امن برای حذف). «نیازمندِ بررسی» = شناسۀ یکسان ولی مقداری
         متفاوت (احتمالاً همان رکوردِ به‌روزشده، یا موردی جدا) — این‌ها خودکار حذف نمی‌شوند؛ هوش مصنوعی با
-        سنجشِ همهٔ فیلدها داوری می‌کند و شما تأیید می‌کنید. حذف‌ها قابلِ بازگشت‌اند و در لاگِ هر مشتری ثبت می‌شوند.
+        سنجشِ همۀ فیلدها داوری می‌کند و شما تأیید می‌کنید. حذف‌ها قابلِ بازگشت‌اند و در لاگِ هر مشتری ثبت می‌شوند.
       </p>
 
       {/* Schedule + AI config */}
@@ -157,7 +157,7 @@ export default function CleanupPage() {
         <div className="bg-white rounded-lg shadow-sm p-4" dir="rtl">
           <div className="flex items-center gap-2 mb-3"><CalendarClock size={18} className="text-gray-500" />
             <h3 className="font-semibold">زمان‌بندیِ پاک‌سازیِ خودکار</h3></div>
-          <p className="text-xs text-gray-500 mb-3">در بازهٔ انتخاب‌شده خودکار اسکن می‌شود و در صورتِ یافتنِ مورد، به مدیران اطلاع می‌رسد (بدونِ حذفِ خودکار).</p>
+          <p className="text-xs text-gray-500 mb-3">در بازۀ انتخاب‌شده خودکار اسکن می‌شود و در صورتِ یافتنِ مورد، به مدیران اطلاع می‌رسد (بدونِ حذفِ خودکار).</p>
           <div className="flex items-center gap-2">
             <select value={config?.schedule || 'off'} onChange={(e) => saveConfig({ schedule: e.target.value })}
               disabled={savingCfg || !config} className="border rounded-lg px-3 py-2 text-sm bg-white">
@@ -242,7 +242,7 @@ export default function CleanupPage() {
           {anyProbable && (
             <div className="bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
               <div className="flex items-center justify-between gap-2 px-4 py-3 border-b bg-amber-50 font-semibold text-amber-800">
-                <span className="inline-flex items-center gap-2"><HelpCircle size={16} /> نیازمندِ بررسی — شناسهٔ یکسان، مقادیرِ متفاوت</span>
+                <span className="inline-flex items-center gap-2"><HelpCircle size={16} /> نیازمندِ بررسی — شناسۀ یکسان، مقادیرِ متفاوت</span>
                 <span className="text-xs font-normal">تیک بزنید تا در حذف لحاظ شود · «داوریِ هوش مصنوعی» موارد را پیشنهاد می‌دهد</span>
               </div>
               <div className="divide-y">
@@ -313,7 +313,7 @@ export default function CleanupPage() {
       {/* History */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden" dir="rtl">
         <div className="flex items-center gap-2 px-4 py-3 border-b bg-gray-50 font-semibold">
-          <HistoryIcon size={16} className="text-gray-500" /> تاریخچهٔ اجراها
+          <HistoryIcon size={16} className="text-gray-500" /> تاریخچۀ اجراها
         </div>
         {history.length > 0 ? (
           <table className="w-full text-sm">

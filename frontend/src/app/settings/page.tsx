@@ -88,7 +88,7 @@ export default function SettingsPage() {
     const drive = new URLSearchParams(window.location.search).get('drive')
     if (!drive) return
     if (drive === 'connected') toast.success('Google Drive با موفقیت متصل شد ✅')
-    else if (drive === 'error_no_refresh_token') toast.error('توکن دریافت نشد؛ دوباره تلاش کن و در صفحهٔ گوگل اجازه بده.')
+    else if (drive === 'error_no_refresh_token') toast.error('توکن دریافت نشد؛ دوباره تلاش کن و در صفحۀ گوگل اجازه بده.')
     else if (drive === 'forbidden') toast.error('فقط ادمین می‌تواند Drive را متصل کند.')
     else if (drive === 'google_not_configured') toast.error('GOOGLE_CLIENT_ID/SECRET تنظیم نشده است.')
     // Clean the query param and refresh the live status.
@@ -348,7 +348,7 @@ export default function SettingsPage() {
         {isAdmin && (
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h3 className="font-medium flex items-center gap-2 mb-1"><Database size={16} /> Backup export</h3>
-            <p className="text-sm text-gray-500 mb-3" dir="rtl">یک نسخهٔ کاملِ دادهٔ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON روی دستگاهِ خودت دانلود می‌کند (دستی و محلی، بدونِ ارتباط با Google Drive).</p>
+            <p className="text-sm text-gray-500 mb-3" dir="rtl">یک نسخۀ کاملِ دادۀ پنل (مشتریان، تسهیلات، KYC، ضامن‌ها، املاک، چک‌لیست‌ها، …) را به‌صورتِ یک فایلِ JSON روی دستگاهِ خودت دانلود می‌کند (دستی و محلی، بدونِ ارتباط با Google Drive).</p>
             <button onClick={downloadBackup} type="button"
               className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900">
               <Database size={16} /> Download backup (JSON)
@@ -400,7 +400,7 @@ export default function SettingsPage() {
               <p className="text-sm text-amber-600 mb-3" dir="rtl">برای فعال‌سازی، در محیطِ سرور (Render) مقدارِ <code dir="ltr">GOOGLE_DRIVE_ENABLED=true</code> را تنظیم کنید (روش پیش‌فرض OAuth است و فقط به <code dir="ltr">GOOGLE_CLIENT_ID/SECRET</code> نیاز دارد).</p>
             )}
             {driveStatus && driveStatus.enabled && driveStatus.mode === 'oauth' && !driveStatus.connected && (
-              <p className="text-sm text-blue-700 mb-3" dir="rtl">برای اتصال، دکمهٔ «اتصال Google Drive» را بزن و با حساب گوگلِ خودت اجازه بده. فایل‌ها در فضای ۱۵ گیگابایتیِ خودت ذخیره می‌شوند.</p>
+              <p className="text-sm text-blue-700 mb-3" dir="rtl">برای اتصال، دکمۀ «اتصال Google Drive» را بزن و با حساب گوگلِ خودت اجازه بده. فایل‌ها در فضای ۱۵ گیگابایتیِ خودت ذخیره می‌شوند.</p>
             )}
 
             <div className="flex flex-wrap gap-2">

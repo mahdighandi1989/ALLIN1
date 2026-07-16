@@ -1,6 +1,6 @@
 'use client'
 
-// Schedule of Charges (تعرفهٔ شارژ تسهیلات) — the editable rule table behind the
+// Schedule of Charges (تعرفۀ شارژ تسهیلات) — the editable rule table behind the
 // offer letter's automatic processing-charge calculation (term 23). Digitized
 // from the bank's scanned booklet (Corporate C01-04-2025 / Individual
 // P01-04-2025); the owner edits it here whenever the bank revises tariffs.
@@ -12,7 +12,7 @@ import { chargeTariffApi, ChargeRule, parseApiError } from '@/lib/api'
 
 const KEY_FA: Record<string, string> = {
   line_fee: 'کارمزد خط اعتباری (OD/CD/… بدون بخش زیر پوشش سپرده)',
-  od_100fd: 'OD با پوشش ۱۰۰٪ سپردهٔ underlien',
+  od_100fd: 'OD با پوشش ۱۰۰٪ سپردۀ underlien',
   commercial_loan: 'وام تجاری (Processing)',
   personal_loan: 'وام شخصی (Processing)',
   temporary_od: 'تسهیلات موقت — OD',
@@ -51,13 +51,13 @@ export default function ChargeTariffPage() {
     setSavingId(rule.id || 'new')
     try {
       await chargeTariffApi.save(rule)
-      toast.success('قاعدهٔ تعرفه ذخیره شد — محاسبهٔ خودکار افرلترها از همین لحظه با مقادیر جدید است')
+      toast.success('قاعدۀ تعرفه ذخیره شد — محاسبۀ خودکار افرلترها از همین لحظه با مقادیر جدید است')
       setEditing(null)
       await load()
     } catch (e) { toast.error(parseApiError(e)) } finally { setSavingId('') }
   }
   const remove = async (r: ChargeRule) => {
-    if (!confirm(`قاعدهٔ «${r.label || r.rule_key}» قرنطینه شود؟ (حذفِ قطعی نیست)`)) return
+    if (!confirm(`قاعدۀ «${r.label || r.rule_key}» قرنطینه شود؟ (حذفِ قطعی نیست)`)) return
     try { await chargeTariffApi.remove(r.id); await load() } catch (e) { toast.error(parseApiError(e)) }
   }
 
@@ -78,7 +78,7 @@ export default function ChargeTariffPage() {
     const inp = 'w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white'
     return (
       <div className="border border-blue-200 bg-blue-50/50 rounded-xl p-4 mb-4" dir="rtl">
-        <div className="font-bold text-sm mb-3">{f.id ? 'ویرایش قاعده' : 'قاعدهٔ جدید'}</div>
+        <div className="font-bold text-sm mb-3">{f.id ? 'ویرایش قاعده' : 'قاعدۀ جدید'}</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <label>بخش
             <select className={inp} value={f.segment} onChange={set('segment')}>
@@ -105,7 +105,7 @@ export default function ChargeTariffPage() {
           <label>سقفِ کارمزد (Max)
             <input className={inp} type="number" value={f.max_charge ?? ''} onChange={(e) => setF((s) => ({ ...s, max_charge: numOrNull(e.target.value) }))} />
           </label>
-          <label>آستانهٔ مبلغِ کوچک
+          <label>آستانۀ مبلغِ کوچک
             <input className={inp} type="number" placeholder="مثلاً 10000" value={f.small_threshold ?? ''} onChange={(e) => setF((s) => ({ ...s, small_threshold: numOrNull(e.target.value) }))} />
           </label>
           <label>کفِ کارمزد برای مبلغ کوچک
@@ -114,7 +114,7 @@ export default function ChargeTariffPage() {
           <label className="col-span-2">عنوان (نمایش)
             <input className={inp} value={f.label ?? ''} onChange={set('label')} />
           </label>
-          <label>نسخهٔ بولتن
+          <label>نسخۀ بولتن
             <input className={inp} placeholder="C01-04-2025" value={f.version ?? ''} onChange={set('version')} dir="ltr" />
           </label>
           <label className="flex items-end gap-2 pb-1">
@@ -188,16 +188,16 @@ export default function ChargeTariffPage() {
           <div className="flex items-center gap-2">
             <div className="bg-amber-500 text-white rounded-lg p-2"><Coins size={18} /></div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">تعرفهٔ شارژ تسهیلات (Schedule of Charges)</h1>
+              <h1 className="text-lg font-bold text-gray-900">تعرفۀ شارژ تسهیلات (Schedule of Charges)</h1>
               <p className="text-gray-500 text-xs">
-                مرجعِ محاسبهٔ خودکارِ کارمزدِ پردازش در افرلتر (بند ۲۳). با هر بازنگریِ سالانه/دوره‌ایِ بانک، همین‌جا مقادیر را ویرایش کن —
-                تسهیلاتِ کارمندی خودکار معاف است و پوششِ ۱۰۰٪ سپرده (underlien) قاعدهٔ خودش را دارد. همهٔ مبالغ بدونِ VAT.
+                مرجعِ محاسبۀ خودکارِ کارمزدِ پردازش در افرلتر (بند ۲۳). با هر بازنگریِ سالانه/دوره‌ایِ بانک، همین‌جا مقادیر را ویرایش کن —
+                تسهیلاتِ کارمندی خودکار معاف است و پوششِ ۱۰۰٪ سپرده (underlien) قاعدۀ خودش را دارد. همۀ مبالغ بدونِ VAT.
               </p>
             </div>
           </div>
           <button onClick={() => setEditing({ ...EMPTY_RULE })}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md px-3 py-2 text-sm">
-            <Plus size={15} /> قاعدهٔ جدید
+            <Plus size={15} /> قاعدۀ جدید
           </button>
         </div>
 

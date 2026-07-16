@@ -61,7 +61,7 @@ export default function CreditFilePage() {
     <Layout>
       <div className="max-w-xl mx-auto mt-10">
         <h1 className="text-xl font-bold text-gray-900 mb-1">Credit File Summary</h1>
-        <p className="text-sm text-gray-500 mb-6">خلاصهٔ فایلِ اعتباری — شمارهٔ حساب را وارد کنید تا فرمِ مناسب باز شود.</p>
+        <p className="text-sm text-gray-500 mb-6">خلاصۀ فایلِ اعتباری — شمارۀ حساب را وارد کنید تا فرمِ مناسب باز شود.</p>
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">Account Number</label>
@@ -85,7 +85,7 @@ export default function CreditFilePage() {
           {choose && (
             <div className="mt-5 border-t border-gray-100 pt-4">
               <p className="text-sm text-gray-700 mb-3" dir="rtl">
-                نوعِ حسابِ «<span className="font-semibold">{choose.name}</span>» (شمارهٔ {choose.accountNo}) در دیتابیس ثبت نشده.
+                نوعِ حسابِ «<span className="font-semibold">{choose.name}</span>» (شمارۀ {choose.accountNo}) در دیتابیس ثبت نشده.
                 این حساب از کدام دسته است؟ انتخابتان ذخیره می‌شود.
               </p>
               <div className="grid grid-cols-2 gap-3">
