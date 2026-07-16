@@ -558,6 +558,10 @@ class GenerateAttachmentRequest(BaseModel):
     # output must reproduce this exact format, filled from DB facts.
     template_text: str = Field(default="", max_length=20000)
     template_name: str = Field(default="", max_length=200)
+    # v65: SOURCE/DATA files' TEXT ([{name, text}], extracted via /template-text)
+    # — an allowed data source alongside the DB facts; any format, any count
+    # (server caps at 8 files x 20k chars in the prompt).
+    source_files: List[Dict[str, str]] = Field(default_factory=list)
 
 
 @router.post("/generate-attachment")
@@ -594,7 +598,8 @@ async def generate_attachment(
     # single-account facts alone cannot answer e.g. «همهٔ املاک شعبهٔ X».
     branches = await gen.list_branches(db)
     prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches),
-                              template_text=tpl_text, template_name=payload.template_name or "")
+                              template_text=tpl_text, template_name=payload.template_name or "",
+                              source_files=payload.source_files or [])
     result = await inference.complete(
         db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
         model_id=payload.model_id, max_tokens=8000,
@@ -607,7 +612,8 @@ async def generate_attachment(
     if need:
         fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "")
         prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched,
-                                   template_text=tpl_text, template_name=payload.template_name or "")
+                                   template_text=tpl_text, template_name=payload.template_name or "",
+                                   source_files=payload.source_files or [])
         # bigger output budget: the spec now carries the fetched rows verbatim
         result = await inference.complete(
             db, prompt2, task="report_drafting", system=gen.SYSTEM_PROMPT,

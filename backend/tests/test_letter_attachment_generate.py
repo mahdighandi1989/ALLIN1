@@ -372,3 +372,48 @@ async def test_template_text_endpoint_reads_xlsx(client, auth_headers):
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and "شماره حساب" in body["text"] and "مبلغ ترهین" in body["text"]
+
+
+# ---------------- v65: SOURCE/DATA files feed the generation ----------------
+
+def test_build_prompt_source_files_section_and_rule():
+    from app.services import letter_attachment_generate as gen
+    p = gen.build_prompt({}, {}, "جدول را از این فایل‌ها بساز",
+                         source_files=[{"name": "لیست-شعبه.xlsx", "text": "حساب ۱۲۳ | مبلغ ۵۰۰"},
+                                       {"name": "گزارش.pdf", "text": "متن گزارش ارزیابی"},
+                                       {"name": "empty.txt", "text": "  "}])
+    assert "فایل‌های منبعِ داده" in p
+    assert "لیست-شعبه.xlsx" in p and "حساب ۱۲۳" in p
+    assert "گزارش.pdf" in p and "متن گزارش ارزیابی" in p
+    assert "empty.txt" not in p                     # blank-text files are dropped
+    # system rules: sources are a legitimate data source; template=SHAPE, sources=DATA
+    assert "فایل‌های منبعِ داده" in gen.SYSTEM_PROMPT
+    assert "قالب/نمونه» فقط شکلِ خروجی" in gen.SYSTEM_PROMPT
+    # template + sources coexist in one prompt, each in its own section
+    p2 = gen.build_prompt({}, {}, "", template_text="ستون الف | ستون ب", template_name="فرم.xlsx",
+                          source_files=[{"name": "داده.csv", "text": "ردیف ۱"}])
+    assert "قالب/نمونهٔ داده‌شده" in p2 and "فایل‌های منبعِ داده" in p2
+    assert p2.index("فایل‌های منبعِ داده") < p2.index("قالب/نمونهٔ داده‌شده")
+
+
+async def test_generate_with_source_files_reaches_model(client, auth_headers, db_session, monkeypatch):
+    await _seed_model(db_session)
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["prompt"] = prompt
+        return {"ok": True, "model": "claude-opus-4-8", "text": json.dumps({
+            "kind": "excel", "filename": "از منابع", "title": "جدول از فایل‌های منبع",
+            "warnings": [],
+            "sheets": [{"name": "داده", "columns": ["حساب", "مبلغ"], "rows": [["۱۲۳", "۵۰۰"]]}],
+        }, ensure_ascii=False)}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "L-SRC-1", "instruction": "جدول حساب/مبلغ از فایل منبع بساز",
+        "source_files": [{"name": "لیست-شعبه.xlsx", "text": "حساب 123 مبلغ 500"}],
+    })
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert "فایل‌های منبعِ داده" in seen["prompt"] and "لیست-شعبه.xlsx" in seen["prompt"]

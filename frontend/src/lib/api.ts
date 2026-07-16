@@ -839,7 +839,7 @@ export const letterAiApi = {
   // AI builds a REAL file attachment (Excel/Word) from an instruction and/or a
   // TEMPLATE file's text — data only from the DB facts; stored like a manual
   // upload, marked ai_generated.
-  async generateAttachment(body: { letter_id: string; account_no?: string; instruction: string; kind?: 'excel' | 'word'; subject?: string; recipient?: string; body_excerpt?: string; model_id?: number | null; template_text?: string; template_name?: string }): Promise<{ ok: boolean; error?: string; model?: string; kind?: string; warnings?: string[]; attachment?: LetterAttachment }> {
+  async generateAttachment(body: { letter_id: string; account_no?: string; instruction: string; kind?: 'excel' | 'word'; subject?: string; recipient?: string; body_excerpt?: string; model_id?: number | null; template_text?: string; template_name?: string; source_files?: { name: string; text: string }[] }): Promise<{ ok: boolean; error?: string; model?: string; kind?: string; warnings?: string[]; attachment?: LetterAttachment }> {
     const { data } = await api.post('/api/letter-ai/generate-attachment', body, { timeout: 420000 })
     return data
   },
