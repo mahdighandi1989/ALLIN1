@@ -417,3 +417,42 @@ async def test_generate_with_source_files_reaches_model(client, auth_headers, db
     })
     assert r.status_code == 200 and r.json()["ok"] is True
     assert "فایل‌های منبعِ داده" in seen["prompt"] and "لیست-شعبه.xlsx" in seen["prompt"]
+
+
+# ---------------- v66: LOGS as need_data datasets ----------------
+
+async def test_fetch_datasets_logs(db_session):
+    """Global audit trail + journal/daily-log lines are requestable datasets —
+    catalogued, capped, branch-filterable through the row's account."""
+    from app.models.audit_log import AuditLog
+    from app.models.crm import JournalEntry
+
+    await _seed_branch_data(db_session)
+    db_session.add(AuditLog(id="a1", username="u1", action="update", entity_type="letter",
+                            account_no="ACC1", detail="ویرایش نامهٔ رسمی"))
+    db_session.add(AuditLog(id="a2", username="u2", action="print", entity_type="letter",
+                            account_no="ACC2", detail="چاپ نامه"))
+    db_session.add(JournalEntry(id="j1", account_no="ACC1", category="letters",
+                                item="صدور نامه", status="done", date="2026-07-14",
+                                user="u1", notes="نامهٔ ترهین"))
+    await db_session.commit()
+
+    # advertised in the catalog + accepted by the need_data parser
+    assert "audit_logs" in gen.DATASETS and "journal_entries" in gen.DATASETS
+    cat = gen.catalog_text([])
+    assert "audit_logs" in cat and "journal_entries" in cat
+    need = gen.parse_need_data(json.dumps({"need_data": {"datasets": ["audit_logs", "journal_entries"]}}))
+    assert need and set(need["datasets"]) == {"audit_logs", "journal_entries"}
+
+    data, warnings = await gen.fetch_datasets(db_session, ["audit_logs", "journal_entries"], "")
+    logs = data["audit_logs"]
+    assert {r["account_no"] for r in logs} == {"ACC1", "ACC2"}
+    row = next(r for r in logs if r["account_no"] == "ACC1")
+    assert row["user"] == "u1" and row["action"] == "update"
+    assert row["customer_name"] == "شرکت الف" and "ویرایش" in row["detail"]
+    j = data["journal_entries"]
+    assert len(j) == 1 and j[0]["item"] == "صدور نامه" and j[0]["customer_name"] == "شرکت الف"
+
+    # branch filter → only the matched account's rows
+    data2, _ = await gen.fetch_datasets(db_session, ["audit_logs"], "sheikh zayed")
+    assert [r["account_no"] for r in data2["audit_logs"]] == ["ACC1"]
