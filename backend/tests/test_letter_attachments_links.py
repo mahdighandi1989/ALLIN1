@@ -201,3 +201,32 @@ async def test_text_attachment_extraction_path(db_session, monkeypatch):
     assert "PLAIN-TEXT" in p
     assert "Record ONLY relationships the document explicitly states" in p
     assert "QUOTE or precisely restate" in p
+
+
+async def test_extraction_kb_items_staged_and_no_account_data(db_session):
+    """v69: a file with NO account-keyed rows is not a scary model error —
+    its general/reference knowledge is staged as kb_write items instead, and
+    the truly-empty case gets the specific no_account_data code."""
+    from app.services import letter_attachment_extract as lax
+
+    staged = await lax.stage_extraction(
+        db_session,
+        {"customers": [], "relationships": [], "kb_items": [
+            {"topic": "بخشنامهٔ نرخ کارمزد", "category": "بخشنامه",
+             "content": "بر اساس بخشنامهٔ ۱۴۰۵/۱۲۳ نرخ کارمزد صدور ضمانت‌نامه ۲٪ تعیین شد.",
+             "source_note": "صفحهٔ ۱"},
+            {"topic": "بخشنامهٔ نرخ کارمزد", "category": "بخشنامه",
+             "content": "بر اساس بخشنامهٔ ۱۴۰۵/۱۲۳ نرخ کارمزد صدور ضمانت‌نامه ۲٪ تعیین شد.",
+             "source_note": "تکراری"},
+            {"topic": "x", "category": "", "content": "کوتاه", "source_note": ""},
+        ]},
+        primary_account="", primary_name="", source_ref="گزارش شعب.xlsx",
+    )
+    kb = [s for s in staged if s["op"] == "kb_write"]
+    assert len(kb) == 1  # deduped + too-short dropped
+    assert kb[0]["applicable"] is True and kb[0]["topic"] == "بخشنامهٔ نرخ کارمزد"
+    assert "گزارش شعب.xlsx" in kb[0]["detail"]
+
+    # kb_items instruction + the "no data is not an error" line reach the prompt
+    p = lax.build_prompt({"subject": "س", "account_no": "1", "customer_name": "ش"})
+    assert "kb_items" in p and "NOT an error" in p

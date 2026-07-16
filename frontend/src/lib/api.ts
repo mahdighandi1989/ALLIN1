@@ -777,7 +777,7 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'kb_write'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'paragraph_merge' | 'kb_write'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
@@ -785,6 +785,8 @@ export type LetterAiChange = {
   table_index?: number; html?: string
   // table_insert only — a brand-new sanitized table + where it lands
   placement?: 'body' | 'attachment'; table_title?: string
+  // paragraph_merge only — scattered pieces to stitch (part 1 → replace, rest deleted)
+  parts?: string[]
   // db_write only — the extracted profile fact + its resolved target customer
   account_no?: string; customer_name?: string; key?: string; value?: string
   action?: 'add' | 'update'; resolution?: string; exists?: boolean

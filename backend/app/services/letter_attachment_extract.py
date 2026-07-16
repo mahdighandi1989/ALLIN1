@@ -77,7 +77,19 @@ def build_prompt(letter_ctx: Dict[str, str], part: str = "") -> str:
         "customer profiles as the recorded justification of the link.\n"
         "- Pick the MOST SPECIFIC kind (a guarantor is \"guarantor\", not \"other\"); use "
         "\"letter\" only for parties connected merely by being named in this correspondence.\n"
-        "- Never invent accounts, names, numbers or relationships."
+        "- Never invent accounts, names, numbers or relationships.\n"
+        "ALSO add a top-level \"kb_items\" array to the SAME JSON object for GENERAL, reusable, "
+        "NON-customer-specific knowledge this file contains — circulars (بخشنامه) with their exact "
+        "numbers/dates, procedures, tariffs, regulatory points, reference tables, aggregate/branch-"
+        "level statistics, educational material:\n"
+        "[{\"topic\": \"...\", \"category\": \"...\", \"content\": \"...\", \"source_note\": \"...\"}]\n"
+        "kb_items rules: content in Persian, complete and precise (keep the document's exact numbers "
+        "and dates); source_note cites this file and the section it came from; NEVER put a specific "
+        "customer's private data (their name/account/amounts) in kb_items; empty array when the file "
+        "has none.\n"
+        "If the file has NO per-account customer data at all (an aggregate or branch-level report, a "
+        "general/reference letter…), that is NOT an error: return \"customers\": [] and still fill "
+        "\"kb_items\" with the general knowledge the file holds."
     )
     return doc_ingest.EXTRACTION_PROMPT + "\n".join(ctx_lines) + (("\n\n" + part) if part else "")
 
@@ -92,6 +104,7 @@ async def extract_attachment(
     is_pdf = mimetype == "application/pdf" or lower.endswith(".pdf")
     customers_merged: Dict[str, dict] = {}
     relationships: List[dict] = []
+    kb_items: List[dict] = []
     chunk_errors: List[str] = []
     model_name = None
 
@@ -107,6 +120,9 @@ async def extract_attachment(
         for r in (parsed.get("relationships") or []):
             if isinstance(r, dict):
                 relationships.append(r)
+        for k in (parsed.get("kb_items") or []):
+            if isinstance(k, dict):
+                kb_items.append(k)
 
     if lower.endswith(_TEXT_EXT) or mimetype == "text/plain":
         # Plain-text attachment: decode tolerantly, chunk, extract as text.
@@ -216,11 +232,16 @@ async def extract_attachment(
     else:
         return {"ok": False, "error": "فرمتِ این پیوست پشتیبانی نمی‌شود (PDF/تصویر/Excel/CSV/Word)."}
 
-    if not customers_merged and not relationships:
-        return {"ok": False, "error": (chunk_errors[0] if chunk_errors else "داده‌ای استخراج نشد"),
+    if not customers_merged and not relationships and not kb_items:
+        # Every chunk succeeded but nothing came out ⇒ the file simply holds no
+        # account-keyed data (aggregate/branch reports, general letters). That
+        # is a fact worth reporting clearly, NOT a scary "model error".
+        return {"ok": False,
+                "error": (chunk_errors[0] if chunk_errors else "no_account_data"),
                 "chunk_errors": chunk_errors}
     return {"ok": True, "customers": list(customers_merged.values()),
-            "relationships": relationships, "model": model_name, "chunk_errors": chunk_errors}
+            "relationships": relationships, "kb_items": kb_items,
+            "model": model_name, "chunk_errors": chunk_errors}
 
 
 def _flatten_fields(cust: dict) -> Dict[str, str]:
@@ -290,6 +311,37 @@ async def stage_extraction(
             "title": f"لینکِ «{kind}»: {fa_} ↔ {ta}",
             "detail": reason, "severity": "medium", "applicable": True,
         })
+
+    # GENERAL/reference knowledge from the file → reviewable kb_write items, so
+    # a file with no account-keyed rows (aggregate report, circular, general
+    # letter) still yields something valuable instead of «nothing extracted».
+    seen_kb: set = set()
+    kb_n = 0
+    for k in extraction.get("kb_items") or []:
+        if not isinstance(k, dict):
+            continue
+        topic = str(k.get("topic") or "").strip()
+        content = str(k.get("content") or "").strip()
+        if len(topic) < 2 or len(content) < 10:
+            continue
+        dd = (topic.casefold(), content[:120].casefold())
+        if dd in seen_kb:
+            continue
+        seen_kb.add(dd)
+        kb_n += 1
+        staged.append({
+            "id": f"kb{kb_n}", "op": "kb_write", "category": "db_extract", "field": "",
+            "severity": "low", "applicable": True,
+            "title": f"پایگاه دانش: {topic[:60]}",
+            "detail": f"محتوای عمومی/مرجع از پیوستِ «{source_ref}»",
+            "topic": topic[:300],
+            "kb_category": str(k.get("category") or "").strip()[:120],
+            "content": content[:8000],
+            "source_note": (str(k.get("source_note") or "").strip()
+                            or f"پیوستِ نامه: {source_ref}")[:400],
+        })
+        if kb_n >= 20:
+            break
     return staged
 
 
