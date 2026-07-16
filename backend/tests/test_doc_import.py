@@ -630,3 +630,82 @@ async def test_attachment_text_deterministic_paths(db_session):
     assert r2["ok"] and "سلام" in r2["text"]
     r3 = await lax.attachment_text(db_session, data=b"junk", filename="x.zzz", mimetype="")
     assert not r3["ok"]
+
+
+# ---------------- v64: property EVENT TIMELINE (several valuations, …) ----------------
+
+def test_extraction_prompt_asks_for_property_event_history():
+    p = doc_ingest.EXTRACTION_PROMPT
+    assert "PROPERTY EVENT HISTORY" in p
+    for k in ("\"events\"", "remortgage", "additional_mortgage", "release", "فک رهن", "ترهین مجدد"):
+        assert k in p, k
+    assert "report them ALL" in p            # several valuations, never only the latest
+
+
+async def test_persist_property_event_timeline_and_dedup(db_session):
+    payload = {
+        "account_no": "702001", "name": "Timeline Co", "account_type": "corporate",
+        "properties": [{
+            "prop_type": "Villa", "address": "تهران، خیابان آزادی", "city": "تهران", "country": "Iran",
+            "plate_no": "638/140", "mortgage_deed_no": "12345",
+            "valuation": "9000000", "last_valuation_date": "1403/05/12",
+            "events": [
+                {"event_type": "valuation", "date": "1399/02/10", "amount": "5000000", "currency": "IRR"},
+                {"event_type": "valuation", "date": "1401/07/03", "amount": "7500000", "currency": "IRR"},
+                {"event_type": "valuation", "date": "1403/05/12", "amount": "9000000", "currency": "IRR"},
+                {"event_type": "mortgage", "date": "1399/03/01", "amount": "4000000", "currency": "IRR"},
+                {"event_type": "ترهین مجدد", "date": "1401/08/15", "amount": "6000000"},  # normalized → other? no: not in set → other
+                {"event_type": "remortgage", "date": "1401/08/15", "amount": "6000000", "currency": "IRR"},
+                {"event_type": "release", "date": "1404/01/20"},
+                {"event_type": "junk"},   # neither date nor amount → dropped
+            ],
+        }],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["property_events_added"] >= 6
+    await db_session.commit()
+
+    from app.models.profile_entities import PropertyEvent
+    from sqlalchemy import select
+    evs = (await db_session.execute(select(PropertyEvent).where(
+        PropertyEvent.account_no == "702001"))).scalars().all()
+    types = sorted(e.event_type for e in evs)
+    # all three valuations kept as separate dated rows
+    assert types.count("valuation") == 3
+    assert "mortgage" in types and "remortgage" in types and "release" in types
+    rel = next(e for e in evs if e.event_type == "release")
+    assert rel.event_date == "1404/01/20"
+
+    # re-import the SAME payload → nothing doubles
+    r2 = await doc_ingest.persist_customer(db_session, payload, "tester")
+    await db_session.commit()
+    assert r2["property_events_added"] == 0
+    evs2 = (await db_session.execute(select(PropertyEvent).where(
+        PropertyEvent.account_no == "702001"))).scalars().all()
+    assert len(evs2) == len(evs)
+
+
+def test_build_facts_includes_property_history_generically():
+    """The letter/AI facts now carry the properties (ALL columns, schema-driven)
+    plus each property's event timeline — so any current or FUTURE property
+    column is available wherever the DB facts are fetched."""
+    from app.services import letter_assistant as la
+    from app.models.profile_entities import MortgagedProperty, PropertyEvent
+
+    prop = MortgagedProperty(id="P1", account_no="702002", plate_no="638/140",
+                             city="Dubai", country="UAE", owner="Ali",
+                             owner_national_id="0012345678", postal_code="12345",
+                             valuation=2500000, last_valuation_date="10/06/2026")
+    ev = PropertyEvent(id="E1", property_id="P1", account_no="702002",
+                       event_type="valuation", event_date="10/06/2026",
+                       amount=2500000, currency="AED")
+    ev2 = PropertyEvent(id="E2", property_id="P1", account_no="702002",
+                        event_type="release", event_date="01/01/2027")
+    facts = la.build_facts(None, {}, [], [], properties=[prop],
+                           property_events=[ev, ev2])
+    p = facts["properties"][0]
+    assert p["plate_no"] == "638/140" and p["owner_national_id"] == "0012345678"
+    assert p["postal_code"] == "12345"          # v58 column flows automatically
+    hist = p["history"]
+    assert {h["event_type"] for h in hist} == {"valuation", "release"}
+    assert any(h.get("date") == "01/01/2027" for h in hist)

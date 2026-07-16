@@ -405,6 +405,14 @@ export const crmApi = {
   async deleteProperty(id: string): Promise<void> {
     await api.delete(`/api/crm/properties/${encodeURIComponent(id)}`)
   },
+  // property EVENT TIMELINE (several valuations, mortgage/re-mortgage/release/insurance)
+  async addPropertyEvent(propertyId: string, body: { event_type: string; event_date?: string; amount?: number; currency?: string; remarks?: string }): Promise<any> {
+    const { data } = await api.post(`/api/crm/properties/${encodeURIComponent(propertyId)}/events`, body)
+    return data
+  },
+  async deletePropertyEvent(id: string): Promise<void> {
+    await api.delete(`/api/crm/property-events/${encodeURIComponent(id)}`)
+  },
   async addFixedDeposit(accountNo: string, body: Record<string, any>): Promise<any> {
     const { data } = await api.post(`/api/crm/fixed-deposits/${encodeURIComponent(accountNo)}`, body)
     return data

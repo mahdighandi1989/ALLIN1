@@ -100,7 +100,9 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
                        "valuation": "", "valuation_currency": "AED", "last_valuation_date": "",
                        "mortgage_amount": "", "mortgage_currency": "AED",
                        "plate_no": "", "mortgage_deed_no": "", "mortgage_date": "",
-                       "insurance_no": "", "insurance_computer_code": "", "insurance_issue": "", "insurance_expiry": ""} ],
+                       "insurance_no": "", "insurance_computer_code": "", "insurance_issue": "", "insurance_expiry": "",
+                       "events": [ {"event_type": "valuation | mortgage | remortgage | additional_mortgage | release | insurance | other",
+                                    "date": "", "amount": "", "currency": "", "remarks": ""} ]} ],
       "security": [ {"type": "Underlien Deposits | Cheques | Collaterals | <as printed>", "for_facility": "",
                      "aed": "", "usd": "", "irr": "", "other": ""} ],
       "required_securities": "<the REQUIRED SECURITIES / DOCUMENTS list exactly as printed, one item per line>",
@@ -124,6 +126,7 @@ Rules:
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - For each mortgaged property also hunt for: the OWNER/mortgagor's name and national ID (کد ملی مالک/راهن), the postal code, the land area and built-up area (متراژ زمین/زیربنا) with the building age and zone, the valuation with its DATE, and the INSURANCE POLICY: policy number ("insurance_no"), the insurer's computer/system code (کد رایانه — "insurance_computer_code"), and the policy's issue and expiry dates. These appear on the title deed, the mortgage deed, the valuation report and the insurance policy pages — read all of them.
+- PROPERTY EVENT HISTORY ("events"): a property's documents often record SEVERAL dated events over the years — list EVERY one you find as its own entry, never only the latest: every valuation with its date and appraised amount ("valuation" — a property may have 2-3 valuations from different years; report them ALL), the original mortgage ("mortgage", date + amount), a re-mortgage or top-up/excess mortgage (ترهین مجدد / ترهین مازاد — "remortgage"/"additional_mortgage", date + amount), a mortgage RELEASE (فک رهن — "release", with its date), and insurance issuance/renewals ("insurance"). Put the property's LATEST valuation in the top-level "valuation"/"last_valuation_date" fields as before, AND repeat every valuation (latest included) inside "events" so the timeline is complete. Dates as printed; amounts as plain digits; a Jalali (Iranian) date stays Jalali.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
 - A FIXED DEPOSIT / سپرده — even one held UNDER LIEN to secure a facility — is a SECURITY, NOT a facility: report it ONLY inside "security" (type "Underlien Deposits"), NEVER as an entry in "facilities". Likewise never output the overall "credit facility line" heading, a TOTAL/summary row, or a processing-charges row as a facility.
 - "required_securities" = the document's REQUIRED SECURITIES / DOCUMENTS (or securities/documents to be obtained) list, copied essentially verbatim, one item per line — the Offer Letter reuses this text as-is.
@@ -527,7 +530,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     # in-memory so rows added earlier in this import are seen too.
     existing_props = list((await db.execute(select(MortgagedProperty).where(
         MortgagedProperty.account_no == acc, MortgagedProperty.is_deleted == False))).scalars().all())  # noqa: E712
-    p_added = p_updated = 0
+    p_added = p_updated = p_events = 0
     for p in (cust.get("properties") or []):
         if not isinstance(p, dict):
             continue
@@ -577,6 +580,11 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             prow.mortgage_amount = _num_bounded(p.get("mortgage_amount"), 1e16)
         if customer is not None and customer.name and not prow.customer_name:
             prow.customer_name = customer.name
+        # ---- the property's dated EVENT HISTORY (several valuations, mortgage /
+        # re-mortgage / release / insurance renewals) — append-with-dedup so a
+        # re-import never doubles a timeline row ----
+        ev_added = await _persist_property_events(db, prow, p.get("events") or [], username, source)
+        p_events += ev_added
 
     # Facilities — create/upsert the real Facility records the credit-file form
     # reads (so Facility Details fills in). Matched by (customer, facility_type);
@@ -646,6 +654,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "facilities_added": f_added, "facilities_updated": f_updated,
             "facilities_skipped_deposits": f_skipped_deposits,
             "properties_added": p_added, "properties_updated": p_updated,
+            "property_events_added": p_events,
             "security_added": sec_added}
 
 
@@ -679,6 +688,52 @@ def _parse_date(v):
         return _dp.parse(s, dayfirst=True, fuzzy=True).date()
     except Exception:
         return None
+
+
+_EVENT_TYPES = {"valuation", "mortgage", "remortgage", "additional_mortgage",
+                "release", "insurance", "other"}
+
+
+async def _persist_property_events(db, prow, events: list, username: str, source: str) -> int:
+    """Append the property's dated EVENT rows (several valuations, mortgage/
+    re-mortgage/release/insurance…), deduped by (type, date, amount) within the
+    property so a re-import never doubles the timeline. Returns rows added."""
+    from app.models.profile_entities import PropertyEvent
+    clean = []
+    for e in (events or []):
+        if not isinstance(e, dict):
+            continue
+        et = str(e.get("event_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if et not in _EVENT_TYPES:
+            et = "other" if (e.get("date") or e.get("amount")) else ""
+        d = str(e.get("date") or "").strip()[:30]
+        amt = _num_bounded(e.get("amount"), 1e16)
+        if not et or (not d and amt is None):
+            continue  # an event with neither date nor amount says nothing
+        clean.append((et, d, amt, str(e.get("currency") or "").strip()[:10],
+                      str(e.get("remarks") or "").strip()[:400]))
+    if not clean:
+        return 0
+    existing = (await db.execute(select(PropertyEvent).where(
+        PropertyEvent.property_id == prow.id,
+        PropertyEvent.is_deleted == False))).scalars().all()  # noqa: E712
+    seen = {(r.event_type, (r.event_date or "").strip(),
+             float(r.amount) if r.amount is not None else None) for r in existing}
+    added = 0
+    import uuid
+    from datetime import datetime
+    for et, d, amt, cur, rem in clean:
+        key = (et, d, float(amt) if amt is not None else None)
+        if key in seen:
+            continue
+        seen.add(key)
+        db.add(PropertyEvent(
+            id=f"PE-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+            property_id=prow.id, account_no=prow.account_no, event_type=et,
+            event_date=d, amount=amt, currency=cur, remarks=rem,
+            source=source, created_by=username))
+        added += 1
+    return added
 
 
 def _set_prop(row, col: str, v) -> None:

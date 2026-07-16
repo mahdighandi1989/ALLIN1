@@ -17,7 +17,7 @@ from app.models.security import Security  # noqa: F401
 from app.models.crm import (  # noqa: F401
     CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
 )
-from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner  # noqa: F401
+from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner, PropertyEvent  # noqa: F401
 from app.schemas.customer import (
     CustomerCreate,
     CustomerUpdate,
@@ -304,7 +304,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     from app.models.crm import (
         CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
     )
-    from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
+    from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner, PropertyEvent
 
     def _to_dict(obj):
         return {c.key: getattr(obj, c.key) for c in _sa_inspect(obj).mapper.column_attrs}
@@ -349,6 +349,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
     journal = await _by_acc(JournalEntry, order=JournalEntry.date.desc(), limit=60)
     notes = await _by_acc(CustomerNote)
     properties = await _by_acc(MortgagedProperty)
+    property_events = await _by_acc(PropertyEvent)
     fixed_deposits = await _by_acc(FixedDeposit)
     partners = await _by_acc(Partner)
     facility_checklists = await _by_acc(FacilityChecklist)
@@ -387,6 +388,7 @@ async def get_customer_detail(customer_id: str, db: AsyncSession = Depends(get_d
         "journal": [_to_dict(j) for j in journal],
         "notes": [_to_dict(n) for n in notes],
         "properties": [_to_dict(p) for p in properties],
+        "property_events": [_to_dict(e) for e in property_events],
         "fixed_deposits": [_to_dict(d) for d in fixed_deposits],
         "partners": [_to_dict(pt) for pt in partners],
         "facility_checklists": [_to_dict(fc) for fc in facility_checklists],
