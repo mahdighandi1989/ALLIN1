@@ -774,6 +774,12 @@ export default function LetterPage() {
               all = all.concat(rx.changes || [])
               if (rx.model) modelUsed = modelUsed || rx.model
               if ((rx.chunk_errors || []).length) toast.error(`${att.original_name}: بخشی از قطعات خطا داشت`)
+            } else if (rx.error === 'no_account_data') {
+              // Not a failure: the file simply holds no account-keyed rows —
+              // say so calmly instead of a red «model error».
+              all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
+                title: `«${att.original_name}» دادهٔ حساب‌محور نداشت`, detail: aiErrorText(rx.error),
+                severity: 'low', applicable: false })
             } else {
               all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
                 title: `استخراج از «${att.original_name}» ناموفق`, detail: aiErrorText(rx.error),
@@ -800,6 +806,7 @@ export default function LetterPage() {
   }
   const aiErrorText = (err?: string) => {
     if (err === 'ai_generated_attachment') return 'این پیوست را خودِ هوش مصنوعی از داده‌های پایگاه‌داده ساخته — استخراجِ دوباره‌اش به دیتابیس بی‌معناست و سرور آن را رد کرد.'
+    if (err === 'no_account_data') return 'این فایل دادهٔ حساب‌محوری برای ثبت در پروفایل‌ها نداشت (مثلاً گزارشِ تجمیعی/سطحِ شعبه یا نامهٔ عمومی) و مطلبِ عمومیِ قابلِ ثبت در پایگاه دانش هم در آن پیدا نشد. محتوایش همچنان در «بررسیِ کاملِ نامه و پیوست‌ها» و پرکردنِ جدول‌ها استفاده می‌شود.'
     if (err === 'no_model') return 'هیچ مدلِ هوش مصنوعیِ فعالی پیکربندی نشده — از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن.'
     if (err === 'no_base_url') return 'آدرسِ سرویس‌دهندهٔ مدل تنظیم نشده است.'
     if (err && /timed out/i.test(err)) return 'پاسخِ مدل به‌موقع نرسید؛ دوباره تلاش کن یا مدلِ سریع‌تری انتخاب کن.'
@@ -851,6 +858,23 @@ export default function LetterPage() {
           nf.body = `${normalizeBodyHtml(nf.body || '')}<div><br></div>${title}${newTbl.outerHTML}<div><br></div>`
         }
         applied++; appliedIds.push(ch.id)
+        continue
+      }
+      if (ch.op === 'paragraph_merge') {
+        // Stitch scattered pieces of one topic: part 1 becomes the merged text,
+        // every later part is deleted from where it sat. All-or-nothing: if any
+        // part cannot be located, nothing is touched (no half-merged letter).
+        if (!(ch.field in nf)) { notLocated++; continue }
+        let val = String(nf[ch.field] ?? '')
+        let okAll = true
+        const parts: string[] = Array.isArray(ch.parts) ? ch.parts : []
+        for (let i = 0; i < parts.length; i++) {
+          const [next, cnt] = applyTextReplaceHtml(val, parts[i], i === 0 ? String(ch.replace ?? '') : '', 'first')
+          if (cnt === 0) { okAll = false; break }
+          val = next
+        }
+        if (okAll && parts.length >= 2) { nf[ch.field] = val; applied++; appliedIds.push(ch.id) }
+        else notLocated++
         continue
       }
       if (ch.op === 'table_replace') {
@@ -2777,7 +2801,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v68</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v69</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>

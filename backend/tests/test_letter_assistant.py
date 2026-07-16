@@ -387,3 +387,38 @@ def test_table_insert_and_attachment_source_rules_reach_prompt():
     p3 = la.build_user_prompt(FIELDS, {}, ["tables"], instruction="جدول را پر کن",
                               tables=["<table><tr><td>x</td></tr></table>"])
     assert "محتوای پیوست‌های نامه» (اگر در همین پیام هست)" in p3
+
+
+def test_paragraph_merge_validation_and_guard():
+    """v69: scattered pieces of one topic can be stitched across paragraph
+    boundaries — every part must exist (verbatim or normalized) or the whole
+    change is dropped; fewer than 2 parts is not a merge."""
+    body = "<div>بانک مرکزی اعلام کرد.</div><div>موضوع دیگری.</div><div>که نرخ جدید ابلاغ شد.</div>"
+    ok_raw = json.dumps({"changes": [
+        {"op": "paragraph_merge", "category": "paragraphs", "title": "دوختن",
+         "parts": ["بانک مرکزی اعلام کرد.", "که نرخ جدید ابلاغ شد."],
+         "replace": "بانک مرکزی اعلام کرد که نرخ جدید ابلاغ شد."},
+        {"op": "paragraph_merge", "title": "توهم",
+         "parts": ["بانک مرکزی اعلام کرد.", "عبارتی که وجود ندارد"], "replace": "x"},
+        {"op": "paragraph_merge", "title": "تک‌تکه", "parts": ["بانک مرکزی اعلام کرد."], "replace": "x"},
+    ]}, ensure_ascii=False)
+    out = la.parse_and_validate(ok_raw, {"body": body})
+    pm = [c for c in out if c["op"] == "paragraph_merge"]
+    assert len(pm) == 1  # hallucinated part + single-part merges are dropped
+    assert pm[0]["field"] == "body" and len(pm[0]["parts"]) == 2
+    assert pm[0]["applicable"] is True and "بدوز" not in pm[0]["replace"]
+    # normalized matching (Arabic yeh / extra spaces) still locates the parts
+    norm_raw = json.dumps({"changes": [
+        {"op": "paragraph_merge", "title": "نرمال",
+         "parts": ["بانك مركزي اعلام كرد.", "كه نرخ جديد ابلاغ شد."],
+         "replace": "بانک مرکزی اعلام کرد که نرخ جدید ابلاغ شد."},
+    ]}, ensure_ascii=False)
+    assert len(la.parse_and_validate(norm_raw, {"body": body})) == 1
+
+
+def test_paragraph_merge_and_holistic_rules_reach_prompt():
+    assert "paragraph_merge" in la.SYSTEM_PROMPT
+    assert "paragraph_merge" in la.TOOLS["paragraphs"]["guide"]
+    assert "کل‌نگر" in la.TOOLS["paragraphs"]["guide"]
+    assert "ابتر" in la.TOOLS["paragraphs"]["guide"]      # incomplete sentences named explicitly
+    assert "جملهٔ ناتمام/ابتر" in la.SYSTEM_PROMPT        # rule 8 holistic re-read
