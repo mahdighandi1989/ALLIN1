@@ -418,6 +418,9 @@ export default function LetterPage() {
   const [genKind, setGenKind] = useState<'' | 'excel' | 'word'>('')   // '' = auto
   const [genBusy, setGenBusy] = useState(false)
   const [genWarnings, setGenWarnings] = useState<string[]>([])
+  // v63: optional TEMPLATE/SAMPLE file (e.g. a blank table another department
+  // sent) — the generated attachment must reproduce ITS exact format.
+  const [genTpl, setGenTpl] = useState<File | null>(null)
 
   // --- Tables tool: enumerate the letter's tables (across all pages — the body
   // is the single source of truth) so the user picks WHICH ones the AI works on.
@@ -580,9 +583,22 @@ export default function LetterPage() {
   const generateAtt = async () => {
     if (!letterId) { toast.error('اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد'); return }
     const inst = genInstruction.trim()
-    if (inst.length < 3) { toast.error('شرحِ پیوستِ درخواستی را بنویس — مثلاً: «جدولی بساز با ستون‌های … و در ردیف‌ها …»'); return }
+    if (inst.length < 3 && !genTpl) { toast.error('شرحِ پیوست را بنویس یا فایلِ قالب/نمونه را انتخاب کن (حداقل یکی)'); return }
     setGenBusy(true); setGenWarnings([])
     try {
+      // TEMPLATE first: the sample file (any format) becomes text the model must
+      // reproduce exactly — read server-side, nothing stored.
+      let tplText = ''
+      let tplName = ''
+      if (genTpl) {
+        const tx = await letterAiApi.templateText(genTpl, aiModelId === '' ? undefined : Number(aiModelId))
+        if (!tx.ok || !(tx.text || '').trim()) {
+          toast.error(`قالب «${genTpl.name}» خوانده نشد: ${aiErrorText(tx.error)}`)
+          return
+        }
+        tplText = tx.text || ''
+        tplName = genTpl.name
+      }
       const r = await letterAiApi.generateAttachment({
         letter_id: letterId,
         account_no: general ? undefined : (acct.trim() || undefined),
@@ -592,6 +608,8 @@ export default function LetterPage() {
         recipient: plain(f.recipientName) || undefined,
         body_excerpt: plain(f.body).slice(0, 1500) || undefined,
         model_id: aiModelId === '' ? undefined : Number(aiModelId),
+        template_text: tplText || undefined,
+        template_name: tplName || undefined,
       })
       if (!r.ok) {
         toast.error((r.error || '').startsWith('bad_spec')
@@ -601,7 +619,7 @@ export default function LetterPage() {
       }
       setGenWarnings(r.warnings || [])
       toast.success(`پیوست «${r.attachment?.original_name || ''}» ساخته و ثبت شد (${r.kind === 'word' ? 'ورد' : 'اکسل'})`)
-      setGenInstruction('')
+      setGenInstruction(''); setGenTpl(null)
       await loadAtts(letterId)
     } catch (e) { toast.error(parseApiError(e)) } finally { setGenBusy(false) }
   }
@@ -2712,7 +2730,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v61</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v63</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2761,7 +2779,25 @@ export default function LetterPage() {
                 </span>
                 <textarea className="meta-in" rows={2} value={genInstruction} disabled={genBusy}
                   onChange={(e) => setGenInstruction(e.target.value)} style={{ width: '100%', resize: 'vertical', font: 'inherit' }}
-                  placeholder="شرحِ دقیقِ جدول یا متنِ درخواستی…" />
+                  placeholder={genTpl ? 'شرحِ اضافه (اختیاری — قالبِ انتخاب‌شده مبناست)…' : 'شرحِ دقیقِ جدول یا متنِ درخواستی…'} />
+                {/* v63: optional TEMPLATE/SAMPLE file — e.g. the blank table another
+                    department sent; the output reproduces ITS exact format from DB data */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <label className="ltr-btn" style={{ background: genTpl ? '#0d9488' : '#64748b', cursor: genBusy ? 'default' : 'pointer' }}>
+                    📄 {genTpl ? 'قالب: انتخاب شد' : 'قالب/نمونه (اختیاری)'}
+                    <input type="file" style={{ display: 'none' }} disabled={genBusy}
+                      accept=".xlsx,.xlsm,.xls,.csv,.docx,.pdf,.png,.jpg,.jpeg,.txt"
+                      onChange={(e) => { const ff = e.target.files?.[0] || null; setGenTpl(ff); e.target.value = '' }} />
+                  </label>
+                  {genTpl && <>
+                    <span className="ltr-hint" style={{ fontWeight: 700, color: '#0f766e' }} dir="ltr">{genTpl.name}</span>
+                    <button type="button" className="ltr-hint" style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
+                      onClick={() => setGenTpl(null)} disabled={genBusy}>✕ حذفِ قالب</button>
+                  </>}
+                  <span className="ltr-hint">
+                    اگر اداره/مرجعی فایلِ نمونه (جدولِ خالی با ستون‌های مشخص و…) داده، همین‌جا بده — خروجی دقیقاً به همان شکل از پایگاه‌داده پر می‌شود؛ شرحِ اضافه هم روی همان قالب اعمال می‌شود.
+                  </span>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <label className="ltr-hint">قالب:</label>
                   <select className="meta-in" style={{ width: 150 }} value={genKind} disabled={genBusy}

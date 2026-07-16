@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -469,15 +469,63 @@ async def attachment_text_endpoint(
     return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model")}
 
 
+@router.post("/template-text")
+async def template_text_endpoint(
+    file: UploadFile = File(...),
+    model_id: Optional[str] = Form(default=None),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Readable TEXT of a TEMPLATE/SAMPLE file the user picked from their machine
+    (a blank table another department sent, in any format) — for the attachment
+    GENERATOR. Nothing is stored; deterministic for Excel/CSV/Word/plain text,
+    one bounded transcription call for PDF/image."""
+    from app.services import letter_attachment_extract as lax
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="فایلِ قالب خالی است")
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="فایلِ قالب بزرگ‌تر از ۱۵MB است")
+
+    import mimetypes
+    fname = file.filename or "template"
+    mime = mimetypes.guess_type(fname)[0] or (file.content_type or "")
+    if not mime or mime == "application/octet-stream":
+        head = data[:12]
+        if head.startswith(b"%PDF-"):
+            mime = "application/pdf"
+        elif head.startswith(b"\x89PNG"):
+            mime = "image/png"
+        elif head.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+
+    mid = None
+    try:
+        mid = int(model_id) if model_id not in (None, "", "null") else None
+    except ValueError:
+        mid = None
+    r = await lax.attachment_text(db, data=data, filename=fname, mimetype=mime, model_id=mid)
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("error"), "file": fname}
+    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model")}
+
+
 class GenerateAttachmentRequest(BaseModel):
     letter_id: str
     account_no: Optional[str] = None
-    instruction: str = Field(min_length=3, max_length=3000)
+    # instruction may be empty when a TEMPLATE is supplied (the format itself
+    # says what to build); the endpoint enforces instruction-OR-template.
+    instruction: str = Field(default="", max_length=3000)
     kind: Optional[str] = None                 # "excel" | "word" | None = model decides
     subject: Optional[str] = None
     recipient: Optional[str] = None
     body_excerpt: Optional[str] = None
     model_id: Optional[int] = None
+    # v63: a sample/template file's TEXT (extracted via /template-text) — the
+    # output must reproduce this exact format, filled from DB facts.
+    template_text: str = Field(default="", max_length=20000)
+    template_name: str = Field(default="", max_length=200)
 
 
 @router.post("/generate-attachment")
@@ -498,7 +546,11 @@ async def generate_attachment(
     facts = await _gather_facts(db, acct)
 
     instruction = payload.instruction.strip()
-    if payload.kind in ("excel", "word"):
+    tpl_text = (payload.template_text or "").strip()
+    if not instruction and not tpl_text:
+        raise HTTPException(status_code=422,
+                            detail="شرحِ درخواست یا فایلِ قالب/نمونه لازم است (حداقل یکی).")
+    if payload.kind in ("excel", "word") and instruction:
         instruction += f"\n(فرمتِ خواسته‌شده توسط کاربر: {payload.kind})"
     letter_ctx = {
         "subject": payload.subject or "",
@@ -509,7 +561,8 @@ async def generate_attachment(
     # bank-wide lists) via need_data instead of returning an empty skeleton —
     # single-account facts alone cannot answer e.g. «همهٔ املاک شعبهٔ X».
     branches = await gen.list_branches(db)
-    prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches))
+    prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches),
+                              template_text=tpl_text, template_name=payload.template_name or "")
     result = await inference.complete(
         db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
         model_id=payload.model_id, max_tokens=8000,
@@ -521,7 +574,8 @@ async def generate_attachment(
     need = gen.parse_need_data(result.get("text") or "")
     if need:
         fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "")
-        prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched)
+        prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched,
+                                   template_text=tpl_text, template_name=payload.template_name or "")
         # bigger output budget: the spec now carries the fetched rows verbatim
         result = await inference.complete(
             db, prompt2, task="report_drafting", system=gen.SYSTEM_PROMPT,
@@ -581,7 +635,7 @@ async def generate_attachment(
         file_size=str(size), upload_date=_date.today().isoformat(),
         uploaded_by=getattr(user, "username", "") or "",
         is_shared="0",
-        notes=f"{gen.AI_GENERATED_MARK}: {instruction[:400]}",
+        notes=f"{gen.AI_GENERATED_MARK}: {(instruction or ('طبق قالبِ ' + (payload.template_name or 'داده‌شده')))[:400]}",
     )
     db.add(att)
     await db.commit()

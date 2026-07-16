@@ -312,3 +312,63 @@ async def test_generate_attachment_rejects_bad_spec(client, auth_headers, db_ses
     })
     assert r.status_code == 200
     assert r.json()["ok"] is False and r.json()["error"].startswith("bad_spec")
+
+
+# ---------------- v63: TEMPLATE/SAMPLE-file driven generation ----------------
+
+def test_build_prompt_template_section_and_rules():
+    from app.services import letter_attachment_generate as gen
+    p = gen.build_prompt({}, {"subject": "س"}, "ستون تاریخ هم اضافه کن",
+                         template_text="نام مشتری | شماره حساب | مبلغ", template_name="فرم-اداره.xlsx")
+    assert "قالب/نمونهٔ داده‌شده توسط کاربر" in p and "فرم-اداره.xlsx" in p
+    assert "نام مشتری | شماره حساب | مبلغ" in p
+    assert "عیناً بازتولید" in p
+    assert "ستون تاریخ هم اضافه کن" in p           # extras apply ON TOP of the template
+    # template-only: the instruction section says build strictly from the template
+    p2 = gen.build_prompt({}, {}, "", template_text="ستون‌های الف/ب", template_name="t.pdf")
+    assert "بدون شرح — پیوست را دقیقاً مطابقِ قالبِ داده‌شده" in p2
+    # SYSTEM rule 9 exists
+    assert "قالب/نمونهٔ داده‌شده توسط کاربر" in gen.SYSTEM_PROMPT
+
+
+async def test_generate_with_template_only(client, auth_headers, db_session, monkeypatch):
+    await _seed_model(db_session)
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["prompt"] = prompt
+        return {"ok": True, "model": "claude-opus-4-8", "text": json.dumps({
+            "kind": "excel", "filename": "طبق قالب", "title": "فرم اداره",
+            "warnings": [],
+            "sheets": [{"name": "فرم", "columns": ["نام مشتری", "شماره حساب", "مبلغ"],
+                        "rows": [["الف", "۱۲۳", "۱٬۰۰۰"]]}],
+        }, ensure_ascii=False)}
+
+    from app.ai import inference
+    monkeypatch.setattr(inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "L-TPL-1", "instruction": "",
+        "template_text": "نام مشتری | شماره حساب | مبلغ", "template_name": "فرم-اداره.xlsx",
+    })
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert "قالب/نمونهٔ داده‌شده" in seen["prompt"] and "فرم-اداره.xlsx" in seen["prompt"]
+    # neither instruction nor template → 422 with a clear Persian message
+    r2 = await client.post("/api/letter-ai/generate-attachment", headers=auth_headers, json={
+        "letter_id": "L-TPL-2", "instruction": "", "template_text": "",
+    })
+    assert r2.status_code == 422
+
+
+async def test_template_text_endpoint_reads_xlsx(client, auth_headers):
+    import io
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active; ws.title = "فرم"
+    ws.append(["نام مشتری", "شماره حساب", "مبلغ ترهین"])
+    buf = io.BytesIO(); wb.save(buf)
+    r = await client.post("/api/letter-ai/template-text", headers=auth_headers,
+                          files={"file": ("فرم-خالی.xlsx", buf.getvalue(),
+                                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and "شماره حساب" in body["text"] and "مبلغ ترهین" in body["text"]
