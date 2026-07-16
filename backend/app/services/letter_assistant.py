@@ -333,6 +333,14 @@ def html_to_text(s: Optional[str]) -> str:
     return "\n".join(out).strip()
 
 
+def _fold_heh(s: str) -> str:
+    """Match-only fold: the editor stores the precomposed «ۀ» (U+06C0 —
+    B Nazanin cannot anchor the combining U+0654) while models often emit
+    ه+U+0654. NEVER used for display — only so both forms locate the same
+    text in the hallucination guards."""
+    return (s or "").replace("\u0654", "").replace("\u06c0", "\u0647")
+
+
 def _norm_ws(s: str) -> str:
     # whitespace/ZWNJ collapse + Arabic-vs-Persian yeh/kaf canonicalization —
     # the model often emits ي/ك or plain spaces where the letter has ی/ک/ZWNJ
@@ -834,7 +842,7 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             parts_txt = [str(p).strip() for p in raw_parts if isinstance(p, str) and str(p).strip()][:6]
             if len(parts_txt) < 2:
                 continue
-            if not all(p in haystack or _norm_ws(p) in _norm_ws(haystack) for p in parts_txt):
+            if not all(p in haystack or _norm_ws(_fold_heh(p)) in _norm_ws(_fold_heh(haystack)) for p in parts_txt):
                 continue
             item["field"] = fld
             item["parts"] = parts_txt
@@ -868,7 +876,7 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             # Hallucination guard: the exact snippet must exist (verbatim, or with
             # whitespace/ZWNJ normalized). If it isn't there, we cannot locate it
             # safely on the client → drop the change.
-            located = find in haystack or _norm_ws(find) in _norm_ws(haystack)
+            located = find in haystack or _norm_ws(_fold_heh(find)) in _norm_ws(_fold_heh(haystack))
             if not located:
                 continue
             occ = str(ch.get("occurrence") or "first").strip()

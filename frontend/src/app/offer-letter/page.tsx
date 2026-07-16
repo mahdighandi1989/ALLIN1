@@ -104,7 +104,7 @@ const LABELS: Record<string, { fa: string; en: string }> = {
   CityCountry: { fa: 'شهر / کشور', en: 'City / Country' },
   Branch: { fa: 'شعبه (نام و کد)', en: 'Branch Name & Code' },
   IssueDate: { fa: 'تاریخ صدور نامه', en: 'Issue Date' },
-  RequestDate: { fa: 'تاریخ نامهٔ درخواست مشتری', en: 'Request Letter Date' },
+  RequestDate: { fa: 'تاریخ نامۀ درخواست مشتری', en: 'Request Letter Date' },
   AcceptanceDate: { fa: 'تاریخ امضا/پذیرش مشتری', en: 'Acceptance Date' },
   FacilityType: { fa: 'نوع تسهیلات (از لیست یا تایپ آزاد)', en: 'Facility Type' },
   CreditLimit: { fa: 'سقف اعتبار — درهم', en: 'Credit Limit (AED)' },
@@ -116,11 +116,11 @@ const LABELS: Record<string, { fa: string; en: string }> = {
   LoanAmount: { fa: 'مبلغ وام — درهم', en: 'Loan Amount (AED)' },
   LoanInterestRate: { fa: 'نرخ سود وام — درصد سالانه', en: 'Loan Interest Rate (%)' },
   LoanTenor: { fa: 'مدت بازپرداخت — ماه', en: 'Loan Tenor (Months)' },
-  MonthlyInstallment: { fa: 'قسط ماهانه (خالی = دکمهٔ محاسبه)', en: 'Monthly Installment' },
+  MonthlyInstallment: { fa: 'قسط ماهانه (خالی = دکمۀ محاسبه)', en: 'Monthly Installment' },
   Purpose: { fa: 'هدف / مصرف وام', en: 'Purpose' },
-  LienAmount: { fa: 'مبلغ وثیقهٔ تودیع — درهم (بند ۴ مدارک)', en: 'Lien Amount (AED)' },
+  LienAmount: { fa: 'مبلغ وثیقۀ تودیع — درهم (بند ۴ مدارک)', en: 'Lien Amount (AED)' },
   Remarks: { fa: 'ملاحظات ردیف ۱ تسهیلات (ستون Remarks جدول)', en: 'Remarks (row 1)' },
-  RequiredSecurities: { fa: 'وثایق و مدارک موردنیاز (متن صفحهٔ ۱)', en: 'Required Securities / Documents' },
+  RequiredSecurities: { fa: 'وثایق و مدارک موردنیاز (متن صفحۀ ۱)', en: 'Required Securities / Documents' },
   NotesPersonal: { fa: 'یادداشت‌های زیر جدول مدارک (Note 1, 2, …)', en: 'Notes under securities table' },
 }
 
@@ -411,7 +411,7 @@ export default function OfferLetterPage() {
       )
       setDbReqSec(String(d.RequiredSecurities || ''))
       if (saved.RequiredSecurities && d.RequiredSecurities && String(saved.RequiredSecurities).trim() !== String(d.RequiredSecurities).trim()) {
-        toast('متنِ وثایقِ آخرین مصوبه با متنِ ذخیره‌شدهٔ نامه فرق دارد — اگر خواستی با دکمهٔ «از آخرین مصوبه» جایگزینش کن', { icon: 'ℹ️', duration: 7000 })
+        toast('متنِ وثایقِ آخرین مصوبه با متنِ ذخیره‌شدۀ نامه فرق دارد — اگر خواستی با دکمۀ «از آخرین مصوبه» جایگزینش کن', { icon: 'ℹ️', duration: 7000 })
       }
       // Guarantors: last saved snapshot wins; otherwise the customer's recorded
       // guarantors from the DB prefill the section.
@@ -508,7 +508,7 @@ export default function OfferLetterPage() {
         try { await crmApi.addGuarantor(a, { guarantor_name: g.name, guarantor_account: g.account }) }
         catch { /* best-effort — the snapshot already holds them */ }
       }
-      if (!silent) toast.success('در پروندهٔ مشتری ذخیره شد')
+      if (!silent) toast.success('در پروندۀ مشتری ذخیره شد')
       return true
     } catch (e) { if (!silent) toast.error(parseApiError(e)); return false }
     finally { setSaving(false) }
@@ -1222,7 +1222,7 @@ export default function OfferLetterPage() {
           <div className="flex items-center gap-2 mb-3">
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
-              <h1 className="text-lg font-bold text-gray-900" dir="rtl">Offer Letter — نامهٔ پیشنهادِ تسهیلات</h1>
+              <h1 className="text-lg font-bold text-gray-900" dir="rtl">Offer Letter — نامۀ پیشنهادِ تسهیلات</h1>
               <p className="text-gray-500 text-xs" dir="rtl">فرم خالی شروع می‌شود؛ با واردکردن شماره‌حساب و «بارگیری»، از آخرین تسهیلاتِ مشتری خودکار پر می‌شود (قالب هم بر اساس نوع حساب×تسهیلات انتخاب می‌شود). متغیرهای پرنشده در متنِ نامه چشمک می‌زنند تا پر شوند، و با دبل‌کلیک روی هر بخشِ نامه پنلِ چینش (فونت/تراز/جهت/فاصله) باز می‌شود.</p>
             </div>
           </div>
@@ -1265,7 +1265,7 @@ export default function OfferLetterPage() {
             <span className="text-[11px] text-gray-500 self-center" dir="rtl">
               {olAcct
                 ? <>چینش فقط برای حسابِ <b dir="ltr">{olAcct}</b> ذخیره می‌شود — قالبِ اصلی دست‌نخورده می‌ماند</>
-                : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کند'}
+                : 'فرم خالی است — تغییرِ چینش، قالبِ اصلی (پیش‌فرضِ همۀ حساب‌ها) را به‌روز می‌کند'}
             </span>
           </div>
 
@@ -1292,7 +1292,7 @@ export default function OfferLetterPage() {
             <b>{effectiveTpl === 'personal' ? 'وام شخصی دوزبانه (EN/AR)' : 'English (اضافه‌برداشت / عمومی)'}</b>
           </p>
 
-          <div className="text-xs font-bold text-gray-600 mb-1.5" dir="rtl">گیرندهٔ نامه — مشخصات مشتری</div>
+          <div className="text-xs font-bold text-gray-600 mb-1.5" dir="rtl">گیرندۀ نامه — مشخصات مشتری</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             {F('Prefix')}
             {F('CompanyName')}
@@ -1309,7 +1309,7 @@ export default function OfferLetterPage() {
             </label>
             <label className="block">
               <span className="flex items-baseline justify-between gap-1 text-[11px]">
-                <span className="text-gray-700 font-medium" dir="rtl">شمارهٔ نامه (سریال متغیر)</span>
+                <span className="text-gray-700 font-medium" dir="rtl">شمارۀ نامه (سریال متغیر)</span>
                 <span className="text-gray-400" dir="ltr">Ref Serial</span>
               </span>
               <div className="flex items-center gap-1">
@@ -1333,7 +1333,7 @@ export default function OfferLetterPage() {
           </div>
 
           {effectiveTpl === 'english' && <>
-            <div className="text-xs font-bold text-gray-600 mt-3 mb-1.5" dir="rtl">مشخصات تسهیلات — جدول صفحهٔ ۱ و شرایط (قالب English)</div>
+            <div className="text-xs font-bold text-gray-600 mt-3 mb-1.5" dir="rtl">مشخصات تسهیلات — جدول صفحۀ ۱ و شرایط (قالب English)</div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
               {F('RequestDate')}
               {F('CreditLimit')}
@@ -1347,7 +1347,7 @@ export default function OfferLetterPage() {
             <div className="mt-3 border border-amber-200 rounded-lg p-3 bg-amber-50/50">
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2" dir="rtl">
                 <span className="text-xs font-bold text-gray-700">
-                  تسهیلاتِ جدول صفحهٔ ۱ — ردیف ۱ همان فیلدهای بالاست؛ برای تسهیلاتِ بیشتر ردیف اضافه کن (جمعِ سقف‌ها در ردیفِ Total چاپ می‌شود)
+                  تسهیلاتِ جدول صفحۀ ۱ — ردیف ۱ همان فیلدهای بالاست؛ برای تسهیلاتِ بیشتر ردیف اضافه کن (جمعِ سقف‌ها در ردیفِ Total چاپ می‌شود)
                 </span>
                 <button type="button" onClick={() => setExtraFacs((r) => [...r, { type: '', limit: '', rate: '', remarks: '', fd: false, staff: false, temp: false }])}
                   className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md px-2.5 py-1">+ افزودن ردیف تسهیلات</button>
@@ -1379,13 +1379,13 @@ export default function OfferLetterPage() {
               <div className="flex items-center gap-3 flex-wrap mt-1" dir="rtl">
                 <button type="button" onClick={() => computeCharges()}
                   className="text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-md px-3 py-1.5">
-                  محاسبهٔ کارمزد از تعرفه ← ProcessingFee
+                  محاسبۀ کارمزد از تعرفه ← ProcessingFee
                 </button>
                 <label className="flex items-center gap-1 text-[11px] text-gray-600">
                   <input type="checkbox" checked={autoCharge} onChange={(e) => setAutoCharge(e.target.checked)} />
-                  محاسبهٔ خودکار با هر تغییرِ نوع/مبلغ
+                  محاسبۀ خودکار با هر تغییرِ نوع/مبلغ
                 </label>
-                <span className="text-[11px] text-gray-400">تعرفه از «Charge Tariff» در منو قابل‌ویرایش است؛ جمعِ کارمزدِ همهٔ ردیف‌ها در بند ۲۳ می‌نشیند (+VAT).</span>
+                <span className="text-[11px] text-gray-400">تعرفه از «Charge Tariff» در منو قابل‌ویرایش است؛ جمعِ کارمزدِ همۀ ردیف‌ها در بند ۲۳ می‌نشیند (+VAT).</span>
               </div>
               {chargeInfo && (
                 <div className="mt-2 text-[11px] bg-white border border-amber-200 rounded-md p-2" dir="rtl">
@@ -1407,7 +1407,7 @@ export default function OfferLetterPage() {
               {F('RequiredSecurities', true)}
               {dbReqSec.trim() && dbReqSec.trim() !== (f.RequiredSecurities || '').trim() && (
                 <div className="flex items-center gap-2 text-[11px] text-gray-600" dir="rtl">
-                  <span>متنِ وثایقِ آخرین مصوبهٔ ثبت‌شده با متنِ فعلیِ نامه فرق دارد.</span>
+                  <span>متنِ وثایقِ آخرین مصوبۀ ثبت‌شده با متنِ فعلیِ نامه فرق دارد.</span>
                   <button type="button"
                     onClick={() => { if (confirm('متنِ فعلیِ «وثایق و مدارک» با متنِ آخرین مصوبه جایگزین شود؟')) setF((s) => ({ ...s, RequiredSecurities: dbReqSec })) }}
                     className="shrink-0 border border-gray-300 rounded-md px-2 py-1 text-xs bg-white hover:bg-blue-50 text-blue-700">
@@ -1429,7 +1429,7 @@ export default function OfferLetterPage() {
                 <FieldLabel k="MonthlyInstallment" />
                 <div className="flex items-center gap-1">
                   <input value={f.MonthlyInstallment} onChange={set('MonthlyInstallment')} className={field} />
-                  <button type="button" title="محاسبهٔ قسط (مانده‌ی نزولی) از مبلغ/نرخ/مدت"
+                  <button type="button" title="محاسبۀ قسط (مانده‌ی نزولی) از مبلغ/نرخ/مدت"
                     onClick={() => { const m = emiSuggest(); if (m) setF((s) => ({ ...s, MonthlyInstallment: m })); else toast.error('مبلغ وام و مدت را وارد کنید') }}
                     className="shrink-0 border border-gray-300 rounded-md px-2 py-1.5 text-xs bg-white hover:bg-blue-50 text-blue-700">
                     محاسبه
@@ -1448,12 +1448,12 @@ export default function OfferLetterPage() {
                 and synced to the customer's guarantor records on Save. */}
             <div className="mt-3 border border-gray-200 rounded-lg p-3 bg-gray-50/60">
               <div className="flex items-center justify-between mb-2" dir="rtl">
-                <span className="text-xs font-bold text-gray-600">ضامن‌ها — در بند ۷ «مدارک موردنیاز» چاپ و در پروندهٔ مشتری ثبت می‌شوند</span>
+                <span className="text-xs font-bold text-gray-600">ضامن‌ها — در بند ۷ «مدارک موردنیاز» چاپ و در پروندۀ مشتری ثبت می‌شوند</span>
                 <button type="button" onClick={() => setGuars((g) => [...g, { name: '', account: '' }])}
                   className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md px-2.5 py-1">+ افزودن ضامن</button>
               </div>
               {guars.length === 0 && (
-                <p className="text-[11px] text-gray-400" dir="rtl">ضامنی ثبت نشده است. ضامن‌های موجود مشتری هنگام «بارگیری» خودکار می‌آیند؛ ضامن جدید را با دکمهٔ بالا اضافه کن.</p>
+                <p className="text-[11px] text-gray-400" dir="rtl">ضامنی ثبت نشده است. ضامن‌های موجود مشتری هنگام «بارگیری» خودکار می‌آیند؛ ضامن جدید را با دکمۀ بالا اضافه کن.</p>
               )}
               {guars.map((g, i) => (
                 <div key={i} className="flex items-center gap-2 mb-1.5">
@@ -1720,8 +1720,8 @@ export default function OfferLetterPage() {
             <button title="زیرخط" style={{ textDecoration: 'underline' }} onMouseDown={(e) => { e.preventDefault(); addMark({ u: true }) }}>U</button>
             <button title="کوچک‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 0.85 }) }}>A−</button>
             <button title="بزرگ‌تر" onMouseDown={(e) => { e.preventDefault(); addMark({ fs: 1.18 }) }}>A＋</button>
-            <button title="فاصلهٔ خطِ کمتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(-0.1) }}>خ−</button>
-            <button title="فاصلهٔ خطِ بیشتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(+0.1) }}>خ＋</button>
+            <button title="فاصلۀ خطِ کمتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(-0.1) }}>خ−</button>
+            <button title="فاصلۀ خطِ بیشتر (کلِ این بند)" onMouseDown={(e) => { e.preventDefault(); hostLh(+0.1) }}>خ＋</button>
             <button title="شماره‌گذاریِ خطوطِ این بند (مثل Word)" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'num' }); setOlFmt(null) }}>1.</button>
             <button title="بولتِ ابتدای خطوط" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'bullet' }); setOlFmt(null) }}>•</button>
             <button title="تیکِ ابتدای خطوط" onMouseDown={(e) => { e.preventDefault(); hostUpdate({ list: 'check' }); setOlFmt(null) }}>✓</button>
@@ -1743,7 +1743,7 @@ export default function OfferLetterPage() {
                 <button className="olp-x" onPointerDown={(e) => e.stopPropagation()} onClick={() => setOlSel(null)}>×</button>
               </div>
               <div className="olp-row">
-                <label>اندازهٔ فونت (pt)</label>
+                <label>اندازۀ فونت (pt)</label>
                 <input type="number" step="0.5" value={b.fs ?? ''} placeholder="—"
                   onChange={(e) => olUpdate({ fs: +e.target.value || undefined })} />
                 <button className={b.bold ? 'on' : ''} onClick={() => olUpdate({ bold: !b.bold })}>بولد</button>
@@ -1769,7 +1769,7 @@ export default function OfferLetterPage() {
                   <option value='Tahoma, "B Nazanin", sans-serif'>Tahoma</option>
                 </select>
               </div>
-              <div className="olp-seg" title="نشانهٔ ابتدای هر خطِ این بلوک (مثل Word)">
+              <div className="olp-seg" title="نشانۀ ابتدای هر خطِ این بلوک (مثل Word)">
                 <button className={!b.list ? 'on' : ''} onClick={() => olUpdate({ list: undefined })}>بدون</button>
                 <button className={b.list === 'num' ? 'on' : ''} onClick={() => olUpdate({ list: 'num' })}>1.2.3</button>
                 <button className={b.list === 'bullet' ? 'on' : ''} onClick={() => olUpdate({ list: 'bullet' })}>•</button>
@@ -1777,8 +1777,8 @@ export default function OfferLetterPage() {
                 <button className={b.list === 'dash' ? 'on' : ''} onClick={() => olUpdate({ list: 'dash' })}>–</button>
               </div>
               <div className="olp-grid">
-                <label>فاصلهٔ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => olUpdate({ lh: +e.target.value || undefined })} /></label>
-                <label>فاصلهٔ حروف<input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => olUpdate({ ls: +e.target.value || undefined })} /></label>
+                <label>فاصلۀ خط<input type="number" step="0.1" value={b.lh ?? ''} placeholder="—" onChange={(e) => olUpdate({ lh: +e.target.value || undefined })} /></label>
+                <label>فاصلۀ حروف<input type="number" step="0.5" value={b.ls ?? ''} placeholder="—" onChange={(e) => olUpdate({ ls: +e.target.value || undefined })} /></label>
                 <label>جابه‌جایی عمودی<input type="number" value={b.mt ?? ''} placeholder="px" onChange={(e) => olUpdate({ mt: +e.target.value || undefined })} /></label>
                 <label>جابه‌جایی افقی<input type="number" value={b.mis ?? ''} placeholder="px" onChange={(e) => olUpdate({ mis: +e.target.value || undefined })} /></label>
                 <label>عرض ٪<input type="number" value={b.w ?? ''} placeholder="—" onChange={(e) => olUpdate({ w: +e.target.value || undefined })} /></label>
@@ -1797,12 +1797,12 @@ export default function OfferLetterPage() {
                   {b.hide ? 'نمایشِ دوباره' : 'حذف از برگه'}
                 </button>
                 <button onClick={() => { setOlLayout((s) => { const n = { ...s }; delete n[olSel.key]; return n }) }}>بازنشانیِ این عنصر</button>
-                <button onClick={() => { if (confirm(olAcct ? `همهٔ چینش/قالب‌بندیِ سفارشیِ حسابِ ${olAcct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همهٔ چیدمان و قالب‌بندیِ سفارشیِ قالبِ اصلی پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
+                <button onClick={() => { if (confirm(olAcct ? `همۀ چینش/قالب‌بندیِ سفارشیِ حسابِ ${olAcct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'همۀ چیدمان و قالب‌بندیِ سفارشیِ قالبِ اصلی پاک شود؟')) { setOlLayout({}); setOlMarks({}); setOlSel(null) } }}>بازنشانیِ همه</button>
               </div>
               <div className="olp-hint">
                 {olAcct
-                  ? <>تغییرها فقط برای حسابِ <b dir="ltr">{olAcct}</b> اعمال و ذخیره می‌شوند؛ قالبِ اصلی تغییری نمی‌کند (با «ذخیره» در پروندهٔ مشتری هم می‌مانند).</>
-                  : 'فرم به حسابی تعلق ندارد — این تغییرها قالبِ اصلی (پیش‌فرضِ همهٔ حساب‌ها) را به‌روز می‌کنند.'}
+                  ? <>تغییرها فقط برای حسابِ <b dir="ltr">{olAcct}</b> اعمال و ذخیره می‌شوند؛ قالبِ اصلی تغییری نمی‌کند (با «ذخیره» در پروندۀ مشتری هم می‌مانند).</>
+                  : 'فرم به حسابی تعلق ندارد — این تغییرها قالبِ اصلی (پیش‌فرضِ همۀ حساب‌ها) را به‌روز می‌کنند.'}
               </div>
             </div>
           )

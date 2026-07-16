@@ -157,7 +157,7 @@ export default function SanctionPage() {
       // First-class persistence: a deduped credit_reviews row + promoted profile
       // columns + the exact snapshot (for restore) — all in one call.
       await crmApi.saveSanction(a, { snapshot: { ...f }, limits, recip, fin, guars, banks })
-      if (!silent) toast.success('مصوبه در پروندهٔ مشتری ذخیره شد')
+      if (!silent) toast.success('مصوبه در پروندۀ مشتری ذخیره شد')
       return true
     } catch (e) { if (!silent) toast.error(parseApiError(e)); return false }
     finally { setSaving(false) }
@@ -234,7 +234,7 @@ export default function SanctionPage() {
             <div className="bg-blue-600 text-white rounded-lg p-2"><Printer size={18} /></div>
             <div>
               <h1 className="text-lg font-bold text-gray-900" dir="rtl">Credit Approval — مصوبه / پیش‌نویس مصوبه</h1>
-              <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ فرم بر اساس نوع حساب (حقیقی/حقوقی) ساخته می‌شود، از دیتابیس پر و هنگام ذخیره/چاپ در پروندهٔ مشتری به‌روزرسانی می‌شود.</p>
+              <p className="text-gray-500 text-xs">شماره‌حساب را وارد کن؛ فرم بر اساس نوع حساب (حقیقی/حقوقی) ساخته می‌شود، از دیتابیس پر و هنگام ذخیره/چاپ در پروندۀ مشتری به‌روزرسانی می‌شود.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-end gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
@@ -256,7 +256,7 @@ export default function SanctionPage() {
             {dl.designButton}
             {dl.scopeHint}
           </div>
-          <p className="text-[11px] text-gray-400 mt-2">همهٔ سلول‌های زرد قابل ویرایش‌اند. ردیف‌های جدول (تسهیلات، ضامن‌ها، بانک‌ها) با + اضافه و با × حذف می‌شوند.</p>
+          <p className="text-[11px] text-gray-400 mt-2">همۀ سلول‌های زرد قابل ویرایش‌اند. ردیف‌های جدول (تسهیلات، ضامن‌ها، بانک‌ها) با + اضافه و با × حذف می‌شوند.</p>
         </div>
 
         {/* ===== printable document ===== */}

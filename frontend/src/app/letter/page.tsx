@@ -129,7 +129,15 @@ function normalizeTables(root: HTMLElement) {
     tbl.querySelectorAll('tr').forEach((tr) => { if (!tr.getAttribute('data-r')) tr.setAttribute('data-r', uid()) })
   })
 }
+// B Nazanin (the letter's Persian font family) has no mark-anchoring for the
+// COMBINING hamza above (U+0654): the browser pulls a fallback font for that
+// one mark, the Arabic shaping run splits, and «…ماهۀ…» renders with a GAP
+// before its final heh. The precomposed Persian «ۀ» (U+06C0) IS covered by
+// the B fonts — normalize every path text enters the letter. Safe globally:
+// ۀ/ۀ only ever occurs word-finally in Persian (the ezafe heh).
+const fixHehHamza = (s: string) => (s || '').replace(/هٔ/g, 'ۀ')
 function cleanPaste(html: string): string {
+  html = fixHehHamza(html)
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     doc.querySelectorAll('style,meta,script,link,title,o\\:p,w\\:sdt').forEach((n) => n.remove())
@@ -241,6 +249,7 @@ function applyTextReplaceHtml(value: string, find: string, replace: string, occu
   if (applied === 0) {
     const canon = (c: string) =>
       c === 'ي' ? 'ی' : c === 'ك' ? 'ک'
+        : c === 'ۀ' ? 'ه' : c === 'ٔ' ? ''   // heh+hamza forms fold to bare heh
         : /[\s‌‎‏ ]/.test(c) ? ' ' : c
     const build = (src: string): { out: string; map: number[] } => {
       let out = ''
@@ -248,6 +257,7 @@ function applyTextReplaceHtml(value: string, find: string, replace: string, occu
       let prevSpace = true
       for (let i = 0; i < src.length; i++) {
         const c = canon(src[i])
+        if (c === '') continue           // dropped char (combining hamza)
         if (c === ' ') { if (prevSpace) continue; prevSpace = true } else prevSpace = false
         out += c
         map.push(i)
@@ -295,18 +305,18 @@ function RichSpan({ value, onChange, placeholder, dir, className, style, multili
     }
   }, [value])
   return <span ref={ref} className={`rich ${className || ''}`} contentEditable suppressContentEditableWarning dir={dir}
-    data-ph={placeholder || ''} onInput={() => { const el = ref.current; if (el) onChange(el.innerHTML) }} style={style}
+    data-ph={placeholder || ''} onInput={() => { const el = ref.current; if (el) onChange(fixHehHamza(el.innerHTML)) }} style={style}
     onKeyDown={multiline ? (e) => {
       // uniform multi-line: Enter always inserts a <br> (never a nested <div>)
-      if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertLineBreak'); const el = ref.current; if (el) onChange(el.innerHTML) }
+      if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertLineBreak'); const el = ref.current; if (el) onChange(fixHehHamza(el.innerHTML)) }
     } : undefined} />
 }
 
 type Boxn = { x: number; y: number; w: number; h?: number; size: number; font?: string; bold?: boolean; underline?: boolean; align?: 'right' | 'center' | 'left'; ls?: number; lh?: number; dir?: 'rtl' | 'ltr'; justify?: boolean; indent?: number; contY?: number; hidden?: boolean }
 const KEY_FA: Record<string, string> = {
   logo: 'لوگو', name: 'نامِ بانک', footer: 'فوتر', besmele: 'بسمه تعالی', shomareh: 'شماره', tarikh: 'تاریخ',
-  peyvast: 'پیوست', recName: 'نامِ گیرنده', recTitle: 'سمت/ادارهٔ گیرنده', classification: 'طبقه‌بندی', subject: 'موضوع',
-  separator: 'خطِ جداکننده', body: 'متنِ نامه', sender: 'امضاکننده', copyto: 'رونوشت', action: 'اقدام‌کننده', pagenum: 'شمارهٔ صفحه',
+  peyvast: 'پیوست', recName: 'نامِ گیرنده', recTitle: 'سمت/ادارۀ گیرنده', classification: 'طبقه‌بندی', subject: 'موضوع',
+  separator: 'خطِ جداکننده', body: 'متنِ نامه', sender: 'امضاکننده', copyto: 'رونوشت', action: 'اقدام‌کننده', pagenum: 'شمارۀ صفحه',
 }
 const DEFAULT_LAYOUT: Record<string, Boxn> = {
   logo: { x: m(4.8), y: m(4), w: m(28.5), h: m(27.6), size: 0 },
@@ -547,7 +557,7 @@ export default function LetterPage() {
   const uploadAtt = async (file?: File | null) => {
     if (!file) return
     if (!letterId) { toast.error('اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد'); return }
-    if (!acct.trim() && !general) { toast.error('شمارهٔ حساب نامه لازم است'); return }
+    if (!acct.trim() && !general) { toast.error('شمارۀ حساب نامه لازم است'); return }
     setAttUploading(true)
     try {
       await crmApi.uploadAttachment(acct.trim() || 'general', file, {
@@ -778,7 +788,7 @@ export default function LetterPage() {
               // Not a failure: the file simply holds no account-keyed rows —
               // say so calmly instead of a red «model error».
               all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
-                title: `«${att.original_name}» دادهٔ حساب‌محور نداشت`, detail: aiErrorText(rx.error),
+                title: `«${att.original_name}» دادۀ حساب‌محور نداشت`, detail: aiErrorText(rx.error),
                 severity: 'low', applicable: false })
             } else {
               all.push({ id: `err-${att.id}`, op: 'note', category: 'db_extract', field: '',
@@ -806,9 +816,9 @@ export default function LetterPage() {
   }
   const aiErrorText = (err?: string) => {
     if (err === 'ai_generated_attachment') return 'این پیوست را خودِ هوش مصنوعی از داده‌های پایگاه‌داده ساخته — استخراجِ دوباره‌اش به دیتابیس بی‌معناست و سرور آن را رد کرد.'
-    if (err === 'no_account_data') return 'این فایل دادهٔ حساب‌محوری برای ثبت در پروفایل‌ها نداشت (مثلاً گزارشِ تجمیعی/سطحِ شعبه یا نامهٔ عمومی) و مطلبِ عمومیِ قابلِ ثبت در پایگاه دانش هم در آن پیدا نشد. محتوایش همچنان در «بررسیِ کاملِ نامه و پیوست‌ها» و پرکردنِ جدول‌ها استفاده می‌شود.'
+    if (err === 'no_account_data') return 'این فایل دادۀ حساب‌محوری برای ثبت در پروفایل‌ها نداشت (مثلاً گزارشِ تجمیعی/سطحِ شعبه یا نامۀ عمومی) و مطلبِ عمومیِ قابلِ ثبت در پایگاه دانش هم در آن پیدا نشد. محتوایش همچنان در «بررسیِ کاملِ نامه و پیوست‌ها» و پرکردنِ جدول‌ها استفاده می‌شود.'
     if (err === 'no_model') return 'هیچ مدلِ هوش مصنوعیِ فعالی پیکربندی نشده — از «تنظیمات ← مدل‌های هوش مصنوعی» یک مدل را فعال کن.'
-    if (err === 'no_base_url') return 'آدرسِ سرویس‌دهندهٔ مدل تنظیم نشده است.'
+    if (err === 'no_base_url') return 'آدرسِ سرویس‌دهندۀ مدل تنظیم نشده است.'
     if (err && /timed out/i.test(err)) return 'پاسخِ مدل به‌موقع نرسید؛ دوباره تلاش کن یا مدلِ سریع‌تری انتخاب کن.'
     return err ? `خطای مدل: ${err}` : 'اجرای مدل ناموفق بود.'
   }
@@ -916,8 +926,12 @@ export default function LetterPage() {
         else notLocated++
       }
     }
-    if (newAttTables.length) setAttTables((list) => [...list, ...newAttTables])
-    if (applied) { setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`) }
+    if (newAttTables.length) setAttTables((list) => [...list, ...newAttTables.map((t) => ({ ...t, html: fixHehHamza(t.html), title: fixHehHamza(t.title) }))])
+    if (applied) {
+      // model-authored text goes through the same heh+hamza normalization as typing
+      for (const k of Object.keys(nf)) if (typeof nf[k] === 'string') nf[k] = fixHehHamza(nf[k])
+      setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`)
+    }
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
     // Persist the approved extracted facts + profile↔profile links + KB items.
@@ -956,7 +970,10 @@ export default function LetterPage() {
         // attachment tables live alongside the fields inside values_json but are
         // kept OUT of `f` (they're a list, not a letter field — and analyze sends
         // `fields: f` verbatim).
-        setAttTables(Array.isArray(v.attTables) ? v.attTables.filter((t: any) => t && t.id && t.html) : [])
+        setAttTables(Array.isArray(v.attTables)
+          ? v.attTables.filter((t: any) => t && t.id && t.html)
+              .map((t: any) => ({ ...t, html: fixHehHamza(t.html), title: fixHehHamza(t.title || '') }))
+          : [])
         delete v.attTables
         setFloats(Array.isArray(v.floats) ? v.floats.filter((t: any) => t && t.id && t.html) : [])
         delete v.floats
@@ -964,6 +981,8 @@ export default function LetterPage() {
         // for already-well-formed text: a paragraph that ends in a terminator stays as
         // one paragraph; only hard-wrapped visual lines get merged). No manual step.
         if (v.body) v.body = reflowBody(normalizeBodyHtml(v.body))
+        // letters saved before the heh+hamza normalization get fixed on open
+        for (const k of Object.keys(v)) if (typeof v[k] === 'string') v[k] = fixHehHamza(v[k])
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
@@ -988,7 +1007,7 @@ export default function LetterPage() {
 
   const newLetter = () => { setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
-    if (!general && !acct.trim()) { toast.error('شمارهٔ حساب را وارد کن، یا «نامهٔ عمومی» را تیک بزن'); return }
+    if (!general && !acct.trim()) { toast.error('شمارۀ حساب را وارد کن، یا «نامۀ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
     try {
       const pDept = plain(f.recipientDept), pMgr = plain(f.recipientName), pSubj = plain(f.subject)
@@ -1370,7 +1389,7 @@ export default function LetterPage() {
     const hostR = host.getBoundingClientRect(); const cw = host.clientWidth || 1
     const rect0 = t0.getBoundingClientRect()
     const tw = +(rect0.width / cw * 100).toFixed(1)
-    if (tw >= 99.5) { toast('جدول تمام‌عرض است — اول از لبهٔ بیرونی کوچکش کن تا جای حرکتِ افقی باز شود'); return }
+    if (tw >= 99.5) { toast('جدول تمام‌عرض است — اول از لبۀ بیرونی کوچکش کن تا جای حرکتِ افقی باز شود'); return }
     const toff0 = (hostR.right - rect0.right) / cw * 100
     const startX = e.clientX
     const mv = (ev: PointerEvent) => {
@@ -1490,7 +1509,7 @@ export default function LetterPage() {
       // ATTACHMENT table → its own page after the letter; also counted as a پیوست.
       setAttTables((list) => [...list, { id: uid(), title: ttl, html: freshTableHtml(R, C) }])
       if (f.attachment !== 'دارد') setF((s) => ({ ...s, attachment: 'دارد' }))
-      toast.success('جدولِ پیوست ساخته شد — صفحهٔ آن بعد از صفحهٔ آخرِ نامه است')
+      toast.success('جدولِ پیوست ساخته شد — صفحۀ آن بعد از صفحۀ آخرِ نامه است')
     } else {
       const title = ttl ? `<div style="font-weight:700;text-align:center;text-indent:0">${escapeHtml(ttl)}</div>` : ''
       const html = `${title}${freshTableHtml(R, C)}<div><br></div>`
@@ -1758,7 +1777,7 @@ export default function LetterPage() {
     try {
       const out: { png: string; land: boolean }[] = []
       for (let i = 0; i < sheets.length; i++) {
-        toast.loading(`در حالِ ساختِ ${label} — صفحهٔ ${fa(i + 1)} از ${fa(sheets.length)}…`, { id: tId })
+        toast.loading(`در حالِ ساختِ ${label} — صفحۀ ${fa(i + 1)} از ${fa(sheets.length)}…`, { id: tId })
         const src = sheets[i]
         const land = src.classList.contains('land')
         const W = land ? PAGE_H : PAGE_W, H = land ? PAGE_W : PAGE_H
@@ -1877,7 +1896,7 @@ export default function LetterPage() {
     const sheets = letterSheets()
     const pi = Math.min(fl.page, sheets.length - 1)
     const cell = (Array.from(sheets[pi]?.querySelectorAll('.bcell') || []) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))[0]
-    if (!cell) { toast.error('صفحهٔ مقصد پیدا نشد'); return }
+    if (!cell) { toast.error('صفحۀ مقصد پیدا نشد'); return }
     const holder = document.createElement('div')
     holder.innerHTML = fl.html
     let node: HTMLElement
@@ -1900,7 +1919,7 @@ export default function LetterPage() {
     const liveTable = el?.closest('table') as HTMLTableElement | null
     const hdrUid = liveTable?.rows[0]?.getAttribute('data-r') || ''
     if (!liveTable || !hdrUid) return
-    if (liveTable.closest('.attsheet')) { toast('جدولِ پیوست صفحهٔ مستقلِ خودش را دارد'); return }
+    if (liveTable.closest('.attsheet')) { toast('جدولِ پیوست صفحۀ مستقلِ خودش را دارد'); return }
     if (liveTable.closest('.lfloat')) { toast('این جدول همین حالا پشتِ متن است'); return }
     const sheet = liveTable.closest('.lsheet') as HTMLElement | null
     if (!sheet) return
@@ -1926,13 +1945,13 @@ export default function LetterPage() {
     const nb = rm(f.body)
     if (nb != null) setF((prev) => ({ ...prev, body: nb }))
     setTbl(null); setColRz(null); setFloatSel(fid)
-    toast.success('جدول «پشتِ متن» شد — با دستگیرهٔ ⠿ بالای آن آزادانه جابه‌جایش کن')
+    toast.success('جدول «پشتِ متن» شد — با دستگیرۀ ⠿ بالای آن آزادانه جابه‌جایش کن')
   }
   // «پشتِ متن» for the selected image
   const floatCurrentImg = () => {
     const id = imgSel; if (!id) return
     const el = liveImg(id); if (!el) return
-    if (el.closest('.attsheet')) { toast('تصویرِ داخلِ صفحهٔ پیوست پشتِ متن نمی‌شود'); return }
+    if (el.closest('.attsheet')) { toast('تصویرِ داخلِ صفحۀ پیوست پشتِ متن نمی‌شود'); return }
     const sheet = el.closest('.lsheet') as HTMLElement | null
     if (!sheet) return
     const page = Math.max(0, letterSheets().indexOf(sheet))
@@ -1945,7 +1964,7 @@ export default function LetterPage() {
       if (blk && !(blk.textContent || '').trim() && !blk.querySelector('img,table')) blk.remove()
     })
     setImgSel(null); setFloatSel(fid)
-    toast.success('تصویر «پشتِ متن» شد — با دستگیرهٔ ⠿ بالای آن آزادانه جابه‌جایش کن')
+    toast.success('تصویر «پشتِ متن» شد — با دستگیرۀ ⠿ بالای آن آزادانه جابه‌جایش کن')
   }
 
   // ---- Reflow: merge hard-wrapped LINES (from PDF/line-broken pastes, or older saved
@@ -2318,7 +2337,7 @@ export default function LetterPage() {
   }, [labels.subject, f.subject, L.subject, L.separator])
 
   // replace one page's chunk and rebuild the whole body (chunks are consecutive slices)
-  const onBody = (pi: number) => (val: string) => setF((s) => { const next = pages.slice(); next[pi] = val; return { ...s, body: next.join('') } })
+  const onBody = (pi: number) => (val: string) => setF((s) => { const next = pages.slice(); next[pi] = fixHehHamza(val); return { ...s, body: next.join('') } })
 
   const Lbl = ({ k }: { k: string }) => (
     <RichSpan className="lbl-in" value={labels[k] ?? ''} onChange={(h) => setLabels((p) => ({ ...p, [k]: h }))} />
@@ -2394,7 +2413,7 @@ export default function LetterPage() {
         <button className="flt-grip no-print" title="پشتِ متن — کشیدن: جابه‌جاییِ آزاد؛ کلیک: ابزارها"
           style={{ left: fl.x, top: Math.max(0, fl.y - 18) }} onPointerDown={(e) => startFloatDrag(e, fl.id)}>⠿</button>
         {seld && <>
-          <button className="flt-grip no-print" title="تغییرِ اندازه (لبهٔ راست ثابت می‌ماند)" style={{ left: fl.x + 24, top: Math.max(0, fl.y - 18), cursor: 'nesw-resize' }}
+          <button className="flt-grip no-print" title="تغییرِ اندازه (لبۀ راست ثابت می‌ماند)" style={{ left: fl.x + 24, top: Math.max(0, fl.y - 18), cursor: 'nesw-resize' }}
             onPointerDown={(e) => startFloatResize(e, fl.id)}>⇲</button>
           <div className="flt-bar no-print" dir="rtl" style={{ left: fl.x, top: Math.max(0, fl.y - 46) }}>
             <button onClick={() => unfloat(fl.id)}>بازگشت به متن</button>
@@ -2487,7 +2506,7 @@ export default function LetterPage() {
             mode it sits at its TRUE designed spot so dragging isn't confusing) */}
         {isLast && (() => { const cs = design ? 0 : closingShift; return <>
           {Box({ k: 'sender', style: cs ? { top: L.sender.y + cs } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندهٔ بعدی)" /></span></span> })}
+          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندۀ بعدی)" /></span></span> })}
           {Box({ k: 'action', style: cs ? { top: L.action.y + cs } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </> })()}
 
@@ -2769,7 +2788,7 @@ export default function LetterPage() {
           {!design
             ? <button onClick={() => setDesign(true)} className="ltr-btn amber"><Move size={15} /> چیدمان (جابه‌جایی فیلدها)</button>
             : <button onClick={() => { setDesign(false); setEditing(null) }} className="ltr-btn green"><Check size={15} /> پایانِ چیدمان</button>}
-          {design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرهٔ چیدمان</button>}
+          {design && <button onClick={saveTemplate} className="ltr-btn blue">ذخیرۀ چیدمان</button>}
           {design && <button onClick={resetTemplate} className="ltr-btn gray"><RotateCcw size={14} /> بازنشانی</button>}
           {design && Object.keys(L).some((k) => L[k].hidden) && (
             <select value="" onChange={(e) => { if (e.target.value) setBox(e.target.value, { hidden: false }) }} className="meta-in" title="بازگرداندنِ فیلدِ حذف‌شده">
@@ -2777,7 +2796,7 @@ export default function LetterPage() {
               {Object.keys(L).filter((k) => L[k].hidden).map((k) => <option key={k} value={k}>{KEY_FA[k] || k}</option>)}
             </select>
           )}
-          <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامهٔ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
+          <button onClick={() => { const subj = plain(f.subject), dept = plain(f.recipientDept); auditApi.logActivity({ action: 'print', entity_type: 'letter', detail: `صدورِ نامۀ رسمی${subj ? ` — موضوع: ${subj}` : ''}${dept ? ` — به ${dept}` : ''}` }); window.print() }} className="ltr-btn blue"><Printer size={15} /> پرینت</button>
           <span style={{ position: 'relative', display: 'inline-block' }}>
             <button onClick={() => setDlMenu((v) => !v)} disabled={pdfBusy} className="ltr-btn" style={{ background: '#9a3412', opacity: pdfBusy ? 0.6 : 1 }}
               title="دانلودِ نامه — دقیقاً با همان ظاهر، صفحه‌بندی و سربرگ؛ فرمت را انتخاب کن"><Download size={15} /> {pdfBusy ? '⏳ در حالِ ساخت…' : 'دانلود ▾'}</button>
@@ -2800,25 +2819,25 @@ export default function LetterPage() {
             </button>
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
-          <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v69</span>
+          <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v70</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
-          <span className="ltr-hint" style={{ fontWeight: 600 }}>ذخیرهٔ نامه:</span>
-          <input value={acct} onChange={(e) => setAcct(e.target.value)} disabled={general} placeholder="شمارهٔ حساب" className="meta-in" style={{ width: 120 }} />
+          <span className="ltr-hint" style={{ fontWeight: 600 }}>ذخیرۀ نامه:</span>
+          <input value={acct} onChange={(e) => setAcct(e.target.value)} disabled={general} placeholder="شمارۀ حساب" className="meta-in" style={{ width: 120 }} />
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوانِ نامه (اختیاری)" className="meta-in" style={{ width: 160 }} />
-          <label className="ltr-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={general} onChange={(e) => setGeneral(e.target.checked)} /> نامهٔ عمومی</label>
-          <div style={{ width: 180 }}><Combobox value={plain(f.recipientDept)} placeholder="اداره/دایرهٔ گیرنده" fetch={fetchDepts}
+          <label className="ltr-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={general} onChange={(e) => setGeneral(e.target.checked)} /> نامۀ عمومی</label>
+          <div style={{ width: 180 }}><Combobox value={plain(f.recipientDept)} placeholder="اداره/دایرۀ گیرنده" fetch={fetchDepts}
             onChange={(v) => setF((s) => ({ ...s, recipientDept: v }))}
             onPick={(o) => setF((s) => ({ ...s, recipientDept: o.value, recipientName: o.data?.current_manager || plain(s.recipientName), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
           <div style={{ width: 160 }}><Combobox value={plain(f.recipientName)} placeholder="مدیرِ دایره" fetch={fetchMgrs}
             onChange={(v) => setF((s) => ({ ...s, recipientName: v }))}
             onPick={(o) => setF((s) => ({ ...s, recipientName: o.value, recipientDept: o.data?.name || plain(s.recipientDept), recipientTitle: o.data?.manager_title || plain(s.recipientTitle) }))} /></div>
           <button onClick={saveLetter} disabled={savingLetter} className="ltr-btn green"><Save size={15} /> {savingLetter ? '...' : (letterId ? 'به‌روزرسانی' : 'ذخیره')}</button>
-          <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامهٔ جدید</button>
+          <button onClick={newLetter} className="ltr-btn gray"><FilePlus size={14} /> نامۀ جدید</button>
           {letterList.length > 0 && <div style={{ width: 230 }}>
-            <Combobox value={letterQuery} placeholder="📂 بازکردنِ نامهٔ ذخیره‌شده…"
+            <Combobox value={letterQuery} placeholder="📂 بازکردنِ نامۀ ذخیره‌شده…"
               fetch={async (q) => { const s = q.trim().toLowerCase(); return letterList.filter((l) => !s || `${l.title || ''} ${l.subject || ''} ${l.account_no || ''}`.toLowerCase().includes(s)).slice(0, 200).map((l) => ({ value: l.id, label: l.title || l.subject || 'نامه', sub: `${l.account_no || 'عمومی'}${l.updated_at ? ' — ' + new Date(l.updated_at).toLocaleDateString('en-GB') : ''}`, data: l })) }}
               onChange={setLetterQuery}
               onPick={(o) => { loadLetter(o.value); setLetterQuery('') }} />
@@ -2840,13 +2859,13 @@ export default function LetterPage() {
                 <Sparkles size={14} /> ساختِ پیوست با هوش مصنوعی
               </button>
               {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
-              <span className="ltr-hint">فایل در Google Drive (پوشهٔ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
+              <span className="ltr-hint">فایل در Google Drive (پوشۀ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
             </div>
             {/* ---- AI attachment generator (ساختِ پیوست) ---- */}
             {genOpen && (
               <div style={{ marginTop: 8, background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span className="ltr-hint" style={{ fontWeight: 700, color: '#6d28d9' }}>
-                  چه پیوستی ساخته شود؟ (مثلاً: «جدولِ تسهیلاتِ این مشتری با ستون‌های قرارداد، مبلغ و وضعیت»، «لیستِ املاکِ رهنیِ شعبهٔ X با وضعیتِ بیمه‌نامه و مدیرِ حساب» یا «توضیحی دربارهٔ وضعیتِ وثایق بنویس»)
+                  چه پیوستی ساخته شود؟ (مثلاً: «جدولِ تسهیلاتِ این مشتری با ستون‌های قرارداد، مبلغ و وضعیت»، «لیستِ املاکِ رهنیِ شعبۀ X با وضعیتِ بیمه‌نامه و مدیرِ حساب» یا «توضیحی دربارۀ وضعیتِ وثایق بنویس»)
                 </span>
                 <textarea className="meta-in" rows={2} value={genInstruction} disabled={genBusy}
                   onChange={(e) => setGenInstruction(e.target.value)} style={{ width: '100%', resize: 'vertical', font: 'inherit' }}
@@ -2915,8 +2934,8 @@ export default function LetterPage() {
                     {genBusy ? '⏳ در حالِ ساخت… (ممکن است تا چند دقیقه طول بکشد)' : '🪄 بساز و پیوست کن'}
                   </button>
                   {(general || !acct.trim())
-                    ? <span className="ltr-hint">نامهٔ عمومی — دادهٔ تک‌مشتری ندارد، ولی فهرست‌های سراسری (مثلاً املاک/تسهیلاتِ یک شعبه یا همهٔ مشتریان) از پایگاه‌داده خوانده می‌شود.</span>
-                    : <span className="ltr-hint">داده‌ها از پروندهٔ حسابِ {acct.trim()} (و در صورتِ نیاز فهرست‌های سراسری/شعبه‌ای) خوانده می‌شود؛ چیزی اختراع نمی‌شود.</span>}
+                    ? <span className="ltr-hint">نامۀ عمومی — دادۀ تک‌مشتری ندارد، ولی فهرست‌های سراسری (مثلاً املاک/تسهیلاتِ یک شعبه یا همۀ مشتریان) از پایگاه‌داده خوانده می‌شود.</span>
+                    : <span className="ltr-hint">داده‌ها از پروندۀ حسابِ {acct.trim()} (و در صورتِ نیاز فهرست‌های سراسری/شعبه‌ای) خوانده می‌شود؛ چیزی اختراع نمی‌شود.</span>}
                 </div>
                 {genWarnings.length > 0 && (
                   <div style={{ fontSize: 11.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px' }}>
@@ -2924,7 +2943,7 @@ export default function LetterPage() {
                   </div>
                 )}
                 <span className="ltr-hint" style={{ color: '#7c3aed' }}>
-                  پیوست‌های ساختهٔ AI چون داده‌شان از خودِ پایگاه‌داده آمده، در ابزارِ «استخراج از پیوست‌ها» به‌صورت پیش‌فرض تیک نمی‌خورند (برای جلوگیری از ثبتِ دوباره) — ولی می‌توانی دستی تیکشان بزنی.
+                  پیوست‌های ساختۀ AI چون داده‌شان از خودِ پایگاه‌داده آمده، در ابزارِ «استخراج از پیوست‌ها» به‌صورت پیش‌فرض تیک نمی‌خورند (برای جلوگیری از ثبتِ دوباره) — ولی می‌توانی دستی تیکشان بزنی.
                 </span>
               </div>
             )}
@@ -2950,7 +2969,7 @@ export default function LetterPage() {
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 9px' }}>
                     <span>▦</span>
                     <b>جدول {fa(i + 1)} پیوست{plain(t.title) ? ` — ${plain(t.title)}` : ''}</b>
-                    <span className="ltr-hint">صفحهٔ {fa(pages.length + i + 1)}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
+                    <span className="ltr-hint">صفحۀ {fa(pages.length + i + 1)}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
                     <button onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}
                       style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer', marginInlineStart: 'auto' }}>حذف</button>
                   </div>
@@ -2969,7 +2988,7 @@ export default function LetterPage() {
             {eb.size > 0 && <>
               <div className="selrow"><select value={eb.font || NAZ} onChange={(e) => setBox(editing, { font: e.target.value })}>{FONTS.map((ft) => <option key={ft.n} value={ft.v}>{ft.n}</option>)}</select></div>
               <div className="pp-seg">
-                <input type="number" title="اندازهٔ فونت" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} />
+                <input type="number" title="اندازۀ فونت" value={eb.size} onChange={(e) => setBox(editing, { size: +e.target.value || 0 })} />
                 <span style={{ flex: 1, fontSize: 9, color: '#94a3b8', alignSelf: 'center', textAlign: 'center' }}>بولد/زیرخط: کلمه را انتخاب کن</span>
               </div>
               <div className="pp-seg" title="چینش">
@@ -2981,8 +3000,8 @@ export default function LetterPage() {
                 <button className={eb.dir === 'ltr' ? 'on' : ''} onClick={() => setBox(editing, { dir: 'ltr' })}>چپ‑راست</button>
               </div>
               <div className="pp-grid">
-                <label className="pp-f"><span>فاصلهٔ حروف</span><input type="number" step="0.5" value={eb.ls || 0} onChange={(e) => setBox(editing, { ls: +e.target.value || 0 })} /></label>
-                <label className="pp-f"><span>فاصلهٔ خط</span><input type="number" step="0.1" value={eb.lh || 1.25} onChange={(e) => setBox(editing, { lh: +e.target.value || undefined })} /></label>
+                <label className="pp-f"><span>فاصلۀ حروف</span><input type="number" step="0.5" value={eb.ls || 0} onChange={(e) => setBox(editing, { ls: +e.target.value || 0 })} /></label>
+                <label className="pp-f"><span>فاصلۀ خط</span><input type="number" step="0.1" value={eb.lh || 1.25} onChange={(e) => setBox(editing, { lh: +e.target.value || undefined })} /></label>
                 <label className="pp-f"><span>تورفتگیِ بند</span><input type="number" step="0.5" value={eb.indent ?? 0} onChange={(e) => setBox(editing, { indent: +e.target.value || 0 })} /></label>
                 {editing === 'body' && <label className="pp-f"><span>Y صفحاتِ بعد</span><input type="number" value={Math.round(contY)} onChange={(e) => setBox('body', { contY: +e.target.value || 0 })} /></label>}
               </div>
@@ -2994,7 +3013,7 @@ export default function LetterPage() {
               <label className="pp-f"><span>Y عمودی</span><input type="number" value={eb.y} onChange={(e) => setBox(editing, { y: +e.target.value || 0 })} /></label>
             </div>
             <button className="pp-del" onClick={() => { setBox(editing, { hidden: true }); setEditing(null) }}>🗑 حذفِ این فیلد از نامه</button>
-            <button className="pp-save" onClick={saveTemplate}>ذخیرهٔ چیدمان</button>
+            <button className="pp-save" onClick={saveTemplate}>ذخیرۀ چیدمان</button>
           </div>
         )}
 
@@ -3015,8 +3034,8 @@ export default function LetterPage() {
             <button title="فهرستِ نقطه‌ای" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertUnorderedList') }}>•</button>
             <button title="فهرستِ شماره‌دار" onMouseDown={(e) => { e.preventDefault(); document.execCommand('insertOrderedList') }}>۱.</button>
             <span className="sep2" />
-            <button title="کاهشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(-0.1) }}>خ−</button>
-            <button title="افزایشِ فاصلهٔ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(0.1) }}>خ＋</button>
+            <button title="کاهشِ فاصلۀ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(-0.1) }}>خ−</button>
+            <button title="افزایشِ فاصلۀ خطوط" onMouseDown={(e) => { e.preventDefault(); lineSpaceSel(0.1) }}>خ＋</button>
             <span className="sep2" />
             {/* preventDefault keeps the selection alive so addAiSelection can read it */}
             <button title="افزودنِ این انتخاب به فهرستِ اعتبارسنجیِ هوش مصنوعی" style={{ color: '#c4b5fd' }}
@@ -3072,7 +3091,7 @@ export default function LetterPage() {
           <div className="img-bar no-print" dir="rtl" style={{ left: imgRz.x + imgRz.w / 2, top: imgRz.y }} onMouseDown={(e) => e.preventDefault()}>
             <button title="جابه‌جاییِ تصویر در متن — بگیر و بینِ بندها رها کن" style={{ cursor: 'grab' }} onPointerDown={startImgMove}>⠿</button>
             <span className="sep2" />
-            <button className={imgCropMode ? 'on' : ''} title="حالتِ کراپ: لبه‌ها پنجرهٔ برش را جابه‌جا می‌کنند" onClick={() => setImgCropMode((v) => !v)}>✂ کراپ</button>
+            <button className={imgCropMode ? 'on' : ''} title="حالتِ کراپ: لبه‌ها پنجرۀ برش را جابه‌جا می‌کنند" onClick={() => setImgCropMode((v) => !v)}>✂ کراپ</button>
             <button title="بازنشانیِ کراپ (نمایشِ کاملِ تصویر)" onClick={resetImgCrop}>↺</button>
             <span className="sep2" />
             <button title="راست‌چین" onClick={() => alignImg('right')}>≡▸</button>
@@ -3136,7 +3155,7 @@ export default function LetterPage() {
               </label>
               <label className="tchk">
                 <input type="checkbox" checked={tblDlg.asAtt} onChange={(e) => setTblDlg((d) => d && { ...d, asAtt: e.target.checked })} />
-                <span>ثبت به‌عنوانِ <b>پیوستِ نامه</b> — جدول صفحهٔ جداگانه‌ای بعد از صفحهٔ آخرِ نامه می‌گیرد؛ اگر عریض باشد صفحه خودکار افقی (landscape) می‌شود</span>
+                <span>ثبت به‌عنوانِ <b>پیوستِ نامه</b> — جدول صفحۀ جداگانه‌ای بعد از صفحۀ آخرِ نامه می‌گیرد؛ اگر عریض باشد صفحه خودکار افقی (landscape) می‌شود</span>
               </label>
               <div className="tbtns">
                 <button className="ltr-btn green" onClick={confirmInsertTable}><Table size={14} /> ساختِ جدول</button>
@@ -3186,7 +3205,7 @@ export default function LetterPage() {
                     {/* Deep attachment extraction — only offered when the letter actually has enclosures */}
                     {hasAttachmentMode && letterAtts.length > 0 && (
                       <label className={`lai-tool${aiSelTools.includes(ATT_TOOL) ? ' on' : ''}`} style={{ borderColor: '#5eead4' }}
-                        title="مانند صفحهٔ Import: همهٔ داده‌های مرتبط با موضوع نامه و همهٔ حساب‌های نام‌برده، کامل و بدون خلاصه‌سازی، استخراج و پس از تیکِ شما ثبت می‌شود">
+                        title="مانند صفحۀ Import: همۀ داده‌های مرتبط با موضوع نامه و همۀ حساب‌های نام‌برده، کامل و بدون خلاصه‌سازی، استخراج و پس از تیکِ شما ثبت می‌شود">
                         <input type="checkbox" checked={aiSelTools.includes(ATT_TOOL)} onChange={() => toggleTool(ATT_TOOL)} />
                         <span>استخراجِ کامل از پیوست‌ها ({fa(selectedAttCount)} از {fa(letterAtts.length)})</span>
                       </label>
@@ -3211,7 +3230,7 @@ export default function LetterPage() {
                         </label>
                       ))}
                       <div className="lai-selhint" style={{ color: '#92400e' }}>
-                        اگر در «دستورِ اختصاصی» خواسته‌ای دربارهٔ جدول بنویسی، هوش مصنوعی همان جدول(های)
+                        اگر در «دستورِ اختصاصی» خواسته‌ای دربارۀ جدول بنویسی، هوش مصنوعی همان جدول(های)
                         انتخاب‌شده را همه‌جانبه (ساختار + محتوا + چیدمان) بازطراحی می‌کند؛ بدونِ دستور،
                         فقط بررسیِ پیش‌فرض (گزارشِ ناهماهنگی + اصلاحِ جزئی) انجام می‌شود.
                       </div>
@@ -3233,7 +3252,7 @@ export default function LetterPage() {
                           <input type="checkbox" checked={attSelected(a)}
                             onChange={(e) => setAiSelAtts((s) => ({ ...s, [a.id]: e.target.checked }))} />
                           <span className="lai-attname">📄 {a.original_name}</span>
-                          {a.ai_generated && <span title="ساختهٔ هوش مصنوعی از روی داده‌های پایگاه‌داده — پیش‌فرض از استخراج کنار گذاشته می‌شود تا داده دوباره ثبت نشود"
+                          {a.ai_generated && <span title="ساختۀ هوش مصنوعی از روی داده‌های پایگاه‌داده — پیش‌فرض از استخراج کنار گذاشته می‌شود تا داده دوباره ثبت نشود"
                             style={{ fontSize: 10, fontWeight: 700, color: '#6d28d9', background: '#f3e8ff', border: '1px solid #e9d5ff', borderRadius: 999, padding: '0 7px', whiteSpace: 'nowrap' }}>🪄 ساختِ AI</span>}
                           <span className="lai-hint">{a.storage === 'drive' ? 'Drive' : 'دیسک'}{a.file_size ? ` · ${a.file_size} بایت` : ''}</span>
                         </label>
@@ -3265,14 +3284,14 @@ export default function LetterPage() {
 
                   <label className="lai-lbl" style={{ marginTop: 8 }}>دستورِ اختصاصی (اختیاری)</label>
                   <textarea className="lai-inp" rows={2} value={aiInstruction} onChange={(e) => setAiInstruction(e.target.value)}
-                    placeholder="مثلاً: لحن را رسمی‌تر کن؛ مبلغ و نرخ را با پرونده تطبیق بده؛ جملهٔ آخر را کوتاه کن…" />
+                    placeholder="مثلاً: لحن را رسمی‌تر کن؛ مبلغ و نرخ را با پرونده تطبیق بده؛ جملۀ آخر را کوتاه کن…" />
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
                     <button className="lai-run" onClick={runAi} disabled={aiLoading}>
                       {aiLoading ? (extracting2 || '⏳ در حالِ بررسی…') : <><Sparkles size={15} /> بررسیِ نامه</>}
                     </button>
                     {(general || !acct.trim())
-                      ? <span className="lai-hint">نامهٔ عمومی — بدونِ حقایقِ پایگاه‌داده (اعتبارسنجیِ مالی محدود است).</span>
+                      ? <span className="lai-hint">نامۀ عمومی — بدونِ حقایقِ پایگاه‌داده (اعتبارسنجیِ مالی محدود است).</span>
                       : <span className="lai-hint">حسابِ {acct.trim()} — اصلاحات با حقایقِ پایگاه‌داده تطبیق داده می‌شوند.</span>}
                   </div>
                 </div>

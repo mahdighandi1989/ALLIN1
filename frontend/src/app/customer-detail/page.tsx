@@ -332,7 +332,7 @@ function CustomerDetailInner() {
     } catch (e) { toast.error(parseApiError(e)) }
   }
   const removePropertyEvent = async (eid: string) => {
-    if (!confirm('این رویداد از تاریخچهٔ ملک حذف شود؟')) return
+    if (!confirm('این رویداد از تاریخچۀ ملک حذف شود؟')) return
     try {
       await crmApi.deletePropertyEvent(eid)
       setData((d: any) => ({ ...d, property_events: (d.property_events || []).filter((x: any) => x.id !== eid) }))
@@ -696,7 +696,7 @@ function CustomerDetailInner() {
 
           {securities.length > 0 && (
             <Section title={`Securities Register — Securities List (${securities.length} entries · ${new Set(securities.map((s: any) => s.year)).size} years)`}>
-              <p className="text-xs text-gray-500 mb-2" dir="rtl">سابقهٔ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
+              <p className="text-xs text-gray-500 mb-2" dir="rtl">سابقۀ کاملِ اوراقِ ثبت‌شده در لیستِ سالانه · مجموعِ مبلغِ چک‌ها: <b>AED {secTotal.toLocaleString()}</b></p>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs whitespace-nowrap">
                   <thead className="bg-gray-50 text-gray-500 text-left">
@@ -797,10 +797,10 @@ function CustomerDetailInner() {
                 </table>
               </div>
             )}
-            {/* ---- تاریخچهٔ رویدادهای ملک: چند ارزیابی، ترهین/ترهین مجدد/مازاد، فک رهن، بیمه ---- */}
+            {/* ---- تاریخچۀ رویدادهای ملک: چند ارزیابی، ترهین/ترهین مجدد/مازاد، فک رهن، بیمه ---- */}
             {properties.length > 0 && (
               <div dir="rtl" className="mt-4 border-t border-gray-100 pt-3">
-                <div className="text-sm font-bold text-gray-700 mb-2">تاریخچهٔ رویدادهای املاک ({propertyEvents.length})</div>
+                <div className="text-sm font-bold text-gray-700 mb-2">تاریخچۀ رویدادهای املاک ({propertyEvents.length})</div>
                 <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
                   <select value={npe.property_id} onChange={(e) => setNpe((s: any) => ({ ...s, property_id: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white col-span-2">
                     <option value="">— ملک؟ —</option>
@@ -858,7 +858,7 @@ function CustomerDetailInner() {
               <button onClick={addPartnerRow} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-2 text-sm font-medium">Add</button>
             </div>
             {partnerRows.length === 0 && blobPartners.length > 0 && (
-              <p className="text-xs text-amber-600 mb-2">نمایش از دادهٔ قدیمی (imported). برای ویرایش، به‌صورت ردیف‌های جدید اضافه کنید.</p>
+              <p className="text-xs text-amber-600 mb-2">نمایش از دادۀ قدیمی (imported). برای ویرایش، به‌صورت ردیف‌های جدید اضافه کنید.</p>
             )}
             {partnerRows.length > 0 ? (
               <div className="overflow-auto">
@@ -1038,7 +1038,7 @@ function CustomerDetailInner() {
               </table>
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-2" dir="rtl">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همهٔ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
+          <p className="text-xs text-gray-400 mt-2" dir="rtl">مستندات روی سرور ذخیره و از همین‌جا قابلِ باز‌کردن‌اند. «Shared» یعنی در همۀ چک‌لیست‌های این حساب در دسترس است. (ردیف‌های قدیمیِ importشده فقط متادیتا دارند.)</p>
         </Section>
       )}
 
@@ -1046,7 +1046,7 @@ function CustomerDetailInner() {
         <Section title={`نامه‌ها (${letters.length})`}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-gray-500">نامه‌هایی که ذیلِ این حساب ذخیره شده‌اند. روی هر کدام بزنید تا در فرمِ نامه باز شود.</p>
-            <button onClick={() => router.push(`/letter?account=${encodeURIComponent(acc)}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm whitespace-nowrap"><Mail size={14} /> نامهٔ جدید برای این حساب</button>
+            <button onClick={() => router.push(`/letter?account=${encodeURIComponent(acc)}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm whitespace-nowrap"><Mail size={14} /> نامۀ جدید برای این حساب</button>
           </div>
           <div className="bg-white border rounded-lg overflow-hidden">
             {letters.length ? (
@@ -1115,7 +1115,7 @@ function CustomerDetailInner() {
           </div>
           {logData && logData.total > LOG_PAGE_SIZE && (
             <div className="mt-3 flex justify-between items-center text-sm">
-              <span className="text-gray-500">{logData.total} مورد · صفحهٔ {logPage} از {Math.max(1, Math.ceil(logData.total / LOG_PAGE_SIZE))}</span>
+              <span className="text-gray-500">{logData.total} مورد · صفحۀ {logPage} از {Math.max(1, Math.ceil(logData.total / LOG_PAGE_SIZE))}</span>
               <div className="flex gap-2">
                 <button onClick={() => setLogPage((p) => Math.max(1, p - 1))} disabled={logPage === 1} className="px-3 py-1.5 border rounded-lg disabled:opacity-50">قبلی</button>
                 <button onClick={() => setLogPage((p) => p + 1)} disabled={logPage >= Math.ceil(logData.total / LOG_PAGE_SIZE)} className="px-3 py-1.5 border rounded-lg disabled:opacity-50">بعدی</button>

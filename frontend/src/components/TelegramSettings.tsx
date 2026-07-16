@@ -175,7 +175,7 @@ export default function TelegramSettings({ isAdmin }: { isAdmin: boolean }) {
           </label>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">آدرس پایهٔ پنل (برای دکمه‌های لینک)</label>
+          <label className="block text-sm font-medium mb-1">آدرس پایۀ پنل (برای دکمه‌های لینک)</label>
           <input type="text" value={prefs.app_base_url} disabled={!isAdmin}
             onChange={(e) => setPrefs({ ...prefs, app_base_url: e.target.value })}
             onBlur={() => save({ app_base_url: prefs.app_base_url })}
@@ -188,12 +188,12 @@ export default function TelegramSettings({ isAdmin }: { isAdmin: boolean }) {
       <div className="bg-white rounded-lg shadow-sm p-6 space-y-3">
         <h3 className="font-medium">کاربران مجاز (chat_id)</h3>
         <p className="text-xs text-gray-500">
-          فقط این شناسه‌ها (به‌علاوهٔ مقدار <code>TELEGRAM_CHAT_ID</code> در سرور) می‌توانند ربات را کنترل کنند.
+          فقط این شناسه‌ها (به‌علاوۀ مقدار <code>TELEGRAM_CHAT_ID</code> در سرور) می‌توانند ربات را کنترل کنند.
           برای یافتن chat_id، یک پیام به ربات بفرستید؛ اگر هنوز هیچ شناسه‌ای مجاز نباشد، ربات شناسه را برمی‌گرداند.
         </p>
         <div className="flex flex-wrap gap-2">
           {status.allowed_chat_ids.length === 0 && (
-            <span className="text-xs text-amber-600">هیچ شناسهٔ مجازی تنظیم نشده — حالت راه‌اندازی فعال است.</span>
+            <span className="text-xs text-amber-600">هیچ شناسۀ مجازی تنظیم نشده — حالت راه‌اندازی فعال است.</span>
           )}
           {prefs.allowed_chat_ids.map((id) => (
             <span key={id} className="inline-flex items-center gap-1 bg-gray-100 rounded-full px-3 py-1 text-sm" dir="ltr">

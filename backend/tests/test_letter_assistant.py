@@ -422,3 +422,22 @@ def test_paragraph_merge_and_holistic_rules_reach_prompt():
     assert "کل‌نگر" in la.TOOLS["paragraphs"]["guide"]
     assert "ابتر" in la.TOOLS["paragraphs"]["guide"]      # incomplete sentences named explicitly
     assert "جملهٔ ناتمام/ابتر" in la.SYSTEM_PROMPT        # rule 8 holistic re-read
+
+
+def test_find_guard_tolerates_heh_hamza_forms():
+    """v70: the editor stores the precomposed «ۀ» (U+06C0 — B Nazanin lacks the
+    combining U+0654) while models often emit ه+hamza; the locate guard folds
+    both to bare heh so neither form gets dropped as a hallucination."""
+    body = "<div>گزارش سه‌ماهۀ نخست بانک</div>"
+    raw = json.dumps({"changes": [{
+        "op": "text_replace", "field": "body", "title": "ت", "category": "spelling",
+        "find": "سه‌ماههٔ نخست", "replace": "سه‌ماهۀ اول"}]},
+        ensure_ascii=False)
+    out = la.parse_and_validate(raw, {"body": body})
+    assert len(out) == 1 and out[0]["applicable"] is True
+    # and the reverse direction (letter has the combining form, model the precomposed)
+    body2 = "<div>گزارش سه‌ماههٔ نخست</div>"
+    raw2 = json.dumps({"changes": [{
+        "op": "text_replace", "field": "body", "title": "ت", "category": "spelling",
+        "find": "سه‌ماهۀ نخست", "replace": "x"}]}, ensure_ascii=False)
+    assert len(la.parse_and_validate(raw2, {"body": body2})) == 1

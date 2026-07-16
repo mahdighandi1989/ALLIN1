@@ -5,10 +5,10 @@ import { AuditEntry } from '@/types'
 // A human-readable Persian summary of "what happened" for one entry.
 const ENTITY_FA: Record<string, string> = {
   customer: 'مشتری', profile: 'پروفایل/مدارک', facility: 'تسهیلات', guarantor: 'ضامن',
-  offer_letter: 'نامهٔ پیشنهادِ تسهیلات', offer_letter_data: 'دادهٔ نامهٔ پیشنهاد',
-  sanction: 'مصوبهٔ کمیتهٔ اعتباری', note: 'یادداشت', attachment: 'مدرک', task: 'تسکِ پیگیری',
-  checklist: 'چک‌لیست', document: 'استخراجِ سند', voucher: 'سندِ انتظامی', letter: 'نامهٔ رسمی',
-  property: 'ملکِ مرهونه', fixed_deposit: 'سپردهٔ ثابت', partner: 'شریک',
+  offer_letter: 'نامۀ پیشنهادِ تسهیلات', offer_letter_data: 'دادۀ نامۀ پیشنهاد',
+  sanction: 'مصوبۀ کمیتۀ اعتباری', note: 'یادداشت', attachment: 'مدرک', task: 'تسکِ پیگیری',
+  checklist: 'چک‌لیست', document: 'استخراجِ سند', voucher: 'سندِ انتظامی', letter: 'نامۀ رسمی',
+  property: 'ملکِ مرهونه', fixed_deposit: 'سپردۀ ثابت', partner: 'شریک',
   user: 'کاربر', auth: 'ورود/خروج',
 }
 const VERB_FA: Record<string, string> = {
