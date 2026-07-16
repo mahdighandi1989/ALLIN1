@@ -845,7 +845,10 @@ export default function LetterPage() {
           if (nf.attachment !== 'دارد') nf.attachment = 'دارد'
         } else {
           const title = ch.table_title ? `<div style="font-weight:700;text-align:center;text-indent:0">${escapeHtml(ch.table_title)}</div>` : ''
-          nf.body = `${normalizeBodyHtml(nf.body || '')}${title}${newTbl.outerHTML}<div><br></div>`
+          // the leading blank line keeps the new table from sitting DIRECTLY next
+          // to an existing one — mergeAdjacentTables would fuse same-header
+          // neighbors (the pagination-split repair) and swallow the new table.
+          nf.body = `${normalizeBodyHtml(nf.body || '')}<div><br></div>${title}${newTbl.outerHTML}<div><br></div>`
         }
         applied++; appliedIds.push(ch.id)
         continue
