@@ -332,3 +332,16 @@ def test_build_user_prompt_explains_log_keys():
     p = la.build_user_prompt(FIELDS, {"account_activity_log": [{"action": "update"}]},
                              ["validation"], instruction="")
     assert "account_activity_log" in p and "لاگِ کارهای همین حساب" in p
+
+
+def test_parse_need_logs_and_rule15():
+    """v67: the model can ask for a FULL log search instead of a changes payload."""
+    assert "need_logs" in la.SYSTEM_PROMPT and "15)" in la.SYSTEM_PROMPT
+    q = la.parse_need_logs('{"need_logs": {"scope": "audit", "text": "ترهین", "junk": "x"}}')
+    assert q == {"scope": "audit", "text": "ترهین"}
+    # a normal changes reply is NOT a need_logs request
+    assert la.parse_need_logs('{"changes": []}') is None
+    assert la.parse_need_logs("garbage") is None
+    # the facts header advertises the protocol
+    p = la.build_user_prompt(FIELDS, {}, ["validation"], instruction="")
+    assert "need_logs" in p

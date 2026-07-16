@@ -196,3 +196,51 @@ async def _customer_id(db_session, acc):
     from sqlalchemy import select
     c = (await db_session.execute(select(Customer).where(Customer.account_no == acc))).scalar_one()
     return c.id
+
+
+async def test_analyze_need_logs_second_round(client, auth_headers, db_session, monkeypatch):
+    """v67: when the model asks need_logs, the server searches the WHOLE logs
+    and re-runs once with the results; the final changes payload wins."""
+    from datetime import datetime
+    from app.models.audit_log import AuditLog
+
+    await _seed_usable_model(db_session)
+    db_session.add(Customer(account_no="770100", name="Sample Co",
+                            account_type="corporate", branch="2624"))
+    db_session.add(AuditLog(id="old1", username="mahdi", action="print",
+                            entity_type="letter", account_no="770100",
+                            detail="چاپ نامهٔ ترهین قدیمی",
+                            created_at=datetime(2025, 1, 5, 10, 0, 0)))
+    await db_session.commit()
+
+    calls = []
+
+    async def fake_complete(db, prompt, **kwargs):
+        calls.append(prompt)
+        if len(calls) == 1:
+            # facts advertise the protocol; the model uses it
+            assert "need_logs" in prompt
+            return {"ok": True, "model": "m", "error": None,
+                    "text": json.dumps({"need_logs": {"scope": "audit", "text": "ترهین"}},
+                                       ensure_ascii=False)}
+        # round 2: the search results (incl. the OLD row) must be in the prompt
+        assert "نتایجِ جستجوی لاگ‌ها" in prompt
+        assert "چاپ نامهٔ ترهین قدیمی" in prompt
+        assert "audit_total" in prompt
+        return {"ok": True, "model": "m", "error": None, "text": json.dumps({
+            "changes": [{"op": "note", "field": "body", "category": "consistency",
+                         "title": "لاگِ چاپِ قبلی یافت شد", "severity": "low"}]
+        }, ensure_ascii=False)}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "account_no": "770100",
+        "fields": {"body": "<div>متن</div>", "subject": "موضوع"},
+        "tools": ["validation"],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True and len(calls) == 2
+    assert [c["title"] for c in body["changes"]] == ["لاگِ چاپِ قبلی یافت شد"]

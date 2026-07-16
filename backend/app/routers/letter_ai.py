@@ -204,6 +204,35 @@ async def analyze(
             "facts_used": bool(facts),
         }
 
+    # need_logs (rule 15): the recent slice in facts is only ambient context —
+    # when the instruction needs MORE logs (older, other accounts, system-wide,
+    # a user/date filter), the model asks once and the server searches the
+    # WHOLE log tables (no newest-N pre-limit), then re-runs with the results.
+    need_logs = la.parse_need_logs(result.get("text") or "")
+    if need_logs is not None:
+        from app.services import log_search
+        import json as _json
+
+        found = await log_search.search_logs(db, need_logs)
+        prompt2 = (
+            prompt
+            + "\n\n### نتایجِ جستجوی لاگ‌ها (پاسخِ need_logs تو — جستجو روی کلِ لاگ‌ها اجرا شد؛ "
+              "دیگر need_logs مجاز نیست، همین حالا خروجیِ نهایی را بده):\n"
+            + _json.dumps(found, ensure_ascii=False, separators=(",", ":"))
+        )
+        result = await inference.complete(
+            db, prompt2, task="report_drafting", system=system,
+            model_id=payload.model_id, max_tokens=8000,
+        )
+        if not result.get("ok"):
+            return {
+                "ok": False,
+                "error": result.get("error") or "ai_failed",
+                "model": result.get("model"),
+                "changes": [],
+                "facts_used": bool(facts),
+            }
+
     changes = la.parse_and_validate(
         result.get("text") or "", payload.fields or {},
         tables_count=(len(payload.tables or []) if "tables" in tools else 0),
@@ -636,7 +665,8 @@ async def generate_attachment(
     fetch_warnings: list = []
     need = gen.parse_need_data(result.get("text") or "")
     if need:
-        fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "")
+        fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "",
+                                                           logs_filter=need.get("logs_filter"))
         prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched,
                                    template_text=tpl_text, template_name=payload.template_name or "",
                                    source_files=payload.source_files or [])

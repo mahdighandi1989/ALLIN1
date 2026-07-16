@@ -41,8 +41,8 @@ DATASETS: Dict[str, str] = {
     "securities": "تضامین/وثایق چندساله: سال، شعبه، حساب، نام مشتری، FD، ضامن، چک‌ها، مبلغ چک، شمارهٔ ملک، مبلغ ترهین، ملاحظات",
     "fixed_deposits": "سپرده‌های ثابت: حساب، نام مشتری، شمارهٔ سپرده، مبلغ، ارز، تاریخ افتتاح/سررسید، نرخ",
     "guarantors": "ضامن‌ها: حساب، نام مشتری، نام ضامن، حسابِ ضامن، شمارهٔ چک، مبلغ چک، بانک",
-    "audit_logs": "لاگِ کلیِ سیستم (Audit Log — جدیدترین اول): تاریخ/زمان، کاربر، عملیات، نوعِ موجودیت، شمارهٔ حساب، شرحِ کار",
-    "journal_entries": "لاگِ کارها و ثبت‌های روزانه (جدیدترین اول): حساب، نام مشتری، شعبه، دسته، مورد، وضعیت، تاریخ/زمان، کاربر، یادداشت",
+    "audit_logs": "لاگِ کلیِ سیستم (Audit Log — جدیدترین اول): تاریخ/زمان، کاربر، عملیات، نوعِ موجودیت، شمارهٔ حساب، شرحِ کار — جستجو روی «کلِ» لاگ‌هاست و با logs_filter (متن/کاربر/عملیات/حساب/بازهٔ تاریخ) محدودش کن",
+    "journal_entries": "لاگِ کارها و ثبت‌های روزانه (جدیدترین اول): حساب، نام مشتری، شعبه، دسته، مورد، وضعیت، تاریخ/زمان، کاربر، یادداشت — جستجو روی «کلِ» لاگ‌هاست و logs_filter می‌پذیرد",
 }
 
 SYSTEM_PROMPT = (
@@ -69,7 +69,11 @@ SYSTEM_PROMPT = (
     "به تفکیکِ شعبه، یا سراسری) و «کاتالوگِ داده‌های سراسری» در پیام هست، به‌جای spec فقط این JSON را "
     "برگردان تا داده برایت واکشی شود:\n"
     "{\"need_data\": {\"datasets\": [\"<از نام‌های کاتالوگ>\"], \"branch\": \"<دقیقاً یکی از مقادیرِ "
-    "فهرست‌شدهٔ شعبه یا رشتهٔ خالی برای همه>\"}}\n"
+    "فهرست‌شدهٔ شعبه یا رشتهٔ خالی برای همه>\", \"logs_filter\": {\"text\": \"\", \"user\": \"\", "
+    "\"action\": \"\", \"account_no\": \"\", \"date_from\": \"YYYY-MM-DD\", \"date_to\": \"YYYY-MM-DD\"}}}\n"
+    "logs_filter فقط برای datasetهای لاگ است و اختیاری؛ جستجوی لاگ روی «کلِ» جدول‌ها اجرا می‌شود "
+    "(بدونِ محدودیتِ قدمت) و اگر یافته‌ها از سقفِ ارسال بیشتر شود، شمارِ واقعی در warnings می‌آید — "
+    "فیلتر را دقیق انتخاب کن.\n"
     "این فرصت فقط یک بار است: در نوبتِ بعد «داده‌های واکشی‌شده» را می‌گیری و باید spec نهایی را بدهی. "
     "نامِ شعبه در دستورِ کاربر ممکن است فارسی و در پایگاه‌داده لاتین باشد — خودت معادلِ درست را از فهرست "
     "انتخاب کن. هرگز به‌جای درخواستِ داده، جدولِ خالی یا دادهٔ ساختگی نده.\n"
@@ -162,7 +166,15 @@ def parse_need_data(raw_text: str) -> Dict[str, Any] | None:
     datasets = [str(d).strip() for d in (need.get("datasets") or []) if str(d).strip() in DATASETS]
     if not datasets:
         return None
-    return {"datasets": datasets[:4], "branch": str(need.get("branch") or "").strip()[:100]}
+    out = {"datasets": datasets[:4], "branch": str(need.get("branch") or "").strip()[:100]}
+    if isinstance(need.get("logs_filter"), dict):
+        from app.services.log_search import sanitize_query
+
+        lf = sanitize_query(need["logs_filter"])
+        lf.pop("scope", None)  # scope follows the requested dataset names
+        if lf:
+            out["logs_filter"] = lf
+    return out
 
 
 def _s(v: Any) -> str:
@@ -196,7 +208,8 @@ async def list_branches(db) -> List[str]:
     return sorted(vals)[:60]
 
 
-async def fetch_datasets(db, datasets: List[str], branch: str = "") -> Tuple[Dict[str, Any], List[str]]:
+async def fetch_datasets(db, datasets: List[str], branch: str = "",
+                         logs_filter: Dict[str, str] | None = None) -> Tuple[Dict[str, Any], List[str]]:
     """Deterministic, capped cross-customer queries for the need_data protocol.
 
     ``branch`` filters by the CUSTOMER's branch (exact, case-insensitive); when
@@ -351,54 +364,40 @@ async def fetch_datasets(db, datasets: List[str], branch: str = "") -> Tuple[Dic
             })
         out["guarantors"] = _cap("ضامن‌ها", items, warnings)
 
-    # Activity LOGS — audit trail + journal/daily-log lines. The tables grow
-    # forever in production, so the query itself is bounded (newest first)
-    # BEFORE the branch filter; _cap then applies the usual row ceiling.
-    if "audit_logs" in datasets:
-        from app.models.audit_log import AuditLog
+    # Activity LOGS — audit trail + journal/daily-log lines. The SEARCH runs
+    # over the WHOLE tables (log_search — no newest-N pre-limit) with the
+    # model's optional logs_filter; only the returned rows are capped, and the
+    # true totals surface in warnings so a cut is never silent. The branch
+    # filter still narrows post-search through each row's account.
+    want_audit = "audit_logs" in datasets
+    want_journal = "journal_entries" in datasets
+    if want_audit or want_journal:
+        from app.services.log_search import search_logs
 
-        rows = (
-            await db.execute(
-                select(AuditLog).order_by(AuditLog.created_at.desc()).limit(2000)
-            )
-        ).scalars().all()
-        items = []
-        for a in rows:
-            acc = _s(a.account_no)
-            if not keep(acc):
-                continue
-            items.append({
-                "when": _s(a.created_at), "user": _s(a.username),
-                "action": _s(a.action), "entity": _s(a.entity_type),
-                "account_no": acc,
-                "customer_name": cust_info(acc)["customer_name"] if acc else "",
-                "detail": _s(a.detail)[:300],
-            })
-        out["audit_logs"] = _cap("لاگِ کلی", items, warnings)
-
-    if "journal_entries" in datasets:
-        from app.models.crm import JournalEntry
-
-        rows = (
-            await db.execute(
-                select(JournalEntry).order_by(JournalEntry.created_at.desc()).limit(2000)
-            )
-        ).scalars().all()
-        items = []
-        for j in rows:
-            acc = _s(j.account_no)
-            if not keep(acc):
-                continue
-            ci = cust_info(acc) if acc else {"customer_name": "", "branch": "", "account_manager": ""}
-            items.append({
-                "account_no": acc,
-                "customer_name": _s(j.account_name) or ci["customer_name"],
-                "branch": _s(j.branch) or ci["branch"],
-                "category": _s(j.category), "item": _s(j.item), "status": _s(j.status),
-                "date": _s(j.date), "time": _s(j.time), "user": _s(j.user),
-                "action": _s(j.action), "notes": _s(j.notes)[:300],
-            })
-        out["journal_entries"] = _cap("لاگِ کارها", items, warnings)
+        lf = dict(logs_filter or {})
+        lf["scope"] = "both" if (want_audit and want_journal) else ("audit" if want_audit else "journal")
+        found = await search_logs(db, lf)
+        warnings.extend(found.get("warnings") or [])
+        if want_audit:
+            items = []
+            for r in found.get("audit") or []:
+                acc = r.get("account_no") or ""
+                if not keep(acc):
+                    continue
+                r["customer_name"] = cust_info(acc)["customer_name"] if acc else ""
+                items.append(r)
+            out["audit_logs"] = _cap("لاگِ کلی", items, warnings)
+        if want_journal:
+            items = []
+            for r in found.get("journal") or []:
+                acc = r.get("account_no") or ""
+                if not keep(acc):
+                    continue
+                ci = cust_info(acc) if acc else {"customer_name": "", "branch": "", "account_manager": ""}
+                r["customer_name"] = r.get("customer_name") or ci["customer_name"]
+                r["branch"] = r.get("branch") or ci["branch"]
+                items.append(r)
+            out["journal_entries"] = _cap("لاگِ کارها", items, warnings)
 
     return out, warnings
 
