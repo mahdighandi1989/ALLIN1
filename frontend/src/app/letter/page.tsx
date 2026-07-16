@@ -421,6 +421,9 @@ export default function LetterPage() {
   // v63: optional TEMPLATE/SAMPLE file (e.g. a blank table another department
   // sent) — the generated attachment must reproduce ITS exact format.
   const [genTpl, setGenTpl] = useState<File | null>(null)
+  // v65: optional SOURCE/DATA files (any count, any format, added any time) —
+  // their CONTENT is an allowed data source for the generation, alongside DB.
+  const [genSrcs, setGenSrcs] = useState<File[]>([])
 
   // --- Tables tool: enumerate the letter's tables (across all pages — the body
   // is the single source of truth) so the user picks WHICH ones the AI works on.
@@ -591,6 +594,7 @@ export default function LetterPage() {
       let tplText = ''
       let tplName = ''
       if (genTpl) {
+        setExtracting2(`خواندنِ قالب: ${genTpl.name}…`)
         const tx = await letterAiApi.templateText(genTpl, aiModelId === '' ? undefined : Number(aiModelId))
         if (!tx.ok || !(tx.text || '').trim()) {
           toast.error(`قالب «${genTpl.name}» خوانده نشد: ${aiErrorText(tx.error)}`)
@@ -599,6 +603,22 @@ export default function LetterPage() {
         tplText = tx.text || ''
         tplName = genTpl.name
       }
+      // SOURCE/DATA files: each one becomes text too (same no-store endpoint) —
+      // their content is an allowed data source alongside the DB facts. A file
+      // that cannot be read aborts with a clear error (silent partial data would
+      // produce a wrong attachment).
+      const srcTexts: { name: string; text: string }[] = []
+      for (let i = 0; i < genSrcs.length; i++) {
+        const sf = genSrcs[i]
+        setExtracting2(`خواندنِ فایلِ منبع ${fa(i + 1)} از ${fa(genSrcs.length)}: ${sf.name}…`)
+        const tx = await letterAiApi.templateText(sf, aiModelId === '' ? undefined : Number(aiModelId))
+        if (!tx.ok || !(tx.text || '').trim()) {
+          toast.error(`فایلِ منبع «${sf.name}» خوانده نشد: ${aiErrorText(tx.error)}`)
+          return
+        }
+        srcTexts.push({ name: sf.name, text: tx.text || '' })
+      }
+      setExtracting2('')
       const r = await letterAiApi.generateAttachment({
         letter_id: letterId,
         account_no: general ? undefined : (acct.trim() || undefined),
@@ -610,6 +630,7 @@ export default function LetterPage() {
         model_id: aiModelId === '' ? undefined : Number(aiModelId),
         template_text: tplText || undefined,
         template_name: tplName || undefined,
+        source_files: srcTexts.length ? srcTexts : undefined,
       })
       if (!r.ok) {
         toast.error((r.error || '').startsWith('bad_spec')
@@ -619,9 +640,9 @@ export default function LetterPage() {
       }
       setGenWarnings(r.warnings || [])
       toast.success(`پیوست «${r.attachment?.original_name || ''}» ساخته و ثبت شد (${r.kind === 'word' ? 'ورد' : 'اکسل'})`)
-      setGenInstruction(''); setGenTpl(null)
+      setGenInstruction(''); setGenTpl(null); setGenSrcs([])
       await loadAtts(letterId)
-    } catch (e) { toast.error(parseApiError(e)) } finally { setGenBusy(false) }
+    } catch (e) { toast.error(parseApiError(e)) } finally { setGenBusy(false); setExtracting2('') }
   }
   const hasAttachmentMode = f.attachment === 'دارد'
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
@@ -2730,7 +2751,7 @@ export default function LetterPage() {
           )}
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحهٔ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v63</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخهٔ کد — برای تأییدِ استقرار">build: reflow-v65</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -2794,10 +2815,38 @@ export default function LetterPage() {
                     <button type="button" className="ltr-hint" style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
                       onClick={() => setGenTpl(null)} disabled={genBusy}>✕ حذفِ قالب</button>
                   </>}
+                  {/* v65: SOURCE/DATA files — any count, any format, appendable any time */}
+                  <label className="ltr-btn" style={{ background: genSrcs.length ? '#b45309' : '#64748b', cursor: genBusy ? 'default' : 'pointer' }}>
+                    🗂 {genSrcs.length ? `فایل‌های منبع (${fa(genSrcs.length)})` : 'فایل‌های منبعِ داده (اختیاری)'}
+                    <input type="file" multiple style={{ display: 'none' }} disabled={genBusy}
+                      accept=".xlsx,.xlsm,.xls,.csv,.docx,.pdf,.png,.jpg,.jpeg,.txt"
+                      onChange={(e) => {
+                        const picked = Array.from(e.target.files || [])
+                        if (picked.length) setGenSrcs((s) => {
+                          // append, never replace — the user adds files over several picks
+                          const have = new Set(s.map((x) => `${x.name}|${x.size}`))
+                          return [...s, ...picked.filter((x) => !have.has(`${x.name}|${x.size}`))]
+                        })
+                        e.target.value = ''
+                      }} />
+                  </label>
                   <span className="ltr-hint">
-                    اگر اداره/مرجعی فایلِ نمونه (جدولِ خالی با ستون‌های مشخص و…) داده، همین‌جا بده — خروجی دقیقاً به همان شکل از پایگاه‌داده پر می‌شود؛ شرحِ اضافه هم روی همان قالب اعمال می‌شود.
+                    اگر اداره/مرجعی فایلِ نمونه (جدولِ خالی با ستون‌های مشخص و…) داده، «قالب» بده — خروجی دقیقاً به همان شکل پر می‌شود. «فایل‌های منبع» هم داده‌های خام‌اند (هر فرمت و هر تعداد): پیوست از محتوای آن‌ها + پایگاه‌داده و طبقِ شرحِ باکس ساخته می‌شود؛ اگر قالب هم باشد، داده‌ها دقیقاً در همان قالب می‌نشینند.
                   </span>
                 </div>
+                {genSrcs.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {genSrcs.map((sf, i) => (
+                      <span key={`${sf.name}-${i}`} className="ltr-hint" style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <span dir="ltr" style={{ fontWeight: 700, color: '#92400e' }}>{sf.name}</span>
+                        <button type="button" style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }} disabled={genBusy}
+                          onClick={() => setGenSrcs((s) => s.filter((_, j) => j !== i))} title="حذفِ این فایلِ منبع">✕</button>
+                      </span>
+                    ))}
+                    <button type="button" className="ltr-hint" style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
+                      onClick={() => setGenSrcs([])} disabled={genBusy}>پاک‌کردنِ همه</button>
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <label className="ltr-hint">قالب:</label>
                   <select className="meta-in" style={{ width: 150 }} value={genKind} disabled={genBusy}
