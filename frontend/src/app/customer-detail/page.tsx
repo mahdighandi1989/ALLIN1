@@ -49,6 +49,7 @@ function CustomerDetailInner() {
   const [newTaskDate, setNewTaskDate] = useState('')
   const [ng, setNg] = useState<any>({ guarantor_name: '', guarantor_account: '', cheque_no: '', cheque_amount: '', issuing_bank: 'BSI' })
   const [nf, setNf] = useState<any>({ facility_type: 'overdraft', amount: '', currency: 'AED', name: '' })
+  const [npe, setNpe] = useState<any>({ property_id: '', event_type: 'valuation', event_date: '', amount: '', currency: 'AED', remarks: '' })
   const [kycEdit, setKycEdit] = useState(false)
   const [kycForm, setKycForm] = useState<any>({})
   const [newNote, setNewNote] = useState('')
@@ -122,7 +123,7 @@ function CustomerDetailInner() {
     </div>
   )
 
-  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [], relationships = { given: [], received: [] } } = data
+  const { customer, facilities = [], offer_letters = [], guarantors = [], securities = [], tasks = [], attachments = [], journal = [], notes = [], profile, checklist, summary = {}, properties = [], property_events: propertyEvents = [], fixed_deposits: fixedDeposits = [], partners: partnerRows = [], facility_checklists: facilityChecklists = [], relationships = { given: [], received: [] } } = data
   const pdata = (profile && profile.data) || {}
   const acc = String(customer.account_no || '').trim()
   const completeness = profile?.profile_completeness || '—'
@@ -311,6 +312,33 @@ function CustomerDetailInner() {
       toast.success('Property removed')
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  // --- Property EVENT TIMELINE (several valuations, mortgage/re-mortgage/release/insurance) ---
+  const EVENT_FA: Record<string, string> = {
+    valuation: 'ارزیابی', mortgage: 'ترهین', remortgage: 'ترهین مجدد',
+    additional_mortgage: 'ترهین مازاد', release: 'فک رهن', insurance: 'بیمه‌نامه', other: 'سایر',
+  }
+  const addPropertyEvent = async () => {
+    if (!npe.property_id) { toast.error('ملک را انتخاب کن'); return }
+    if (!npe.event_date.trim() && !npe.amount) { toast.error('تاریخ یا مبلغِ رویداد لازم است'); return }
+    try {
+      const ev = await crmApi.addPropertyEvent(npe.property_id, {
+        event_type: npe.event_type, event_date: npe.event_date.trim(),
+        amount: npe.amount ? Number(npe.amount) : undefined,
+        currency: npe.currency || '', remarks: npe.remarks || '',
+      })
+      setData((d: any) => ({ ...d, property_events: [...(d.property_events || []), ev] }))
+      setNpe((s: any) => ({ ...s, event_date: '', amount: '', remarks: '' }))
+      toast.success('رویداد ثبت شد')
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const removePropertyEvent = async (eid: string) => {
+    if (!confirm('این رویداد از تاریخچهٔ ملک حذف شود؟')) return
+    try {
+      await crmApi.deletePropertyEvent(eid)
+      setData((d: any) => ({ ...d, property_events: (d.property_events || []).filter((x: any) => x.id !== eid) }))
+    } catch (e) { toast.error(parseApiError(e)) }
+  }
+  const propLabel = (p: any) => p ? [p.plate_no, p.mortgage_deed_no, p.city].filter(Boolean).join(' / ') || p.id : '—'
   const addFd = async () => {
     if (!nfd.fd_number && !nfd.amount) { toast.error('FD number or amount required'); return }
     try {
@@ -767,6 +795,48 @@ function CustomerDetailInner() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {/* ---- تاریخچهٔ رویدادهای ملک: چند ارزیابی، ترهین/ترهین مجدد/مازاد، فک رهن، بیمه ---- */}
+            {properties.length > 0 && (
+              <div dir="rtl" className="mt-4 border-t border-gray-100 pt-3">
+                <div className="text-sm font-bold text-gray-700 mb-2">تاریخچهٔ رویدادهای املاک ({propertyEvents.length})</div>
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
+                  <select value={npe.property_id} onChange={(e) => setNpe((s: any) => ({ ...s, property_id: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white col-span-2">
+                    <option value="">— ملک؟ —</option>
+                    {properties.map((p: any) => <option key={p.id} value={p.id}>{propLabel(p)}</option>)}
+                  </select>
+                  <select value={npe.event_type} onChange={(e) => setNpe((s: any) => ({ ...s, event_type: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                    {Object.entries(EVENT_FA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                  <input value={npe.event_date} onChange={(e) => setNpe((s: any) => ({ ...s, event_date: e.target.value }))} placeholder="تاریخ (مثلاً 1403/05/12)" className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                  <input value={npe.amount} onChange={(e) => setNpe((s: any) => ({ ...s, amount: e.target.value }))} placeholder="مبلغ (اختیاری)" inputMode="numeric" className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                  <button onClick={addPropertyEvent} type="button" className="bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1.5 text-sm font-medium">افزودن رویداد</button>
+                </div>
+                {propertyEvents.length === 0 ? (
+                  <p className="text-xs text-gray-400">هنوز رویدادی ثبت نشده — ایمپورتِ اسنادِ ملک (ارزیابی‌ها، سند رهنی، فک رهن) خودکار این‌جا را پر می‌کند.</p>
+                ) : (
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm whitespace-nowrap">
+                      <thead className="bg-gray-50"><tr className="text-right text-gray-500">
+                        {['ملک', 'رویداد', 'تاریخ', 'مبلغ', 'ملاحظات', 'منبع', ''].map((h, i) => <th key={i} className="px-3 py-2">{h}</th>)}
+                      </tr></thead>
+                      <tbody className="divide-y">
+                        {propertyEvents.map((ev: any) => (
+                          <tr key={ev.id}>
+                            <td className="px-3 py-1.5">{propLabel(properties.find((p: any) => p.id === ev.property_id))}</td>
+                            <td className="px-3 py-1.5 font-medium">{EVENT_FA[ev.event_type] || ev.event_type}</td>
+                            <td className="px-3 py-1.5 tabular-nums">{val(ev.event_date)}</td>
+                            <td className="px-3 py-1.5 tabular-nums">{ev.amount != null ? `${ev.currency || ''} ${Number(ev.amount).toLocaleString()}`.trim() : '—'}</td>
+                            <td className="px-3 py-1.5 max-w-[220px] whitespace-normal">{val(ev.remarks)}</td>
+                            <td className="px-3 py-1.5 text-xs text-gray-400">{ev.source === 'manual' ? 'دستی' : 'ایمپورت/AI'}</td>
+                            <td className="px-3 py-1.5"><button onClick={() => removePropertyEvent(ev.id)} type="button" className="text-xs text-red-600 hover:underline">حذف</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </Section>

@@ -117,3 +117,33 @@ class Partner(Base):
     def __init__(self, **kwargs):
         kwargs.setdefault("is_deleted", False)
         super().__init__(**kwargs)
+
+
+class PropertyEvent(Base):
+    """One dated event in a mortgaged property's LIFE HISTORY — a property can
+    have MANY of each kind over the years (several valuations, a mortgage, a
+    re-mortgage/additional mortgage, a release/فک رهن, insurance renewals…).
+    The single columns on MortgagedProperty (valuation/last_valuation_date/
+    mortgage_date/…) keep holding the LATEST/primary value; this table holds
+    the full timeline, one row per event, with provenance."""
+
+    __tablename__ = "property_events"
+
+    id = Column(String(60), primary_key=True)
+    property_id = Column(String(60), index=True, nullable=False)  # -> mortgaged_properties.id
+    account_no = Column(String(50), index=True, nullable=False)
+    # valuation | mortgage | remortgage | additional_mortgage | release | insurance | other
+    event_type = Column(String(30), nullable=False)
+    event_date = Column(String(30))          # dates as text (Jalali/Gregorian as printed)
+    amount = Column(Numeric(18, 2))
+    currency = Column(String(10))
+    remarks = Column(String(400))
+    source = Column(String(30), default="manual")   # manual | import_ai | letter_ai
+    source_ref = Column(String(200))
+    created_by = Column(String(80))
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("is_deleted", False)
+        super().__init__(**kwargs)

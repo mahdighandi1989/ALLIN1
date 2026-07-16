@@ -25,7 +25,7 @@ from app.models.crm import ChecklistProgress, FacilityChecklist, CHECKLIST_STEPS
 from app.services import attachments as attachments_store
 from app.models.guarantor import Guarantor
 from app.models.credit_review import CreditReview
-from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
+from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner, PropertyEvent
 from app.models.customer import Customer
 from app.models.facility import Facility, FacilityType
 from app.services.checklist import seed_facility_checklist, HOURGLASS
@@ -1696,6 +1696,66 @@ async def delete_property(
 ):
     """Remove (soft-delete) a mortgaged property."""
     return await _delete_child(db, MortgagedProperty, item_id, user, "property", "ملکِ مرهونه")
+
+
+class PropertyEventCreate(BaseModel):
+    # valuation | mortgage | remortgage | additional_mortgage | release | insurance | other
+    event_type: str = Field(min_length=3, max_length=30)
+    event_date: str = ""
+    amount: Optional[float] = None
+    currency: str = ""
+    remarks: str = ""
+
+
+@router.post("/properties/{property_id}/events")
+async def add_property_event(
+    property_id: str, payload: PropertyEventCreate,
+    db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    """Add one dated event to a property's timeline (several valuations,
+    mortgage / re-mortgage / release / insurance…) — manual counterpart of the
+    import's event history."""
+    import uuid as _uuid
+    from datetime import datetime as _dt
+
+    prop = (await db.execute(select(MortgagedProperty).where(
+        MortgagedProperty.id == property_id))).scalar_one_or_none()
+    if prop is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+    et = payload.event_type.strip().lower().replace("-", "_").replace(" ", "_")
+    if et not in {"valuation", "mortgage", "remortgage", "additional_mortgage",
+                  "release", "insurance", "other"}:
+        raise HTTPException(status_code=422, detail="نوعِ رویداد نامعتبر است")
+    if not payload.event_date.strip() and payload.amount is None:
+        raise HTTPException(status_code=422, detail="رویداد باید دست‌کم تاریخ یا مبلغ داشته باشد")
+    ev = PropertyEvent(
+        id=f"PE-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:8]}",
+        property_id=property_id, account_no=prop.account_no, event_type=et,
+        event_date=payload.event_date.strip()[:30], amount=payload.amount,
+        currency=payload.currency.strip()[:10], remarks=payload.remarks.strip()[:400],
+        source="manual", created_by=getattr(user, "username", "") or "",
+    )
+    db.add(ev)
+    await db.commit()
+    await _audit(db, user, action="create", entity_type="property_event",
+                 account_no=prop.account_no, entity_id=ev.id,
+                 detail=f"رویدادِ ملک «{et}» ({ev.event_date or '—'}) برای {prop.plate_no or prop.mortgage_deed_no or property_id}")
+    return _child_dict(ev)
+
+
+@router.delete("/property-events/{event_id}")
+async def delete_property_event(
+    event_id: str, db: AsyncSession = Depends(get_db), user=Depends(require_editor),
+):
+    ev = (await db.execute(select(PropertyEvent).where(PropertyEvent.id == event_id))).scalar_one_or_none()
+    if ev is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    ev.is_deleted = True
+    await db.commit()
+    await _audit(db, user, action="delete", entity_type="property_event",
+                 account_no=ev.account_no, entity_id=ev.id,
+                 detail=f"حذفِ رویدادِ ملک «{ev.event_type}» ({ev.event_date or '—'})")
+    return {"ok": True}
 
 
 # ---- Fixed deposits (A12) ----

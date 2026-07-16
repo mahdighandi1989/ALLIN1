@@ -340,8 +340,34 @@ def _norm_ws(s: str) -> str:
     return _WS_RE.sub(" ", s).strip()
 
 
+def _row_facts(row: Any, skip: tuple = ("id", "account_no", "customer_name", "created_by",
+                                        "date_added", "is_deleted", "created_at",
+                                        "content_norm", "title_norm")) -> Dict[str, Any]:
+    """Generic, schema-driven view of an ORM row for the facts JSON: every
+    non-empty column except housekeeping. A column added to the model later is
+    AUTOMATICALLY available to the model — no facts-builder edit needed."""
+    out: Dict[str, Any] = {}
+    for col in row.__table__.columns:
+        if col.name in skip:
+            continue
+        v = getattr(row, col.name, None)
+        if v in (None, ""):
+            continue
+        try:
+            from decimal import Decimal
+            if isinstance(v, Decimal):
+                v = f"{float(v):,.2f}"
+        except Exception:
+            pass
+        out[col.name] = str(v)
+    return out
+
+
 def build_facts(customer: Any, profile_data: Dict[str, Any], facilities: List[Any],
-                guarantors: List[Any]) -> Dict[str, Any]:
+                guarantors: List[Any], properties: Optional[List[Any]] = None,
+                property_events: Optional[List[Any]] = None,
+                fixed_deposits: Optional[List[Any]] = None,
+                partners: Optional[List[Any]] = None) -> Dict[str, Any]:
     """Compact, authoritative DB snapshot for the letter's account — the ground
     truth the model validates the letter against. Only plain, non-secret facts."""
     def ev(v):
@@ -386,6 +412,32 @@ def build_facts(customer: Any, profile_data: Dict[str, Any], facilities: List[An
                        "cheque_amount": (f"{float(g.cheque_amount):,.2f}" if g.cheque_amount is not None else "")})
         if gl:
             facts["guarantors"] = gl
+    # Mortgaged properties — EVERY column generically (schema-driven, so new
+    # columns like postal_code/owner_national_id and any future ones flow in
+    # automatically) + the full dated EVENT TIMELINE per property (several
+    # valuations, mortgage/re-mortgage/release/insurance…).
+    if properties:
+        ev_by_prop: Dict[str, List[Dict[str, Any]]] = {}
+        for e in (property_events or []):
+            ev_by_prop.setdefault(e.property_id, []).append({
+                "event_type": e.event_type, "date": e.event_date or "",
+                **({"amount": f"{float(e.amount):,.2f}"} if e.amount is not None else {}),
+                **({"currency": e.currency} if e.currency else {}),
+                **({"remarks": e.remarks} if e.remarks else {}),
+            })
+        pl = []
+        for p in properties[:20]:
+            d = _row_facts(p)
+            evs = ev_by_prop.get(p.id) or []
+            if evs:
+                d["history"] = evs[:30]
+            pl.append(d)
+        if pl:
+            facts["properties"] = pl
+    if fixed_deposits:
+        facts["fixed_deposits"] = [_row_facts(fd) for fd in fixed_deposits[:20]]
+    if partners:
+        facts["partners"] = [_row_facts(pt) for pt in partners[:20]]
     # A curated slice of the profile blob (avoid dumping 290 raw fields).
     if isinstance(profile_data, dict) and profile_data:
         keep = {}

@@ -85,6 +85,36 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
             select(Guarantor).where(Guarantor.account_no == acc, Guarantor.is_deleted == False)  # noqa: E712
         )
     ).scalars().all()
+    # Mortgaged properties (+ their dated event history), fixed deposits and
+    # partners — so letters, the full_check pass and the attachment generator
+    # can answer property/valuation/mortgage questions from the DB.
+    from app.models.profile_entities import MortgagedProperty, PropertyEvent, FixedDeposit, Partner
+    properties = (
+        await db.execute(
+            select(MortgagedProperty).where(MortgagedProperty.account_no == acc,
+                                            MortgagedProperty.is_deleted == False)  # noqa: E712
+        )
+    ).scalars().all()
+    property_events = []
+    if properties:
+        property_events = (
+            await db.execute(
+                select(PropertyEvent).where(PropertyEvent.account_no == acc,
+                                            PropertyEvent.is_deleted == False)  # noqa: E712
+                .order_by(PropertyEvent.event_date)
+            )
+        ).scalars().all()
+    fixed_deposits = (
+        await db.execute(
+            select(FixedDeposit).where(FixedDeposit.account_no == acc,
+                                       FixedDeposit.is_deleted == False)  # noqa: E712
+        )
+    ).scalars().all()
+    partners = (
+        await db.execute(
+            select(Partner).where(Partner.account_no == acc, Partner.is_deleted == False)  # noqa: E712
+        )
+    ).scalars().all()
     # Profile blob (extracted facts / offer-letter snapshot live here).
     profile_data: Dict[str, Any] = {}
     try:
@@ -100,7 +130,9 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
                 profile_data = loaded
     except Exception:
         profile_data = {}
-    return la.build_facts(customer, profile_data, list(facilities), list(guarantors))
+    return la.build_facts(customer, profile_data, list(facilities), list(guarantors),
+                          properties=list(properties), property_events=list(property_events),
+                          fixed_deposits=list(fixed_deposits), partners=list(partners))
 
 
 @router.post("/analyze")
