@@ -15,6 +15,10 @@ type FormDef = {
   icon: typeof Printer
   category: string
   ready: boolean
+  // multi-entrance card: when set, the card shows one button per entrance
+  // instead of being a single link (used to merge sibling cards without
+  // losing either route)
+  links?: { href: string; label: string }[]
 }
 
 const FORMS: FormDef[] = [
@@ -55,22 +59,20 @@ const FORMS: FormDef[] = [
     ready: true,
   },
   {
+    // ONE card, TWO entrances — the same letter editor serves both; only the
+    // save/browse bucket differs (customer letters vs the «عمومی» bucket).
+    // Both former cards' routes are preserved verbatim as the two links below.
     href: '/letter',
     title: 'Official Letter',
     subtitle: 'نامهٔ رسمی (سربرگِ بانک)',
-    description: 'قالبِ نامهٔ رسمیِ بانک صادرات (دفترِ منطقه‌ای) با سربرگ و فوتر، «بسمه تعالی»، شماره/تاریخ/پیوست، گیرنده، موضوع و متنِ آزاد. امضاکننده (سرپرستی منطقه خلیج فارس / دایره تسهیلات اعطایی) به‌صورتِ منوی کشویی است؛ نامه می‌تواند چند صفحه شود و سربرگ/فوتر در هر صفحه تکرار و صفحات شماره‌گذاری می‌شوند.',
+    description: 'قالبِ نامهٔ رسمیِ بانک صادرات (دفترِ منطقه‌ای) با سربرگ و فوتر، «بسمه تعالی»، شماره/تاریخ/پیوست، گیرنده، موضوع و متنِ آزاد. امضاکننده (سرپرستی منطقه خلیج فارس / دایره تسهیلات اعطایی) منوی کشویی است؛ نامه می‌تواند چند صفحه شود و سربرگ/فوتر در هر صفحه تکرار و صفحات شماره‌گذاری می‌شوند. نامهٔ مربوط به یک حساب/مشتری زیرِ پروندهٔ همان مشتری ذخیره می‌شود؛ نامهٔ عمومی (بدونِ حساب) با عنوان در بخشِ نامه‌های عمومی ذخیره و مرور می‌شود.',
     icon: Mail,
     category: 'Letters',
     ready: true,
-  },
-  {
-    href: '/letter?general=1',
-    title: 'General Letters',
-    subtitle: 'نامه‌های عمومی (بدونِ حساب)',
-    description: 'نامه‌هایی که به حسابِ خاصی مربوط نیستند؛ این‌جا با عنوان ذخیره و مرور می‌شوند و نامه‌های بعدیِ مشابه هم به همین‌جا اضافه می‌شوند.',
-    icon: Mail,
-    category: 'Letters',
-    ready: true,
+    links: [
+      { href: '/letter', label: 'نامهٔ حساب/مشتری' },
+      { href: '/letter?general=1', label: 'نامهٔ عمومی (بدونِ حساب)' },
+    ],
   },
 ]
 
@@ -94,6 +96,32 @@ export default function FormsPage() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {FORMS.filter((f) => f.category === cat).map((f) => {
                 const Icon = f.icon
+                const links = f.links
+                if (links?.length) {
+                  // multi-entrance card: the card itself is not a link — each
+                  // entrance keeps its own route (nothing merged away)
+                  return (
+                    <div key={f.href}
+                      className="group bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-sm transition-all flex flex-col">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="bg-blue-50 text-blue-600 rounded-lg p-2 group-hover:bg-blue-100 transition-colors">
+                          <Icon size={20} />
+                        </div>
+                      </div>
+                      <div className="font-bold text-gray-900">{f.title}</div>
+                      {f.subtitle && <div className="text-sm text-gray-500 mt-0.5">{f.subtitle}</div>}
+                      <p className="text-xs text-gray-500 leading-6 mt-2 flex-1">{f.description}</p>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        {links.map((l) => (
+                          <Link key={l.href} href={l.href}
+                            className="flex items-center justify-center gap-1.5 text-sm font-medium border border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-100 rounded-lg px-3 py-2 transition-colors">
+                            <ArrowLeft size={14} /> {l.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                }
                 return (
                   <Link
                     key={f.href}
