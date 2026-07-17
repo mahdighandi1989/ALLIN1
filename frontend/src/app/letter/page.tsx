@@ -1865,7 +1865,7 @@ export default function LetterPage() {
         f: f as any, labels, L: L as any, attTables, attMeta: attMeta as any, floats,
         pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
         renderFloatPng: renderFloatPngForWord,
-        buildTag: 'reflow-v79',   // kept in lock-step with the visible marker by the release sed
+        buildTag: 'reflow-v80',   // kept in lock-step with the visible marker by the release sed
       })
       saveBlob(blob, `${exportName()}.docx`)
       toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و فیلدها همه قابلِ ویرایش‌اند', { id: tId })
@@ -2906,7 +2906,7 @@ export default function LetterPage() {
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v79</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v80</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
