@@ -2314,17 +2314,24 @@ export default function LetterPage() {
         const MIN_GAP = 4
         const sorted = fieldsInfo.slice().sort((a, b) => b.y - a.y)   // bottom-most first
         let below = floor + MIN_GAP        // virtual top of the thing below (the floor)
-        let packOk = fieldsInfo.length > 0
         const sh: Record<string, number> = {}
         for (const fi of sorted) {
           const cap = below - MIN_GAP - fi.h
-          if (cap < fi.y) { packOk = false; break }   // cannot even stay in place
+          if (cap <= fi.y) {
+            // this field already touches its ceiling (e.g. اقدام sits at the page-
+            // number line by layout design) — PIN it in place; the fields above
+            // still pack against ITS top. Failing the whole pack here made a 5px
+            // overflow banish the letter's table to the next page.
+            sh[fi.k] = 0
+            below = fi.y
+            continue
+          }
           const newTop = Math.max(fi.y, Math.min(fi.y + overflow, cap))
           sh[fi.k] = Math.ceil(newTop - fi.y)
           below = newTop
         }
         const topField = fieldsInfo.slice().sort((a, b) => a.y - b.y)[0]
-        if (packOk && topField && (sh[topField.k] ?? 0) >= Math.ceil(overflow)) shift = sh
+        if (topField && (sh[topField.k] ?? 0) >= Math.ceil(overflow)) shift = sh
         else {
           // Even fully compressed the closing cannot clear the content — move the
           // OVERFLOWING tail of the last page onto a fresh page so the closing
@@ -2360,12 +2367,14 @@ export default function LetterPage() {
     // exactly why pages/closing ended up where they did.
     if (typeof window !== 'undefined' && /[?&]pdbg=1/.test(window.location.search)) {
       // eslint-disable-next-line no-console
-      console.info('[letter-pagination]', {
-        pages: pages.length, heights: pages.map((p2) => pageH(p2)),
-        availLast: regionAvail(pages.length - 1, true), availTight: pages.map((_, i2) => regionAvail(i2, false)),
+      console.info('[letter-pagination] ' + JSON.stringify({
+        pages: pages.length, heights: pages.map((p2) => Math.round(pageH(p2))),
+        availLast: Math.round(regionAvail(pages.length - 1, true)),
+        availTight: pages.map((_, i2) => Math.round(regionAvail(i2, false))),
         closingShift: shift, bodyY: L.body.y, bodyH: L.body.h,
         closingY: { sender: L.sender?.y, copyto: L.copyto?.y, action: L.action?.y },
-      })
+        pageNumLimit: Math.round(pageNumLimit),
+      }))
     }
     // re-group consecutive rows of the same table back into one <table> per page
     const render = (us: Unit[]) => {
@@ -2896,7 +2905,7 @@ export default function LetterPage() {
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v71</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v73</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
