@@ -173,11 +173,14 @@ const alignOf = (el: HTMLElement, fallback: (typeof AlignmentType)[keyof typeof 
 // v79 — Word reads w:jc in bidi paragraphs LOGICALLY (documented WordprocessingML
 // behavior, and proven by the owner's file: every bidi paragraph with jc="right"
 // rendered flush LEFT, mirroring the whole letter head). "right" means logical
-// END = visual LEFT for RTL. So for RTL content: visual-RIGHT = omit jc (the
-// bidi default is start = right in every engine), visual-LEFT = emit "right".
-// center/both are side-neutral and pass through.
+// END = visual LEFT for RTL, "left" means logical START = visual RIGHT.
+// v82 — never rely on the DEFAULT (omitted jc): at body level the bidi default
+// is start (right), but inside a table cell the owner's Word rendered the same
+// omitted-jc paragraphs flush LEFT (پیوست under the right-aligned شماره line).
+// So always EMIT the logical value: visual-RIGHT ⇒ "left", visual-LEFT ⇒
+// "right"; center/both are side-neutral and pass through.
 const jcBidi = (a: any): any =>
-  a === AlignmentType.RIGHT ? undefined : a === AlignmentType.LEFT ? AlignmentType.RIGHT : a
+  a === AlignmentType.RIGHT ? AlignmentType.LEFT : a === AlignmentType.LEFT ? AlignmentType.RIGHT : a
 
 // ---------- one HTML block → docx paragraph(s)/table ----------
 function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, justify: boolean): (Paragraph | Table)[] {
