@@ -60,16 +60,22 @@ const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]
 // every bidi engine Word ever shipped. Flanking every non-digit separator
 // with LRMs makes each '/', dash and space sit BETWEEN two strong-L chars,
 // so UAX#9 N1 locks the whole value left-to-right — «182 / 4 / … / 2026»
-// keeps 182 on the far left exactly like the page. Embedding kept as a
-// harmless extra layer for engines that do honor it.
+// keeps 182 on the far left exactly like the page.
 const LRM = '\u200E'
+// v78: LRM-ONLY. The owner's v76/v77 files (docProps-stamped, so provably from
+// the fixed builds) showed that Word (a) draws LRE/PDF (U+202A/202C) as a
+// visible «|» in fallback fonts and (b) treats the mere PRESENCE of a <w:rtl>
+// element on a run as rtl-ON even with w:val="false" — force-reversing the
+// value and overriding the LRMs, symmetric to the v46 lesson where
+// rightToLeft:true force-REVERSED a date. Both are gone: no embedding
+// controls, no w:rtl element — only the invisible strong-LTR LRMs remain.
 const ltrIsolate = (t: string) =>
-  '\u202A' + LRM + (t || '').replace(/([^0-9]+)/g, (m) => LRM + m + LRM) + LRM + '\u202C'
+  LRM + (t || '').replace(/([^0-9]+)/g, (m) => LRM + m + LRM) + LRM
 // NB: per-run rightToLeft is an OVERRIDE in Word — putting it on mixed runs
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
 // bidi algorithm, exactly like the browser renders the letter.
-const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean; ltrRun?: boolean } = {}) =>
+const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean } = {}) =>
   new TextRun({
     text,
     font: { ascii: font, hAnsi: font, cs: font } as any,
@@ -77,12 +83,6 @@ const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; it
     bold: o.bold, boldComplexScript: o.bold,
     italics: o.italics, italicsComplexScript: o.italics,
     underline: o.underline ? {} : undefined,
-    // ltrRun: the Word-NATIVE marking of an LTR value inside an RTL paragraph
-    // (<w:rtl w:val="0">) — Word's own bidi engine ignores plain control marks
-    // for segment ordering (owner's Word screenshot: serial still mirrored with
-    // the LRM pair), but honors the explicit run direction, symmetric to the
-    // v46 lesson where rightToLeft:true force-REVERSED a date.
-    rightToLeft: o.ltrRun === true ? false : undefined,
   } as any)
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
 // like plainText but keeps <br>/<div>/<p> boundaries as separate lines (multi-recipient رونوشت)
@@ -290,7 +290,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       bidirectional: true, alignment: opts.align || AlignmentType.RIGHT,
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
-        ...(opts.ltrValue != null ? [mkRun(ltrIsolate(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold, ltrRun: true })] : []),
+        ...((opts.ltrValue || '').trim() ? [mkRun(ltrIsolate(opts.ltrValue as string), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
       ],
     })
 
