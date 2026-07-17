@@ -54,7 +54,17 @@ const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]
 // same semantics as the page's dir="ltr" span — and unlike LRI/PDI Word
 // renders it invisibly. Digit CODEPOINTS stay Latin exactly like the page
 // (B Nazanin draws them Persian-shaped in Word just as in the browser).
-const ltrIsolate = (t: string) => `\u202A${t}\u202C`
+// v77: the owner's v76 file PROVED Word ignores both the LRE/PDF embedding
+// and w:rtl=false for segment ordering. LRM (U+200E) is different — not an
+// embedding control but a real invisible STRONG-LTR character, honored by
+// every bidi engine Word ever shipped. Flanking every non-digit separator
+// with LRMs makes each '/', dash and space sit BETWEEN two strong-L chars,
+// so UAX#9 N1 locks the whole value left-to-right — «182 / 4 / … / 2026»
+// keeps 182 on the far left exactly like the page. Embedding kept as a
+// harmless extra layer for engines that do honor it.
+const LRM = '\u200E'
+const ltrIsolate = (t: string) =>
+  '\u202A' + LRM + (t || '').replace(/([^0-9]+)/g, (m) => LRM + m + LRM) + LRM + '\u202C'
 // NB: per-run rightToLeft is an OVERRIDE in Word — putting it on mixed runs
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
