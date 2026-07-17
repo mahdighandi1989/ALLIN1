@@ -75,6 +75,14 @@ const ltrIsolate = (t: string) =>
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
 // bidi algorithm, exactly like the browser renders the letter.
+// v80 — native-Word direction marking: a run whose text is purely RTL script
+// (+ neutrals — no digits, no Latin) gets <w:rtl/>, exactly what Word itself
+// writes when a Persian user types. NEVER emitted with val="false" (v78: the
+// element's mere presence is read as rtl-ON) and NEVER on runs containing
+// digits/Latin (v46: rtl on a digit run reverses the groups). Without it,
+// typing at a colon boundary in the exported file inserts on the wrong side
+// (owner's v79 report).
+const pureRtl = (t: string) => hasPersian(t) && !/[0-9A-Za-z]/.test(t)
 const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean } = {}) =>
   new TextRun({
     text,
@@ -83,6 +91,7 @@ const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; it
     bold: o.bold, boldComplexScript: o.bold,
     italics: o.italics, italicsComplexScript: o.italics,
     underline: o.underline ? {} : undefined,
+    rightToLeft: pureRtl(text) ? true : undefined,
   } as any)
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
 // like plainText but keeps <br>/<div>/<p> boundaries as separate lines (multi-recipient رونوشت)
@@ -295,11 +304,15 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
 
   // label (Persian) + optional VALUE kept in an LTR isolate (mirrors the page's
   // dir="ltr" spans: serial line, date, phone extension never get bidi-flipped)
-  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string } = {}) =>
+  // v80: label and value live in SEPARATE runs (opts.value) — the native
+  // two-run shape Word itself writes for «برچسب : مقدار», so typing at the
+  // colon continues in the right place instead of jumping before the label.
+  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string; value?: string } = {}) =>
     new Paragraph({
       bidirectional: true, alignment: jcBidi(opts.align || AlignmentType.RIGHT),
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
+        ...((opts.value || '').trim() ? [mkRun(opts.value as string, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
         ...((opts.ltrValue || '').trim() ? [mkRun(ltrIsolate(opts.ltrValue as string), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
       ],
     })
@@ -325,8 +338,8 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const metaCol = [
     PLtrLine('shomareh', `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}`, 12),
     PLtrLine('tarikh', a.f.date || '', 12),
-    P(`${lbl('peyvast')}${a.f.attachment || ''}`, { pt: 12 }),
-    P(`${lbl('classification')}${a.f.classification || ''}`, { pt: 11, bold: true }),
+    P(lbl('peyvast'), { pt: 12, value: a.f.attachment || '' }),
+    P(lbl('classification'), { pt: 11, bold: true, value: a.f.classification || '' }),
   ]
   const recCol = [
     P(plainText(a.f.recipientName) || ' ', { pt: 12, bold: true, font: TITR }),
@@ -345,9 +358,12 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   // v79 — column widths from the letter's OWN layout: the شماره column's right
   // edge sits at ~70mm on the page (not at 50% of the text width), so give the
   // meta column exactly the share it occupies between the body margins.
-  const bodyX = a.L.body.x, bodyW = a.L.body.w
-  const metaEdge = (a.L.shomareh?.x ?? bodyX) + (a.L.shomareh?.w ?? bodyW * 0.35)
-  const metaPct = Math.min(60, Math.max(22, Math.round(((metaEdge - bodyX) / bodyW) * 100)))
+  // the web's شماره box may START left of the Word text margin, so measuring
+  // edge-minus-margin under-sizes the cell and wraps the label (v79 screenshot);
+  // the BOX WIDTH is what the line actually needs.
+  const bodyW = a.L.body.w
+  const metaW = a.L.shomareh?.w ?? bodyW * 0.35
+  const metaPct = Math.min(60, Math.max(25, Math.round((metaW / bodyW) * 100)))
   const pctOf = (col: Paragraph[]) => (col === metaCol ? metaPct : 100 - metaPct)
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
   const topTable = new Table({
@@ -365,7 +381,10 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const subjectPara = new Paragraph({
     bidirectional: true, alignment: jcBidi(AlignmentType.RIGHT),
     border: { bottom: { style: BorderStyle.DASHED, size: 4, color: '000000', space: 4 } },
-    children: [mkRun(`${lbl('subject')}${plainText(a.f.subject)}`, TITR, 24, { bold: true })],
+    children: [
+      mkRun(lbl('subject'), TITR, 24, { bold: true }),
+      ...(plainText(a.f.subject) ? [mkRun(plainText(a.f.subject), TITR, 24, { bold: true })] : []),
+    ],
   })
 
   // -- body --
@@ -395,10 +414,10 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const copyLines = plainLines(a.f.copyTo)
   const closing = [
     P(a.f.sender || '', { bold: true, align: AlignmentType.CENTER, font: TITR, pt: 13 }),
-    P(`${lbl('copyto')}${copyLines[0] || ''}`, { pt: 10 }),
+    P(lbl('copyto'), { pt: 10, value: copyLines[0] || '' }),
     // extra recipients: one paragraph each, stacked under the first
     ...copyLines.slice(1).map((li) => P(li, { pt: 10 })),
-    P(`${lbl('action')}${plainText(a.f.actionName)} ${lbl('actionExt')}`, { pt: 10, ltrValue: a.f.actionExt || '' }),
+    P(lbl('action'), { pt: 10, value: `${plainText(a.f.actionName)} ${lbl('actionExt')}`.trim(), ltrValue: a.f.actionExt || '' }),
   ]
 
   // -- letter section margins from the designed body box --
