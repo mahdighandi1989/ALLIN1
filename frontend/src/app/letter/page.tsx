@@ -498,6 +498,34 @@ export default function LetterPage() {
     setAttTables((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)))
   const removeAttTable = (id: string) => setAttTables((list) => list.filter((t) => t.id !== id))
 
+  // --- UNDO (v71): a coarse (~1s) rolling history of {fields, attachment tables}.
+  // Structural table ops / resize handles / AI applies mutate the DOM outside the
+  // browser's native undo stack, so a wrecked table had NO way back. This covers
+  // every mutation path without instrumenting each one. ---
+  const undoStack = useRef<{ f: any; attTables: AttTable[] }[]>([])
+  const undoPrev = useRef<{ f: any; attTables: AttTable[] } | null>(null)
+  const undoLastT = useRef(0)
+  const undoApplying = useRef(false)
+  useEffect(() => {
+    if (undoApplying.current) { undoApplying.current = false; undoPrev.current = { f, attTables }; return }
+    const now = Date.now()
+    if (undoPrev.current && now - undoLastT.current > 1000) {
+      undoStack.current.push(undoPrev.current)
+      if (undoStack.current.length > 40) undoStack.current.shift()
+      undoLastT.current = now
+    }
+    undoPrev.current = { f, attTables }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f, attTables])
+  const doUndo = () => {
+    const snap = undoStack.current.pop()
+    if (!snap) { toast.error('تغییری برای برگشت نیست'); return }
+    undoApplying.current = true
+    setF(snap.f); setAttTables(snap.attTables)
+    toast.success('یک مرحله به عقب برگشت — برای مراحلِ قبل‌تر دوباره بزن')
+  }
+  const undoReset = () => { undoStack.current = []; undoPrev.current = null; undoLastT.current = 0 }
+
   // --- BEHIND-TEXT floats (Word's «پشتِ متن»): tables/images lifted OUT of the text
   // flow onto a free layer UNDER the text of one letter page. They never affect
   // pagination; position/size are absolute on the sheet. Stored in values_json. ---
@@ -964,6 +992,7 @@ export default function LetterPage() {
 
   const loadLetter = async (id: string) => {
     try {
+      undoReset()   // history belongs to ONE letter — undoing across letters would cross-paste bodies
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
@@ -1005,7 +1034,7 @@ export default function LetterPage() {
     else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
-  const newLetter = () => { setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
+  const newLetter = () => { undoReset(); setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
     if (!general && !acct.trim()) { toast.error('شمارۀ حساب را وارد کن، یا «نامۀ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
@@ -2121,9 +2150,12 @@ export default function LetterPage() {
   const measureRef = useRef<HTMLDivElement>(null)
   const subjRef = useRef<HTMLSpanElement>(null)
   const [pages, setPages] = useState<string[]>([''])
-  // How far the closing block slides DOWN on the last page to clear the content
-  // (0 = exactly where «چیدمان» put it). Bounded by the page-number/footer floor.
-  const [closingShift, setClosingShift] = useState(0)
+  // How far each closing field slides DOWN on the last page to clear the content
+  // ({} = exactly where «چیدمان» put them). PER FIELD (v71): the group keeps its
+  // order but compresses its internal whitespace — the old single group-shift was
+  // capped by the BOTTOM-most field's headroom, so a 60px overlap with lots of
+  // free page left still banished the whole closing to a fresh page.
+  const [closingShift, setClosingShift] = useState<Record<string, number>>({})
   useEffect(() => {
     // Use the rendered off-screen measurer; if it isn't attached yet (e.g. a letter
     // loaded during mount, before refs settle), fall back to a temporary one so
@@ -2248,19 +2280,18 @@ export default function LetterPage() {
     // space above the page number / footer, (3) only when even that can't clear the
     // content does the closing get its own trailing page.
     const li = pages.length - 1
-    let shift = 0
+    let shift: Record<string, number> = {}
     if (!isHidden('sender') && pages.length) {
       const us = pages[li].slice()
       while (us.length && isEmptyBlock(us[us.length - 1])) us.pop()
       const overflow = pageH(us) - regionAvail(li, true)
       if (overflow > 0) {
-        // How far down can the closing go? Measure each visible closing field at its
-        // real width/font (copyTo/action can wrap to several lines) and keep the
-        // bottom-most one above the page-number line and the footer.
+        // Measure each visible closing field at its real width/font (copyTo/action
+        // can wrap to several lines) — per-field {y, h} for the packing below.
         const tmp = document.createElement('div')
         tmp.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden'
         document.body.appendChild(tmp)
-        let closingBottom = 0
+        const fieldsInfo: { k: string; y: number; h: number }[] = []
         for (const k of CLOSING) {
           const b = L[k]; if (!b || b.hidden) continue
           const inner = document.createElement('div')
@@ -2270,14 +2301,58 @@ export default function LetterPage() {
             : k === 'copyto' ? `<span style="display:flex;align-items:baseline"><span style="white-space:pre;flex:0 0 auto">${labels.copyto || ''}</span><span style="flex:1 1 auto;min-width:0">${f.copyTo || 'x'}</span></span>`
             : (labels.action || '') + (f.actionName || 'x') + (labels.actionExt || '') + escapeHtml(f.actionExt || 'x')
           tmp.appendChild(inner)
-          closingBottom = Math.max(closingBottom, b.y + inner.offsetHeight)
+          fieldsInfo.push({ k, y: b.y, h: inner.offsetHeight })
           tmp.removeChild(inner)
         }
         document.body.removeChild(tmp)
         const floor = Math.min(pageNumLimit, (L.footer && !L.footer.hidden ? L.footer.y : m(277)) - gap)
-        const maxShift = Math.max(0, floor - closingBottom)
-        if (overflow <= maxShift) shift = Math.ceil(overflow)
-        else pages.push([])
+        // PER-FIELD packing, bottom-up (v71): every field wants to slide down by
+        // `overflow`; a field is capped by the floor or the field below it (order
+        // preserved, small min gap) — the group compresses its internal whitespace
+        // instead of jumping to a fresh page. Success = the TOPMOST field cleared
+        // the content by the full overflow; only genuine lack of room adds a page.
+        const MIN_GAP = 4
+        const sorted = fieldsInfo.slice().sort((a, b) => b.y - a.y)   // bottom-most first
+        let below = floor + MIN_GAP        // virtual top of the thing below (the floor)
+        let packOk = fieldsInfo.length > 0
+        const sh: Record<string, number> = {}
+        for (const fi of sorted) {
+          const cap = below - MIN_GAP - fi.h
+          if (cap < fi.y) { packOk = false; break }   // cannot even stay in place
+          const newTop = Math.max(fi.y, Math.min(fi.y + overflow, cap))
+          sh[fi.k] = Math.ceil(newTop - fi.y)
+          below = newTop
+        }
+        const topField = fieldsInfo.slice().sort((a, b) => a.y - b.y)[0]
+        if (packOk && topField && (sh[topField.k] ?? 0) >= Math.ceil(overflow)) shift = sh
+        else {
+          // Even fully compressed the closing cannot clear the content — move the
+          // OVERFLOWING tail of the last page onto a fresh page so the closing
+          // follows the content there (Word behavior), instead of sitting alone
+          // on an otherwise-empty page while free space remains above.
+          let dg2 = 0
+          while (dg2++ < 8) {
+            const liNow = pages.length - 1
+            const usNow = pages[liNow]
+            const capNow = regionAvail(liNow, true)
+            const keep: Unit[] = []
+            let hUsed = 0
+            const seenT = new Set<number>()
+            let splitAt = usNow.length
+            for (let i = 0; i < usNow.length; i++) {
+              const u = usNow[i]
+              const need = u.h + (u.kind === 'trow' && !seenT.has(u.tid) ? u.headerH : 0)
+              if (hUsed + need > capNow) { splitAt = i; break }
+              hUsed += need
+              if (u.kind === 'trow') seenT.add(u.tid)
+              keep.push(u)
+            }
+            if (splitAt >= usNow.length) break            // the last page fits now
+            if (!keep.length) { pages.push([]); break }   // nothing fits above the closing → old fallback
+            pages[liNow] = keep
+            pages.push(usNow.slice(splitAt))              // re-check the NEW last page next round
+          }
+        }
       }
     }
     setClosingShift(shift)
@@ -2442,7 +2517,7 @@ export default function LetterPage() {
           <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌اش)" onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}>حذف</button>
         </div>
         {meta?.tooTall && <div className="att-warn no-print">جدول از یک صفحه بلندتر است — چند ردیف را حذف یا جدول را کوچک‌تر کن</div>}
-        <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: h })} transformPaste={cleanPaste}
+        <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: fixHehHamza(h) })} transformPaste={cleanPaste}
           style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + (t.offY || 0), width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - (t.offY || 0) - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
         {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
@@ -2504,10 +2579,10 @@ export default function LetterPage() {
         {/* closing block — only on the last page (slid down by closingShift when the
             content would otherwise collide with its designed position; in «چیدمان»
             mode it sits at its TRUE designed spot so dragging isn't confusing) */}
-        {isLast && (() => { const cs = design ? 0 : closingShift; return <>
-          {Box({ k: 'sender', style: cs ? { top: L.sender.y + cs } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
-          {Box({ k: 'copyto', style: cs ? { top: L.copyto.y + cs } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندۀ بعدی)" /></span></span> })}
-          {Box({ k: 'action', style: cs ? { top: L.action.y + cs } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
+        {isLast && (() => { const cs = (k: string) => (design ? 0 : closingShift[k] || 0); return <>
+          {Box({ k: 'sender', style: cs('sender') ? { top: L.sender.y + cs('sender') } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
+          {Box({ k: 'copyto', style: cs('copyto') ? { top: L.copyto.y + cs('copyto') } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندۀ بعدی)" /></span></span> })}
+          {Box({ k: 'action', style: cs('action') ? { top: L.action.y + cs('action') } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </> })()}
 
         {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
@@ -2540,9 +2615,9 @@ export default function LetterPage() {
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
-          {P('sender', f.sender, closingShift ? { top: L.sender.y + closingShift } : undefined)}
-          {P('copyto', <span className="hangfld"><span className="hlbl">{H(labels.copyto)}</span><span className="hval">{H(f.copyTo)}</span></span>, closingShift ? { top: L.copyto.y + closingShift } : undefined)}
-          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift ? { top: L.action.y + closingShift } : undefined)}
+          {P('sender', f.sender, closingShift.sender ? { top: L.sender.y + closingShift.sender } : undefined)}
+          {P('copyto', <span className="hangfld"><span className="hlbl">{H(labels.copyto)}</span><span className="hval">{H(f.copyTo)}</span></span>, closingShift.copyto ? { top: L.copyto.y + closingShift.copyto } : undefined)}
+          {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift.action ? { top: L.action.y + closingShift.action } : undefined)}
         </>}
         {repImg('footer', LH_FOOTER)}
         {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>}
@@ -2818,9 +2893,10 @@ export default function LetterPage() {
               📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
             </button>
           )}
+          <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v70</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v71</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
