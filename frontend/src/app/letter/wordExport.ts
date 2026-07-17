@@ -310,9 +310,9 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   // v80: label and value live in SEPARATE runs (opts.value) — the native
   // two-run shape Word itself writes for «برچسب : مقدار», so typing at the
   // colon continues in the right place instead of jumping before the label.
-  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string; value?: string } = {}) =>
+  const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string; value?: string; frame?: any } = {}) =>
     new Paragraph({
-      bidirectional: true, alignment: jcBidi(opts.align || AlignmentType.RIGHT),
+      bidirectional: true, alignment: jcBidi(opts.align || AlignmentType.RIGHT), frame: opts.frame,
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
         ...((opts.value || '').trim() ? [mkRun(opts.value as string, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
@@ -327,10 +327,10 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   // the digit groups in ANY bidi engine (no LRM/embedding needed), and it reads
   // exactly like the page: «182 / 4 / ---- / 2026 : شماره» — label on the right.
   // jc is literal in non-bidi paragraphs, so RIGHT really means right.
-  const PLtrLine = (labelKey: string, value: string, pt: number) => {
+  const PLtrLine = (labelKey: string, value: string, pt: number, frame?: any) => {
     const labelText = plainText(a.labels[labelKey] || '').replace(/[\s:،–-]+$/, '')
     return new Paragraph({
-      alignment: AlignmentType.RIGHT,
+      alignment: AlignmentType.RIGHT, frame,
       children: [
         mkRun(value, FONT, pt * 2),
         mkRun(' : ', FONT, pt * 2),
@@ -343,11 +343,29 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       ],
     })
   }
+  // v83 — NO header table (owner: only شماره/تاریخ/پیوست may sit in a box; the
+  // recipient must be free text — and table cells proved to have their own
+  // alignment defaults, v82). The meta block lives in a Word-native FRAME
+  // (w:framePr) anchored at the letter's OWN layout coordinates: consecutive
+  // paragraphs with identical frame options merge into ONE frame in Word, the
+  // frame is plain editable text, its right edge matches the page's شماره box
+  // (so the four labels stack at the exact same x), and the recipient block
+  // simply FLOWS beside it (wrap=around) like the page.
+  const bodyW = a.L.body.w
+  const metaW = a.L.shomareh?.w ?? bodyW * 0.35
+  const twips = (px: number) => Math.round(px * PX2TW)
+  const metaFrame = {
+    type: 'absolute',
+    position: { x: twips(a.L.shomareh?.x ?? 30), y: twips(a.L.shomareh?.y ?? 170) },
+    width: twips(metaW), height: 240, rule: 'atLeast',
+    anchor: { horizontal: 'page', vertical: 'page' },
+    wrap: 'around',
+  } as any
   const metaCol = [
-    PLtrLine('shomareh', `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}`, 12),
-    PLtrLine('tarikh', a.f.date || '', 12),
-    P(lbl('peyvast'), { pt: 12, value: a.f.attachment || '' }),
-    P(lbl('classification'), { pt: 11, bold: true, value: a.f.classification || '' }),
+    PLtrLine('shomareh', `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}`, 12, metaFrame),
+    PLtrLine('tarikh', a.f.date || '', 12, metaFrame),
+    P(lbl('peyvast'), { pt: 12, value: a.f.attachment || '', frame: metaFrame }),
+    P(lbl('classification'), { pt: 11, bold: true, value: a.f.classification || '', frame: metaFrame }),
   ]
   const recCol = [
     P(plainText(a.f.recipientName) || ' ', { pt: 12, bold: true, font: TITR }),
@@ -358,41 +376,21 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const staggerPx = Math.max(0, (a.L.recName?.y ?? 0) - (a.L.shomareh?.y ?? 0))
   const nBlank = Math.min(4, Math.round(staggerPx / 26))
   for (let i = 0; i < nBlank; i++) recCol.unshift(P(' ', { pt: 10 }))
-  // column order follows the letter's OWN layout: in an RTL table the FIRST cell
-  // renders on the RIGHT — put whichever block the letter has on its right there.
-  const recOnRight = (a.L.recName?.x ?? 480) >= (a.L.shomareh?.x ?? 30)
-  const rightCol = recOnRight ? recCol : metaCol
-  const leftCol = recOnRight ? metaCol : recCol
-  // v79 — column widths from the letter's OWN layout: the شماره column's right
-  // edge sits at ~70mm on the page (not at 50% of the text width), so give the
-  // meta column exactly the share it occupies between the body margins.
-  // the web's شماره box may START left of the Word text margin, so measuring
-  // edge-minus-margin under-sizes the cell and wraps the label (v79 screenshot);
-  // the BOX WIDTH is what the line actually needs.
-  const bodyW = a.L.body.w
-  const metaW = a.L.shomareh?.w ?? bodyW * 0.35
-  const metaPct = Math.min(60, Math.max(25, Math.round((metaW / bodyW) * 100)))
-  const pctOf = (col: Paragraph[]) => (col === metaCol ? metaPct : 100 - metaPct)
-  const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
-  const topTable = new Table({
-    visuallyRightToLeft: true,
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder },
-    rows: [new TableRow({
-      children: [
-        new TableCell({ children: rightCol, width: { size: pctOf(rightCol), type: WidthType.PERCENTAGE }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
-        new TableCell({ children: leftCol, width: { size: pctOf(leftCol), type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
-      ],
-    })],
-  })
 
   const subjectPara = new Paragraph({
     bidirectional: true, alignment: jcBidi(AlignmentType.RIGHT),
-    border: { bottom: { style: BorderStyle.DASHED, size: 4, color: '000000', space: 4 } },
     children: [
       mkRun(lbl('subject'), TITR, 24, { bold: true }),
       ...(plainText(a.f.subject) ? [mkRun(plainText(a.f.subject), TITR, 24, { bold: true })] : []),
     ],
+  })
+  // v83 — the dashed rule under the subject is REAL text now (the old paragraph
+  // BORDER was not adjustable/removable in Word — owner's report), sized to the
+  // subject line's own length like the page's separator, right-aligned under it.
+  const subjTxt = `${lbl('subject')}${plainText(a.f.subject)}`
+  const subjectDash = new Paragraph({
+    alignment: AlignmentType.RIGHT,
+    children: [mkRun('-'.repeat(Math.min(110, Math.max(24, Math.round(subjTxt.length * 1.7)))), FONT, 20)],
   })
 
   // -- body --
@@ -443,8 +441,10 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
     footers: { default: letterheadFooter(a.L, FONT) },
     children: [
       new Paragraph({ alignment: AlignmentType.CENTER, bidirectional: true, children: [...floatRuns, mkRun(plainText(a.labels.besmele || '') || 'بسمه تعالی', FONT, 26)] }),
-      topTable,
+      ...metaCol,
+      ...recCol,
       subjectPara,
+      subjectDash,
       P(' ', { pt: 6 }),
       ...bodyBlocks,
       P(' ', { pt: 8 }),
