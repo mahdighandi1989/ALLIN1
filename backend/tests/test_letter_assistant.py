@@ -441,3 +441,19 @@ def test_find_guard_tolerates_heh_hamza_forms():
         "op": "text_replace", "field": "body", "title": "ت", "category": "spelling",
         "find": "سه‌ماهۀ نخست", "replace": "x"}]}, ensure_ascii=False)
     assert len(la.parse_and_validate(raw2, {"body": body2})) == 1
+
+
+def test_inline_prompts_route_to_table_ops_and_aggregation_rules():
+    """v72: an in-text instruction about a TABLE routes to the table ops with the
+    same data sources; explicit aggregation is allowed with provenance; page-fit
+    requests get an explanatory note (pagination is automatic, not a model op)."""
+    g = la.TOOLS["inline_prompts"]["guide"]
+    assert "table_replace" in g and "table_insert" in g
+    assert "محتوای پیوست‌های نامه" in g
+    assert "صفحه‌بندی" in g and "خودکار" in g
+    # aggregation rules ride with the selected-tables block
+    p = la.build_user_prompt(FIELDS, {}, ["tables", "inline_prompts"],
+                             instruction="جدول را با جمعِ همهٔ شعب پر کن",
+                             tables=["<table><tr><td>x</td></tr></table>"])
+    assert "جمع/تجمیع فقط به‌درخواستِ صریحِ کاربر" in p
+    assert "دو بار مستقل" in p and "قابلِ راستی‌آزمایی" in p
