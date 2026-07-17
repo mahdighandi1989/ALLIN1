@@ -42,7 +42,16 @@ const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]
 // Word's own zero-width bidi marks — so its segment order never flips inside an
 // RTL paragraph. (U+2066/2069 isolates would be more precise, but Word renders
 // them as visible LRI/PDI boxes; LRM is invisible and is what Word itself uses.)
-const ltr = (t: string) => `\u200E${t}\u200E`
+// v74 (owner: «در Word همه‌چیز برعکس است»): the page shows the serial/date/ext
+// inside a REAL dir="ltr" isolate. The old LRM pair was NOT an isolate — the
+// space-separated numeric segments still reordered right-to-left inside the
+// RTL paragraph, so Word displayed the MIRROR of the letter
+// («2026 / 403 / 4 / 182» with 2026 beside the label instead of 182 on the
+// far left). LRE…PDF (U+202A/202C) is a true directional embedding — the
+// same semantics as the page's dir="ltr" span — and unlike LRI/PDI Word
+// renders it invisibly. Digit CODEPOINTS stay Latin exactly like the page
+// (B Nazanin draws them Persian-shaped in Word just as in the browser).
+const ltrIsolate = (t: string) => `\u202A${t}\u202C`
 // NB: per-run rightToLeft is an OVERRIDE in Word — putting it on mixed runs
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
@@ -262,7 +271,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       bidirectional: true, alignment: opts.align || AlignmentType.RIGHT,
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
-        ...(opts.ltrValue != null ? [mkRun(ltr(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
+        ...(opts.ltrValue != null ? [mkRun(ltrIsolate(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
       ],
     })
 

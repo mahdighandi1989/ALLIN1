@@ -2905,7 +2905,7 @@ export default function LetterPage() {
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v73</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v74</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
