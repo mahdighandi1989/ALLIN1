@@ -83,7 +83,7 @@ const ltrIsolate = (t: string) =>
 // typing at a colon boundary in the exported file inserts on the wrong side
 // (owner's v79 report).
 const pureRtl = (t: string) => hasPersian(t) && !/[0-9A-Za-z]/.test(t)
-const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean } = {}) =>
+const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean; noRtl?: boolean } = {}) =>
   new TextRun({
     text,
     font: { ascii: font, hAnsi: font, cs: font } as any,
@@ -91,7 +91,7 @@ const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; it
     bold: o.bold, boldComplexScript: o.bold,
     italics: o.italics, italicsComplexScript: o.italics,
     underline: o.underline ? {} : undefined,
-    rightToLeft: pureRtl(text) ? true : undefined,
+    rightToLeft: !o.noRtl && pureRtl(text) ? true : undefined,
   } as any)
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
 // like plainText but keeps <br>/<div>/<p> boundaries as separate lines (multi-recipient رونوشت)
@@ -331,7 +331,12 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       children: [
         mkRun(value, FONT, pt * 2),
         mkRun(' : ', FONT, pt * 2),
-        mkRun(labelText, FONT, pt * 2),
+        // v81 — NO <w:rtl/> on this label: inside a NON-bidi paragraph an
+        // rtl-marked run makes Word detach the ' : ' separator to the line
+        // start («: 182 / 4 / ---- / 2026شماره», owner's v80 screenshot).
+        // Unmarked it renders correctly (proven in v79), and these lines'
+        // values are digits, so the native-typing mark is not needed here.
+        mkRun(labelText, FONT, pt * 2, { noRtl: true }),
       ],
     })
   }
