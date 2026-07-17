@@ -56,7 +56,7 @@ const ltrIsolate = (t: string) => `\u202A${t}\u202C`
 // reversed dates («2026/07/06» → «06/07/2026»). The paragraph's bidirectional
 // flag gives the RTL base; character order is then resolved by the standard
 // bidi algorithm, exactly like the browser renders the letter.
-const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean } = {}) =>
+const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; italics?: boolean; underline?: boolean; ltrRun?: boolean } = {}) =>
   new TextRun({
     text,
     font: { ascii: font, hAnsi: font, cs: font } as any,
@@ -64,7 +64,13 @@ const mkRun = (text: string, font: string, half: number, o: { bold?: boolean; it
     bold: o.bold, boldComplexScript: o.bold,
     italics: o.italics, italicsComplexScript: o.italics,
     underline: o.underline ? {} : undefined,
-  })
+    // ltrRun: the Word-NATIVE marking of an LTR value inside an RTL paragraph
+    // (<w:rtl w:val="0">) — Word's own bidi engine ignores plain control marks
+    // for segment ordering (owner's Word screenshot: serial still mirrored with
+    // the LRM pair), but honors the explicit run direction, symmetric to the
+    // v46 lesson where rightToLeft:true force-REVERSED a date.
+    rightToLeft: o.ltrRun === true ? false : undefined,
+  } as any)
 const plainText = (h: string) => { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim() }
 // like plainText but keeps <br>/<div>/<p> boundaries as separate lines (multi-recipient رونوشت)
 const plainLines = (h: string) => {
@@ -271,7 +277,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
       bidirectional: true, alignment: opts.align || AlignmentType.RIGHT,
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
-        ...(opts.ltrValue != null ? [mkRun(ltrIsolate(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
+        ...(opts.ltrValue != null ? [mkRun(ltrIsolate(opts.ltrValue), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold, ltrRun: true })] : []),
       ],
     })
 
