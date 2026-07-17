@@ -18,6 +18,9 @@ const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹'
 const fa = (n: number | string) => String(n).replace(/[0-9]/g, (d) => FA_DIGITS[+d])
 
 export type WordExportArgs = {
+  // stamped into docProps (description) so a problematic file tells us WHICH
+  // deployed build produced it — deploy-lag debugging without guesswork
+  buildTag?: string
   f: Record<string, string>
   labels: Record<string, string>
   L: Record<string, { x: number; y: number; w: number; h?: number; size?: number }>
@@ -408,6 +411,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   }
 
   const doc = new Document({
+    description: `ALLIN1 letter export — build ${a.buildTag || '?'}`,
     styles: { default: { document: { run: { font: { ascii: FONT, hAnsi: FONT, cs: FONT }, size: half, sizeComplexScript: half } as any } } },
     sections,
   })
