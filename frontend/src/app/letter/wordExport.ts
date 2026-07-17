@@ -161,6 +161,15 @@ const alignOf = (el: HTMLElement, fallback: (typeof AlignmentType)[keyof typeof 
   return fallback
 }
 
+// v79 — Word reads w:jc in bidi paragraphs LOGICALLY (documented WordprocessingML
+// behavior, and proven by the owner's file: every bidi paragraph with jc="right"
+// rendered flush LEFT, mirroring the whole letter head). "right" means logical
+// END = visual LEFT for RTL. So for RTL content: visual-RIGHT = omit jc (the
+// bidi default is start = right in every engine), visual-LEFT = emit "right".
+// center/both are side-neutral and pass through.
+const jcBidi = (a: any): any =>
+  a === AlignmentType.RIGHT ? undefined : a === AlignmentType.LEFT ? AlignmentType.RIGHT : a
+
 // ---------- one HTML block → docx paragraph(s)/table ----------
 function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, justify: boolean): (Paragraph | Table)[] {
   if (el.tagName === 'TABLE') return [tableToDocx(el as HTMLTableElement, font, half, imgs)]
@@ -172,7 +181,7 @@ function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, 
   }
   if (el.tagName === 'UL' || el.tagName === 'OL') {
     return Array.from(el.querySelectorAll('li')).map((li, i) => new Paragraph({
-      bidirectional: true, alignment: alignOf(el, AlignmentType.RIGHT),
+      bidirectional: true, alignment: jcBidi(alignOf(el, AlignmentType.RIGHT)),
       children: [mkRun(el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, half),
         ...inlineRuns(li, font, half, {}, imgs, hasPersian(li.textContent || ''))],
     }))
@@ -180,7 +189,7 @@ function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, 
   const runs = inlineRuns(el, font, half, {}, imgs, hasPersian(el.textContent || ''))
   return [new Paragraph({
     bidirectional: true,
-    alignment: alignOf(el, justify ? AlignmentType.JUSTIFIED : AlignmentType.RIGHT),
+    alignment: jcBidi(alignOf(el, justify ? AlignmentType.JUSTIFIED : AlignmentType.RIGHT)),
     spacing: justify ? { line: 360 } : undefined,
     children: runs.length ? runs : [mkRun('', font, half)],
   })]
@@ -201,7 +210,7 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
         const inner = td.childNodes.length ? td : null
         const para = new Paragraph({
           bidirectional: true,
-          alignment: alignOf(td, isTh ? AlignmentType.CENTER : AlignmentType.RIGHT),
+          alignment: jcBidi(alignOf(td, isTh ? AlignmentType.CENTER : AlignmentType.RIGHT)),
           children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs, hasPersian(td.textContent || '')) : [mkRun('', font, half)],
         })
         return new TableCell({
@@ -220,7 +229,8 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
   const tw = parseFloat((tbl.style.getPropertyValue('--tw') || '100').replace('%', '')) || 100
   return new Table({
     visuallyRightToLeft: true,
-    alignment: AlignmentType.RIGHT,
+    // logical start = visual RIGHT for a bidiVisual table (same w:jc rule as v79)
+    alignment: AlignmentType.LEFT,
     width: { size: Math.min(100, Math.max(10, tw)), type: WidthType.PERCENTAGE },
     borders: {
       top: CELL_BORDER, bottom: CELL_BORDER, left: CELL_BORDER, right: CELL_BORDER,
@@ -287,7 +297,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   // dir="ltr" spans: serial line, date, phone extension never get bidi-flipped)
   const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string } = {}) =>
     new Paragraph({
-      bidirectional: true, alignment: opts.align || AlignmentType.RIGHT,
+      bidirectional: true, alignment: jcBidi(opts.align || AlignmentType.RIGHT),
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
         ...((opts.ltrValue || '').trim() ? [mkRun(ltrIsolate(opts.ltrValue as string), opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
@@ -296,9 +306,25 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
 
   // -- top block: right column (شماره/تاریخ/پیوست/طبقه‌بندی) + left column (گیرنده) --
   const lbl = (k: string) => { const t = plainText(a.labels[k] || ''); return t && !/[\s:،–-]$/.test(t) ? t + ' ' : (t ? t + ' ' : t) }
+  // v79 — the BULLETPROOF serial/date line: a NON-bidi (LTR-base) paragraph whose
+  // logical order is [value][' : '][label]. With an LTR base nothing can reorder
+  // the digit groups in ANY bidi engine (no LRM/embedding needed), and it reads
+  // exactly like the page: «182 / 4 / ---- / 2026 : شماره» — label on the right.
+  // jc is literal in non-bidi paragraphs, so RIGHT really means right.
+  const PLtrLine = (labelKey: string, value: string, pt: number) => {
+    const labelText = plainText(a.labels[labelKey] || '').replace(/[\s:،–-]+$/, '')
+    return new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [
+        mkRun(value, FONT, pt * 2),
+        mkRun(' : ', FONT, pt * 2),
+        mkRun(labelText, FONT, pt * 2),
+      ],
+    })
+  }
   const metaCol = [
-    P(lbl('shomareh'), { pt: 12, ltrValue: `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}` }),
-    P(lbl('tarikh'), { pt: 12, ltrValue: a.f.date || '' }),
+    PLtrLine('shomareh', `182 / 4 / ${a.f.serial || '----'} / ${a.f.year || ''}`, 12),
+    PLtrLine('tarikh', a.f.date || '', 12),
     P(`${lbl('peyvast')}${a.f.attachment || ''}`, { pt: 12 }),
     P(`${lbl('classification')}${a.f.classification || ''}`, { pt: 11, bold: true }),
   ]
@@ -316,6 +342,13 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const recOnRight = (a.L.recName?.x ?? 480) >= (a.L.shomareh?.x ?? 30)
   const rightCol = recOnRight ? recCol : metaCol
   const leftCol = recOnRight ? metaCol : recCol
+  // v79 — column widths from the letter's OWN layout: the شماره column's right
+  // edge sits at ~70mm on the page (not at 50% of the text width), so give the
+  // meta column exactly the share it occupies between the body margins.
+  const bodyX = a.L.body.x, bodyW = a.L.body.w
+  const metaEdge = (a.L.shomareh?.x ?? bodyX) + (a.L.shomareh?.w ?? bodyW * 0.35)
+  const metaPct = Math.min(60, Math.max(22, Math.round(((metaEdge - bodyX) / bodyW) * 100)))
+  const pctOf = (col: Paragraph[]) => (col === metaCol ? metaPct : 100 - metaPct)
   const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
   const topTable = new Table({
     visuallyRightToLeft: true,
@@ -323,14 +356,14 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
     borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder },
     rows: [new TableRow({
       children: [
-        new TableCell({ children: rightCol, width: { size: 50, type: WidthType.PERCENTAGE }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
-        new TableCell({ children: leftCol, width: { size: 50, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
+        new TableCell({ children: rightCol, width: { size: pctOf(rightCol), type: WidthType.PERCENTAGE }, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
+        new TableCell({ children: leftCol, width: { size: pctOf(leftCol), type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder } }),
       ],
     })],
   })
 
   const subjectPara = new Paragraph({
-    bidirectional: true, alignment: AlignmentType.RIGHT,
+    bidirectional: true, alignment: jcBidi(AlignmentType.RIGHT),
     border: { bottom: { style: BorderStyle.DASHED, size: 4, color: '000000', space: 4 } },
     children: [mkRun(`${lbl('subject')}${plainText(a.f.subject)}`, TITR, 24, { bold: true })],
   })
