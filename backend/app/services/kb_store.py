@@ -37,7 +37,7 @@ def norm_content_key(s: str) -> str:
 async def upsert_entry(
     db: AsyncSession, *, topic_title: str, content: str,
     category: str = "", source_kind: str = "letter_ai", source_ref: str = "",
-    account_no: str = "", username: str = "",
+    account_no: str = "", username: str = "", global_dedupe: bool = False,
 ) -> dict:
     """Group ``content`` under the topic named ``topic_title`` (created if new).
 
@@ -67,6 +67,18 @@ async def upsert_entry(
         topic.category = category[:120]
 
     ckey = norm_content_key(content)
+    if global_dedupe:
+        # v85 (import harvesting): the same knowledge re-uploaded over time must
+        # NEVER duplicate — even if the model files it under a different topic
+        # title this time. Content identity wins over topic identity.
+        anywhere = (await db.execute(
+            select(KnowledgeEntry).where(KnowledgeEntry.content_norm == ckey,
+                                         KnowledgeEntry.is_deleted == False)  # noqa: E712
+        )).scalars().first()
+        if anywhere is not None:
+            return {"ok": True, "topic_id": anywhere.topic_id, "entry_id": anywhere.id,
+                    "created_topic": created_topic, "created_entry": False,
+                    "duplicate_global": True}
     existing = (await db.execute(
         select(KnowledgeEntry).where(KnowledgeEntry.topic_id == topic.id,
                                      KnowledgeEntry.content_norm == ckey,
