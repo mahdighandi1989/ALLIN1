@@ -218,3 +218,29 @@ class TestHttpErrorDescription:
 
         err = gd._drive_error("upload 'x.json'", ValueError("boom"))
         assert "ValueError" in str(err)
+
+
+class TestUnicodeAttachmentNames:
+    """v84 — the Drive copy of an attachment keeps its Persian stem instead of
+    collapsing to the 'document' fallback (meaningless letter/number names)."""
+
+    def test_field_text_keeps_persian(self):
+        assert "گزارش تسهیلات" in drive_sync._field_text("گزارش تسهیلات: <ویژه>", "document")
+
+    def test_field_text_still_strips_hostile_chars_and_separator(self):
+        out = drive_sync._field_text('a__b/c\\d:e"f', "na")
+        assert "__" not in out and "/" not in out and "\\" not in out and '"' not in out
+
+    def test_field_text_falls_back_when_empty(self):
+        assert drive_sync._field_text("///", "document") == "document"
+
+    def test_build_name_unicode_descriptor_keeps_persian(self):
+        name = drive_sync.build_name(
+            "attachment", "cust-1001", "fac-LTR-1--گزارش تسهیلات - حساب 1001", "xlsx",
+            unicode_descriptor=True,
+        )
+        assert "گزارش تسهیلات" in name and name.endswith(".xlsx") and name.startswith("allin1__")
+
+    def test_default_build_name_unchanged_ascii_only(self):
+        name = drive_sync.build_name("attachment", "cust-1001", "fac-F1--گزارش", "pdf")
+        assert "گزارش" not in name  # legacy sanitizer path untouched (backup naming etc.)

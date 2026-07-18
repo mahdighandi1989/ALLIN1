@@ -64,7 +64,7 @@ SYSTEM_PROMPT = (
     f"5) سقف‌ها: {MAX_SHEETS} شیت، {MAX_ROWS} ردیف، {MAX_COLS} ستون، {MAX_PARAGRAPHS} پاراگراف.\n"
     "6) سرستون‌ها فارسی و روشن؛ اعدادِ مبلغ با جداکنندهٔ هزارگان؛ ستونِ آخرِ هر شیت را اگر مفید است "
     "«ملاحظات» بگذار.\n"
-    "7) filename کوتاه، فارسی، بدونِ / \\ : * ? \" < > |.\n"
+    "7) filename: فارسی و توصیفِ دقیقِ محتوا — نوعِ گزارش/موضوع + دوره/سال اگر دارد (مثلاً «گزارش تسهیلات پرداختی شعب 2024 تا 2026»)؛ نه عبارتِ عمومی مثل «پیوست» یا «گزارش». بدونِ / \\ : * ? \" < > |. شمارهٔ حساب را خودِ سرور به نام اضافه می‌کند.\n"
     "8) اگر برای انجامِ دستور به داده‌هایی فراتر از «حقایقِ پایگاه‌داده» نیاز داری (فهرستِ چندمشتری، "
     "به تفکیکِ شعبه، یا سراسری) و «کاتالوگِ داده‌های سراسری» در پیام هست، به‌جای spec فقط این JSON را "
     "برگردان تا داده برایت واکشی شود:\n"
@@ -406,6 +406,24 @@ def _clean_filename(name: str) -> str:
     name = re.sub(r'[\\/:*?"<>|]+', "-", (name or "").strip())
     name = re.sub(r"\s+", " ", name).strip(" .-") or "پیوست"
     return name[:80]
+
+
+def finalize_filename(filename: str, account_no: str) -> str:
+    """Owner rule: a generated file's name = its CONTENT + the account number.
+    The model supplies the content part (rule 7); the account number is appended
+    HERE, deterministically — never left to the model. Idempotent (skips when
+    the account is already in the name), keeps the extension, and does nothing
+    for the general/no-account case."""
+    acct = (account_no or "").strip()
+    if not acct or acct.lower() == "general":
+        return filename
+    stem, dot, ext = (filename or "").rpartition(".")
+    if not dot:
+        stem, ext = filename or "", ""
+    if acct in stem:
+        return filename
+    stem = stem.strip()[:70].rstrip(" -")
+    return f"{stem} - حساب {acct}" + (f".{ext}" if ext else "")
 
 
 def parse_spec(raw_text: str) -> Tuple[Dict[str, Any], List[str]]:
