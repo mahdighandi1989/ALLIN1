@@ -295,6 +295,101 @@ def _same_person(a, b) -> bool:
     return False
 
 
+def _norm_name_fa(s) -> str:
+    """Persian-aware name normalization for cross-document matching: Arabic
+    yeh/kaf/teh-marbuta folded to Persian, alef variants unified, combining
+    marks and ZWNJ dropped, punctuation collapsed. «شركت پارس‌تجارت» and
+    «شرکت پارس تجارت» normalize identically (v85)."""
+    s = str(s or "").replace("\u200c", " ")
+    for a, b in (("ي", "ی"), ("ك", "ک"), ("ة", "ه"), ("ؤ", "و"), ("إ", "ا"), ("أ", "ا"), ("آ", "ا")):
+        s = s.replace(a, b)
+    s = re.sub("[\u064b-\u0655\u0670]", "", s)
+    s = re.sub(r"[^0-9A-Za-z\u0600-\u06FF ]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip().casefold()
+
+
+def _fa_same_name(a, b) -> bool:
+    """Same-entity test for Persian/Latin customer names: equal once
+    normalized, or one name's token-set contained in the other with at least
+    two shared tokens (conservative — «پارس تجارت» matches «شرکت پارس تجارت
+    خاورمیانه» only via the containment rule)."""
+    na, nb = _norm_name_fa(a), _norm_name_fa(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    ta = {t for t in na.split() if len(t) >= 2}
+    tb = {t for t in nb.split() if len(t) >= 2}
+    return len(ta & tb) >= 2 and (ta <= tb or tb <= ta)
+
+
+def merge_key(cust: dict) -> str:
+    """Chunk-merge key: the account when the model anchored one, else a
+    normalized-name key. v85 — records WITHOUT a printed account number are no
+    longer silently dropped; they carry through to resolve_accounts()."""
+    acc = _acc_of(cust)
+    if acc:
+        return acc
+    nk = _norm_name_fa(str(cust.get("name") or ""))
+    return ("~" + nk) if nk else ""
+
+
+async def resolve_accounts(db, customers: list, fname: str) -> tuple[list, list]:
+    """Attribute extracted records that have NO printed account number.
+
+    CONSERVATIVE by design (the review-first philosophy): a record is attached
+    to an EXISTING profile only on unique, non-conflicting evidence —
+      (a) exactly one 6-digit token in the FILE NAME that is a known account,
+          and only when the file has a single unassigned record whose name does
+          not point at a different account; or
+      (b) the extracted NAME matching exactly one customer (Persian-normalized,
+          spelling variants fold together).
+    A bare 6-digit number from the CONTENT is never used here — deed/document/
+    invoice numbers look identical (the model is instructed to only emit
+    account_no with real account context). Anything ambiguous is returned in
+    ``unmatched`` for manual review instead of being guessed."""
+    from app.models.customer import Customer
+
+    unassigned = [c for c in customers if not _acc_of(c)]
+    if not unassigned:
+        return customers, []
+    rows = (await db.execute(
+        select(Customer.account_no, Customer.name).where(Customer.is_deleted == False)  # noqa: E712
+    )).all()
+    by_acc = {str(a or "").strip(): str(n or "") for a, n in rows if str(a or "").strip()}
+    fname_hits = sorted({t for t in re.findall(r"\d{6}", fname or "") if t in by_acc})
+    resolved, unmatched = [], []
+    for c in unassigned:
+        nm = str(c.get("name") or "").strip()
+        name_hits = [a for a, n in by_acc.items() if nm and _fa_same_name(nm, n)]
+        pick, how = "", ""
+        # conflicting evidence (file-name number vs printed name pointing at
+        # DIFFERENT accounts) disqualifies BOTH signals → manual review.
+        conflict = bool(len(fname_hits) == 1 and len(unassigned) == 1
+                        and name_hits and fname_hits[0] not in name_hits)
+        if not conflict and len(fname_hits) == 1 and len(unassigned) == 1:
+            fa_acc = fname_hits[0]
+            if not nm or _fa_same_name(nm, by_acc.get(fa_acc, "")) or not name_hits:
+                pick, how = fa_acc, "شمارهٔ حساب از نامِ فایل"
+        if not pick and not conflict and len(name_hits) == 1:
+            pick, how = name_hits[0], f"تطبیقِ نام با پروفایلِ «{by_acc[name_hits[0]]}»"
+        if pick:
+            c["account_no"] = pick
+            c["_match_note"] = how
+            resolved.append(c)
+        else:
+            reason = ("نامِ فایل و نامِ مشتری به دو حسابِ متفاوت اشاره دارند" if conflict else
+                      "چند پروفایلِ هم‌نام در پایگاه‌داده" if len(name_hits) > 1 else
+                      "هیچ تطبیقِ یکتایی با پروفایل‌های موجود پیدا نشد")
+            unmatched.append({
+                "name": nm or "(بدون نام)", "reason": reason,
+                "candidates": [{"account_no": a, "name": by_acc[a]}
+                               for a in (name_hits[:3] or fname_hits[:3])],
+            })
+    kept = [c for c in customers if _acc_of(c)] + resolved
+    return kept, unmatched
+
+
 def _clean_pct(v) -> str:
     """Normalise a share/percentage: trim trailing zeros (45.0000000 → 45%), and
     DROP impossible percentages (a value >100 or <0 cannot be a share — it's a

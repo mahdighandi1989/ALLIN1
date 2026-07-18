@@ -436,6 +436,31 @@ async def ai_import_models(db: AsyncSession = Depends(get_db), user=Depends(get_
     return {"models": models, "drive_enabled": drive_sync.is_enabled()}
 
 
+def _import_rules(fname: str) -> str:
+    """v85 extraction addenda for the IMPORT path only (the letter-attachment
+    path composes its own): careful account attribution + knowledge harvesting."""
+    return (
+        "\n\nADDITIONAL IMPORT RULES:\n"
+        f"- FILE NAME: «{fname}» — the file name itself may carry the account number.\n"
+        "- If NO account number is printed for a customer, do NOT guess and do NOT borrow an "
+        "unrelated number: output \"account_no\": \"\" with the customer's exact NAME as printed — "
+        "the server matches names against the database (spelling variants are handled there).\n"
+        "- A 6-digit number counts as an ACCOUNT number ONLY when its context says so (a "
+        "حساب/account/A-C label, an account-statement header, or an account pattern like "
+        "2624-XXXXXX-011). Mortgage-deed numbers (سند رهنی), title/registration numbers, invoice or "
+        "reference numbers are NOT account numbers even when they have 6 digits — when in doubt, "
+        "leave account_no empty and let the server resolve by name.\n"
+        "- ALSO add a top-level \"kb_items\" array to the SAME JSON object for GENERAL, reusable, "
+        "NON-customer-specific knowledge this file contains — circulars (بخشنامه) with their exact "
+        "numbers/dates, procedures, tariffs, regulatory points, reference tables, aggregate/branch-"
+        "level statistics, educational material:\n"
+        "[{\"topic\": \"...\", \"category\": \"...\", \"content\": \"...\", \"source_note\": \"...\"}]\n"
+        "kb_items rules: content in Persian, complete and precise (keep the document's exact numbers "
+        "and dates); NEVER put a specific customer's private data (their name/account/amounts) in "
+        "kb_items; empty array when the file has none.\n"
+    )
+
+
 async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str,
                             model_id, username: str) -> dict:
     """Extract one uploaded document and persist it across the right customers.
@@ -449,6 +474,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
 
     documents: list = []
     chunk_errors: list = []
+    kb_raw: list = []
     if lower.endswith(_EXCEL_EXT) or mime in ("text/csv",):
         # Office/Excel/CSV tables: parse locally to text and let the model extract
         # every row/account (chunked for big tables), routing each to its customer.
@@ -467,7 +493,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         last_model_text = ""
         import asyncio as _aio
         for ci, ch in enumerate(chunks):
-            prompt = (_di.EXTRACTION_PROMPT +
+            prompt = (_di.EXTRACTION_PROMPT + _import_rules(fname) +
                       f"\n\nThe content below is a SPREADSHEET/TABLE (part {ci+1} of {len(chunks)}). "
                       "Each row is usually ONE account/customer; extract EVERY row and attribute it "
                       "to the correct account. There are no page images — ignore the 'documents' array.\n\n"
@@ -490,14 +516,16 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                 raise HTTPException(status_code=502, detail=f"استخراج با مدل ناموفق بود: {err}.{hint}")
             model_name = res.get("model")
             last_model_text = res.get("text", "")
-            for c in (doc_ingest.parse_model_json(res.get("text", "")).get("customers") or []):
-                acc = doc_ingest._acc_of(c)
-                if not acc:
+            parsed_ch = doc_ingest.parse_model_json(res.get("text", ""))
+            kb_raw.extend(k for k in (parsed_ch.get("kb_items") or []) if isinstance(k, dict))
+            for c in (parsed_ch.get("customers") or []):
+                key = doc_ingest.merge_key(c)
+                if not key:
                     continue
-                if acc in merged:
-                    doc_ingest.merge_customer(merged[acc], c)
+                if key in merged:
+                    doc_ingest.merge_customer(merged[key], c)
                 else:
-                    merged[acc] = c
+                    merged[key] = c
         customers = list(merged.values())
         if not customers:
             # the model answered but produced nothing usable — fall back to the
@@ -505,7 +533,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
             customers = _di.table_fallback_customers(table_text)
             if customers:
                 model_name = f"{model_name or 'مدل'} + استخراج قطعی جدول"
-        if not customers:
+        if not customers and not kb_raw:
             sample = re.sub(r"\s+", " ", str(last_model_text or ""))[:180]
             raise HTTPException(status_code=422, detail=(
                 "هیچ حساب/مشتری از جدول استخراج نشد. "
@@ -562,39 +590,47 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         merged: dict = {}
         errs: list = []
         for start, pbytes in chunk_iter:
+            xprompt = doc_ingest.EXTRACTION_PROMPT + _import_rules(fname)
             res = await inference.send_multimodal(
-                resolved, doc_ingest.EXTRACTION_PROMPT,
+                resolved, xprompt,
                 [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
             if not res.get("ok") and "429" in str(res.get("error", "")):
                 await asyncio.sleep(3)  # single backoff retry on rate-limit
                 res = await inference.send_multimodal(
-                    resolved, doc_ingest.EXTRACTION_PROMPT,
+                    resolved, xprompt,
                     [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
             pbytes = None  # free this chunk's bytes before the next one
             if not res.get("ok"):
                 errs.append(res.get("error"))
                 continue
             parsed = doc_ingest.parse_model_json(res.get("text", ""))
+            kb_raw.extend(k for k in (parsed.get("kb_items") or []) if isinstance(k, dict))
             off = (start - 1) if start else 0
             for c in (parsed.get("customers") or []):
-                a = doc_ingest._acc_of(c)
-                if not a:
+                key = doc_ingest.merge_key(c)
+                if not key:
                     continue
-                if a in merged:
-                    doc_ingest.merge_customer(merged[a], c)
+                if key in merged:
+                    doc_ingest.merge_customer(merged[key], c)
                 else:
-                    merged[a] = c
+                    merged[key] = c
             for d in (parsed.get("documents") or []):
                 if isinstance(d, dict):
                     if off:
                         d["pages"] = doc_ingest.offset_pages(d.get("pages", ""), off)
                     documents.append(d)
         customers = list(merged.values())
-        if not customers:
+        if not customers and not kb_raw:
             raise HTTPException(status_code=502, detail=f"استخراج ناموفق بود: {errs[0] if errs else 'داده‌ای یافت نشد'}")
         chunk_errors = errs  # surfaced in the response so partial failures are visible
     else:
         raise HTTPException(status_code=415, detail="فقط PDF، تصویر یا Word (.docx) پشتیبانی می‌شود.")
+
+    # v85 — records the model could not anchor to a PRINTED account number are
+    # resolved conservatively against existing profiles (unique file-name number
+    # or unique Persian-normalized name match); anything ambiguous is reported
+    # for manual review below, never guessed.
+    customers, unmatched = await doc_ingest.resolve_accounts(db, customers, fname)
 
     # Persist each customer (deduped). Each runs in its OWN savepoint so a single
     # bad record (e.g. a value that overflows a column) rolls back just that
@@ -604,9 +640,16 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         try:
             async with db.begin_nested():
                 r = await doc_ingest.persist_customer(db, c, username)
+            if r.get("ok") and c.get("_match_note"):
+                r["match_basis"] = c["_match_note"]
             results.append(r)
         except Exception as exc:  # never let one bad record break the batch
             results.append({"ok": False, "reason": str(exc)})
+    for u in unmatched:
+        cand = "، ".join(f"{x['name']} ({x['account_no']})" for x in (u.get("candidates") or []))
+        results.append({"ok": False, "name": u.get("name"),
+                        "reason": f"«{u.get('name')}» بدون شمارهٔ حسابِ قطعی — {u.get('reason')}"
+                                  + (f"؛ نامزدها: {cand}" if cand else "")})
     saved = [r for r in results if r.get("ok")]
 
     # Content hash → re-uploading the SAME file reuses the existing Drive copy
@@ -669,6 +712,32 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                 doc_ingest.record_documents_on_profile(pdata, my_docs, drive_link, drive_id, fname, sha)
                 cp.data_json = _json.dumps(pdata, ensure_ascii=False)
 
+    # v85 — knowledge harvested from the file goes to the دانشنامه through the
+    # single shared write path: topic matched/created by normalized title, and
+    # GLOBAL content dedupe so re-uploaded material never duplicates an entry.
+    from app.services import kb_store
+    kb_summary = {"added": 0, "duplicates": 0, "topics_created": 0}
+    for k in kb_raw[:30]:
+        topic = str(k.get("topic") or "").strip()[:300]
+        content = str(k.get("content") or "").strip()[:4000]
+        if not topic or not content:
+            continue
+        src = f"import:{fname}" + (f" — {k.get('source_note')}" if k.get("source_note") else "")
+        try:
+            kres = await kb_store.upsert_entry(
+                db, topic_title=topic, content=content,
+                category=str(k.get("category") or "").strip()[:120] or "ایمپورت",
+                source_kind="import_ai", source_ref=src[:400], username=username,
+                global_dedupe=True)
+        except Exception:  # KB failure must never fail the import itself
+            continue
+        if kres.get("ok") and kres.get("created_entry"):
+            kb_summary["added"] += 1
+            if kres.get("created_topic"):
+                kb_summary["topics_created"] += 1
+        elif kres.get("ok"):
+            kb_summary["duplicates"] += 1
+
     await db.commit()
 
     # Log the import under each affected customer's profile (and the global log).
@@ -679,7 +748,17 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         await record_audit(
             action="import", entity_type="document", entity_id=r.get("customer_id"),
             account_no=r.get("account_no"),
-            detail=f"استخراج از فایل «{fname}»" + (f" — {nfields} فیلد" if nfields else ""),
+            detail=f"استخراج از فایل «{fname}»" + (f" — {nfields} فیلد" if nfields else "")
+                   + (f" — تطبیق: {r['match_basis']}" if r.get("match_basis") else ""),
+            user=actor, request=None, db=db,
+        )
+    if kb_summary["added"]:
+        await record_audit(
+            action="update", entity_type="knowledge", entity_id="",
+            account_no=None,
+            detail=(f"به‌روزرسانیِ دانشنامه از فایلِ «{fname}» — {kb_summary['added']} مطلبِ جدید"
+                    + (f"، {kb_summary['topics_created']} سرفصلِ جدید" if kb_summary['topics_created'] else "")
+                    + (f"، {kb_summary['duplicates']} تکراری ثبت نشد" if kb_summary['duplicates'] else "")),
             user=actor, request=None, db=db,
         )
 
@@ -687,6 +766,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         "ok": True, "model": model_name, "filename": fname,
         "customers": results, "multi_customer": len(saved) > 1, "documents": documents,
         "chunk_errors": [e for e in chunk_errors if e],
+        "kb": kb_summary,
         "drive": {"stored": bool(drive_id), "link": drive_link, "id": drive_id, "reused": reused},
     }
 

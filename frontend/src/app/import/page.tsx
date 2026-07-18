@@ -168,6 +168,7 @@ export default function ImportPage() {
                   {c.ok ? (
                     <div>
                       <div className="font-medium text-gray-900">{c.name} <span className="text-gray-400 font-normal">· {c.account_no}</span></div>
+                      {c.match_basis && <div className="text-[11px] text-blue-700">🔗 بدون شمارهٔ حساب در سند — {c.match_basis}</div>}
                       <div className="text-xs text-gray-600">
                         {c.fields_saved?.length ? `${c.fields_saved.length} فیلد` : 'بدون فیلدِ جدید'}
                         {c.guarantors_added ? ` · ${c.guarantors_added} ضامن جدید` : ''}
@@ -200,6 +201,13 @@ export default function ImportPage() {
                   {r.data.documents.map((d: any, k: number) => (
                     <span key={k} className="mr-3">📄 ص {d.pages}: <b>{d.type}</b>{d.customer_account ? ` (${d.customer_account})` : ''}</span>
                   ))}
+                </div>
+              )}
+              {r.ok && r.data?.kb && (r.data.kb.added > 0 || r.data.kb.duplicates > 0) && (
+                <div className="mt-1 text-xs text-purple-700">
+                  📚 دانشنامه: {r.data.kb.added > 0 ? `${r.data.kb.added} مطلب جدید` : 'مطلب جدیدی نداشت'}
+                  {r.data.kb.topics_created > 0 ? ` (${r.data.kb.topics_created} سرفصل جدید)` : ''}
+                  {r.data.kb.duplicates > 0 ? ` — ${r.data.kb.duplicates} مورد تکراری ثبت نشد` : ''}
                 </div>
               )}
             </div>
