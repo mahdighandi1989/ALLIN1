@@ -690,6 +690,8 @@ async def generate_attachment(
             if payload.kind == "word" and "paragraphs" not in spec:
                 raise ValueError("no_paragraphs")
         data, filename, mimetype = gen.render(spec)
+        # v84 — owner rule: the file's name = content description + account number
+        filename = gen.finalize_filename(filename, acct)
     except ValueError as exc:
         return {"ok": False, "error": f"bad_spec:{exc}", "model": result.get("model")}
 

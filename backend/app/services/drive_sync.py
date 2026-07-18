@@ -83,7 +83,19 @@ def _field(value: str, fallback: str = "na", limit: int = 60) -> str:
     return (cleaned or fallback)[:limit]
 
 
-def build_name(category: str, owner: str, descriptor: str, ext: str) -> str:
+def _field_text(value: str, fallback: str = "na", limit: int = 60) -> str:
+    """Like :func:`_field` but KEEPS non-Latin letters (Persian) — used for the
+    human-readable stem of attachment names, so «گزارش تسهیلات» survives in the
+    Drive file name instead of collapsing to the 'document' fallback (owner:
+    generated attachments showed meaningless letter/number names). Path-hostile
+    characters and control chars are still stripped, and a field can never
+    forge the name separator."""
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", str(value or "").strip()).strip("-. ")
+    cleaned = cleaned.replace(_FIELD_SEP, "-")
+    return (cleaned or fallback)[:limit]
+
+
+def build_name(category: str, owner: str, descriptor: str, ext: str, *, unicode_descriptor: bool = False) -> str:
     """Compose a traceable file name from its identity fields.
 
     ``ext`` may be given with or without a leading dot; an empty ext yields a
@@ -96,7 +108,7 @@ def build_name(category: str, owner: str, descriptor: str, ext: str) -> str:
             _APP,
             _field(category, "misc"),
             _field(owner, "system"),
-            _field(descriptor, "item", limit=80),
+            (_field_text if unicode_descriptor else _field)(descriptor, "item", limit=80),
             stamp,
             shortid,
         ]
@@ -217,8 +229,8 @@ async def sync_attachment(
     stem, ext = _split_ext(original_name)
     path_parts = ["attachments", f"cust-{acc}", f"fac-{fac}"]
     # descriptor binds the facility + original document stem into the name.
-    descriptor = f"fac-{fac}--{_field(stem, 'document')}"
-    filename = build_name("attachment", f"cust-{acc}", descriptor, ext)
+    descriptor = f"fac-{fac}--{_field_text(stem, 'document')}"
+    filename = build_name("attachment", f"cust-{acc}", descriptor, ext, unicode_descriptor=True)
 
     try:
         result = await asyncio.to_thread(

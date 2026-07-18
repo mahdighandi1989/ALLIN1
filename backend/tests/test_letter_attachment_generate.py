@@ -485,3 +485,26 @@ async def test_need_data_logs_filter_full_table_search(db_session):
     rows = data["audit_logs"]
     assert len(rows) == 1 and "قدیمی" in rows[0]["detail"]
     assert rows[0]["customer_name"] == "شرکت الف"
+
+
+class TestFinalizeFilename:
+    """v84 — owner rule: generated file name = content description + account number."""
+
+    def test_appends_account_before_extension(self):
+        assert gen.finalize_filename("گزارش تسهیلات پرداختی.xlsx", "1001") == \
+            "گزارش تسهیلات پرداختی - حساب 1001.xlsx"
+
+    def test_idempotent_when_account_already_present(self):
+        name = "گزارش - حساب 1001.xlsx"
+        assert gen.finalize_filename(name, "1001") == name
+
+    def test_no_account_or_general_left_unchanged(self):
+        assert gen.finalize_filename("گزارش.docx", "") == "گزارش.docx"
+        assert gen.finalize_filename("گزارش.docx", "general") == "گزارش.docx"
+
+    def test_no_extension_still_works(self):
+        assert gen.finalize_filename("گزارش", "77") == "گزارش - حساب 77"
+
+    def test_long_stem_is_capped_but_keeps_account_and_ext(self):
+        out = gen.finalize_filename(("ن" * 100) + ".xlsx", "55")
+        assert out.endswith(" - حساب 55.xlsx") and len(out) < 100
