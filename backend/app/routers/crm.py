@@ -2266,6 +2266,14 @@ async def daily_log(
             priority="Medium", created_by=uname, created_date=today, completed_date="", is_active="1",
         ))
         matched.append({"account_no": acc, "customer_name": cust.name, "task_id": tid})
+        # v86 — the customer page's «لاگِ کارها» tab reads the ACTIVITY log; a
+        # daily-log line routed to this account must show up there too (owner:
+        # «ذیل لاگ اون حساب دیدم چیزی ثبت نشده»). Journal + task alone are
+        # invisible to that tab.
+        await _audit(db, user, action="create", entity_type="daily_log",
+                     account_no=acc, entity_id=jid,
+                     detail=f"لاگ روزانه: {text[:300]}"
+                            + (f" — پیگیری: {payload.followup_date}" if payload.followup_date else ""))
     await db.commit()
     return {"journal_id": jid, "accounts_found": accounts, "routed": matched, "unknown_accounts": unknown}
 

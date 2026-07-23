@@ -193,3 +193,27 @@ class TestCustomerActivityLog:
         pairs = {(e["action"], e["entity_type"]) for e in r.json()["items"]}
         assert ("create", "property") in pairs
         assert ("delete", "property") in pairs
+
+    async def test_daily_log_routed_line_appears_in_customer_log(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        """v86 — a daily-log line mentioning an account must show up in that
+        customer's «لاگِ کارها» tab (the activity log), not only as a task."""
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "445566", "name": "Daily Log Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        r = await client.post(
+            "/api/crm/daily-log",
+            json={"text": "پیگیری 445566 بابت تمدید ضمانت‌نامه", "followup_date": "2026-08-01"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["accounts_found"] == ["445566"] and body["routed"]
+        log = await client.get("/api/audit/customer/445566", headers=admin_headers)
+        items = log.json()["items"]
+        rows = [e for e in items if e["entity_type"] == "daily_log"]
+        assert rows, f"daily_log entry missing from activity log: {items}"
+        assert "پیگیری" in rows[0]["detail"] and "2026-08-01" in rows[0]["detail"]

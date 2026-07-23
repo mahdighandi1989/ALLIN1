@@ -2260,3 +2260,21 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   حساب‌دارها، dedupِ سراسری/درون‌سرفصلی kb، قواعدِ پرامپت) + ۵۰ تستِ
   قبلیِ ایمپورت سبز؛ pytest کامل در گیت؛ forms harness ۱۱/۱۱ (بعد از
   همگام‌سازیِ هارنس با ۀ پیش‌ترکیبِ v70 — خطای هارنس بود، نه محصول).
+
+## 2026-07-23 — v86: لاگِ روزانهٔ مسیریابی‌شده باید در «لاگِ کارها»ی حساب دیده شود
+
+- **[EVIDENCE]** مالک: در Daily Log خطی برای یک حساب نوشت، حساب شناسایی
+  شد، ولی زبانهٔ «Logs (لاگ)» همان مشتری خالی ماند («هنوز کاری برای این
+  حساب ثبت نشده»).
+- **[ROOT CAUSE]** اندپوینتِ `/api/crm/daily-log` فقط JournalEntry و
+  CustomTask می‌ساخت و هیچ رکوردِ auditی ثبت نمی‌کرد؛ زبانهٔ Logs صفحهٔ
+  مشتری از `/api/audit/customer/{acc}` (لاگِ فعالیت) می‌خوانَد — پس خط،
+  در Tasks بود ولی در لاگ نه.
+- **[FIX]** برای هر حسابِ match‌شده یک رکوردِ فعالیت ثبت می‌شود:
+  `_audit(action="create", entity_type="daily_log", account_no=acc,
+  entity_id=jid, detail="لاگ روزانه: …" + تاریخِ پیگیری)`. Journal و
+  Task مثلِ قبل ساخته می‌شوند (بدونِ تغییرِ رفتار).
+- **[VERIFY]** تستِ جدید: POST daily-log با متنِ حاویِ حساب ⇒ ورودیِ
+  `daily_log` با متن و تاریخِ پیگیری در GET /api/audit/customer/{acc}.
+  test_audit ۱۳/۱۳؛ pytest کامل در گیت؛ فرانت‌اند بدونِ تغییر
+  (type-check+build سبز).
