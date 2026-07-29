@@ -161,6 +161,43 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
                           audit_logs=list(audit_rows), journal_entries=list(journal_rows))
 
 
+async def _style_samples(db: AsyncSession, current_body_html: str, limit: int = 3) -> list:
+    """v88 — few-shot tone exemplars from the office's OWN saved letters, so
+    rewrite suggestions read like this office's real correspondence instead of
+    generic (childish) prose. Recent letters with a substantial body win; the
+    letter currently being edited is skipped by body-prefix signature. Only
+    subject+body text are sent, capped, and rule 16 forbids lifting facts."""
+    import json as _json
+    import re as _re
+
+    from app.models.letter import Letter
+
+    def _strip(h: str) -> str:
+        return _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", h or "")).strip()
+
+    cur_sig = _strip(current_body_html)[:200]
+    rows = (await db.execute(
+        select(Letter).where(Letter.is_deleted == False)  # noqa: E712
+        .order_by(Letter.created_at.desc()).limit(24)
+    )).scalars().all()
+    out: list = []
+    for l in rows:
+        try:
+            vals = _json.loads(l.values_json or "{}")
+        except Exception:
+            continue
+        body = _strip(str(vals.get("body") or ""))
+        if len(body) < 220:                      # too short to model tone
+            continue
+        if cur_sig and body[:200] == cur_sig:    # the letter being edited
+            continue
+        out.append({"subject": _strip(str(vals.get("subject") or ""))[:120],
+                    "body": body[:1500]})
+        if len(out) >= limit:
+            break
+    return out
+
+
 @router.post("/analyze")
 async def analyze(
     payload: AnalyzeRequest,
@@ -172,10 +209,12 @@ async def analyze(
     reviewable change proposals. Never mutates anything."""
     tools = [t for t in (payload.tools or []) if t in la.TOOLS] or list(la.TOOLS.keys())
     facts = await _gather_facts(db, payload.account_no or "")
+    # v88 — the office's own archive as the tone model for rewrites (rule 16)
+    style = await _style_samples(db, str((payload.fields or {}).get("body") or ""))
 
     system = la.SYSTEM_PROMPT
     prompt = la.build_user_prompt(
-        payload.fields or {}, facts, tools,
+        payload.fields or {}, facts, tools, style_samples=style,
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
         tables=(payload.tables or []) if "tables" in tools else [],

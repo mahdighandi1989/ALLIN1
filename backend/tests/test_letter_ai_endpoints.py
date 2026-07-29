@@ -244,3 +244,46 @@ async def test_analyze_need_logs_second_round(client, auth_headers, db_session, 
     body = r.json()
     assert body["ok"] is True and len(calls) == 2
     assert [c["title"] for c in body["changes"]] == ["لاگِ چاپِ قبلی یافت شد"]
+
+
+async def test_analyze_feeds_archive_style_samples(client, auth_headers, db_session, monkeypatch):
+    """v88 — saved letters (long bodies, not the letter being edited) reach the
+    prompt as tone exemplars; short letters and the current letter are skipped."""
+    import json as _json
+
+    from app.models.letter import Letter
+    from app.routers import letter_ai as mod
+
+    cur_body = "<div>" + ("متن نامهٔ در حالِ ویرایش است. " * 12) + "</div>"
+    db_session.add(Letter(id="LSTY1", account_no="", category="general", title="t1",
+                          subject="", recipient_dept="", recipient_manager="",
+                          values_json=_json.dumps({
+                              "subject": "پیگیری بیمه‌نامه",
+                              "body": "<div>" + ("احتراماً به استحضار می‌رساند مراتب جهت اقدام ایفاد می‌گردد. " * 8) + "</div>"},
+                              ensure_ascii=False)))
+    db_session.add(Letter(id="LSTY2", account_no="", category="general", title="t2",
+                          subject="", recipient_dept="", recipient_manager="",
+                          values_json=_json.dumps({"subject": "کوتاه", "body": "<div>خیلی کوتاه</div>"},
+                                                  ensure_ascii=False)))
+    db_session.add(Letter(id="LSTY3", account_no="", category="general", title="t3",
+                          subject="", recipient_dept="", recipient_manager="",
+                          values_json=_json.dumps({"subject": "خودِ نامه", "body": cur_body},
+                                                  ensure_ascii=False)))
+    await db_session.commit()
+
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["prompt"] = prompt
+        return {"ok": True, "model": "fake", "text": '{"changes": []}'}
+
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/analyze",
+                          json={"fields": {"body": cur_body}, "tools": ["paragraphs"]},
+                          headers=auth_headers)
+    assert r.status_code == 200, r.text
+    p = seen["prompt"]
+    assert "نمونه‌نامه‌های آرشیو" in p
+    assert "به استحضار می‌رساند مراتب جهت اقدام" in p      # long archive letter included
+    assert "خیلی کوتاه" not in p                            # too short → skipped
+    assert p.count("متن نامهٔ در حالِ ویرایش است") <= 13    # current letter NOT re-fed as a sample
