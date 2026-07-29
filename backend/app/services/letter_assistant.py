@@ -596,7 +596,13 @@ SYSTEM_PROMPT = (
     "همهٔ فیلترها اختیاری‌اند (خالی = همه). این فرصت فقط یک بار است: در نوبتِ بعد «نتایجِ جستجوی "
     "لاگ‌ها» را می‌گیری و باید خروجیِ نهایی را بدهی؛ اگر شمارِ یافته‌ها از سقفِ ارسال بیشتر بود در "
     "warnings همان پیام آمده — فیلتر را در همان نوبتِ اول درست انتخاب کن. هرگز به‌جای need_logs "
-    "دادهٔ لاگ نساز."
+    "دادهٔ لاگ نساز.\n"
+    "16) لحنِ بازنویسی از آرشیوِ خودِ اداره: اگر بخشِ «نمونه‌نامه‌های آرشیو» در پیام هست، هر "
+    "جمله‌ای که پیشنهاد می‌دهی باید هم‌جنسِ همان نامه‌ها باشد — همان فاصلهٔ رسمی، همان قالب‌های "
+    "آغاز/استناد/درخواست/پایان‌بندی، همان آهنگ و پختگیِ جمله. پیش از نوشتنِ هر replace، جمله‌ات "
+    "را ذهنی کنارِ نمونه‌ها بگذار؛ اگر در آن نامه‌ها چنین جمله‌ای نمی‌نشیند (خام، محاوره‌ای، "
+    "شتاب‌زده)، بازنویسی‌اش کن تا بنشیند. از نمونه‌ها فقط «سبک» را بردار: هیچ نام/عدد/تاریخ/"
+    "تعهد/موضوعی از آن‌ها به این نامه نیاور و محتوایشان را واقعیت تلقی نکن."
 )
 
 
@@ -616,12 +622,17 @@ MAX_CHANGES = 60
 MAX_SELECTIONS = 12
 
 
+MAX_STYLE_SAMPLES = 3
+MAX_STYLE_CHARS = 1500
+
+
 def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List[str],
                       instruction: str = "", selection: str = "",
                       selections: Optional[List[str]] = None,
                       tables: Optional[List[str]] = None,
                       attachments_text: Optional[List[Dict[str, str]]] = None,
-                      attachment_tables: Optional[List[str]] = None) -> str:
+                      attachment_tables: Optional[List[str]] = None,
+                      style_samples: Optional[List[Dict[str, str]]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -638,6 +649,20 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     body_txt = html_to_text(str(fields.get(BODY_FIELD, "") or ""))
     parts.append("\n### متنِ نامه (body):")
     parts.append(body_txt or "(خالی)")
+
+    # v88 — few-shot لحن: نامه‌های واقعیِ قبلاً ذخیره‌شدهٔ همین اداره، فقط
+    # به‌عنوانِ الگوی نگارش (قاعدهٔ ۱۶). محتوایشان هرگز منبعِ واقعیت نیست.
+    if style_samples:
+        parts.append("\n### نمونه‌نامه‌های آرشیو (فقط الگوی لحن و نگارش — قاعدهٔ ۱۶):")
+        parts.append(
+            "این‌ها نامه‌های رسمیِ قبلاً ذخیره‌شدهٔ همین اداره‌اند. لحن، قالبِ جمله‌ها و "
+            "آغاز/استناد/درخواست/پایان‌بندی را از این‌ها الگو بگیر تا پیشنهادهایت هم‌صدا با "
+            "مکاتباتِ واقعیِ این اداره باشد. فقط «سبک» را بردار: هیچ نام/عدد/تاریخ/موضوعی از "
+            "نمونه‌ها به نامهٔ فعلی منتقل نشود و محتوایشان واقعیت تلقی نشود.")
+        for i, smp in enumerate((style_samples or [])[:MAX_STYLE_SAMPLES], 1):
+            subj = str(smp.get("subject") or "").strip()
+            head = f"— نمونهٔ {i}" + (f" (موضوع: {subj})" if subj else "")
+            parts.append(head + ":\n" + str(smp.get("body") or "").strip()[:MAX_STYLE_CHARS])
 
     parts.append("\n### حقایقِ پایگاه‌داده (منبعِ حقیقت برای اعتبارسنجی؛ کلیدهای "
                  "account_activity_log/journal_log = لاگِ کارهای همین حساب — جدیدترین اول؛ "

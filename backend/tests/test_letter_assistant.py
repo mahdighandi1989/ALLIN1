@@ -457,3 +457,33 @@ def test_inline_prompts_route_to_table_ops_and_aggregation_rules():
                              tables=["<table><tr><td>x</td></tr></table>"])
     assert "جمع/تجمیع فقط به‌درخواستِ صریحِ کاربر" in p
     assert "دو بار مستقل" in p and "قابلِ راستی‌آزمایی" in p
+
+
+class TestStyleSamples:
+    """v88 — the office's own saved letters feed the assistant as tone models."""
+
+    def test_prompt_includes_style_section_and_guard(self):
+        from app.services import letter_assistant as la
+        p = la.build_user_prompt(
+            {"body": "<div>متن فعلی</div>"}, {}, ["paragraphs"],
+            style_samples=[{"subject": "تمدید ضمانت‌نامه",
+                            "body": "احتراماً به استحضار می‌رساند پیرو نامهٔ شماره ۱۲، خواهشمند است دستور فرمایید."}])
+        assert "نمونه‌نامه‌های آرشیو" in p
+        assert "تمدید ضمانت‌نامه" in p and "به استحضار می‌رساند" in p
+        assert "فقط «سبک» را بردار" in p  # facts-from-samples guard
+
+    def test_prompt_without_samples_has_no_section(self):
+        from app.services import letter_assistant as la
+        p = la.build_user_prompt({"body": "<div>متن</div>"}, {}, ["paragraphs"])
+        assert "نمونه‌نامه‌های آرشیو" not in p
+
+    def test_samples_capped_in_count_and_length(self):
+        from app.services import letter_assistant as la
+        many = [{"subject": f"s{i}", "body": "ب" * 5000} for i in range(6)]
+        p = la.build_user_prompt({"body": ""}, {}, ["paragraphs"], style_samples=many)
+        assert p.count("— نمونهٔ ") == la.MAX_STYLE_SAMPLES
+        assert "ب" * (la.MAX_STYLE_CHARS + 1) not in p
+
+    def test_system_prompt_has_rule_16(self):
+        from app.services import letter_assistant as la
+        assert "لحنِ بازنویسی از آرشیو" in la.SYSTEM_PROMPT
