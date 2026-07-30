@@ -694,10 +694,27 @@ async def generate_attachment(
     prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches),
                               template_text=tpl_text, template_name=payload.template_name or "",
                               source_files=payload.source_files or [])
-    result = await inference.complete(
-        db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
-        model_id=payload.model_id, max_tokens=8000,
-    )
+    # v89 — the source-files prompt can reach ~160k chars (8×20k caps): the
+    # 60s default inference deadline regularly expired with several files
+    # attached (owner: «دوبار امتحان کردم نشد … قبلا میشد»). Long deadline +
+    # ONE retry on a transient failure, the same treatment the import path got
+    # in v46. The UI already waits 420s for this call.
+    async def _gen_complete(p_, max_tokens_):
+        import asyncio as _aio
+        res = await inference.complete(
+            db, p_, task="report_drafting", system=gen.SYSTEM_PROMPT,
+            model_id=payload.model_id, max_tokens=max_tokens_, timeout=240.0,
+        )
+        err0 = str(res.get("error") or "")
+        if not res.get("ok") and ("timed out" in err0 or "connection failed" in err0 or "429" in err0):
+            await _aio.sleep(3)
+            res = await inference.complete(
+                db, p_, task="report_drafting", system=gen.SYSTEM_PROMPT,
+                model_id=payload.model_id, max_tokens=max_tokens_, timeout=240.0,
+            )
+        return res
+
+    result = await _gen_complete(prompt, 8000)
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
 
@@ -710,10 +727,7 @@ async def generate_attachment(
                                    template_text=tpl_text, template_name=payload.template_name or "",
                                    source_files=payload.source_files or [])
         # bigger output budget: the spec now carries the fetched rows verbatim
-        result = await inference.complete(
-            db, prompt2, task="report_drafting", system=gen.SYSTEM_PROMPT,
-            model_id=payload.model_id, max_tokens=16000,
-        )
+        result = await _gen_complete(prompt2, 16000)
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
         if gen.parse_need_data(result.get("text") or ""):
