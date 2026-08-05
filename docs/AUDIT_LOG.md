@@ -2376,3 +2376,20 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   (چندصفحه‌ای) و در «یک‌صفحه‌ای» z=0.4؛ کلیک-پنهان، ردیف‌های خالی (۲۰
   ردیف)، بازگرداندن؛ CSSهای شکست/پنهان‌سازی. type-check+build سبز؛
   static سینک؛ pytest کامل در گیت.
+
+## 2026-08-05 — v90 (تکمله): تأییدِ پس‌ازمرجِ pytest + ترمیمِ محیطِ dev
+
+- **[HONESTY]** مرجِ v90 چند دقیقه قبل از سبزشدنِ pytest رفت: ری‌استارتِ
+  کانتینرِ dev محیطِ pip را پاک کرده بود و «python -m pytest | tail» به
+  خاطرِ pipe، خطای «No module named pytest» را با exit 0 پنهان کرد —
+  یعنی گیتِ قانونِ ۴ در لحظهٔ مرج واقعاً اجرا نشده بود (تغییراتِ v90
+  تماماً فرانت‌اندی بود؛ ریسکِ عملی نزدیکِ صفر، ولی شکافِ فرایندی ثبت
+  می‌شود).
+- **[REPAIR]** بازسازیِ محیط: npm ci؛ pip requirements (با
+  --ignore-installed برای PyJWT دبیانی) + cffi/cryptography (خطای
+  _cffi_backend)؛ pytest و افزونه‌ها. suite کامل بلافاصله پس از مرج اجرا
+  شد: **۷۵۳ passed** — v90 تأیید شد.
+- **[LESSON→experiences]** «cmd | tail» کدِ خروجِ cmd را می‌بلعد؛ در
+  گیت‌ها یا pipefail بگذار یا خروجی را جدا چک کن؛ و بعد از هر ری‌استارتِ
+  کانتینر اول سلامتِ toolchain (pytest --version، import core deps) را
+  بسنج، بعد گیت را «اجراشده» حساب کن.
