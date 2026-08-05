@@ -242,9 +242,21 @@ export default function CreditFileRetailPage() {
   // v90 — print-fit mode: auto (shrink only while READABLE, else full-size
   // multi-page), one (always force one page), full (always full size). A ref
   // so fitSheet (deps []) reads the live value.
-  const fitModeRef = useRef<'auto' | 'one' | 'full'>('auto')
-  const [fitMode, setFitMode] = useState<'auto' | 'one' | 'full'>('auto')
-  useEffect(() => { fitModeRef.current = fitMode }, [fitMode])
+  // v91 — DEFAULT = the familiar one-page fit (the auto mode surprised the
+  // owner by sending a normal account to two pages); auto/full are explicit
+  // opt-ins and the choice is remembered on this device.
+  const fitModeRef = useRef<'auto' | 'one' | 'full'>('one')
+  const [fitMode, setFitMode] = useState<'auto' | 'one' | 'full'>('one')
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cfPrintFitMode')
+      if (saved === 'auto' || saved === 'one' || saved === 'full') setFitMode(saved)
+    } catch { /* private mode */ }
+  }, [])
+  useEffect(() => {
+    fitModeRef.current = fitMode
+    try { localStorage.setItem('cfPrintFitMode', fitMode) } catch { /* quota */ }
+  }, [fitMode])
   // v90 — «حذف از پرینت»: in hide mode, clicking any sheet row excludes it
   // from the printout (dimmed on screen, display:none in print).
   const [hideMode, setHideMode] = useState(false)
@@ -412,8 +424,8 @@ export default function CreditFileRetailPage() {
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
           <select className="no-print" title="حالتِ فیتِ پرینت" value={fitMode} onChange={(e) => setFitMode(e.target.value as any)} style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 6px', fontSize: 12 }}>
-            <option value="auto">فیت: خودکار (خوانا)</option>
-            <option value="one">فیت: یک‌صفحه‌ای</option>
+            <option value="one">فیت: یک‌صفحه‌ای (پیش‌فرض)</option>
+            <option value="auto">خودکار (اگر خیلی ریز شود، چندصفحه‌ای)</option>
             <option value="full">اندازهٔ کامل (چندصفحه‌ای)</option>
           </select>
           <button onClick={() => setHideMode((h) => !h)} className="cf-btn" style={{ background: hideMode ? '#dc2626' : '#7c3aed' }}>{hideMode ? 'پایانِ حذف از پرینت' : '🖨 حذف از پرینت'}</button>
