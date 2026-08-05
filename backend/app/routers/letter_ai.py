@@ -161,6 +161,43 @@ async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
                           audit_logs=list(audit_rows), journal_entries=list(journal_rows))
 
 
+async def _style_samples(db: AsyncSession, current_body_html: str, limit: int = 3) -> list:
+    """v88 — few-shot tone exemplars from the office's OWN saved letters, so
+    rewrite suggestions read like this office's real correspondence instead of
+    generic (childish) prose. Recent letters with a substantial body win; the
+    letter currently being edited is skipped by body-prefix signature. Only
+    subject+body text are sent, capped, and rule 16 forbids lifting facts."""
+    import json as _json
+    import re as _re
+
+    from app.models.letter import Letter
+
+    def _strip(h: str) -> str:
+        return _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", h or "")).strip()
+
+    cur_sig = _strip(current_body_html)[:200]
+    rows = (await db.execute(
+        select(Letter).where(Letter.is_deleted == False)  # noqa: E712
+        .order_by(Letter.created_at.desc()).limit(24)
+    )).scalars().all()
+    out: list = []
+    for l in rows:
+        try:
+            vals = _json.loads(l.values_json or "{}")
+        except Exception:
+            continue
+        body = _strip(str(vals.get("body") or ""))
+        if len(body) < 220:                      # too short to model tone
+            continue
+        if cur_sig and body[:200] == cur_sig:    # the letter being edited
+            continue
+        out.append({"subject": _strip(str(vals.get("subject") or ""))[:120],
+                    "body": body[:1500]})
+        if len(out) >= limit:
+            break
+    return out
+
+
 @router.post("/analyze")
 async def analyze(
     payload: AnalyzeRequest,
@@ -172,10 +209,12 @@ async def analyze(
     reviewable change proposals. Never mutates anything."""
     tools = [t for t in (payload.tools or []) if t in la.TOOLS] or list(la.TOOLS.keys())
     facts = await _gather_facts(db, payload.account_no or "")
+    # v88 — the office's own archive as the tone model for rewrites (rule 16)
+    style = await _style_samples(db, str((payload.fields or {}).get("body") or ""))
 
     system = la.SYSTEM_PROMPT
     prompt = la.build_user_prompt(
-        payload.fields or {}, facts, tools,
+        payload.fields or {}, facts, tools, style_samples=style,
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
         tables=(payload.tables or []) if "tables" in tools else [],
@@ -655,10 +694,27 @@ async def generate_attachment(
     prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches),
                               template_text=tpl_text, template_name=payload.template_name or "",
                               source_files=payload.source_files or [])
-    result = await inference.complete(
-        db, prompt, task="report_drafting", system=gen.SYSTEM_PROMPT,
-        model_id=payload.model_id, max_tokens=8000,
-    )
+    # v89 — the source-files prompt can reach ~160k chars (8×20k caps): the
+    # 60s default inference deadline regularly expired with several files
+    # attached (owner: «دوبار امتحان کردم نشد … قبلا میشد»). Long deadline +
+    # ONE retry on a transient failure, the same treatment the import path got
+    # in v46. The UI already waits 420s for this call.
+    async def _gen_complete(p_, max_tokens_):
+        import asyncio as _aio
+        res = await inference.complete(
+            db, p_, task="report_drafting", system=gen.SYSTEM_PROMPT,
+            model_id=payload.model_id, max_tokens=max_tokens_, timeout=240.0,
+        )
+        err0 = str(res.get("error") or "")
+        if not res.get("ok") and ("timed out" in err0 or "connection failed" in err0 or "429" in err0):
+            await _aio.sleep(3)
+            res = await inference.complete(
+                db, p_, task="report_drafting", system=gen.SYSTEM_PROMPT,
+                model_id=payload.model_id, max_tokens=max_tokens_, timeout=240.0,
+            )
+        return res
+
+    result = await _gen_complete(prompt, 8000)
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
 
@@ -671,10 +727,7 @@ async def generate_attachment(
                                    template_text=tpl_text, template_name=payload.template_name or "",
                                    source_files=payload.source_files or [])
         # bigger output budget: the spec now carries the fetched rows verbatim
-        result = await inference.complete(
-            db, prompt2, task="report_drafting", system=gen.SYSTEM_PROMPT,
-            model_id=payload.model_id, max_tokens=16000,
-        )
+        result = await _gen_complete(prompt2, 16000)
         if not result.get("ok"):
             return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
         if gen.parse_need_data(result.get("text") or ""):

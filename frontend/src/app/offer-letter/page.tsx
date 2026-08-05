@@ -634,6 +634,15 @@ export default function OfferLetterPage() {
   // text rewrites mutate React-owned text nodes — engage the same remount
   // guard as selection marks so reconciliation never trips over them
   const olHasTxt = Object.values(olEffLayout).some((b) => b.txt != null || !!b.list)
+  // v87 — remount key for the preview subtree: a NEW key only when the
+  // formatting state itself changes. The old key bumped on EVERY render, so
+  // any unrelated re-render (typing in the panel, hover state, …) destroyed
+  // the DOM mid-interaction — text selection collapsed instantly and panel
+  // edits felt dead (owner: «سریع از حالت سلکت خارج میشه… اثر نمی‌کند»).
+  const olDomKey = React.useMemo(
+    () => (Object.keys(olEffMarks).length || olHasTxt || olFmt || olEdit ? `mk-${++olRenderSeq.current}` : 'stable'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [olEffMarks, olHasTxt, olFmt, olEdit, olEffLayout])
   useEffect(() => {
     for (const k of olPrevKeys.current) {
       const el = elFromPath(k)
@@ -815,9 +824,15 @@ export default function OfferLetterPage() {
       if (!sel || sel.isCollapsed || !sel.rangeCount || !printRef.current) return
       const r = sel.getRangeAt(0)
       if (r.startContainer.nodeType !== 3 || r.endContainer.nodeType !== 3) return
-      const hostEl = (r.commonAncestorContainer.nodeType === 3
+      // v87 — NEVER resolve the host to one of our own mark spans: a selection
+      // entirely inside bolded text would otherwise key the new mark to the
+      // span's path (which disappears on re-wrap) and the B toggle could never
+      // find/remove the original mark.
+      let hostEl = (r.commonAncestorContainer.nodeType === 3
         ? r.commonAncestorContainer.parentElement
         : (r.commonAncestorContainer as HTMLElement))?.closest('span,td,th,li,p,div') as HTMLElement | null
+      while (hostEl && hostEl.hasAttribute('data-olm'))
+        hostEl = hostEl.parentElement?.closest('span,td,th,li,p,div') as HTMLElement | null
       if (!hostEl || !printRef.current.contains(hostEl) || hostEl.closest('.olp-panel,.olf-bar')) return
       const key = elPath(hostEl)
       if (!key) return
@@ -831,7 +846,32 @@ export default function OfferLetterPage() {
   const addMark = (patch: Partial<OlMark>) => {
     if (!olFmt) return
     const { key, s, e } = olFmt
-    setOlMarks((prev) => ({ ...prev, [key]: [...(prev[key] || []), { s, e, ...patch }] }))
+    // v87 — B/I/U are TOGGLES: if the picked range is already fully covered
+    // with that style, strip it there (splitting overlapping marks) instead of
+    // stacking another mark (owner: «وقتی بولد میشه دیگه بر نمی‌گرده»).
+    const prop = (['b', 'i', 'u'] as const).find((k2) => (patch as any)[k2])
+    setOlMarks((prev) => {
+      const cur = prev[key] || []
+      if (prop) {
+        let pos = s
+        for (const m of [...cur].filter((m) => (m as any)[prop]).sort((a, b) => a.s - b.s)) {
+          if (m.s <= pos && m.e > pos) pos = m.e
+          if (pos >= e) break
+        }
+        if (pos >= e) {
+          const next: OlMark[] = []
+          for (const m of cur) {
+            if (!(m as any)[prop] || m.e <= s || m.s >= e) { next.push(m); continue }
+            if (m.s < s) next.push({ ...m, e: s })
+            if (m.e > e) next.push({ ...m, s: e })
+          }
+          const n = { ...prev }
+          if (next.length) n[key] = next; else delete n[key]
+          return n
+        }
+      }
+      return { ...prev, [key]: [...cur, { s, e, ...patch }] }
+    })
     setOlFmt(null)
     try { window.getSelection()?.removeAllRanges() } catch { /* selection already gone */ }
   }
@@ -862,7 +902,13 @@ export default function OfferLetterPage() {
     })
     setOlFmt(null)
   }
+  const olCrashN = useRef(0)
   const onPreviewCrash = () => {
+    // v87 — first occurrences: OlSafe's gen-remount alone rebuilds a clean
+    // tree and the effect re-applies the SAME marks — the user loses nothing.
+    // Only a repeating (deterministic) crash falls back to the old wipe.
+    olCrashN.current += 1
+    if (olCrashN.current <= 3) { setOlFmt(null); return }
     // drop the selection formatting that caused the render error and recover
     // (both layers: the account-scoped stores AND the template bases)
     setOlMarks({}); setOlMarksBase({}); setOlFmt(null)
@@ -1125,7 +1171,9 @@ export default function OfferLetterPage() {
         .ol-sign-stack > div { text-decoration:underline; }
         .ol-sign-stack-gap { margin-top:16mm; }
         .ol-terms-h { font-weight:800; text-decoration:underline; margin:2.5mm 0 1.5mm; }
-        ol.ol-terms { margin:0; padding-left:6mm; } ol.ol-terms li { margin:0.8mm 0; text-align:justify; }
+        ol.ol-terms { margin:0; padding-left:6mm; list-style:none; counter-reset:term; }
+        ol.ol-terms li { margin:0.8mm 0; text-align:justify; counter-increment:term; }
+        ol.ol-terms li::before { content: counter(term) ") "; }
         .ol-foot { position:absolute; bottom:5mm; left:13mm; right:13mm; border-top:0.8px solid #555; padding-top:1.2mm; }
         /* english footer = verbatim blue banner image (it carries its own blue top rule) */
         .ol-foot--en { display:flex; align-items:flex-end; gap:4mm; border-top:0; padding-top:0; }
@@ -1472,12 +1520,11 @@ export default function OfferLetterPage() {
             dblclick any block → layout panel (font/align/dir/spacing/offsets) */}
         <OlSafe onCrash={onPreviewCrash}>
         <div id="offer-print" dir="ltr" ref={printRef}
-          /* CRASH GUARD: while selection marks exist, remount the whole preview
-             on every render (fresh tree = React never reconciles against the
-             text nodes our mark spans moved → no removeChild crash); with no
-             marks the key is stable and nothing changes. Marks + overrides are
-             re-applied by the after-render effect either way. */
-          key={Object.keys(olEffMarks).length || olHasTxt || olFmt || olEdit ? `mk-${++olRenderSeq.current}` : 'stable'}
+          /* CRASH GUARD (v87): remount when the formatting state CHANGES (fresh
+             tree = React never reconciles against the text nodes our mark spans
+             moved). Renders with an unchanged key may rarely diff mutated DOM —
+             OlSafe catches that and gen-remounts WITHOUT wiping the marks. */
+          key={olDomKey}
           onDoubleClick={onPreviewDblClick} onMouseUp={onPreviewMouseUp}
           onClick={olDesign ? onPreviewClick : undefined}
           onPointerDown={olDesign || olSel ? onPreviewPointerDown : undefined}
@@ -1556,7 +1603,7 @@ export default function OfferLetterPage() {
               <div className="ol-page">
                 <div className="ol-fit">
                   <Letterhead mode="english" />
-                  <ol className="ol-terms" start={18}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fillN(t)}</li>)}</ol>
+                  <ol className="ol-terms" start={18} style={{ counterReset: 'term 17' }}>{TERM_TEXTS.slice(17).map((t, i) => <li key={i}>{fillN(t)}</li>)}</ol>
                   <div className="ol-p">Please read the content of this letter and if you agree kindly sign the original copy and return it to us as confirmation for our records not later than one month from the date of this letter; if not accepted it will be deemed to have lapsed.</div>
                   <div className="ol-p">We trust that you will find the above limits and its terms to your satisfaction and will utilize the same for our mutual benefits. While assuring you of our best service at all times, we appreciate your kind co-operation and prompt reply.</div>
                   <div className="ol-p" style={{ marginTop: '4mm' }}>Yours truly,</div>
