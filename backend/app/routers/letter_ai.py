@@ -226,13 +226,29 @@ async def analyze(
         attachment_tables=(payload.attachment_tables or []) if ({"full_check", "db_extract"} & set(tools)) else [],
     )
 
-    result = await inference.complete(
-        db, prompt, task="report_drafting", system=system,
-        model_id=payload.model_id, max_tokens=8000,
-        # No explicit temperature: newer reasoning models (Opus 4.8) reject it with
-        # a 400. inference.complete also strips+retries as a backstop for any model
-        # that carries a configured temperature.
-    )
+    # v93 — the analyze prompt can be very large (attachment PDFs' text, all
+    # tools, tables, archive tone samples): the 60s default inference deadline
+    # expired for the owner exactly like the generator path (v89). Long deadline
+    # + one transient retry; the UI already waits 300s.
+    async def _an_complete(p_):
+        import asyncio as _aio
+        res = await inference.complete(
+            db, p_, task="report_drafting", system=system,
+            model_id=payload.model_id, max_tokens=8000, timeout=240.0,
+            # No explicit temperature: newer reasoning models (Opus 4.8) reject it
+            # with a 400. inference.complete also strips+retries as a backstop for
+            # any model that carries a configured temperature.
+        )
+        err0 = str(res.get("error") or "")
+        if not res.get("ok") and ("timed out" in err0 or "connection failed" in err0 or "429" in err0):
+            await _aio.sleep(3)
+            res = await inference.complete(
+                db, p_, task="report_drafting", system=system,
+                model_id=payload.model_id, max_tokens=8000, timeout=240.0,
+            )
+        return res
+
+    result = await _an_complete(prompt)
     if not result.get("ok"):
         # Friendly, non-fatal: the UI shows the reason (e.g. no model configured).
         return {
@@ -259,10 +275,7 @@ async def analyze(
               "دیگر need_logs مجاز نیست، همین حالا خروجیِ نهایی را بده):\n"
             + _json.dumps(found, ensure_ascii=False, separators=(",", ":"))
         )
-        result = await inference.complete(
-            db, prompt2, task="report_drafting", system=system,
-            model_id=payload.model_id, max_tokens=8000,
-        )
+        result = await _an_complete(prompt2)
         if not result.get("ok"):
             return {
                 "ok": False,

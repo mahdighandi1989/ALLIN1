@@ -315,3 +315,26 @@ async def test_generate_attachment_uses_long_deadline_and_retries(
     assert r.json().get("ok") is True
     assert len(calls) == 2                       # timed out once → retried once
     assert all(k.get("timeout") == 240.0 for k in calls)
+
+
+async def test_analyze_uses_long_deadline_and_retries(client, auth_headers, db_session, monkeypatch):
+    """v93 — analyze passes an explicit long timeout and retries once on a
+    transient failure (same treatment the generator got in v89)."""
+    from app.routers import letter_ai as mod
+
+    calls = []
+
+    async def fake_complete(db, prompt, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {"ok": False, "error": "request timed out", "model": "m"}
+        return {"ok": True, "model": "m", "text": '{"changes": []}'}
+
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "fields": {"body": "<div>متن آزمایشی نامه</div>"}, "tools": ["paragraphs"],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json().get("ok") is True
+    assert len(calls) == 2                       # timed out once → retried once
+    assert all(k.get("timeout") == 240.0 for k in calls)
