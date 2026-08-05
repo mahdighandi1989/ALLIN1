@@ -351,17 +351,34 @@ export default function CreditFileCorporatePage() {
     const MIN_Z = 0.72   // readability floor — below this a one-page fit turns illegibly tiny
     const mode = fitModeRef.current
     if (hMm > avail && mode !== 'full') {
-      const zFit = avail / hMm
-      // v90 — auto: shrink only while it stays readable; otherwise print
-      // FULL-SIZE across several pages (clean row breaks) instead of a tiny
-      // ugly single page (owner: «خیلی ریز میشه همه چیز و زشت میشه»).
-      if (mode === 'one' || zFit >= MIN_Z) {
-        z = Math.max(0.4, zFit)
+      // v92 — FIXED-POINT fit: a wider layout wraps text into FEWER lines, so
+      // the single-pass estimate (z from the height at the narrow width)
+      // over-shrinks and leaves the bottom of the page empty (owner: «بخش
+      // زیادی از پایین صفحه خالی می‌مونه و ریز می‌شن»). Iterate width⇄height
+      // until the scaled height actually FILLS the page, so the shrink is the
+      // minimum truly needed.
+      let h = hMm
+      for (let i = 0; i < 5; i++) {
+        const zNeed = Math.min(1, avail / h)
+        if (Math.abs(zNeed - z) < 0.01 && i > 0) break
+        z = zNeed
         pw = PRINT_W / z
         el.style.width = `${pw}mm`
         void el.offsetHeight
         regrow()
+        h = el.scrollHeight / MMpx
       }
+      if (h * z > avail) z = avail / h            // never overflow the page
+      if (mode === 'one') {
+        z = Math.max(0.4, z)
+      } else if (z < MIN_Z) {
+        // auto: refuse an illegibly tiny page → full size, multi-page
+        z = 1
+      }
+      pw = PRINT_W / z
+      el.style.width = `${pw}mm`
+      void el.offsetHeight
+      regrow()
     }
     // Restore the on-screen layout; print uses the CSS vars.
     offRows.forEach((h, i) => { h.style.display = savedDisp[i] })
