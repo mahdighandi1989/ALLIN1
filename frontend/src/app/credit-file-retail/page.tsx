@@ -239,6 +239,39 @@ export default function CreditFileRetailPage() {
   // Fit the whole sheet onto ONE A4 page: measure at the REAL print width (190mm)
   // so wrapping matches the printout, then shrink via CSS zoom. Runs on the Print
   // button AND on Ctrl+P (beforeprint).
+  // v90 — print-fit mode: auto (shrink only while READABLE, else full-size
+  // multi-page), one (always force one page), full (always full size). A ref
+  // so fitSheet (deps []) reads the live value.
+  const fitModeRef = useRef<'auto' | 'one' | 'full'>('auto')
+  const [fitMode, setFitMode] = useState<'auto' | 'one' | 'full'>('auto')
+  useEffect(() => { fitModeRef.current = fitMode }, [fitMode])
+  // v90 — «حذف از پرینت»: in hide mode, clicking any sheet row excludes it
+  // from the printout (dimmed on screen, display:none in print).
+  const [hideMode, setHideMode] = useState(false)
+  const onSheetClickCapture = (e: React.MouseEvent) => {
+    if (!hideMode) return
+    const tr = (e.target as HTMLElement).closest('table.cf tr') as HTMLElement | null
+    if (!tr || !sheetRef.current?.contains(tr)) return
+    e.preventDefault(); e.stopPropagation()
+    tr.classList.toggle('pr-hide')
+  }
+  const hideEmptyRows = () => {
+    const el = sheetRef.current
+    if (!el) return
+    let n = 0
+    el.querySelectorAll('table.cf tr').forEach((tr) => {
+      if (tr.querySelector('.band') || tr.classList.contains('hdr') || tr.classList.contains('pr-hide')) return
+      const vals = Array.from(tr.querySelectorAll('input:not([type="checkbox"]), textarea')) as (HTMLInputElement | HTMLTextAreaElement)[]
+      if (!vals.length) return
+      if (vals.every((v) => !(v.value || '').trim())) { tr.classList.add('pr-hide'); n += 1 }
+    })
+    toast.success(n ? `${n} ردیفِ خالی از پرینت حذف شد` : 'ردیفِ خالی‌ای پیدا نشد')
+  }
+  const unhideAll = () => {
+    sheetRef.current?.querySelectorAll('.pr-hide').forEach((x) => x.classList.remove('pr-hide'))
+    setHideMode(false)
+  }
+
   const fitSheet = useCallback(() => {
     const el = sheetRef.current
     if (!el) return
@@ -249,6 +282,10 @@ export default function CreditFileRetailPage() {
       const ta = t as HTMLTextAreaElement
       ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`
     })
+    // v90 — rows removed from the print must not count in the fit math
+    const offRows = Array.from(el.querySelectorAll('.pr-hide')) as HTMLElement[]
+    const savedDisp = offRows.map((h) => h.style.display)
+    offRows.forEach((h) => { h.style.display = 'none' })
     const savedW = el.style.width
     const savedZ = (el.style as any).zoom
     el.style.width = `${PRINT_W}mm`
@@ -259,13 +296,22 @@ export default function CreditFileRetailPage() {
     // Shrink to fit height, but render wider first so the printed width stays full
     // (a plain zoom scales width+height together → narrow + tiny).
     let z = 1, pw = PRINT_W
-    if (hMm > avail) {
-      z = Math.max(0.4, avail / hMm)
-      pw = PRINT_W / z
-      el.style.width = `${pw}mm`
-      void el.offsetHeight
-      regrow()
+    const MIN_Z = 0.72   // readability floor — below this a one-page fit turns illegibly tiny
+    const mode = fitModeRef.current
+    if (hMm > avail && mode !== 'full') {
+      const zFit = avail / hMm
+      // v90 — auto: shrink only while it stays readable; otherwise print
+      // FULL-SIZE across several pages (clean row breaks) instead of a tiny
+      // ugly single page (owner: «خیلی ریز میشه همه چیز و زشت میشه»).
+      if (mode === 'one' || zFit >= MIN_Z) {
+        z = Math.max(0.4, zFit)
+        pw = PRINT_W / z
+        el.style.width = `${pw}mm`
+        void el.offsetHeight
+        regrow()
+      }
     }
+    offRows.forEach((h, i) => { h.style.display = savedDisp[i] })
     el.style.width = savedW
     ;(el.style as any).zoom = savedZ
     void el.offsetHeight
@@ -319,6 +365,9 @@ export default function CreditFileRetailPage() {
         .tools select { font-size: 10px; max-width: 150px; border: 1px dashed #94a3b8; border-radius: 4px; }
         .tools button { border: 0; background: transparent; color: #dc2626; cursor: pointer; padding: 0 4px; }
         .addbtn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #2563eb; background: #eff6ff; border: 1px dashed #93c5fd; border-radius: 6px; padding: 3px 8px; cursor: pointer; margin: 0 0 8px; }
+        .pr-hide { opacity: .35; outline: 1.5px dashed #dc2626; outline-offset: -1px; }
+        .hidemode table.cf tr { cursor: pointer; }
+        .hidemode table.cf tr:hover { background: #fee2e2; }
         .print-only { display: none; }
         .cf-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; }
         .cf-sign { width: 260px; font-weight: 600; } .cf-sign .line { border-top: 1px solid #000; margin-top: 50px; padding-top: 4px; }
@@ -345,7 +394,10 @@ export default function CreditFileRetailPage() {
           table.cf td, table.cf th { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; }
           table.cf input { background: transparent !important; }
           table.cf textarea.wrap-cell { background: transparent !important; overflow: visible !important; }
-          table.cf, .cf-row-top, .cf-title, .cf-branch { page-break-inside: avoid; }
+          .pr-hide { display: none !important; }
+          table.cf tr { page-break-inside: avoid; break-inside: avoid; }
+          table.cf .band { page-break-after: avoid; break-after: avoid; }
+          .cf-row-top, .cf-title, .cf-branch { page-break-inside: avoid; }
         }
       `}</style>
 
@@ -359,15 +411,23 @@ export default function CreditFileRetailPage() {
           <button onClick={() => loadAccount()} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
+          <select className="no-print" title="حالتِ فیتِ پرینت" value={fitMode} onChange={(e) => setFitMode(e.target.value as any)} style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 6px', fontSize: 12 }}>
+            <option value="auto">فیت: خودکار (خوانا)</option>
+            <option value="one">فیت: یک‌صفحه‌ای</option>
+            <option value="full">اندازهٔ کامل (چندصفحه‌ای)</option>
+          </select>
+          <button onClick={() => setHideMode((h) => !h)} className="cf-btn" style={{ background: hideMode ? '#dc2626' : '#7c3aed' }}>{hideMode ? 'پایانِ حذف از پرینت' : '🖨 حذف از پرینت'}</button>
+          {hideMode && <button onClick={hideEmptyRows} className="cf-btn" style={{ background: '#b45309' }}>ردیف‌های خالی</button>}
+          {hideMode && <button onClick={unhideAll} className="cf-btn" style={{ background: '#475569' }}>بازگرداندن همه</button>}
           {dl.designButton}
           {dl.scopeHint}
           <div style={{ flexBasis: '100%', fontSize: 11, color: '#64748b' }}>
-            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. مبالغ خودکار کاما می‌گیرند. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی تک‌صفحه است. با دبل‌کلیک (یا دکمۀ «چیدمان» + کلیک) روی هر بخشِ برگه، پنلِ چینش باز می‌شود.
+            ستون آبیِ سمت راستِ هر ردیف تسهیلات (فقط روی صفحه) برای انتخاب اینکه ردیف به کدام تسهیلاتِ مشتری وصل شود. مبالغ خودکار کاما می‌گیرند. خانه‌های آبی قابل‌ویرایش‌اند؛ موقع پرینت پاک می‌شوند و خروجی خودکار فیت می‌شود (اگر یک‌صفحه‌ایِ خوانا نشد، تمام‌اندازه و چندصفحه‌ای چاپ می‌شود؛ با «حذف از پرینت» می‌توانی ردیف‌های ناخواسته/خالی را از خروجی برداری). با دبل‌کلیک (یا دکمۀ «چیدمان» + کلیک) روی هر بخشِ برگه، پنلِ چینش باز می‌شود.
           </div>
           <DraftDrop accountNo={a.accountNumber || acc} onExtracted={handleExtract} />
         </div>
 
-        <div id="cf-sheet" ref={sheetRef} {...dl.containerProps}>
+        <div id="cf-sheet" ref={sheetRef} className={hideMode ? 'hidemode' : undefined} onClickCapture={onSheetClickCapture} {...dl.containerProps}>
           <div className="cf-row-top">
             <div className="cf-logo"><b>بانک صادرات ایران — BANK SADERAT IRAN</b><span>U.A.E. · Credit Facility Dept.</span></div>
             <div className="cf-date"><div className="l">Date</div><input value={a.date} onChange={set('date')} onBlur={(e) => { const nv = dmySlash(e.target.value); if (nv !== e.target.value) setA((s) => ({ ...s, date: nv })) }} /></div>
