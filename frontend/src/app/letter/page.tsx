@@ -1012,6 +1012,12 @@ export default function LetterPage() {
         if (v.body) v.body = reflowBody(normalizeBodyHtml(v.body))
         // letters saved before the heh+hamza normalization get fixed on open
         for (const k of Object.keys(v)) if (typeof v[k] === 'string') v[k] = fixHehHamza(v[k])
+        // v94 — legacy letters saved with sender:'' : the SCREEN select silently
+        // displays the first option while the real value stays empty, so the
+        // PRINT (which renders the value) dropped the «سرپرستی…» line entirely.
+        // An empty sender can never come from the select (options only) — treat
+        // it as «not saved» and keep the default.
+        if (typeof v.sender === 'string' && !v.sender.trim()) delete v.sender
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
@@ -2625,7 +2631,7 @@ export default function LetterPage() {
         </>}
         {!isHidden('body') && <div className={`bcell${pi === 0 ? ' firstpage' : ''}`} style={{ ...bodyTextStyle(), position: 'absolute', left: L.body.x, top: regionTop(pi), width: L.body.w, ['--ind' as any]: L.body.indent ? `${L.body.indent}em` : '0' }} dangerouslySetInnerHTML={{ __html: pages[pi] || '' }} />}
         {isLast && <>
-          {P('sender', f.sender, closingShift.sender ? { top: L.sender.y + closingShift.sender } : undefined)}
+          {P('sender', f.sender || SENDERS[0], closingShift.sender ? { top: L.sender.y + closingShift.sender } : undefined)}
           {P('copyto', <span className="hangfld"><span className="hlbl">{H(labels.copyto)}</span><span className="hval">{H(f.copyTo)}</span></span>, closingShift.copyto ? { top: L.copyto.y + closingShift.copyto } : undefined)}
           {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift.action ? { top: L.action.y + closingShift.action } : undefined)}
         </>}
