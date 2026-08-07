@@ -304,6 +304,10 @@ export const crmApi = {
     const { data } = await api.get(`/api/crm/guarantors/${encodeURIComponent(accountNo)}`)
     return data
   },
+  async releaseCheque(accountNo: string, body: { cheque_no: string; facility_id?: string; settled_facility?: string; date?: string; note?: string }): Promise<any> {
+    const { data } = await api.post(`/api/crm/guarantors/${encodeURIComponent(accountNo)}/release`, body)
+    return data
+  },
   async addGuarantor(accountNo: string, body: { guarantor_name: string; guarantor_account?: string; cheque_no?: string; cheque_amount?: number; issuing_bank?: string; pim_ref?: string; facility_id?: string; branch?: string; id?: string }): Promise<any> {
     const { data } = await api.post(`/api/crm/guarantors/${encodeURIComponent(accountNo)}`, body)
     return data

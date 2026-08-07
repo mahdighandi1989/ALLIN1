@@ -217,3 +217,52 @@ class TestCustomerActivityLog:
         rows = [e for e in items if e["entity_type"] == "daily_log"]
         assert rows, f"daily_log entry missing from activity log: {items}"
         assert "پیگیری" in rows[0]["detail"] and "2026-08-01" in rows[0]["detail"]
+
+    async def test_security_cheque_release_marks_and_logs(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        """v95 — the reversal voucher marks the cheque released (with date +
+        settled facility) and the release shows in the account's activity log."""
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "778899", "name": "Rev Co", "account_type": "sme"},
+            headers=admin_headers,
+        )
+        g = await client.post(
+            "/api/crm/guarantors/778899",
+            json={"guarantor_name": "NAEIMEH HASHEMI", "cheque_no": "133754",
+                  "cheque_amount": 84000, "facility_id": "STF-1", "branch": "2624"},
+            headers=admin_headers,
+        )
+        assert g.status_code == 200, g.text
+        r = await client.post(
+            "/api/crm/guarantors/778899/release",
+            json={"cheque_no": "133754", "facility_id": "STF-1",
+                  "settled_facility": "STF-1", "date": "07/08/2026"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] and body["released"] == 1
+        gg = body["guarantors"][0]
+        assert gg["released"] is True and gg["released_date"] == "07/08/2026"
+        assert "SECURITY CHQ REVERSAL" in gg["release_note"] and "STF-1" in gg["release_note"]
+        # idempotent second call → already_released
+        r2 = await client.post(
+            "/api/crm/guarantors/778899/release",
+            json={"cheque_no": "133754"}, headers=admin_headers,
+        )
+        assert r2.json()["already_released"] == 1 and r2.json()["released"] == 0
+        # unknown cheque → 404
+        r3 = await client.post(
+            "/api/crm/guarantors/778899/release",
+            json={"cheque_no": "999999"}, headers=admin_headers,
+        )
+        assert r3.status_code == 404
+        # the release is in the account's activity log
+        log = await client.get("/api/audit/customer/778899", headers=admin_headers)
+        pairs = {(e["action"], e["entity_type"]) for e in log.json()["items"]}
+        assert ("release", "security_cheque") in pairs
+        # list endpoint carries the release fields
+        lst = await client.get("/api/crm/guarantors/778899", headers=admin_headers)
+        assert lst.json()[0]["released"] is True

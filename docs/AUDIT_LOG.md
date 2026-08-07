@@ -2466,3 +2466,35 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   می‌داد و printedSender=false؛ بعد ⇒ value و نمایش یکی و
   printedSender=true. type-check+build سبز؛ static سینک؛ pytest کامل در
   گیت.
+
+## 2026-08-07 — v95: سندِ برگشتی (Reversal) در صفحهٔ Per-Contra + ثبتِ خروجِ چکِ ضمانتی در پروفایل
+
+- **[REQUEST]** مالک: با یک انتخاب، سندِ برگشتی برای پس‌دادنِ چک‌های
+  انتظامی — بدونِ خراب‌شدنِ سندِ فعلی؛ همان قالب/ظاهر، فقط جابه‌جاییِ
+  طرف‌ها و شماره‌حساب‌ها؛ ورودیِ «کدام تسهیلات settle شده» که در سند ثبت
+  شود؛ و زیرساختِ دیتابیس که خروجِ چک با تاریخ، مرتبط با تسهیلاتش،
+  ذیلِ پروفایل ثبت شود — بدونِ شلوغی.
+- **[BUILD]**
+  1. صفحهٔ voucher: سوییچِ «سندِ عادی / سندِ برگشتی». حالتِ عادی
+     بیت‌به‌بیت دست‌نخورده (همان GLها، همان دکمه‌ها — هارنس تأیید).
+     برگشتی طبقِ workbookِ خودِ بانک: CREDIT/PER CONTRA =
+     branch-860185-784-590 و DEBIT/SECURITY HELD CHEQUES =
+     branch-869900-784-090؛ مهرهای «SECURITY CHQ REVERSAL» و
+     «LOAN SETTLED — {تسهیلاتِ تسویه‌شده}» زیرِ بلوکِ OUR REF (prop
+     اختیاریِ extraLines — صفر اثر بر حالتِ عادی)؛ ورودیِ SETTLED
+     FACILITY فقط در برگشتی؛ auditِ چاپ برچسبِ (برگشتی) می‌گیرد.
+  2. دیتابیس: ستون‌های released/released_date/release_note روی
+     guarantors (مهاجرتِ خودکارِ db_init — ADD COLUMN IF NOT EXISTS).
+     اندپوینتِ جدید POST /api/crm/guarantors/{acct}/release: چک(ها) با
+     cheque_no (+ تسهیلات اگر داده شود) پیدا و مهرِ خروج می‌خورند —
+     حذف نمی‌شوند؛ note = REVERSAL + LOAN SETTLED: {facility}؛
+     idempotent (already_released)؛ 404 برای چکِ ناموجود؛ و طبقِ درسِ
+     v86، رکوردِ فعالیت با action=release ذیلِ همان حساب ⇒ در «لاگِ
+     کارها»ی مشتری دیده می‌شود. serializerِ guarantors فیلدهای release
+     را برمی‌گرداند و فهرستِ چک‌های صفحهٔ voucher برچسبِ «خروج‌خورده
+     {تاریخ}» می‌گیرد (بدونِ UIِ اضافه در پروفایل — کم‌شلوغ).
+- **[VERIFY]** تستِ backend: ثبتِ خروج + تاریخ/نوت + idempotency + 404 +
+  ردِ audit + فیلدها در list (test_audit ۱۴/۱۴). هارنسِ UI ‏۸/۸: حالتِ
+  عادی دست‌نخورده (GLها و دکمه‌ها)، برگشتی با GLهای جابه‌جا و مهرها و
+  دکمهٔ «ثبتِ خروجِ چک»، بازگشت به عادی بدونِ به‌جاماندنِ اثر.
+  type-check+build سبز؛ static سینک؛ pytest کامل در گیت.

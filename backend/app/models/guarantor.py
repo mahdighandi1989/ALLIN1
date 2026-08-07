@@ -31,6 +31,13 @@ class Guarantor(Base):
     seclist_row = Column(String(20))
     seclist_year = Column(String(10))
     date_added = Column(String(30))
+    # v95 — security-cheque RELEASE (سند برگشتی): stamped when the cheque is
+    # returned to the customer after its facility settles. released="1" marks
+    # the cheque as handed back; the note carries the settled facility +
+    # voucher context so the profile shows WHY it left.
+    released = Column(String(1), default="")
+    released_date = Column(String(30))
+    release_note = Column(String(300))
     created_by = Column(String(80))
     is_deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
