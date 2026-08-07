@@ -385,10 +385,15 @@ export default function VoucherPage() {
     const acct = acNo.trim()
     if (!acct) { toast.error('شماره حساب را وارد کنید'); return }
     if (!chqNo.trim()) { toast.error('شمارهٔ چکِ ریالی لازم است'); return }
+    // v102 — a rial cheque is always written by a THIRD PARTY (guarantor
+    // nature); it is never the UAE borrower's own cheque, so the record's name
+    // must be the issuer — no silent fallback to the account holder.
+    const issuer = irrIssuer.trim()
+    if (!issuer) { toast.error('نامِ صادرکنندهٔ چکِ ریالی لازم است — چکِ ریالی صادرهٔ شخصِ ثالث است، نه گیرندهٔ تسهیلات'); return }
     setSaving(true)
     try {
       const res = await crmApi.addGuarantor(acct, {
-        guarantor_name: (irrIssuer || acName).trim() || acName,
+        guarantor_name: issuer,
         cheque_no: chqNo.trim() || undefined,
         issuing_bank: (irrIssuerBank.split('-')[0] || 'IRR').trim().slice(0, 45) || undefined,
         facility_id: facilityId.trim() || undefined,
@@ -585,20 +590,26 @@ export default function VoucherPage() {
                 <input className={field} value={branch} onChange={(e) => setBranch(e.target.value)} list="branches" placeholder="مثلاً 2776" />
                 <datalist id="branches">{BRANCHES.map((b) => <option key={b} value={b} />)}</datalist>
               </label>
-              <label className="text-sm">
-                <span className="text-gray-600">نوع نام</span>
-                <select className={field} value={nameType} onChange={(e) => setNameType(e.target.value as any)}>
-                  <option value="Borrower Name">Borrower Name</option>
-                  <option value="Guarantor Name">Guarantor Name</option>
-                </select>
-              </label>
-              {nameType === 'Guarantor Name' && (
-                <label className="col-span-2 text-sm">
-                  <span className="text-gray-600">نام ضامن (Guarantor)</span>
-                  <input className={field} value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} list="vch-gnames" />
-                  <datalist id="vch-gnames">{guarantorNames.map((n) => <option key={n} value={n} />)}</datalist>
+              {/* v102 — no «نوع نام» in IRR mode: a rial cheque is BY NATURE a
+                  third-party (guarantor-type) instrument — the UAE borrower can
+                  never be its writer, so the Borrower/Guarantor choice is
+                  meaningless there (the dedicated issuer-name input rules). */}
+              {mode !== 'irr' && (<>
+                <label className="text-sm">
+                  <span className="text-gray-600">نوع نام</span>
+                  <select className={field} value={nameType} onChange={(e) => setNameType(e.target.value as any)}>
+                    <option value="Borrower Name">Borrower Name</option>
+                    <option value="Guarantor Name">Guarantor Name</option>
+                  </select>
                 </label>
-              )}
+                {nameType === 'Guarantor Name' && (
+                  <label className="col-span-2 text-sm">
+                    <span className="text-gray-600">نام ضامن (Guarantor)</span>
+                    <input className={field} value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} list="vch-gnames" />
+                    <datalist id="vch-gnames">{guarantorNames.map((n) => <option key={n} value={n} />)}</datalist>
+                  </label>
+                )}
+              </>)}
               <label className="text-sm">
                 <span className="text-gray-600">شماره چک (CHQ NO)</span>
                 <input className={field} value={chqNo} onChange={(e) => onChqNoChange(e.target.value)} inputMode="numeric" list="vch-chqnos" />
