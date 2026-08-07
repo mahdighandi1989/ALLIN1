@@ -38,9 +38,10 @@ type VProps = {
   ourRef: string
   description: string
   acName: string
+  extraLines?: string[]   // v95 — reversal stamps (SECURITY CHQ REVERSAL / LOAN SETTLED)
 }
 
-function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, d, prefix }: VProps & { d: DesignState; prefix: string }) {
+function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, d, prefix }: VProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
     <div className="vch" dir="ltr">
@@ -67,6 +68,9 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
           {M('refno', <div className="vch-ref-no">{ourRef}</div>, true)}
           {M('refdesc', <div className="vch-ref-desc">{description}</div>, true)}
           {M('refname', <div className="vch-ref-name">{acName}</div>, true)}
+          {(extraLines || []).map((ln, i) => (
+            <div key={i} className="vch-ref-desc" style={{ fontWeight: 800, borderTop: i === 0 ? '1pt solid #000' : undefined, paddingTop: i === 0 ? '1mm' : undefined }}>{ln}</div>
+          ))}
         </div>
       </div>
 
@@ -96,6 +100,11 @@ export default function VoucherPage() {
   const [facilities, setFacilities] = useState<any[]>([])
   const [selectedGid, setSelectedGid] = useState('')        // the picked existing cheque (for update)
   const [saving, setSaving] = useState(false)
+  // v95 — REVERSAL mode (سندِ برگشتی): the settled facility gets stamped on the
+  // slip and the release is recorded on the cheque record in the DB.
+  const [reversal, setReversal] = useState(false)
+  const [settledFacility, setSettledFacility] = useState('')
+  const [releasing, setReleasing] = useState(false)
   const previewRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   // scoped: with an account typed/loaded, layout tweaks belong to THAT account
@@ -226,6 +235,29 @@ export default function VoucherPage() {
     }
   }
 
+  // v95 — reversal write path: stamp the cheque as RETURNED on its own record
+  // (nothing deleted; the customer profile + activity log carry the release).
+  const releaseCheque = async () => {
+    const acct = acNo.trim()
+    if (!acct) { toast.error('شماره حساب را وارد کنید'); return }
+    if (!chqNo.trim()) { toast.error('شمارهٔ چک برای ثبتِ خروج لازم است'); return }
+    setReleasing(true)
+    try {
+      const r = await crmApi.releaseCheque(acct, {
+        cheque_no: chqNo.trim(),
+        facility_id: facilityId.trim() || undefined,
+        settled_facility: settledFacility.trim() || undefined,
+        date,
+      })
+      await refreshGuarantors(acct)
+      toast.success(r.released ? `خروجِ چک ثبت شد (${r.released} رکورد)` : 'این چک قبلاً خروج خورده بود — تاریخ/یادداشت به‌روزرسانی شد')
+    } catch (e) {
+      toast.error(parseApiError(e))
+    } finally {
+      setReleasing(false)
+    }
+  }
+
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
   // Cheques under the selected facility (if any) drive the CHQ NO / AMOUNT lists;
   // otherwise all of the account's cheques do.
@@ -243,6 +275,12 @@ export default function VoucherPage() {
   ].filter((x) => x && String(x).trim() && x !== '???')))
   const debitGL = branch ? `${branch}-860185-784-090` : ''
   const creditGL = branch ? `${branch}-869900-784-590` : ''
+  // v95 — REVERSAL swaps the GL sides (mirrors the bank's own reversal workbook):
+  //   CREDIT (PER CONTRA)             = <branch>-860185-784-590
+  //   DEBIT  (SECURITY HELD CHEQUES)  = <branch>-869900-784-090
+  const revCreditGL = branch ? `${branch}-860185-784-590` : ''
+  const revDebitGL = branch ? `${branch}-869900-784-090` : ''
+  const revLines = ['SECURITY CHQ REVERSAL', `LOAN SETTLED${settledFacility.trim() ? ` — ${settledFacility.trim()}` : ''}`]
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
   const description = `CHQ NO ${chqNo}_${nameType}: ${nameOnCheque}`
   const field = 'w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -321,6 +359,15 @@ export default function VoucherPage() {
           {/* ---- inputs (not printed) ---- */}
           <div className="bg-white border border-gray-200 rounded-xl p-4 no-print" dir="rtl">
             <h2 className="font-bold text-gray-800 mb-2">ورودی‌ها</h2>
+            <div className="flex gap-2 mb-2">
+              <button type="button" onClick={() => setReversal(false)}
+                className={`flex-1 rounded-lg py-1.5 text-sm font-bold border ${!reversal ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>سندِ عادی</button>
+              <button type="button" onClick={() => setReversal(true)}
+                className={`flex-1 rounded-lg py-1.5 text-sm font-bold border ${reversal ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>سندِ برگشتی (Reversal)</button>
+            </div>
+            {reversal && (
+              <p className="text-xs text-purple-700 mb-2">برگرداندنِ چکِ ضمانتی: طرف‌های بدهکار/بستانکار جابه‌جا چاپ می‌شوند و با «ثبتِ خروجِ چک»، خروجِ چک با تاریخ و تسهیلاتِ تسویه‌شده ذیلِ همان رکوردِ چک در پروفایل ثبت می‌شود.</p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <label className="col-span-2 text-sm">
                 <span className="text-gray-600">شماره حساب (A/C NO)</span>
@@ -337,7 +384,7 @@ export default function VoucherPage() {
                     <option value="">— چک جدید —</option>
                     {guarantors.map((g) => (
                       <option key={g.id} value={g.id}>
-                        {[g.cheque_no, g.guarantor_name, g.cheque_amount, g.facility_id].filter(Boolean).join(' · ')}
+                        {[g.cheque_no, g.guarantor_name, g.cheque_amount, g.facility_id].filter(Boolean).join(' · ')}{g.released ? ` — خروج‌خورده ${g.released_date || ''}` : ''}
                       </option>
                     ))}
                   </select>
@@ -381,6 +428,12 @@ export default function VoucherPage() {
                 <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="144000" list="vch-amts" />
                 <datalist id="vch-amts">{chqAmounts.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
+              {reversal && (
+                <label className="col-span-2 text-sm">
+                  <span className="text-gray-600">تسهیلاتِ تسویه‌شده (SETTLED FACILITY)</span>
+                  <input className={field} value={settledFacility} onChange={(e) => setSettledFacility(e.target.value)} placeholder="مثلاً STF1260603000001 یا 182/4/1099/2025" list="vch-facids" />
+                </label>
+              )}
               <label className="col-span-2 text-sm">
                 <span className="text-gray-600">ارز / تاریخ</span>
                 <div className="flex gap-2">
@@ -390,11 +443,18 @@ export default function VoucherPage() {
               </label>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button onClick={saveGuarantor} disabled={saving} type="button"
-                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
-                {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
-              </button>
-              <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'voucher', account_no: acNo || undefined, detail: `چاپِ سندِ انتظامی${chqNo ? ` — چک ${chqNo}` : ''}${acName ? ` — ${acName}` : ''}` }); window.print() }} type="button"
+              {reversal ? (
+                <button onClick={releaseCheque} disabled={releasing} type="button"
+                  className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
+                  {releasing ? '...' : 'ثبتِ خروجِ چک (برگشتی)'}
+                </button>
+              ) : (
+                <button onClick={saveGuarantor} disabled={saving} type="button"
+                  className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
+                  {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
+                </button>
+              )}
+              <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'voucher', account_no: acNo || undefined, detail: `چاپِ سندِ انتظامی${reversal ? ' (برگشتی)' : ''}${chqNo ? ` — چک ${chqNo}` : ''}${acName ? ` — ${acName}` : ''}` }); window.print() }} type="button"
                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2">
                 <Printer size={18} /> چاپ (Print)
               </button>
@@ -409,8 +469,17 @@ export default function VoucherPage() {
           {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
           <div className="vch-wrap" ref={wrapRef}>
             <div id="voucher-print" ref={previewRef}>
-              <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="sec" />
-              <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="pc" />
+              {reversal ? (
+                <>
+                  <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={revCreditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvc" />
+                  <Voucher kind="DEBIT" title="SECURITY HELD CHEQUES" date={date} acNo={revDebitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvd" />
+                </>
+              ) : (
+                <>
+                  <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="sec" />
+                  <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="pc" />
+                </>
+              )}
             </div>
           </div>
         </div>

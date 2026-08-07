@@ -249,7 +249,74 @@ def _guarantor_out(g) -> dict:
         "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
         "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref, "national_id": g.national_id,
         "facility_id": g.facility_id, "branch": g.branch, "date_added": g.date_added,
+        # v95 — release (سند برگشتی) status
+        "released": (g.released or "") == "1",
+        "released_date": g.released_date, "release_note": g.release_note,
     }
+
+
+class ChequeReleaseIn(BaseModel):
+    cheque_no: str = ""
+    facility_id: str = ""
+    settled_facility: str = ""
+    date: str = ""            # DD/MM/YYYY from the voucher form
+    note: str = ""
+
+
+@router.post("/guarantors/{account_no}/release")
+async def release_security_cheque(
+    account_no: str,
+    payload: ChequeReleaseIn,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """v95 — the REVERSAL voucher's write path: mark the account's security
+    cheque(s) as RETURNED (خروج‌خورده) when their facility settles. Matches by
+    cheque_no (plus facility when given); nothing is deleted — the record keeps
+    living under the profile with released/date/note stamped, and the release
+    lands in the account's activity log (the customer page's «لاگِ کارها»)."""
+    from datetime import date as _date
+
+    chq = (payload.cheque_no or "").strip()
+    fac = (payload.facility_id or "").strip()
+    if not chq:
+        raise HTTPException(status_code=422, detail="شمارهٔ چک برای ثبتِ خروج لازم است.")
+    q = select(Guarantor).where(
+        Guarantor.account_no == account_no,
+        Guarantor.cheque_no == chq,
+        Guarantor.is_deleted == False,  # noqa: E712
+    )
+    if fac:
+        q = q.where(Guarantor.facility_id == fac)
+    rows = (await db.execute(q)).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="چکی با این شماره (و تسهیلات) برای این حساب ثبت نشده است.")
+    when = (payload.date or "").strip() or _date.today().strftime("%d/%m/%Y")
+    settled = (payload.settled_facility or "").strip()
+    note = (payload.note or "").strip()
+    stamp = " — ".join(x for x in [
+        "SECURITY CHQ REVERSAL",
+        f"LOAN SETTLED: {settled}" if settled else "",
+        note,
+    ] if x)[:300]
+    n_new = n_already = 0
+    for g in rows:
+        if (g.released or "") == "1":
+            n_already += 1
+        else:
+            n_new += 1
+        g.released = "1"
+        g.released_date = when
+        g.release_note = stamp
+    await db.commit()
+    await _audit(db, user, action="release", entity_type="security_cheque",
+                 account_no=account_no, entity_id=rows[0].id,
+                 detail=f"خروجِ چکِ ضمانتی {chq}"
+                        + (f" (تسهیلات {fac})" if fac else "")
+                        + (f" — تسویهٔ {settled}" if settled else "")
+                        + f" — تاریخ {when} (سندِ برگشتی)")
+    return {"ok": True, "released": n_new, "already_released": n_already,
+            "guarantors": [_guarantor_out(g) for g in rows]}
 
 
 @router.get("/guarantors/{account_no}")
