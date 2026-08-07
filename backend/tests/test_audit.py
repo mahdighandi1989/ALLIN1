@@ -254,12 +254,36 @@ class TestCustomerActivityLog:
             json={"cheque_no": "133754"}, headers=admin_headers,
         )
         assert r2.json()["already_released"] == 1 and r2.json()["released"] == 0
-        # unknown cheque → 404
+        # v98 triage — facility known, cheque unknown ⇒ warn (likely cheque typo)
         r3 = await client.post(
             "/api/crm/guarantors/778899/release",
-            json={"cheque_no": "999999"}, headers=admin_headers,
+            json={"cheque_no": "999999", "facility_id": "STF-1"}, headers=admin_headers,
         )
-        assert r3.status_code == 404
+        assert r3.status_code == 200 and r3.json()["ok"] is False
+        assert r3.json()["error"] == "cheque_mismatch" and "133754" in r3.json()["message"]
+        # v98 triage — cheque known, facility unknown ⇒ warn (likely facility typo)
+        r4 = await client.post(
+            "/api/crm/guarantors/778899/release",
+            json={"cheque_no": "133754", "facility_id": "WRONG-9"}, headers=admin_headers,
+        )
+        assert r4.json()["ok"] is False and r4.json()["error"] == "facility_mismatch"
+        assert "STF-1" in r4.json()["message"]
+        # v98 — BOTH unknown ⇒ the facility was never recorded: create + release
+        r5 = await client.post(
+            "/api/crm/guarantors/778899/release",
+            json={"cheque_no": "555001", "facility_id": "NEW-77",
+                  "settled_facility": "O.D RENEWED", "date": "07/08/2026",
+                  "guarantor_name": "NEW CO", "cheque_amount": 1000, "branch": "2900"},
+            headers=admin_headers,
+        )
+        assert r5.status_code == 200, r5.text
+        b5 = r5.json()
+        assert b5["ok"] and b5["created"] is True and b5["released"] == 1
+        g5 = b5["guarantors"][0]
+        assert g5["released"] is True and g5["facility_id"] == "NEW-77"
+        assert "O.D RENEWED" in g5["release_note"]
+        lst5 = await client.get("/api/crm/guarantors/778899", headers=admin_headers)
+        assert any(x["cheque_no"] == "555001" and x["released"] for x in lst5.json())
         # the release is in the account's activity log
         log = await client.get("/api/audit/customer/778899", headers=admin_headers)
         pairs = {(e["action"], e["entity_type"]) for e in log.json()["items"]}
