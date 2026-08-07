@@ -248,9 +248,20 @@ export default function VoucherPage() {
         facility_id: facilityId.trim() || undefined,
         settled_facility: settledFacility.trim() || undefined,
         date,
+        // v98 — creation details for the both-unknown path (never-recorded facility)
+        guarantor_name: (nameType === 'Borrower Name' ? acName : guarantorName).trim() || undefined,
+        cheque_amount: Number(String(chqAmount).replace(/,/g, '')) || undefined,
+        branch: branch.trim() || undefined,
       })
+      if (r.ok === false) {
+        // v98 triage: a lone mismatch is most likely MY typo — warn, change nothing
+        toast.error(r.message || 'ثبت نشد', { duration: 9000 })
+        return
+      }
       await refreshGuarantors(acct)
-      toast.success(r.released ? `خروجِ چک ثبت شد (${r.released} رکورد)` : 'این چک قبلاً خروج خورده بود — تاریخ/یادداشت به‌روزرسانی شد')
+      toast.success(r.created
+        ? 'تسهیلات/چک قبلاً ثبت نشده بود — همین حالا ثبت و خروجش زده شد'
+        : r.released ? `خروجِ چک ثبت شد (${r.released} رکورد)` : 'این چک قبلاً خروج خورده بود — تاریخ/یادداشت به‌روزرسانی شد')
     } catch (e) {
       toast.error(parseApiError(e))
     } finally {

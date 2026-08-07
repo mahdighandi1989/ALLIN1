@@ -261,6 +261,11 @@ class ChequeReleaseIn(BaseModel):
     settled_facility: str = ""
     date: str = ""            # DD/MM/YYYY from the voucher form
     note: str = ""
+    # v98 — details for the auto-create path (both cheque AND facility unknown
+    # ⇒ the facility was simply never recorded; create + release in one go)
+    guarantor_name: str = ""
+    cheque_amount: Optional[float] = None
+    branch: str = ""
 
 
 @router.post("/guarantors/{account_no}/release")
@@ -289,8 +294,53 @@ async def release_security_cheque(
     if fac:
         q = q.where(Guarantor.facility_id == fac)
     rows = (await db.execute(q)).scalars().all()
+    created = False
     if not rows:
-        raise HTTPException(status_code=404, detail="چکی با این شماره (و تسهیلات) برای این حساب ثبت نشده است.")
+        # v98 — TRIAGE before failing (owner's rule): a lone mismatch is most
+        # likely a typo → warn with the real values; BOTH unknown means the
+        # facility was never recorded → create the cheque record under it and
+        # stamp the release immediately, so the reversal history lives there.
+        all_g = (await db.execute(select(Guarantor).where(
+            Guarantor.account_no == account_no,
+            Guarantor.is_deleted == False,  # noqa: E712
+        ))).scalars().all()
+        chq_matches = [g for g in all_g if (g.cheque_no or "").strip() == chq]
+        fac_in_cheques = bool(fac) and any((g.facility_id or "").strip() == fac for g in all_g)
+        fac_in_facilities = False
+        if fac and not fac_in_cheques:
+            cust = (await db.execute(select(Customer).where(
+                Customer.account_no == account_no, Customer.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+            if cust is not None:
+                fac_in_facilities = bool((await db.execute(select(Facility.id).where(
+                    Facility.customer_id == cust.id, Facility.name == fac))).first())
+        fac_known = fac_in_cheques or fac_in_facilities
+        if chq_matches:
+            actual = "، ".join(sorted({(g.facility_id or "—").strip() or "—" for g in chq_matches}))
+            return {"ok": False, "error": "facility_mismatch",
+                    "message": f"چک {chq} برای این حساب ثبت است ولی ذیلِ تسهیلاتِ «{actual}» — "
+                               "احتمالاً مرجعِ تسهیلات را اشتباه وارد کرده‌ای؛ اصلاحش کن یا فیلدِ تسهیلات را خالی بگذار تا با خودِ چک ثبت شود."}
+        if fac_known:
+            under = "، ".join(sorted({(g.cheque_no or "").strip() for g in all_g
+                                      if (g.facility_id or "").strip() == fac and (g.cheque_no or "").strip()})) or "—"
+            return {"ok": False, "error": "cheque_mismatch",
+                    "message": f"تسهیلاتِ {fac} شناخته‌شده است ولی چکی با شمارهٔ {chq} ذیلش نیست "
+                               f"(چک‌های ثبت‌شده‌اش: {under}) — احتمالاً شمارهٔ چک را اشتباه وارد کرده‌ای."}
+        # both unknown → the facility was never recorded: create + release
+        from app.services.customer_link import ensure_customer
+        await ensure_customer(db, account_no, None)
+        gid = f"G-{account_no}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:2]}"
+        g_new = Guarantor(
+            id=gid, account_no=account_no,
+            facility_id=fac or None, branch=(payload.branch or "").strip() or None,
+            guarantor_name=(payload.guarantor_name or "").strip() or None,
+            cheque_no=chq, cheque_amount=payload.cheque_amount,
+            issuing_bank="BSI", date_added=_date.today().isoformat(),
+            created_by=getattr(user, "username", "") or "",
+        )
+        db.add(g_new)
+        await db.flush()
+        rows = [g_new]
+        created = True
     when = (payload.date or "").strip() or _date.today().strftime("%d/%m/%Y")
     settled = (payload.settled_facility or "").strip()
     note = (payload.note or "").strip()
@@ -313,11 +363,12 @@ async def release_security_cheque(
     await db.commit()
     await _audit(db, user, action="release", entity_type="security_cheque",
                  account_no=account_no, entity_id=rows[0].id,
-                 detail=f"خروجِ چکِ ضمانتی {chq}"
+                 detail=("ثبتِ تسهیلات/چکِ جدید و " if created else "") + f"خروجِ چکِ ضمانتی {chq}"
                         + (f" (تسهیلات {fac})" if fac else "")
                         + (f" — {settled}" if settled else "")
                         + f" — تاریخ {when} (سندِ برگشتی)")
     return {"ok": True, "released": n_new, "already_released": n_already,
+            "created": created,
             "guarantors": [_guarantor_out(g) for g in rows]}
 
 
