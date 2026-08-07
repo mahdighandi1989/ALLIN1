@@ -603,7 +603,7 @@ function CustomerDetailInner() {
           {guarantors.length === 0 ? <Empty>No guarantors</Empty> : (
             <div className="overflow-auto">
               <table className="w-full text-sm whitespace-nowrap">
-                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Guarantor', 'Account', 'National ID', 'Cheque No', 'Amount', 'Bank', 'Ref'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
+                <thead className="bg-gray-50"><tr className="text-left text-gray-500">{['Guarantor', 'Account', 'National ID', 'Cheque No', 'Amount', 'Bank', 'Ref', 'Cheque Status'].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
                 <tbody className="divide-y">
                   {guarantors.map((g: any) => (
                     <tr key={g.id}>
@@ -618,6 +618,11 @@ function CustomerDetailInner() {
                       <td className="px-3 py-1.5">{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td>
                       <td className="px-3 py-1.5">{val(g.issuing_bank)}</td>
                       <td className="px-3 py-1.5">{val(g.pim_ref)}</td>
+                      <td className="px-3 py-1.5">
+                        {g.released
+                          ? <span dir="rtl" title={g.release_note || ''} className="inline-block bg-amber-100 text-amber-800 border border-amber-300 rounded px-1.5 py-0.5 text-xs font-medium">خروج‌خورده {g.released_date || ''}</span>
+                          : (g.cheque_no ? <span className="text-green-700 text-xs">نزدِ بانک</span> : '—')}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

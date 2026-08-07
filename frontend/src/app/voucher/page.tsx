@@ -280,7 +280,10 @@ export default function VoucherPage() {
   //   DEBIT  (SECURITY HELD CHEQUES)  = <branch>-869900-784-090
   const revCreditGL = branch ? `${branch}-860185-784-590` : ''
   const revDebitGL = branch ? `${branch}-869900-784-090` : ''
-  const revLines = ['SECURITY CHQ REVERSAL', `LOAN SETTLED${settledFacility.trim() ? ` — ${settledFacility.trim()}` : ''}`]
+  // v96 — «LOAN SETTLED» was sample wording from the bank's example workbook;
+  // the slip only carries the settlement line when the user actually enters
+  // WHICH facility settled (and that same value is what gets recorded).
+  const revLines = ['SECURITY CHQ REVERSAL', ...(settledFacility.trim() ? [`LOAN SETTLED — ${settledFacility.trim()}`] : [])]
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
   const description = `CHQ NO ${chqNo}_${nameType}: ${nameOnCheque}`
   const field = 'w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -432,6 +435,7 @@ export default function VoucherPage() {
                 <label className="col-span-2 text-sm">
                   <span className="text-gray-600">تسهیلاتِ تسویه‌شده (SETTLED FACILITY)</span>
                   <input className={field} value={settledFacility} onChange={(e) => setSettledFacility(e.target.value)} placeholder="مثلاً STF1260603000001 یا 182/4/1099/2025" list="vch-facids" />
+                  <span className="text-[11px] text-gray-400">اگر پر شود، سطرِ «LOAN SETTLED — …» روی سند چاپ و همراهِ خروجِ چک در پروفایل ثبت می‌شود؛ خالی باشد چیزی چاپ نمی‌شود.</span>
                 </label>
               )}
               <label className="col-span-2 text-sm">
