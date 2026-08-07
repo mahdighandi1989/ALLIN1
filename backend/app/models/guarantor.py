@@ -35,6 +35,14 @@ class Guarantor(Base):
     # returned to the customer after its facility settles. released="1" marks
     # the cheque as handed back; the note carries the settled facility +
     # voucher context so the profile shows WHY it left.
+    # v99 — IRR (rial) security cheques: the sanction may require a rial cheque
+    # covering a % of the facility at a set IRR/AED rate; captured here so the
+    # IRR voucher, the import extraction and the profile all read ONE record.
+    cheque_currency = Column(String(10))     # '' / 'AED' / 'IRR'
+    irr_amount = Column(String(40))          # rial amount as printed (huge → text)
+    irr_rate = Column(String(40))            # IRR-per-AED conversion rate
+    coverage_pct = Column(String(20))        # % of the facility the cheque covers
+    issuer_bank_code = Column(String(80))    # issuing bank + code (e.g. karafarin - 5300114)
     released = Column(String(1), default="")
     released_date = Column(String(30))
     release_note = Column(String(300))

@@ -2553,3 +2553,39 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   facility_mismatch (با ذکرِ تسهیلاتِ واقعی)، ایجاد+خروجِ هم‌زمان
   (created=true، تسهیلاتِ جدید، نوتِ verbatim، حضور در list) —
   test_audit ۱۴/۱۴؛ type-check+build؛ static سینک؛ pytest کامل در گیت.
+
+## 2026-08-07 — v99: سندِ چکِ ریالی (IRR) — حالتِ سومِ voucher + زیرساختِ DB + استخراج از مدارکِ ایمپورت
+
+- **[REQUEST]** مالک: فرمی برای سندِ ورودِ چک‌های ریالی با همان قاب ولی
+  محتوای workbookِ IRR: تعدادِ چک در AMOUNT؛ narrative شاملِ مبلغ/شمارهٔ
+  چکِ ریالی، بانکِ صادرکننده، نوع/مبلغِ تسهیلات، درصدِ پوشش، نرخِ تبدیل،
+  نامِ صادرکننده و نامِ حسابِ گیرندهٔ تسهیلات. باکس‌های RECONCILIATION/
+  VALUE DATE/CURR.CODE و حروفِ TZ/TU حذف؛ هیچ متغیری hardcode نشود؛
+  اطلاعات باید از مصوباتِ ایمپورت‌شده «با دقتِ فراوان» قابلِ استخراج باشد
+  و در DB و پروفایل (بدونِ شلوغی) بنشیند.
+- **[BUILD]**
+  1. voucher: حالتِ سومِ «سندِ چکِ ریالی (IRR)» (mode سه‌حالته؛ عادی/برگشتی
+     بیت‌به‌بیت دست‌نخورده). کامپوننتِ VoucherIRR با همان قابِ vch:
+     BRANCH/ACCOUNT/TRAN. CODE به‌صورتِ باکسِ خانه‌خانه، TRANSACTION
+     NARRATIVE چهارسطریِ ساخته‌شده «فقط» از ورودی‌ها، AMOUNT = تعدادِ چک،
+     پایین INTIATED/APPROVED BY. «همه‌چیز ورودیِ قابلِ‌ویرایش» است حتی
+     شماره‌حساب‌های GL (پیش‌فرض 800016901/869999901)، کدهای تراکنش
+     (090/590) و عنوانِ دو سند. باکس‌ها/حروفِ خواسته‌نشده حذف.
+  2. DB: ستون‌های cheque_currency/irr_amount/irr_rate/coverage_pct/
+     issuer_bank_code روی guarantors (مهاجرتِ خودکار)؛ GuarantorCreate +
+     add_guarantor (fill-style) + serializer. دکمهٔ «ذخیرهٔ چکِ ریالی
+     ذیلِ تسهیلات» همان upsertِ addGuarantor با currency=IRR.
+  3. ایمپورت: شِمای guarantors در EXTRACTION_PROMPT فیلدهای cheque_no/
+     cheque_currency/irr_amount/irr_rate/coverage_pct/issuer_bank گرفت +
+     قاعدهٔ صریحِ «IRR SECURITY CHEQUES» (رقم‌به‌رقم، بدونِ گردکردن، فقط
+     آنچه سند می‌گوید)؛ persist_customer با _set_prop (fill-empty) به
+     ستون‌های جدید می‌نویسد.
+  4. پروفایل: ستونِ Amount برای چکِ IRR مقدارِ «IRR …» را با tooltipِ
+     نرخ/پوشش/بانک نشان می‌دهد — بدونِ ستون/شلوغیِ اضافه.
+- **[VERIFY]** تست‌ها: ذخیرهٔ endpointی با همهٔ فیلدها و بازگشتشان در
+  list؛ persistِ ایمپورت با جزئیاتِ IRR روی سطرِ Guarantor + حضورِ قاعده
+  در پرامپت (test_audit+test_doc_import ۴۸/۴۸). هارنسِ UI ‏۲۱/۲۱ —
+  شاملِ: narrative عیناً از ورودی‌ها، AMOUNT=تعداد، نبودِ RECONCILIATION/
+  VALUE DATE/CURR.CODE/TZ/TU، قابلِ‌ویرایش‌بودنِ GL (تغییرش در سند
+  منعکس شد)، و دست‌نخوردگیِ حالتِ عادی بعدِ برگشت. type-check+build؛
+  static سینک؛ pytest کامل در گیت.

@@ -615,7 +615,11 @@ function CustomerDetailInner() {
                       <td className="px-3 py-1.5">{val(g.guarantor_account)}</td>
                       <td className="px-3 py-1.5 tabular-nums">{val(g.national_id)}</td>
                       <td className="px-3 py-1.5">{val(g.cheque_no)}</td>
-                      <td className="px-3 py-1.5">{g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—'}</td>
+                      <td className="px-3 py-1.5" title={g.cheque_currency === 'IRR' ? [g.irr_rate && `نرخ: ${g.irr_rate}`, g.coverage_pct && `پوشش: ${g.coverage_pct}٪`, g.issuer_bank_code].filter(Boolean).join(' — ') : undefined}>
+                        {g.cheque_currency === 'IRR' && g.irr_amount
+                          ? <span dir="ltr">IRR {Number(String(g.irr_amount).replace(/,/g, '')) ? Number(String(g.irr_amount).replace(/,/g, '')).toLocaleString() : g.irr_amount}</span>
+                          : (g.cheque_amount ? Number(g.cheque_amount).toLocaleString() : '—')}
+                      </td>
                       <td className="px-3 py-1.5">{val(g.issuing_bank)}</td>
                       <td className="px-3 py-1.5">{val(g.pim_ref)}</td>
                       <td className="px-3 py-1.5">

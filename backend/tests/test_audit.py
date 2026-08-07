@@ -291,3 +291,28 @@ class TestCustomerActivityLog:
         # list endpoint carries the release fields
         lst = await client.get("/api/crm/guarantors/778899", headers=admin_headers)
         assert lst.json()[0]["released"] is True
+
+    async def test_irr_cheque_saved_with_details(
+        self, client: AsyncClient, admin_headers: dict
+    ):
+        """v99 — the IRR voucher stores every rial-cheque detail on the record."""
+        await client.post(
+            "/api/customers/",
+            json={"account_no": "115529", "name": "SATIN STAR TRADING LLC", "account_type": "corporate"},
+            headers=admin_headers,
+        )
+        r = await client.post(
+            "/api/crm/guarantors/115529",
+            json={"guarantor_name": "M/s Hani pokht iraninan", "cheque_no": "536001/237986",
+                  "facility_id": "STF-IRR", "branch": "2624",
+                  "cheque_currency": "IRR", "irr_amount": "6383360000000",
+                  "irr_rate": "398960", "coverage_pct": "200",
+                  "issuer_bank_code": "karafarin bank - 5300114"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 200, r.text
+        lst = await client.get("/api/crm/guarantors/115529", headers=admin_headers)
+        g = lst.json()[0]
+        assert g["cheque_currency"] == "IRR" and g["irr_amount"] == "6383360000000"
+        assert g["irr_rate"] == "398960" and g["coverage_pct"] == "200"
+        assert "karafarin" in g["issuer_bank_code"]

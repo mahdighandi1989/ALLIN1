@@ -83,6 +83,68 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
   )
 }
 
+// v99 — IRR (rial) security-cheque slip: the SAME .vch frame as the other
+// vouchers, but the IRR workbook's content: branch/account/tran-code boxes, a
+// 4-line TRANSACTION NARRATIVE, and AMOUNT = the NUMBER OF CHEQUES. Everything
+// visible comes from editable inputs (nothing hardcoded); the RECONCILIATION
+// NARRATIVE, VALUE DATE and CURR.CODE boxes and the TZ/TU letters of the
+// source workbook are deliberately left out (owner's instruction).
+function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, count, d, prefix }:
+  { kind: 'DEBIT' | 'CREDIT'; title: string; date: string; branchNo: string; acctNo: string;
+    tranCode: string; narrative: string[]; count: string; d: DesignState; prefix: string }) {
+  const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
+  const box = (label: string, value: string, wide = false) => (
+    <div style={{ marginTop: '2.5mm' }}>
+      <div style={{ border: '1.2pt solid #000', display: 'inline-block', fontSize: '8.5pt', fontWeight: 800, padding: '0.4mm 1.5mm' }}>{label}</div>
+      <div style={{ border: '1.2pt solid #000', borderTop: 0, display: 'flex', width: wide ? '58mm' : '30mm' }}>
+        {value.split('').map((ch, i) => (
+          <span key={i} style={{ flex: 1, textAlign: 'center', borderLeft: i ? '0.8pt solid #000' : undefined, fontSize: '11pt', fontWeight: 800, padding: '0.6mm 0' }}>{ch}</span>
+        ))}
+      </div>
+    </div>
+  )
+  return (
+    <div className="vch" dir="ltr">
+      <div className="vch-head">
+        <div className="vch-kind">{M('kind', kind)}</div>
+        <div className="vch-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+          <div className="vch-iv">INTERNAL VOUCHER</div>
+        </div>
+      </div>
+      <div className="vch-banner">{M('title', title)}</div>
+      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
+      <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start' }}>
+        <div style={{ flex: '0 0 auto' }}>
+          {M('branch', box('BRANCH NO.', branchNo || '    '), true)}
+          {M('acct', box('ACCOUNT NO.', acctNo || '         ', true), true)}
+          {M('tran', box('TRAN. CODE', tranCode || '   '), true)}
+        </div>
+        <div style={{ flex: 1, marginTop: '2.5mm' }}>
+          <div style={{ fontSize: '9pt', fontWeight: 800 }}>TRANSACTION NARRATIVE</div>
+          <div style={{ border: '1.2pt solid #000' }}>
+            {narrative.map((ln, i) => (
+              <div key={i} style={{ borderTop: i ? '0.8pt solid #000' : undefined, fontSize: '9pt', fontWeight: 600, padding: '1mm 1.5mm', minHeight: '5mm' }}>{ln}</div>
+            ))}
+          </div>
+          {M('amount', (
+            <div style={{ marginTop: '4mm', display: 'flex', alignItems: 'center', gap: '3mm' }}>
+              <span style={{ fontSize: '13pt', fontWeight: 900 }}>AMOUNT</span>
+              <span style={{ border: '1.2pt solid #000', minWidth: '34mm', textAlign: 'right', fontSize: '12pt', fontWeight: 800, padding: '1mm 2mm' }}>{count || '—'}</span>
+            </div>
+          ), true)}
+        </div>
+      </div>
+      <div className="vch-spacer" />
+      <div className="vch-foot">
+        <div>INTIATED BY<span className="vch-sigline" /></div>
+        <div>APPROVED BY<span className="vch-sigline" /></div>
+      </div>
+    </div>
+  )
+}
+
 export default function VoucherPage() {
   const [acNo, setAcNo] = useState('')
   const [acName, setAcName] = useState('')
@@ -100,9 +162,27 @@ export default function VoucherPage() {
   const [facilities, setFacilities] = useState<any[]>([])
   const [selectedGid, setSelectedGid] = useState('')        // the picked existing cheque (for update)
   const [saving, setSaving] = useState(false)
-  // v95 — REVERSAL mode (سندِ برگشتی): the settled facility gets stamped on the
-  // slip and the release is recorded on the cheque record in the DB.
-  const [reversal, setReversal] = useState(false)
+  // v95/v99 — voucher mode: normal | reversal | irr. `reversal` stays a
+  // derived boolean so every v95 code path is untouched.
+  const [mode, setMode] = useState<'normal' | 'reversal' | 'irr'>('normal')
+  const reversal = mode === 'reversal'
+  const setReversal = (on: boolean) => setMode(on ? 'reversal' : 'normal')
+  // v99 — IRR cheque inputs (ALL variable — defaults from the bank's IRR
+  // workbook, every one editable; nothing fixed in code)
+  const [irrCount, setIrrCount] = useState('1')
+  const [irrAmount, setIrrAmount] = useState('')
+  const [irrRate, setIrrRate] = useState('')
+  const [irrLoanAed, setIrrLoanAed] = useState('')
+  const [irrMonths, setIrrMonths] = useState('')
+  const [irrCoverage, setIrrCoverage] = useState('')
+  const [irrIssuer, setIrrIssuer] = useState('')
+  const [irrIssuerBank, setIrrIssuerBank] = useState('')
+  const [irrDrAcct, setIrrDrAcct] = useState('800016901')
+  const [irrCrAcct, setIrrCrAcct] = useState('869999901')
+  const [irrDrTran, setIrrDrTran] = useState('090')
+  const [irrCrTran, setIrrCrTran] = useState('590')
+  const [irrDrTitle, setIrrDrTitle] = useState('SECURITY DOC IRR TD')
+  const [irrCrTitle, setIrrCrTitle] = useState('SECURITIES')
   const [settledFacility, setSettledFacility] = useState('')
   const [releasing, setReleasing] = useState(false)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -269,6 +349,39 @@ export default function VoucherPage() {
     }
   }
 
+  // v99 — the IRR narrative lines, assembled ONLY from the inputs
+  const nfmt = (v: string) => { const n = Number(String(v).replace(/,/g, '')); return isFinite(n) && n !== 0 ? n.toLocaleString('en-US') : String(v || '').trim() }
+  const irrNarrative = [
+    `AC NO ${acNo}${acName ? `   M/S.  ${acName}` : ''}`,
+    `CHQ NO ${chqNo}${irrAmount ? `  FOR IRR ${nfmt(irrAmount)}/-` : ''}${irrRate ? `   RATE@ IRR ${nfmt(irrRate)}/-` : ''}`,
+    `${irrLoanAed ? `LOAN AMOUNT AED ${nfmt(irrLoanAed)}/-` : ''}${irrMonths ? ` FOR ${irrMonths} MONTHS` : ''}${irrCoverage ? ` @ ${irrCoverage}% LOAN AMOUNT` : ''}`.trim(),
+    `${irrIssuer ? `IRR CHQ FOR ${irrIssuer}` : ''}${irrIssuerBank ? ` (${irrIssuerBank})` : ''}`.trim(),
+  ]
+  const saveIrrCheque = async () => {
+    const acct = acNo.trim()
+    if (!acct) { toast.error('شماره حساب را وارد کنید'); return }
+    if (!chqNo.trim()) { toast.error('شمارهٔ چکِ ریالی لازم است'); return }
+    setSaving(true)
+    try {
+      const res = await crmApi.addGuarantor(acct, {
+        guarantor_name: (irrIssuer || acName).trim() || acName,
+        cheque_no: chqNo.trim() || undefined,
+        issuing_bank: (irrIssuerBank.split('-')[0] || 'IRR').trim().slice(0, 45) || undefined,
+        facility_id: facilityId.trim() || undefined,
+        branch: branch.trim() || undefined,
+        cheque_currency: 'IRR',
+        irr_amount: irrAmount.trim() || undefined,
+        irr_rate: irrRate.trim() || undefined,
+        coverage_pct: irrCoverage.trim() || undefined,
+        issuer_bank_code: irrIssuerBank.trim() || undefined,
+      } as any)
+      await refreshGuarantors(acct)
+      toast.success(res?.created ? 'چکِ ریالی ذیلِ تسهیلات ثبت شد' : 'چکِ ریالی به‌روزرسانی شد')
+    } catch (e) {
+      toast.error(parseApiError(e))
+    } finally { setSaving(false) }
+  }
+
   const nameOnCheque = nameType === 'Borrower Name' ? acName : guarantorName
   // Cheques under the selected facility (if any) drive the CHQ NO / AMOUNT lists;
   // otherwise all of the account's cheques do.
@@ -379,6 +492,8 @@ export default function VoucherPage() {
                 className={`flex-1 rounded-lg py-1.5 text-sm font-bold border ${!reversal ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>سندِ عادی</button>
               <button type="button" onClick={() => setReversal(true)}
                 className={`flex-1 rounded-lg py-1.5 text-sm font-bold border ${reversal ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>سندِ برگشتی (Reversal)</button>
+              <button type="button" onClick={() => setMode('irr')}
+                className={`flex-1 rounded-lg py-1.5 text-sm font-bold border ${mode === 'irr' ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-300'}`}>سندِ چکِ ریالی (IRR)</button>
             </div>
             {reversal && (
               <p className="text-xs text-purple-700 mb-2">برگرداندنِ چکِ ضمانتی: طرف‌های بدهکار/بستانکار جابه‌جا چاپ می‌شوند و با «ثبتِ خروجِ چک»، خروجِ چک با تاریخ و تسهیلاتِ تسویه‌شده ذیلِ همان رکوردِ چک در پروفایل ثبت می‌شود.</p>
@@ -443,6 +558,36 @@ export default function VoucherPage() {
                 <input className={field} value={chqAmount} onChange={(e) => setChqAmount(e.target.value)} inputMode="numeric" placeholder="144000" list="vch-amts" />
                 <datalist id="vch-amts">{chqAmounts.map((n) => <option key={n} value={n} />)}</datalist>
               </label>
+              {mode === 'irr' && (<>
+                <label className="text-sm"><span className="text-gray-600">تعدادِ چک (در AMOUNT چاپ می‌شود)</span>
+                  <input className={field} value={irrCount} onChange={(e) => setIrrCount(e.target.value)} inputMode="numeric" /></label>
+                <label className="text-sm"><span className="text-gray-600">مبلغِ چکِ ریالی (IRR)</span>
+                  <input className={field} value={irrAmount} onChange={(e) => setIrrAmount(e.target.value)} inputMode="numeric" placeholder="6383360000000" /></label>
+                <label className="text-sm"><span className="text-gray-600">نرخِ تبدیل (IRR به ازای هر AED)</span>
+                  <input className={field} value={irrRate} onChange={(e) => setIrrRate(e.target.value)} inputMode="numeric" placeholder="398960" /></label>
+                <label className="text-sm"><span className="text-gray-600">مبلغِ تسهیلات (AED)</span>
+                  <input className={field} value={irrLoanAed} onChange={(e) => setIrrLoanAed(e.target.value)} inputMode="numeric" placeholder="8000000" /></label>
+                <label className="text-sm"><span className="text-gray-600">مدت (ماه)</span>
+                  <input className={field} value={irrMonths} onChange={(e) => setIrrMonths(e.target.value)} inputMode="numeric" placeholder="48" /></label>
+                <label className="text-sm"><span className="text-gray-600">پوشش (٪ از تسهیلات)</span>
+                  <input className={field} value={irrCoverage} onChange={(e) => setIrrCoverage(e.target.value)} inputMode="numeric" placeholder="200" /></label>
+                <label className="col-span-2 text-sm"><span className="text-gray-600">نامِ صادرکنندهٔ چکِ ریالی</span>
+                  <input className={field} value={irrIssuer} onChange={(e) => setIrrIssuer(e.target.value)} placeholder="M/s Hani pokht iraninan" /></label>
+                <label className="col-span-2 text-sm"><span className="text-gray-600">بانکِ صادرکننده (+ کد)</span>
+                  <input className={field} value={irrIssuerBank} onChange={(e) => setIrrIssuerBank(e.target.value)} placeholder="karafarin bank - 5300114" /></label>
+                <label className="text-sm"><span className="text-gray-600">حسابِ بدهکار (DR)</span>
+                  <input className={field} value={irrDrAcct} onChange={(e) => setIrrDrAcct(e.target.value)} inputMode="numeric" /></label>
+                <label className="text-sm"><span className="text-gray-600">حسابِ بستانکار (CR)</span>
+                  <input className={field} value={irrCrAcct} onChange={(e) => setIrrCrAcct(e.target.value)} inputMode="numeric" /></label>
+                <label className="text-sm"><span className="text-gray-600">کدِ تراکنشِ DR</span>
+                  <input className={field} value={irrDrTran} onChange={(e) => setIrrDrTran(e.target.value)} inputMode="numeric" /></label>
+                <label className="text-sm"><span className="text-gray-600">کدِ تراکنشِ CR</span>
+                  <input className={field} value={irrCrTran} onChange={(e) => setIrrCrTran(e.target.value)} inputMode="numeric" /></label>
+                <label className="text-sm"><span className="text-gray-600">عنوانِ سندِ DR</span>
+                  <input className={field} value={irrDrTitle} onChange={(e) => setIrrDrTitle(e.target.value)} /></label>
+                <label className="text-sm"><span className="text-gray-600">عنوانِ سندِ CR</span>
+                  <input className={field} value={irrCrTitle} onChange={(e) => setIrrCrTitle(e.target.value)} /></label>
+              </>)}
               {reversal && (
                 <label className="col-span-2 text-sm">
                   <span className="text-gray-600">شرحِ تسویه/برگشت (متنِ سطرِ دومِ سند — عیناً چاپ می‌شود)</span>
@@ -459,7 +604,12 @@ export default function VoucherPage() {
               </label>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {reversal ? (
+              {mode === 'irr' ? (
+                <button onClick={saveIrrCheque} disabled={saving} type="button"
+                  className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
+                  {saving ? '...' : 'ذخیرهٔ چکِ ریالی ذیلِ تسهیلات'}
+                </button>
+              ) : reversal ? (
                 <button onClick={releaseCheque} disabled={releasing} type="button"
                   className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white font-bold rounded-lg py-2">
                   {releasing ? '...' : 'ثبتِ خروجِ چک (برگشتی)'}
@@ -470,7 +620,7 @@ export default function VoucherPage() {
                   {saving ? '...' : 'ذخیره ذیلِ تسهیلات'}
                 </button>
               )}
-              <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'voucher', account_no: acNo || undefined, detail: `چاپِ سندِ انتظامی${reversal ? ' (برگشتی)' : ''}${chqNo ? ` — چک ${chqNo}` : ''}${acName ? ` — ${acName}` : ''}` }); window.print() }} type="button"
+              <button onClick={() => { auditApi.logActivity({ action: 'print', entity_type: 'voucher', account_no: acNo || undefined, detail: `چاپِ سندِ انتظامی${reversal ? ' (برگشتی)' : mode === 'irr' ? ' (چکِ ریالی)' : ''}${chqNo ? ` — چک ${chqNo}` : ''}${acName ? ` — ${acName}` : ''}` }); window.print() }} type="button"
                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2">
                 <Printer size={18} /> چاپ (Print)
               </button>
@@ -485,7 +635,12 @@ export default function VoucherPage() {
           {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
           <div className="vch-wrap" ref={wrapRef}>
             <div id="voucher-print" ref={previewRef}>
-              {reversal ? (
+              {mode === 'irr' ? (
+                <>
+                  <VoucherIRR kind="DEBIT" title={irrDrTitle} date={date} branchNo={branch} acctNo={irrDrAcct} tranCode={irrDrTran} narrative={irrNarrative} count={irrCount} d={d} prefix="irrd" />
+                  <VoucherIRR kind="CREDIT" title={irrCrTitle} date={date} branchNo={branch} acctNo={irrCrAcct} tranCode={irrCrTran} narrative={irrNarrative} count={irrCount} d={d} prefix="irrc" />
+                </>
+              ) : reversal ? (
                 <>
                   <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={revCreditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvc" />
                   <Voucher kind="DEBIT" title="SECURITY HELD CHEQUES" date={date} acNo={revDebitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvd" />
