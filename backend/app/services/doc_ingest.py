@@ -90,12 +90,12 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
       },
       "guarantors": [ {"name": "", "account": "", "branch": "", "national_id": "",
                        "cheque_no": "", "cheque_currency": "AED | IRR", "irr_amount": "", "irr_rate": "",
-                       "coverage_pct": "", "issuer_bank": ""} ],
+                       "coverage_pct": "", "issuer_bank": "", "facility_ref": ""} ],
       "partners": [ {"name": "", "role": "Partner | Manager | Director | Authorized Signatory | <as printed>",
                      "nationality": "", "national_id": "", "passport_no": "", "passport_issue": "", "passport_expiry": "",
                      "emirates_id_no": "", "emirates_id_expiry": "", "share": "", "remarks": ""} ],
       "facilities": [ {"facility_type": "overdraft | loan | cheque_discounting | trust_receipt | lc_sight | lc_usance | lc | lg | log | other",
-                       "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "notes": ""} ],
+                       "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "tenor_months": "", "notes": ""} ],
       "properties": [ {"prop_type": "", "address": "", "city": "", "country": "", "postal_code": "",
                        "owner": "", "owner_national_id": "",
                        "land_area": "", "infra_area": "", "building_age": "", "zone": "",
@@ -125,11 +125,11 @@ Rules:
 - Partner/share percentages are real percentages between 0 and 100 and should sum to about 100. A value that cannot be a percentage (e.g. a capital amount such as 3,300,000) is an extraction error — omit it. Likewise sanity-check every number against its meaning (an interest rate is not thousands of percent).
 - "partners" = the company's shareholders/partners AND its managers/directors/authorized signatories — set "role" to what is printed (Partner, Manager, Director, Authorized Signatory, …). A person who is both partner and manager gets ONE entry with the fuller role. "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
 - PERSON IDENTITY NUMBERS MATTER: for EVERY partner/manager/guarantor and for the property owner, capture the national ID (کد ملی — the 10-digit Iranian code — or the local equivalent) plus, for partners/managers, the passport number with its ISSUE and EXPIRY dates and the Emirates ID number with its expiry, whenever the document shows them. Copy ID numbers digit-for-digit; never guess or pad them.
-- "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
+- "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed); when a tenor IS printed, put the number of months in "tenor_months" (48 for "48 months"). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - For each mortgaged property also hunt for: the OWNER/mortgagor's name and national ID (کد ملی مالک/راهن), the postal code, the land area and built-up area (متراژ زمین/زیربنا) with the building age and zone, the valuation with its DATE, and the INSURANCE POLICY: policy number ("insurance_no"), the insurer's computer/system code (کد رایانه — "insurance_computer_code"), and the policy's issue and expiry dates. These appear on the title deed, the mortgage deed, the valuation report and the insurance policy pages — read all of them.
 - PROPERTY EVENT HISTORY ("events"): a property's documents often record SEVERAL dated events over the years — list EVERY one you find as its own entry, never only the latest: every valuation with its date and appraised amount ("valuation" — a property may have 2-3 valuations from different years; report them ALL), the original mortgage ("mortgage", date + amount), a re-mortgage or top-up/excess mortgage (ترهین مجدد / ترهین مازاد — "remortgage"/"additional_mortgage", date + amount), a mortgage RELEASE (فک رهن — "release", with its date), and insurance issuance/renewals ("insurance"). Put the property's LATEST valuation in the top-level "valuation"/"last_valuation_date" fields as before, AND repeat every valuation (latest included) inside "events" so the timeline is complete. Dates as printed; amounts as plain digits; a Jalali (Iranian) date stays Jalali.
-- IRR (Iranian rial) SECURITY CHEQUES: when the approval/sanction requires a rial cheque as security, capture EVERY detail exactly as printed on the guarantor entry: the cheque number(s) ("cheque_no"), "cheque_currency": "IRR", the rial amount digit-for-digit ("irr_amount" — these are huge numbers; never round or abbreviate), the IRR-per-AED conversion rate used ("irr_rate"), what percentage of the facility the cheque covers ("coverage_pct" — e.g. 200), the cheque WRITER's name in "name", and the issuing bank with its code in "issuer_bank" (e.g. "karafarin bank - 5300114"). An ordinary AED cheque uses "cheque_currency": "AED". Never guess any of these — omit what the document does not state.
+- IRR (Iranian rial) SECURITY CHEQUES: when the approval/sanction requires a rial cheque as security, capture EVERY detail exactly as printed on the guarantor entry: the cheque number(s) ("cheque_no"), "cheque_currency": "IRR", the rial amount digit-for-digit ("irr_amount" — these are huge numbers; never round or abbreviate), the IRR-per-AED conversion rate used ("irr_rate"), what percentage of the facility the cheque covers ("coverage_pct" — e.g. 200), the cheque WRITER's name in "name", the issuing bank with its code in "issuer_bank" (e.g. "karafarin bank - 5300114"), and the REFERENCE of the facility the cheque secures in "facility_ref" exactly as printed (e.g. "STF1260603000001" or "182/4/1099/2025") so the cheque links to its facility. An ordinary AED cheque uses "cheque_currency": "AED". Never guess any of these — omit what the document does not state.
 - "security" = the collateral/security matrix: underlien deposits, security cheques, collaterals, etc., with the amount in each currency column (AED/USD/IRR/other) and which facility it secures ("for_facility").
 - A FIXED DEPOSIT / سپرده — even one held UNDER LIEN to secure a facility — is a SECURITY, NOT a facility: report it ONLY inside "security" (type "Underlien Deposits"), NEVER as an entry in "facilities". Likewise never output the overall "credit facility line" heading, a TOTAL/summary row, or a processing-charges row as a facility.
 - "required_securities" = the document's REQUIRED SECURITIES / DOCUMENTS (or securities/documents to be obtained) list, copied essentially verbatim, one item per line — the Offer Letter reuses this text as-is.
@@ -588,6 +588,9 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
         _set_prop(row, "irr_rate", g.get("irr_rate"))
         _set_prop(row, "coverage_pct", g.get("coverage_pct"))
         _set_prop(row, "issuer_bank_code", g.get("issuer_bank"))
+        # v101 — the facility reference the cheque secures (links the cheque to
+        # its facility so the voucher form can suggest/auto-fill from it)
+        _set_prop(row, "facility_id", g.get("facility_ref"))
         if customer is not None and customer.name and not row.customer_name:
             row.customer_name = customer.name
 
@@ -747,6 +750,10 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             exp = _parse_date(fc.get("expiry_date"))
             if exp and frow.expiry_date is None:
                 frow.expiry_date = exp
+            # v101 — tenor in months (fill-empty; digits only, e.g. "48")
+            tnr = str(fc.get("tenor_months") or "").strip()
+            if tnr and not (frow.tenor_months or "") and tnr.isdigit():
+                frow.tenor_months = tnr[:4]
 
     return {"ok": True, "account_no": acc, "name": name or acc,
             "customer_id": (customer.id if customer is not None else None),

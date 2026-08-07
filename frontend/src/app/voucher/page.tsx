@@ -60,7 +60,12 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
 
       <div className="vch-acrow">
         <div><span className="vch-aclbl">A/c No. :</span>{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
-        {M('amount', <div className="vch-amt">{amountText !== undefined ? (amountText || '**********') : amount ? `${currency} ${money(amount)}` : '**********'}</div>, true)}
+        {M('amount', amountText !== undefined ? (
+          // v101 — the cheque COUNT sits in a labelled box (not loose on the page)
+          <div className="vch-amt vch-qty"><span className="vch-qty-lbl">AMOUNT / QUANTITY</span><span className="vch-qty-box">{amountText || '—'}</span></div>
+        ) : (
+          <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>
+        ), true)}
       </div>
 
       <div className="vch-ref">
@@ -260,7 +265,26 @@ export default function VoucherPage() {
       if (acName && nm === acName) setNameType('Borrower Name')
       else { setNameType('Guarantor Name'); setGuarantorName(nm) }
     }
+    // v101 — an IRR cheque record also carries the rial details the import
+    // extraction stored; picking the cheque fills them (still editable).
+    if (g.irr_amount) setIrrAmount(String(g.irr_amount))
+    if (g.irr_rate) setIrrRate(String(g.irr_rate))
+    if (g.coverage_pct) setIrrCoverage(String(g.coverage_pct))
+    if (g.issuer_bank_code) setIrrIssuerBank(String(g.issuer_bank_code))
+    if (nm && String(g.cheque_currency || '') === 'IRR') setIrrIssuer(nm)
+    applyFacilityDetails(String(g.facility_id || ''))
     setSelectedGid(g.id || '')
+  }
+
+  // v101 — the linked facility record supplies the AED loan amount / tenor for
+  // the IRR narrative (matched by the bank reference in Facility.name, or id).
+  const applyFacilityDetails = (ref: string) => {
+    const v = ref.trim()
+    if (!v) return
+    const f = facilities.find((x) => String(x.name || '') === v || String(x.id || '') === v)
+    if (!f) return
+    if (f.amount != null && Number(f.amount)) setIrrLoanAed(String(Math.round(Number(f.amount))))
+    if (f.tenor_months) setIrrMonths(String(f.tenor_months))
   }
 
   const pickGuarantor = (id: string) => {
@@ -276,6 +300,7 @@ export default function VoucherPage() {
     const v = value.trim()
     const m = v ? guarantors.filter((g) => String(g.facility_id || '') === v) : []
     if (m.length === 1) applyChequeRecord(m[0])
+    else applyFacilityDetails(v)   // v101 — at least the loan amount/tenor
   }
 
   // Picking a cheque number fills its amount + name (scoped to the chosen facility).
@@ -390,6 +415,16 @@ export default function VoucherPage() {
   const chqNos = Array.from(new Set(sourceCheques.map((g) => g.cheque_no).filter(Boolean)))
   const chqAmounts = Array.from(new Set(sourceCheques.map((g) => g.cheque_amount).filter((v) => v != null).map(String)))
   const guarantorNames = Array.from(new Set(guarantors.map((g) => g.guarantor_name).filter(Boolean)))
+  // v101 — suggestion pools for the IRR inputs, fed by whatever the import
+  // extraction (or earlier manual saves) already stored for this account.
+  const uniqVals = (xs: any[]) => Array.from(new Set(xs.filter((v) => v != null && String(v).trim() !== '').map((v) => String(v))))
+  const sgIrrAmounts = uniqVals(sourceCheques.map((g) => g.irr_amount))
+  const sgIrrRates = uniqVals(sourceCheques.map((g) => g.irr_rate))
+  const sgIrrCoverages = uniqVals(sourceCheques.map((g) => g.coverage_pct))
+  const sgIrrIssuers = uniqVals(guarantors.map((g) => g.guarantor_name))
+  const sgIrrBanks = uniqVals(guarantors.map((g) => g.issuer_bank_code))
+  const sgFacAmounts = uniqVals(facilities.map((f) => (f.amount != null && Number(f.amount) ? Math.round(Number(f.amount)) : null)))
+  const sgFacMonths = uniqVals(facilities.map((f) => f.tenor_months))
   // The bank's real facility REFERENCE lives in Facility.name (e.g. "182/4/1099/2025",
   // "STF 1251218000001", "PIM …"), NOT the internal F-… id. Suggest those.
   const facilityIds = Array.from(new Set([
@@ -411,8 +446,12 @@ export default function VoucherPage() {
   // v100 — IRR slips reuse the standard Voucher frame; the A/c No is the same
   // dashed string style as the other slips (branch-account-trancode), built from
   // the editable inputs (empty parts simply drop out).
-  const irrDebitGL = [branch, irrDrAcct, irrDrTran].map((x) => x.trim()).filter(Boolean).join('-')
-  const irrCreditGL = [branch, irrCrAcct, irrCrTran].map((x) => x.trim()).filter(Boolean).join('-')
+  // v101 — a digits-only GL account longer than 6 gets a small dash after the
+  // 6-digit base (800016901 → 800016-901), per the bank's written form. Display
+  // only; an account typed WITH its own dashes is left as-is.
+  const fmtGlAcct = (a: string) => { const t = a.trim(); return /^\d{7,}$/.test(t) ? `${t.slice(0, 6)}-${t.slice(6)}` : t }
+  const irrDebitGL = [branch.trim(), fmtGlAcct(irrDrAcct), irrDrTran.trim()].filter(Boolean).join('-')
+  const irrCreditGL = [branch.trim(), fmtGlAcct(irrCrAcct), irrCrTran.trim()].filter(Boolean).join('-')
   // Ref-body content for IRR: the cheque line replaces the normal description,
   // the loan/coverage + issuer lines print as extra lines (only when non-empty).
   const irrChqLine = irrNarrative[1]
@@ -441,6 +480,10 @@ export default function VoucherPage() {
         .vch-aclbl { font-size: 13pt; font-weight: 800; margin-right: 4mm; }
         .vch-ac { font-size: 14pt; font-weight: 800; letter-spacing: 0.5px; }
         .vch-amt { font-size: 12pt; font-weight: 700; white-space: nowrap; }
+        /* v101 — boxed cheque-count cell for the IRR slip */
+        .vch-qty { display: flex; align-items: center; gap: 2.5mm; }
+        .vch-qty-lbl { font-size: 9pt; font-weight: 800; letter-spacing: 0.2mm; }
+        .vch-qty-box { border: 1.2pt solid #000; min-width: 20mm; text-align: center; font-size: 12pt; font-weight: 800; padding: 0.8mm 2mm; }
         .vch-ref { display: flex; border: 1.2pt solid #000; margin-top: 5mm; }
         .vch-ref-lbl { font-size: 10pt; font-weight: 800; padding: 2mm; border-right: 1.2pt solid #000;
                        display: flex; align-items: center; white-space: nowrap; }
@@ -570,19 +613,26 @@ export default function VoucherPage() {
                 <label className="text-sm"><span className="text-gray-600">تعدادِ چک (در AMOUNT چاپ می‌شود)</span>
                   <input className={field} value={irrCount} onChange={(e) => setIrrCount(e.target.value)} inputMode="numeric" /></label>
                 <label className="text-sm"><span className="text-gray-600">مبلغِ چکِ ریالی (IRR)</span>
-                  <input className={field} value={irrAmount} onChange={(e) => setIrrAmount(e.target.value)} inputMode="numeric" placeholder="6383360000000" /></label>
+                  <input className={field} value={irrAmount} onChange={(e) => setIrrAmount(e.target.value)} inputMode="numeric" placeholder="6383360000000" list="vch-irr-amts" />
+                  <datalist id="vch-irr-amts">{sgIrrAmounts.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="text-sm"><span className="text-gray-600">نرخِ تبدیل (IRR به ازای هر AED)</span>
-                  <input className={field} value={irrRate} onChange={(e) => setIrrRate(e.target.value)} inputMode="numeric" placeholder="398960" /></label>
+                  <input className={field} value={irrRate} onChange={(e) => setIrrRate(e.target.value)} inputMode="numeric" placeholder="398960" list="vch-irr-rates" />
+                  <datalist id="vch-irr-rates">{sgIrrRates.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="text-sm"><span className="text-gray-600">مبلغِ تسهیلات (AED)</span>
-                  <input className={field} value={irrLoanAed} onChange={(e) => setIrrLoanAed(e.target.value)} inputMode="numeric" placeholder="8000000" /></label>
+                  <input className={field} value={irrLoanAed} onChange={(e) => setIrrLoanAed(e.target.value)} inputMode="numeric" placeholder="8000000" list="vch-fac-amts" />
+                  <datalist id="vch-fac-amts">{sgFacAmounts.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="text-sm"><span className="text-gray-600">مدت (ماه)</span>
-                  <input className={field} value={irrMonths} onChange={(e) => setIrrMonths(e.target.value)} inputMode="numeric" placeholder="48" /></label>
+                  <input className={field} value={irrMonths} onChange={(e) => setIrrMonths(e.target.value)} inputMode="numeric" placeholder="48" list="vch-fac-months" />
+                  <datalist id="vch-fac-months">{sgFacMonths.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="text-sm"><span className="text-gray-600">پوشش (٪ از تسهیلات)</span>
-                  <input className={field} value={irrCoverage} onChange={(e) => setIrrCoverage(e.target.value)} inputMode="numeric" placeholder="200" /></label>
+                  <input className={field} value={irrCoverage} onChange={(e) => setIrrCoverage(e.target.value)} inputMode="numeric" placeholder="200" list="vch-irr-cov" />
+                  <datalist id="vch-irr-cov">{sgIrrCoverages.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="col-span-2 text-sm"><span className="text-gray-600">نامِ صادرکنندهٔ چکِ ریالی</span>
-                  <input className={field} value={irrIssuer} onChange={(e) => setIrrIssuer(e.target.value)} placeholder="M/s Hani pokht iraninan" /></label>
+                  <input className={field} value={irrIssuer} onChange={(e) => setIrrIssuer(e.target.value)} placeholder="M/s Hani pokht iraninan" list="vch-irr-issuers" />
+                  <datalist id="vch-irr-issuers">{sgIrrIssuers.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="col-span-2 text-sm"><span className="text-gray-600">بانکِ صادرکننده (+ کد)</span>
-                  <input className={field} value={irrIssuerBank} onChange={(e) => setIrrIssuerBank(e.target.value)} placeholder="karafarin bank - 5300114" /></label>
+                  <input className={field} value={irrIssuerBank} onChange={(e) => setIrrIssuerBank(e.target.value)} placeholder="karafarin bank - 5300114" list="vch-irr-banks" />
+                  <datalist id="vch-irr-banks">{sgIrrBanks.map((n) => <option key={n} value={n} />)}</datalist></label>
                 <label className="text-sm"><span className="text-gray-600">حسابِ بدهکار (DR)</span>
                   <input className={field} value={irrDrAcct} onChange={(e) => setIrrDrAcct(e.target.value)} inputMode="numeric" /></label>
                 <label className="text-sm"><span className="text-gray-600">حسابِ بستانکار (CR)</span>

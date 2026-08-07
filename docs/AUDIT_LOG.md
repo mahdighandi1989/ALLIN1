@@ -2613,3 +2613,29 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   INTIATED BY)، خانهٔ AMOUNT دقیقاً = تعدادِ چک، narrative از ورودی‌ها،
   حالت‌های عادی/برگشتی مثل قبل. اسکرین‌شاتِ بصری تأیید شد. type-check +
   build سبز؛ static سینک؛ pytest کامل در گیت.
+
+## 2026-08-07 — v101: پرداختِ سندِ IRR + پیشنهاد/تکمیلِ خودکارِ ورودی‌ها از دیتابیس + پیوندِ چک↔تسهیلات در استخراج
+
+- **[UI]** `voucher/page.tsx`:
+  1. حسابِ GL رقمی‌ِ بلندتر از ۶ رقم با خط‌فاصلهٔ کوچک بعد از پایهٔ
+     ۶رقمی چاپ می‌شود (`800016901` → `800016-901`؛ فقط نمایش — ورودیِ
+     دارای خط‌فاصلهٔ خودِ کاربر دست نمی‌خورد).
+  2. تعدادِ چک دیگر رها در صفحه نیست: خانهٔ `AMOUNT / QUANTITY` با کادرِ
+     مشکی (`vch-qty-box`) در همان جای خانهٔ مبلغِ سندهای دیگر.
+- **[SUGGEST]** ورودی‌های IRR حالا datalist دارند که از رکوردهای همان
+  حساب پر می‌شوند (مبلغ/نرخ/پوشش از چک‌های ثبت‌شده؛ صادرکننده/بانک از
+  guarantors؛ مبلغِ تسهیلات/مدت از facilities). انتخابِ شماره‌چکِ
+  ثبت‌شده همهٔ جزئیاتِ IRR را تکمیل می‌کند (`applyChequeRecord`) و
+  مرجعِ تسهیلاتِ لینک‌شده مبلغ AED و مدت را می‌آورد
+  (`applyFacilityDetails`؛ در `onFacilityChange` هم).
+- **[EXTRACT]** `doc_ingest.py` (قانون ۳ — افزودنی و fill-empty، مسیرِ
+  قبلی دست‌نخورده): شِمای guarantors فیلدِ `facility_ref` گرفت (مرجعِ
+  تسهیلاتی که چک ضمانتش است) → persist به `Guarantor.facility_id`؛
+  شِمای facilities فیلدِ `tenor_months` گرفت (فقط عددِ ماه) → persist
+  fill-empty با گاردِ isdigit. قاعده‌های IRR و tenor در پرامپت صریح شدند.
+- **[VERIFY]** تستِ جدید `test_import_links_cheque_to_facility_and_tenor`
+  (پیوند + tenor + حضورِ هر دو کلید در پرامپت)؛ doc_import ۳۴/۳۴؛
+  هارنسِ voucher ‏۲۸/۲۸ (خط‌فاصلهٔ GL، کادرِ AMOUNT/QUANTITY، datalistها
+  از دیتابیسِ ماک، auto-fill با انتخابِ چک، انعکاس در narrative،
+  دست‌نخوردگیِ حالت‌های قبلی)؛ اسکرین‌شات بصری تأیید شد؛ pytest کامل +
+  type-check + build در گیت؛ static سینک.

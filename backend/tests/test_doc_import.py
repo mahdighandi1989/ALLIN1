@@ -735,3 +735,33 @@ async def test_import_persists_irr_cheque_details(db_session):
     assert row.coverage_pct == "200" and "karafarin" in row.issuer_bank_code
     # the extraction prompt teaches the model to capture these fields
     assert "irr_amount" in doc_ingest.EXTRACTION_PROMPT and "IRR" in doc_ingest.EXTRACTION_PROMPT
+
+
+async def test_import_links_cheque_to_facility_and_tenor(db_session):
+    """v101 — the extracted facility_ref lands on Guarantor.facility_id, and a
+    facility's tenor_months persists (both fill-empty), so the voucher form can
+    suggest/auto-fill the IRR narrative from the DB."""
+    payload = {
+        "account_no": "115530", "name": "TENOR TEST LLC",
+        "account_type": "corporate",
+        "guarantors": [{
+            "name": "M/s Issuer Co", "cheque_no": "990011",
+            "cheque_currency": "IRR", "irr_amount": "1000000000",
+            "facility_ref": "STF1260603000001",
+        }],
+        "facilities": [{"facility_type": "loan", "amount": "8000000",
+                        "currency": "AED", "tenor_months": "48"}],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["guarantors_added"] == 1 and r["facilities_added"] == 1
+    await db_session.commit()
+    from app.models.guarantor import Guarantor
+    from app.models.facility import Facility
+    from sqlalchemy import select
+    g = (await db_session.execute(select(Guarantor).where(Guarantor.account_no == "115530"))).scalars().first()
+    assert g.facility_id == "STF1260603000001"
+    f = (await db_session.execute(select(Facility))).scalars().all()
+    mine = [x for x in f if x.tenor_months == "48" and float(x.amount) == 8000000.0]
+    assert mine, "tenor_months must persist on the imported facility"
+    # the prompt asks for both links
+    assert "facility_ref" in doc_ingest.EXTRACTION_PROMPT and "tenor_months" in doc_ingest.EXTRACTION_PROMPT
