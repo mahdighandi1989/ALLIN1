@@ -39,9 +39,10 @@ type VProps = {
   description: string
   acName: string
   extraLines?: string[]   // v95 — reversal stamps (SECURITY CHQ REVERSAL / LOAN SETTLED)
+  amountText?: string     // v100 — verbatim amount cell (IRR mode prints the CHEQUE COUNT, not a money value)
 }
 
-function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, d, prefix }: VProps & { d: DesignState; prefix: string }) {
+function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, amountText, d, prefix }: VProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
     <div className="vch" dir="ltr">
@@ -59,7 +60,7 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
 
       <div className="vch-acrow">
         <div><span className="vch-aclbl">A/c No. :</span>{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
-        {M('amount', <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>, true)}
+        {M('amount', <div className="vch-amt">{amountText !== undefined ? (amountText || '**********') : amount ? `${currency} ${money(amount)}` : '**********'}</div>, true)}
       </div>
 
       <div className="vch-ref">
@@ -83,12 +84,10 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
   )
 }
 
-// v99 — IRR (rial) security-cheque slip: the SAME .vch frame as the other
-// vouchers, but the IRR workbook's content: branch/account/tran-code boxes, a
-// 4-line TRANSACTION NARRATIVE, and AMOUNT = the NUMBER OF CHEQUES. Everything
-// visible comes from editable inputs (nothing hardcoded); the RECONCILIATION
-// NARRATIVE, VALUE DATE and CURR.CODE boxes and the TZ/TU letters of the
-// source workbook are deliberately left out (owner's instruction).
+// v99 → QUARANTINED in v100 (docs/REMOVAL_CANDIDATES.md): this boxed layout
+// copied the IRR workbook's look; the owner rejected it — the IRR slip must use
+// the SAME Voucher frame as the normal/reversal slips, only the contents differ.
+// Kept unused (not deleted) per rule 2.
 function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, count, d, prefix }:
   { kind: 'DEBIT' | 'CREDIT'; title: string; date: string; branchNo: string; acctNo: string;
     tranCode: string; narrative: string[]; count: string; d: DesignState; prefix: string }) {
@@ -409,6 +408,15 @@ export default function VoucherPage() {
   // sample workbook's wording — the owner writes their own, e.g.
   // «O.D & C.D RENEWED WITH NEW SECURITIES»). Empty input ⇒ no line at all.
   const revLines = ['SECURITY CHQ REVERSAL', ...(settledFacility.trim() ? [settledFacility.trim()] : [])]
+  // v100 — IRR slips reuse the standard Voucher frame; the A/c No is the same
+  // dashed string style as the other slips (branch-account-trancode), built from
+  // the editable inputs (empty parts simply drop out).
+  const irrDebitGL = [branch, irrDrAcct, irrDrTran].map((x) => x.trim()).filter(Boolean).join('-')
+  const irrCreditGL = [branch, irrCrAcct, irrCrTran].map((x) => x.trim()).filter(Boolean).join('-')
+  // Ref-body content for IRR: the cheque line replaces the normal description,
+  // the loan/coverage + issuer lines print as extra lines (only when non-empty).
+  const irrChqLine = irrNarrative[1]
+  const irrExtraLines = [irrNarrative[2], irrNarrative[3]].filter(Boolean)
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
   const description = `CHQ NO ${chqNo}_${nameType}: ${nameOnCheque}`
   const field = 'w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -637,8 +645,8 @@ export default function VoucherPage() {
             <div id="voucher-print" ref={previewRef}>
               {mode === 'irr' ? (
                 <>
-                  <VoucherIRR kind="DEBIT" title={irrDrTitle} date={date} branchNo={branch} acctNo={irrDrAcct} tranCode={irrDrTran} narrative={irrNarrative} count={irrCount} d={d} prefix="irrd" />
-                  <VoucherIRR kind="CREDIT" title={irrCrTitle} date={date} branchNo={branch} acctNo={irrCrAcct} tranCode={irrCrTran} narrative={irrNarrative} count={irrCount} d={d} prefix="irrc" />
+                  <Voucher kind="DEBIT" title={irrDrTitle} date={date} acNo={irrDebitGL} amount="" amountText={irrCount.trim()} currency="" ourRef={ourRef} description={irrChqLine} acName={acName} extraLines={irrExtraLines} d={d} prefix="irrd" />
+                  <Voucher kind="CREDIT" title={irrCrTitle} date={date} acNo={irrCreditGL} amount="" amountText={irrCount.trim()} currency="" ourRef={ourRef} description={irrChqLine} acName={acName} extraLines={irrExtraLines} d={d} prefix="irrc" />
                 </>
               ) : reversal ? (
                 <>
