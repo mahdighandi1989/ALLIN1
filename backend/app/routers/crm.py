@@ -294,9 +294,11 @@ async def release_security_cheque(
     when = (payload.date or "").strip() or _date.today().strftime("%d/%m/%Y")
     settled = (payload.settled_facility or "").strip()
     note = (payload.note or "").strip()
+    # v97 — the settlement description is the user's own words, stored VERBATIM
+    # (no automatic «LOAN SETTLED» prefix — that was the sample workbook's text).
     stamp = " — ".join(x for x in [
         "SECURITY CHQ REVERSAL",
-        f"LOAN SETTLED: {settled}" if settled else "",
+        settled,
         note,
     ] if x)[:300]
     n_new = n_already = 0
@@ -313,7 +315,7 @@ async def release_security_cheque(
                  account_no=account_no, entity_id=rows[0].id,
                  detail=f"خروجِ چکِ ضمانتی {chq}"
                         + (f" (تسهیلات {fac})" if fac else "")
-                        + (f" — تسویهٔ {settled}" if settled else "")
+                        + (f" — {settled}" if settled else "")
                         + f" — تاریخ {when} (سندِ برگشتی)")
     return {"ok": True, "released": n_new, "already_released": n_already,
             "guarantors": [_guarantor_out(g) for g in rows]}
