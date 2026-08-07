@@ -247,6 +247,7 @@ class TestCustomerActivityLog:
         gg = body["guarantors"][0]
         assert gg["released"] is True and gg["released_date"] == "07/08/2026"
         assert "SECURITY CHQ REVERSAL" in gg["release_note"] and "STF-1" in gg["release_note"]
+        assert "LOAN SETTLED" not in gg["release_note"]   # v97 — verbatim, no auto prefix
         # idempotent second call → already_released
         r2 = await client.post(
             "/api/crm/guarantors/778899/release",
