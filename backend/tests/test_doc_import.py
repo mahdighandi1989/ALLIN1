@@ -709,3 +709,29 @@ def test_build_facts_includes_property_history_generically():
     hist = p["history"]
     assert {h["event_type"] for h in hist} == {"valuation", "release"}
     assert any(h.get("date") == "01/01/2027" for h in hist)
+
+
+async def test_import_persists_irr_cheque_details(db_session):
+    """v99 — guarantor entries extracted from sanction documents carry the IRR
+    cheque details through to the Guarantor row (fill-empty)."""
+    payload = {
+        "account_no": "2624-115529-011", "name": "SATIN STAR TRADING LLC",
+        "account_type": "corporate",
+        "guarantors": [{
+            "name": "M/s Hani pokht iraninan", "cheque_no": "536001/237986",
+            "cheque_currency": "IRR", "irr_amount": "6383360000000",
+            "irr_rate": "398960", "coverage_pct": "200",
+            "issuer_bank": "karafarin bank - 5300114",
+        }],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["guarantors_added"] == 1
+    await db_session.commit()
+    from app.models.guarantor import Guarantor
+    from sqlalchemy import select
+    row = (await db_session.execute(select(Guarantor).where(Guarantor.account_no == "115529"))).scalars().first()
+    assert row.cheque_no == "536001/237986" and row.cheque_currency == "IRR"
+    assert row.irr_amount == "6383360000000" and row.irr_rate == "398960"
+    assert row.coverage_pct == "200" and "karafarin" in row.issuer_bank_code
+    # the extraction prompt teaches the model to capture these fields
+    assert "irr_amount" in doc_ingest.EXTRACTION_PROMPT and "IRR" in doc_ingest.EXTRACTION_PROMPT

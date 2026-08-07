@@ -237,6 +237,12 @@ class GuarantorCreate(BaseModel):
     facility_id: str = ""
     branch: str = ""
     national_id: str = ""
+    # v99 — IRR (rial) cheque details (all optional; blank keeps stored values)
+    cheque_currency: str = ""
+    irr_amount: str = ""
+    irr_rate: str = ""
+    coverage_pct: str = ""
+    issuer_bank_code: str = ""
     id: str = ""  # when set, update that record (else match by account+cheque_no)
 
 
@@ -249,6 +255,10 @@ def _guarantor_out(g) -> dict:
         "cheque_amount": float(g.cheque_amount) if g.cheque_amount is not None else None,
         "issuing_bank": g.issuing_bank, "pim_ref": g.pim_ref, "national_id": g.national_id,
         "facility_id": g.facility_id, "branch": g.branch, "date_added": g.date_added,
+        # v99 — IRR cheque details
+        "cheque_currency": g.cheque_currency, "irr_amount": g.irr_amount,
+        "irr_rate": g.irr_rate, "coverage_pct": g.coverage_pct,
+        "issuer_bank_code": g.issuer_bank_code,
         # v95 — release (سند برگشتی) status
         "released": (g.released or "") == "1",
         "released_date": g.released_date, "release_note": g.release_note,
@@ -489,6 +499,17 @@ async def add_guarantor(
         g.branch = payload.branch[:20]
     if (payload.national_id or "").strip():
         g.national_id = payload.national_id.strip()[:40]
+    # v99 — IRR cheque fields (fill style: blank keeps the stored value)
+    if (payload.cheque_currency or "").strip():
+        g.cheque_currency = payload.cheque_currency.strip()[:10]
+    if (payload.irr_amount or "").strip():
+        g.irr_amount = payload.irr_amount.strip()[:40]
+    if (payload.irr_rate or "").strip():
+        g.irr_rate = payload.irr_rate.strip()[:40]
+    if (payload.coverage_pct or "").strip():
+        g.coverage_pct = payload.coverage_pct.strip()[:20]
+    if (payload.issuer_bank_code or "").strip():
+        g.issuer_bank_code = payload.issuer_bank_code.strip()[:80]
     if customer and getattr(customer, "name", None) and not g.customer_name:
         g.customer_name = customer.name
 
