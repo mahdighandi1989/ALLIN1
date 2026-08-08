@@ -765,3 +765,106 @@ async def test_import_links_cheque_to_facility_and_tenor(db_session):
     assert mine, "tenor_months must persist on the imported facility"
     # the prompt asks for both links
     assert "facility_ref" in doc_ingest.EXTRACTION_PROMPT and "tenor_months" in doc_ingest.EXTRACTION_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# v103 — operator instructions: the box's text must reach every model prompt as
+# a HIGHEST-PRIORITY block, and the response must carry the model's report of
+# what it did because of it. No instructions ⇒ byte-identical pre-v103 prompt.
+# ---------------------------------------------------------------------------
+
+def _mock_complete(captured, report="طبق دستورِ شما، شمارهٔ حساب 550011 از متنِ دستور برداشته و روی رکورد اعمال شد."):
+    import json as _j
+
+    async def fake_complete(db, prompt, task=None, model_id=None, max_tokens=0, timeout=0.0):
+        captured.append(prompt)
+        return {"ok": True, "model": "mock-model", "text": _j.dumps({
+            "customers": [{"account_no": "550011", "name": "Instr Co",
+                           "account_type": "corporate", "fields": {"business_type": "Trading"}}],
+            "instruction_report": report,
+            "kb_items": [],
+        }, ensure_ascii=False)}
+    return fake_complete
+
+
+async def test_import_instructions_reach_prompt_and_report(client, auth_headers, db_session,
+                                                           import_inline, monkeypatch):
+    from app.ai import inference
+    captured: list = []
+    monkeypatch.setattr(inference, "complete", _mock_complete(captured))
+    note = "شمارهٔ حسابِ این مدارک 550011 است؛ نوعِ کسب‌وکار را Trading ثبت کن."
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("sheet.csv", b"Account,Name\n2624-550011-1,Instr Co", "text/csv")},
+                          data={"instructions": note})
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    res = job["result"]
+    # the operator text reached the model, wrapped in the authoritative block
+    # (markers carry a per-run random nonce so neither the operator text nor a
+    # hostile document can forge them — v103 review finding)
+    import re as _re
+    assert captured, "the model was never called"
+    for p in captured:
+        assert "OPERATOR INSTRUCTIONS — HIGHEST PRIORITY" in p
+        assert note in p
+        m = _re.search(r"--- OPERATOR INSTRUCTIONS ([0-9a-f]{8}) START ---", p)
+        assert m, "nonce start marker missing"
+        assert f"--- OPERATOR INSTRUCTIONS {m.group(1)} END ---" in p
+        assert "instruction_report" in p  # the report demand itself
+    # and the model's applied-instructions report surfaced in the response
+    assert res["instructions_used"] is True
+    assert "550011" in res["instruction_report"]
+    assert any(c.get("ok") and c.get("account_no") == "550011" for c in res["customers"])
+
+
+async def test_import_without_instructions_has_no_block(client, auth_headers, db_session,
+                                                        import_inline, monkeypatch):
+    from app.ai import inference
+    captured: list = []
+    monkeypatch.setattr(inference, "complete", _mock_complete(captured, report=""))
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("sheet.csv", b"Account,Name\n2624-550011-1,Instr Co", "text/csv")})
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    res = job["result"]
+    for p in captured:
+        assert "OPERATOR INSTRUCTIONS" not in p  # pre-v103 prompt, untouched
+    assert res["instructions_used"] is False
+    assert res["instruction_report"] == ""
+
+
+async def test_import_instructions_docx_path_honest_note(client, auth_headers, db_session, import_inline):
+    """The Word fast-path is deterministic (no model) — with instructions given,
+    the report must SAY they could not be applied instead of staying silent."""
+    db_session.add(Customer(account_no="115524", name="Old"))
+    await db_session.commit()
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("efco.docx", _draft_docx(), mime)},
+                          data={"instructions": "فقط ضامن‌ها را بردار"})
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    res = job["result"]
+    assert res["instructions_used"] is True
+    assert "قابلِ اعمال نبود" in res["instruction_report"]
+
+
+async def test_import_silent_model_gets_honest_fallback_report(client, auth_headers, db_session,
+                                                               import_inline, monkeypatch):
+    """Instructions given but the model returns NO instruction_report ⇒ the
+    response must carry the explicit «گزارشی نداد» warning, never silence."""
+    from app.ai import inference
+    captured: list = []
+    monkeypatch.setattr(inference, "complete", _mock_complete(captured, report=""))
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("sheet.csv", b"Account,Name\n2624-550011-1,Instr Co", "text/csv")},
+                          data={"instructions": "هر چه هست ثبت کن"})
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+    res = job["result"]
+    assert res["instructions_used"] is True
+    assert "گزارشِ اعمالِ دستور برنگرداند" in res["instruction_report"]

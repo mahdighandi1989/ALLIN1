@@ -890,12 +890,14 @@ export const importsApi = {
     const { data } = await api.get('/api/imports/ai-models')
     return data
   },
-  async analyzeDocument(file: File, modelId?: number, onTick?: () => void): Promise<any> {
+  async analyzeDocument(file: File, modelId?: number, onTick?: () => void, instructions?: string): Promise<any> {
     // Start a background job (returns immediately), then poll until done — so a
     // long extraction never hits the HTTP gateway timeout.
     const form = new FormData()
     form.append('file', file)
     if (modelId != null) form.append('model_id', String(modelId))
+    // v103 — operator's free-text guidance for the extraction model (optional)
+    if (instructions && instructions.trim()) form.append('instructions', instructions.trim())
     const { data: start } = await api.post('/api/imports/analyze', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000, // generous: this only covers the file UPLOAD
