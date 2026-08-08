@@ -136,8 +136,9 @@ def import_inline(db_session: AsyncSession, monkeypatch):
     async def _reuse():
         yield db_session  # the fixture owns this session's lifecycle; don't close
 
-    async def _inline(job_id, data, fname, mime, model_id, username):
-        await imports_router._run_import_job(job_id, data, fname, mime, model_id, username)
+    async def _inline(job_id, data, fname, mime, model_id, username, instructions=""):
+        await imports_router._run_import_job(job_id, data, fname, mime, model_id, username,
+                                             instructions=instructions)
 
     monkeypatch.setattr(imports_router, "_job_session", _reuse)
     monkeypatch.setattr(imports_router, "_spawn_job", _inline)

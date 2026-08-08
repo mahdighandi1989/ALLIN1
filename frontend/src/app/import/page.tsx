@@ -23,6 +23,9 @@ export default function ImportPage() {
   const [dragOver, setDragOver] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [results, setResults] = useState<FileResult[]>([])
+  // v103 — optional operator instructions the extraction model MUST follow;
+  // the per-file result then reports exactly what was done because of them.
+  const [instructions, setInstructions] = useState('')
 
   useEffect(() => {
     importsApi.aiModels()
@@ -53,7 +56,7 @@ export default function ImportPage() {
     for (let i = 0; i < files.length; i++) {
       const f = files[i]
       try {
-        const r = await importsApi.analyzeDocument(f, modelId === 'auto' ? undefined : modelId)
+        const r = await importsApi.analyzeDocument(f, modelId === 'auto' ? undefined : modelId, undefined, instructions)
         out.push({ filename: f.name, ok: true, data: r })
       } catch (e: any) {
         const d = e?.response?.data?.detail
@@ -67,6 +70,15 @@ export default function ImportPage() {
     const okN = out.filter((x) => x.ok).length
     if (okN) toast.success(`${okN} از ${files.length} فایل تحلیل و ثبت شد`)
     else toast.error('هیچ فایلی با موفقیت تحلیل نشد')
+    // v103 review finding (major): a document-specific instruction (e.g. an
+    // account number) must never silently ride into the NEXT batch — clear the
+    // box once a batch that used it succeeds. On full failure it stays for the
+    // retry. (Cleared here, NOT in addFiles: a note typed between adding file 1
+    // and file 2 of the same batch must survive.)
+    if (okN && instructions.trim()) {
+      setInstructions('')
+      toast('دستورِ متنی روی این دسته اعمال شد و برای دستهٔ بعدی پاک شد — گزارشش زیر هر فایل آمده است.', { icon: '🧭' })
+    }
   }
 
   const sel = 'border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -135,6 +147,20 @@ export default function ImportPage() {
             </div>
           )}
 
+          {/* v103 — operator instructions for the extraction model (optional) */}
+          <label className="block">
+            <span className="text-[12px] text-gray-600 font-semibold">دستور / توضیح برای مدلِ استخراج‌گر (اختیاری)</span>
+            <textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={3}
+              maxLength={6000}
+              className="w-full mt-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+              placeholder="مثلاً: «شمارهٔ حسابِ این مدارک 271520 است»، «فقط بخشِ ضامن‌ها را استخراج کن»، «نامِ شرکت را Alpha Trading LLC ثبت کن»، یا هر دستور/تکمیلِ دیگری…"
+            />
+            <span className="text-[11px] text-gray-400">مدل موظف است دقیقاً طبقِ این نوشته عمل کند و بعد از استخراج گزارش می‌دهد که بر اساسِ آن چه کرده است.</span>
+          </label>
+
           <button onClick={analyzeAll} disabled={busy || !files.length}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
             {busy
@@ -151,6 +177,13 @@ export default function ImportPage() {
                 {r.ok && r.data?.drive?.stored && <a href={r.data.drive.link} target="_blank" rel="noreferrer" className="mr-auto inline-flex items-center gap-1 text-blue-700 hover:underline text-xs">Drive <ExternalLink size={11} /></a>}
               </div>
 
+              {/* v103 — what the model did because of the operator's instructions */}
+              {r.ok && r.data?.instructions_used && (
+                <div className="mb-1 rounded-lg border border-indigo-200 bg-indigo-50 p-2">
+                  <div className="text-[12px] font-bold text-indigo-800">🧭 گزارشِ اجرای دستورِ شما</div>
+                  <div className="text-[12px] text-indigo-900 whitespace-pre-wrap leading-5">{r.data.instruction_report || '—'}</div>
+                </div>
+              )}
               {r.incapable && (
                 <div className="text-xs text-amber-800">
                   {r.incapable.message || `«${r.incapable.model}» از پسِ این فایل برنمی‌آید.`}
