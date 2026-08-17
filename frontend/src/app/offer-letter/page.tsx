@@ -515,6 +515,31 @@ export default function OfferLetterPage() {
   }
   const printDoc = async () => { await saveOffer(true); setTimeout(() => window.print(), 50) }
 
+  // v104 — download the letter as a REAL, EDITABLE Word file, built from the
+  // LIVE preview DOM (so every layout/text/format override is included).
+  const [wordBusy, setWordBusy] = useState(false)
+  const downloadWord = async () => {
+    if (wordBusy || !printRef.current) return
+    setWordBusy(true)
+    const tId = toast.loading('در حالِ ساختِ فایلِ Word (متنِ قابلِ ویرایش)…')
+    try {
+      await saveOffer(true)
+      const { buildOfferDocx } = await import('./wordExport')
+      const blob = await buildOfferDocx({ root: printRef.current, buildTag: 'offer-v104' })
+      // unicode-preserving filename (v84 lesson): only path-hazard chars go
+      const base = `Offer Letter - ${(f.CompanyName || 'Customer').trim()}${(acc || f.AccountNumber).trim() ? ` - ${(acc || f.AccountNumber).trim()}` : ''}`
+        .replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120)
+      const url = URL.createObjectURL(blob)
+      const el = document.createElement('a')
+      el.href = url; el.download = `${base}.docx`
+      document.body.appendChild(el); el.click(); document.body.removeChild(el)
+      setTimeout(() => URL.revokeObjectURL(url), 4000)
+      toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و شماره‌گذاری بندها همه قابلِ ویرایش‌اند', { id: tId })
+    } catch {
+      toast.error('ساختِ Word ناموفق بود — دوباره تلاش کن', { id: tId })
+    } finally { setWordBusy(false) }
+  }
+
   // Drop / pick a filled committee-approval draft (.docx): the backend parses it,
   // persists everything to the customer record, and returns the fields that
   // prefill this Offer Letter.
@@ -1302,6 +1327,10 @@ export default function OfferLetterPage() {
             <button onClick={printDoc} type="button"
               className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-md px-4 py-2 text-sm font-medium">
               <Download size={15} /> Print / PDF
+            </button>
+            <button onClick={downloadWord} disabled={wordBusy} type="button"
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-md px-4 py-2 text-sm font-medium">
+              <Download size={15} /> {wordBusy ? '...' : 'Word (.docx)'}
             </button>
             {/* page-wide layout mode, like the official-letter page's toolbar
                 toggle — hover highlights a block, one click opens its layout
