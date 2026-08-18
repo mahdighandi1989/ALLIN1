@@ -866,6 +866,14 @@ export const letterAiApi = {
 // ---------------------------------------------------------------------------
 // Excel import
 // ---------------------------------------------------------------------------
+// v105 — voucher template exports (Excel rendered server-side with openpyxl)
+export const vouchersApi = {
+  async exportExcel(payload: { mode: string; slips: any[]; logo_png?: string }): Promise<Blob> {
+    const { data } = await api.post('/api/vouchers/export-excel', payload, { responseType: 'blob' })
+    return data
+  },
+}
+
 export const importsApi = {
   async customers(file: File, dryRun = false): Promise<ImportResult> {
     const form = new FormData()

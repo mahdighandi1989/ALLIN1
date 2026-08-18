@@ -2723,3 +2723,30 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   buildTag) — ۲۱/۲۱ سبز. راستی‌آزماییِ دوم با python-docx: ترتیبِ محتوا
   (عنوان→گیرنده→جدول→بندها→پایان‌بندی) و کاملی بندها. pytest کامل +
   type-check + build؛ static سینک.
+
+## 2026-08-17 — v105: خروجیِ Excel و Wordِ سندهای کانترا — قالبِ پُرشدنی با پرینتِ یکسان
+
+- **[FEATURE]** دو دکمهٔ «Excel (.xlsx)» و «Word (.docx)» زیرِ دکمهٔ چاپِ
+  صفحهٔ کانترا. هر دو از **یک specِ واحد** تغذیه می‌شوند (`buildSlips()`)
+  که دقیقاً همان مقادیرِ پیش‌نمایشِ حالتِ جاری را می‌دهد (عادی/برگشتی/IRR)
+  — هیچ منطقِ موازی که drift کند.
+- **[EXCEL]** endpointِ جدید `POST /api/vouchers/export-excel`
+  (`routers/voucher_export.py`، پشتِ auth): رندرِ قطعی با openpyxl —
+  بنرِ بنفشِ merged، باکسِ OUR REF با خطِ جداکنندهٔ برچسب و خطِ بالای
+  نام، خانهٔ AMOUNT / QUANTITY برای IRR، خطوطِ امضا، قابِ ضخیمِ دورِ هر
+  سند، لوگوی بانک (همان PNGِ باندل‌شدهٔ صفحه، با اعتبارسنجیِ data-url و
+  سقفِ حجم) — و **print setupِ A4 عمودی fit-to-one-page با حاشیه‌های
+  همانِ چاپِ وب** تا پرینتِ خودِ Excel هم همان قالب دربیاید. سلول‌ها
+  همه قابلِ پرکردنِ بعدی‌اند.
+- **[WORD]** `voucher/wordExport.ts` سمتِ کلاینت: هر سند یک جدول-فرمِ
+  قاب‌دار (خانه‌ها پُرشدنی، مثل خاستگاهِ اکسلیِ فرم)، هر دو سند در یک
+  A4. درس‌های docx نامه‌ها اعمال: سندِ انگلیسیِ تمام-LTR (صفر w:bidi،
+  هیچ w:rtl، هیچ embedding control)، jc literal، docProps با نشانِ
+  «voucher-v105».
+- **[VERIFY]** تستِ بک‌اندِ جدید `test_voucher_export.py` (۳ تست: ساختارِ
+  کامل + رنگِ بنر + print setup + دو تصویرِ لوگو؛ نیازِ auth؛ ردِ
+  data-urlِ غیرتصویری). هارنسِ جدید `voucher_export_check.js` ‏۱۳/۱۳:
+  payloadِ اکسل آینهٔ اسلیپ‌های پیش‌نمایش، فایلِ Wordِ واقعی unzip و
+  روی XML چک شد (GLهای خط‌تیره‌دار، narrative رقم‌به‌رقم، بنرِ CCCCFF،
+  قیدهای bidi، جدول‌های قاب‌دار، لوگو، buildTag). هارنسِ قبلی صفحه
+  ۳۰/۳۰ بدونِ رگرسیون. pytest کامل + type-check + build؛ static سینک.
