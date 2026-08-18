@@ -892,8 +892,20 @@ async def _prune_jobs(db: AsyncSession, keep: int = 300) -> None:
         pass
 
 
-async def _create_job(db: AsyncSession, job_id: str, fname: str, username: str) -> None:
-    db.add(ImportJob(id=job_id, status="running", filename=fname, username=username))
+# v106 — how many times a job may RUN in total (first run + resumes after a
+# restart). 2 = exactly one resume: a file that keeps killing the instance gets
+# an honest error instead of an endless restart→resume→OOM loop.
+_MAX_JOB_ATTEMPTS = 2
+
+
+async def _create_job(db: AsyncSession, job_id: str, fname: str, username: str,
+                      *, data: bytes = b"", mime: str = "", model_id=None,
+                      instructions: str = "") -> None:
+    # v106 — the upload + parameters are stored WITH the row so a restart can
+    # resume the job; attempts starts at 1 (this run counts).
+    db.add(ImportJob(id=job_id, status="running", filename=fname, username=username,
+                     mime=mime, model_id=model_id, instructions=instructions or None,
+                     attempts=1, file_data=data or None))
     await _prune_jobs(db)
     await db.commit()
 
@@ -905,6 +917,7 @@ async def _record_job_error(db: AsyncSession, job_id: str, http_status: int, det
         row.http_status = http_status
         row.detail_json = _json.dumps(detail, ensure_ascii=False)
         row.finished_at = func.now()
+        row.file_data = None          # v106 — finished ⇒ the stored upload goes
     await db.commit()
 
 
@@ -919,6 +932,7 @@ async def _run_import_job(job_id: str, data: bytes, fname: str, mime: str, model
                 row.status = "done"
                 row.result_json = _json.dumps(result, ensure_ascii=False)
                 row.finished_at = func.now()
+                row.file_data = None      # v106 — finished ⇒ the stored upload goes
             await db.commit()
         except HTTPException as he:
             await db.rollback()
@@ -941,23 +955,48 @@ async def _spawn_job(job_id: str, data: bytes, fname: str, mime: str, model_id, 
 
 
 async def fail_orphaned_jobs() -> int:
-    """At startup, any import job still 'running' is orphaned: the process that was
-    extracting it died on a restart/redeploy, so its task is gone and the row would
-    otherwise stay 'running' forever (the browser polling it endlessly). Mark such
-    jobs as errored so the poll returns a clear 'please re-upload' instead. Returns
-    how many were reconciled."""
+    """At startup, reconcile import jobs left 'running' by the previous process
+    (a restart/redeploy killed their in-flight task).
+
+    v106 — heavy files were dying here: Render restarts the instance mid-
+    extraction (OOM or an autodeploy) and this used to error EVERY interrupted
+    job, so the user saw the small warning icon and no extraction. Now a job
+    whose upload is stored on its row (``file_data``) and whose ``attempts`` is
+    under the cap is RESUMED (re-spawned from the stored bytes — the browser's
+    poll keeps working because the row stays 'running'); only jobs beyond the
+    cap or without a stored upload (legacy rows) get the old clear error. The
+    attempt cap keeps a file that repeatedly kills the instance from creating a
+    restart loop. Returns how many jobs were marked errored (resumes logged)."""
+    resumed = 0
     try:
         async with _job_session() as db:
             rows = (await db.execute(select(ImportJob).where(ImportJob.status == "running"))).scalars().all()
+            to_resume: list = []
             for r in rows:
+                if r.file_data and (r.attempts or 0) < _MAX_JOB_ATTEMPTS:
+                    r.attempts = (r.attempts or 0) + 1
+                    to_resume.append((r.id, bytes(r.file_data), r.filename or "document",
+                                      r.mime or "", r.model_id, r.username or "",
+                                      r.instructions or ""))
+                    continue
                 r.status = "error"
                 r.http_status = 503
                 r.detail_json = _json.dumps(
+                    ("پردازش دوبار به‌خاطرِ ری‌استارتِ سرور قطع شد — فایل برای این سرور سنگین است؛ "
+                     "آن را به چند فایلِ کوچک‌تر تقسیم کن و دوباره بارگذاری کن.")
+                    if r.file_data else
                     "پردازش به‌خاطر ری‌استارتِ سرور نیمه‌کاره ماند؛ لطفاً دوباره فایل را بارگذاری کنید.",
                     ensure_ascii=False)
                 r.finished_at = func.now()
+                r.file_data = None
             await db.commit()
-            return len(rows)
+            for job_id, data, fname, mime, model_id, username, instructions in to_resume:
+                await _spawn_job(job_id, data, fname, mime, model_id, username,
+                                 instructions=instructions)
+                resumed += 1
+            if resumed:
+                logger.info("Resumed %d interrupted import job(s) from their stored uploads", resumed)
+            return len(rows) - resumed        # = jobs actually marked errored
     except Exception:  # pragma: no cover - best-effort startup housekeeping
         return 0
 
@@ -991,9 +1030,12 @@ async def analyze_document(
 
     username = getattr(user, "username", "") or ""
     job_id = _uuid.uuid4().hex[:12]
-    await _create_job(db, job_id, fname, username)
-    await _spawn_job(job_id, data, fname, mime, model_id, username,
-                     instructions=(instructions or "").strip()[:_INSTRUCTIONS_MAX_CHARS])
+    instr = (instructions or "").strip()[:_INSTRUCTIONS_MAX_CHARS]
+    # v106 — the upload is stored WITH the job so a mid-extraction instance
+    # restart resumes it on boot instead of erroring (blob cleared on finish)
+    await _create_job(db, job_id, fname, username, data=data, mime=mime,
+                      model_id=model_id, instructions=instr)
+    await _spawn_job(job_id, data, fname, mime, model_id, username, instructions=instr)
     return {"job_id": job_id, "status": "running", "filename": fname}
 
 
