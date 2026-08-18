@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app.config import settings, enforce_security_on_startup
-from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router, letter_ai as letter_ai_router, cleanup as cleanup_router, charge_tariff as charge_tariff_router, knowledge as knowledge_router
+from app.routers import auth, customers, facilities, stats, offer_letters, reports, users, trash, audit, notifications, imports, settings as settings_router, fx, google_auth, crm, general, personal, properties, ai as ai_router, telegram as telegram_router, staff as staff_router, departments as departments_router, letters as letters_router, letter_ai as letter_ai_router, cleanup as cleanup_router, charge_tariff as charge_tariff_router, knowledge as knowledge_router, voucher_export as voucher_export_router
 from app.utils.log_sanitizer import install_log_sanitizer
 from app.middleware import MetricsMiddleware
 # Importing ``app.monitoring`` runs ``structlog.configure(...)`` as a side effect,
@@ -288,6 +288,7 @@ app.include_router(telegram_router.router, prefix="/api/telegram", tags=["telegr
 app.include_router(charge_tariff_router.router, prefix="/api/charge-tariff", tags=["charge-tariff"])
 app.include_router(knowledge_router.router, prefix="/api/knowledge", tags=["knowledge"])
 app.include_router(cleanup_router.router, tags=["cleanup"])  # router carries its own /api/cleanup prefix
+app.include_router(voucher_export_router.router, prefix="/api/vouchers", tags=["voucher-export"])
 
 
 @app.get("/health")

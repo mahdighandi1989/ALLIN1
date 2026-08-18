@@ -5,7 +5,7 @@ import Layout from '@/components/Layout'
 import { Printer, Search } from 'lucide-react'
 import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
-import { customersApi, crmApi, auditApi, parseApiError } from '@/lib/api'
+import { customersApi, crmApi, auditApi, vouchersApi, parseApiError } from '@/lib/api'
 import { dmySlash } from '@/lib/dates'
 import { useFormDesign, Movable, DesignControls, DesignPanel, DesignState } from '@/lib/formDesign'
 import toast from 'react-hot-toast'
@@ -463,6 +463,68 @@ export default function VoucherPage() {
   const irrExtraLines = [irrNarrative[2], irrNarrative[3]].filter(Boolean)
   const ourRef = useMemo(() => [acNo, facilityId].filter(Boolean).join(' _ '), [acNo, facilityId])
   const description = `CHQ NO ${chqNo}_${nameType}: ${nameOnCheque}`
+  // v105 — ONE spec drives the Excel/Word template exports: exactly the values
+  // the preview renders for the CURRENT mode (no parallel logic to drift).
+  const buildSlips = () => {
+    const amt = chqAmount ? `${currency} ${money(chqAmount)}`.trim() : ''
+    if (mode === 'irr') {
+      const n = irrCount.trim()
+      return [
+        { kind: 'DEBIT', title: irrDrTitle, date, acNo: irrDebitGL, amount: n, amountBoxed: true, ourRef, description: irrChqLine, acName, extraLines: irrExtraLines },
+        { kind: 'CREDIT', title: irrCrTitle, date, acNo: irrCreditGL, amount: n, amountBoxed: true, ourRef, description: irrChqLine, acName, extraLines: irrExtraLines },
+      ]
+    }
+    if (reversal) {
+      return [
+        { kind: 'CREDIT', title: 'PER CONTRA', date, acNo: revCreditGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: revLines },
+        { kind: 'DEBIT', title: 'SECURITY HELD CHEQUES', date, acNo: revDebitGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: revLines },
+      ]
+    }
+    return [
+      { kind: 'DEBIT', title: 'SECURITIES', date, acNo: debitGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: [] as string[] },
+      { kind: 'CREDIT', title: 'PER CONTRA', date, acNo: creditGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: [] as string[] },
+    ]
+  }
+  const saveBlobFile = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob)
+    const el = document.createElement('a')
+    el.href = url; el.download = name
+    document.body.appendChild(el); el.click(); document.body.removeChild(el)
+    setTimeout(() => URL.revokeObjectURL(url), 4000)
+  }
+  const exportBase = () => `Voucher${mode === 'irr' ? ' IRR' : reversal ? ' Reversal' : ''}${chqNo.trim() ? ` - CHQ ${chqNo.trim()}` : ''}${acNo.trim() ? ` - ${acNo.trim()}` : ''}`.replace(/[\\/:*?"<>|]+/g, '-')
+  const [exporting, setExporting] = useState<'' | 'xlsx' | 'docx'>('')
+  const exportExcel = async () => {
+    if (exporting) return
+    setExporting('xlsx')
+    const tId = toast.loading('در حالِ ساختِ فایلِ Excel…')
+    try {
+      const blob = await vouchersApi.exportExcel({ mode, slips: buildSlips().map((s) => ({
+        kind: s.kind, title: s.title, date: s.date, ac_no: s.acNo, amount: s.amount,
+        amount_boxed: s.amountBoxed, our_ref: s.ourRef, description: s.description,
+        ac_name: s.acName, extra_lines: s.extraLines,
+      })), logo_png: BANK_LOGO })
+      saveBlobFile(blob, `${exportBase()}.xlsx`)
+      toast.success('فایلِ Excel دانلود شد — سلول‌ها قابلِ پرکردن‌اند و پرینتِ خودِ Excel یک‌صفحهٔ A4 با همین قالب است', { id: tId })
+      auditApi.logActivity({ action: 'export', entity_type: 'voucher', account_no: acNo || undefined, detail: `خروجیِ Excelِ سندِ انتظامی (${mode})${chqNo ? ` — چک ${chqNo}` : ''}` })
+    } catch (e) {
+      toast.error(parseApiError(e), { id: tId })
+    } finally { setExporting('') }
+  }
+  const exportWord = async () => {
+    if (exporting) return
+    setExporting('docx')
+    const tId = toast.loading('در حالِ ساختِ فایلِ Word…')
+    try {
+      const { buildVoucherDocx } = await import('./wordExport')
+      const blob = await buildVoucherDocx(buildSlips(), 'voucher-v105')
+      saveBlobFile(blob, `${exportBase()}.docx`)
+      toast.success('فایلِ Word دانلود شد — هر دو سند در یک صفحهٔ A4، همه‌چیز قابلِ ویرایش', { id: tId })
+      auditApi.logActivity({ action: 'export', entity_type: 'voucher', account_no: acNo || undefined, detail: `خروجیِ Wordِ سندِ انتظامی (${mode})${chqNo ? ` — چک ${chqNo}` : ''}` })
+    } catch {
+      toast.error('ساختِ Word ناموفق بود — دوباره تلاش کن', { id: tId })
+    } finally { setExporting('') }
+  }
   const field = 'w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
@@ -693,6 +755,17 @@ export default function VoucherPage() {
                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg py-2">
                 <Printer size={18} /> چاپ (Print)
               </button>
+              {/* v105 — the same slips as fillable Excel / Word templates */}
+              <div className="flex gap-2">
+                <button onClick={exportExcel} disabled={!!exporting} type="button"
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-green-700 hover:bg-green-800 disabled:opacity-60 text-white font-bold rounded-lg py-2 text-sm">
+                  {exporting === 'xlsx' ? '...' : 'Excel (.xlsx)'}
+                </button>
+                <button onClick={exportWord} disabled={!!exporting} type="button"
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold rounded-lg py-2 text-sm">
+                  {exporting === 'docx' ? '...' : 'Word (.docx)'}
+                </button>
+              </div>
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">در پنجرۀ چاپ، Scale را روی «Default / 100%» و Margins را «Default» بگذارید تا دقیق فیت شود.</p>
             <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
