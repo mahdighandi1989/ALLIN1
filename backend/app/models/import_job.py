@@ -11,7 +11,7 @@ final status/result back to this row.
 """
 from datetime import datetime
 
-from sqlalchemy import Column, String, Text, Integer, DateTime
+from sqlalchemy import Column, String, Text, Integer, DateTime, LargeBinary
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -29,6 +29,17 @@ class ImportJob(Base):
     detail_json = Column(Text)        # JSON of the error detail (str or dict)
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     finished_at = Column(DateTime(timezone=True))
+    # v106 — restart-survivable jobs: the upload + its parameters ride WITH the
+    # job row, so an instance restart mid-extraction (Render OOM / autodeploy)
+    # RESUMES the job on boot instead of erroring it. ``file_data`` is cleared
+    # the moment the job finishes (done or error) so the table never bloats;
+    # ``attempts`` caps resumes (a file that keeps killing the instance must
+    # not create a restart loop).
+    mime = Column(String(120))
+    model_id = Column(Integer)
+    instructions = Column(Text)
+    attempts = Column(Integer, default=0)
+    file_data = Column(LargeBinary)
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         return f"<ImportJob {self.id} {self.status} {self.filename!r}>"

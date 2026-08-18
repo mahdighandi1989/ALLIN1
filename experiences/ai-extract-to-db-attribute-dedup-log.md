@@ -7,7 +7,7 @@ source:
   origin: "claude-code"
   imported_at: "2026-07-04T09:40:00Z"
 created_at: "2026-07-04T09:40:00Z"
-updated_at: "2026-07-16T12:00:00Z"
+updated_at: "2026-08-18T00:00:00Z"
 merged_from: []
 ---
 
@@ -66,8 +66,6 @@ merged_from: []
 - ALLIN1: `services/letter_db_extract.py` + `routers/letter_ai.py` (apply-db) — AUDIT_LOG 2026-07-04
 - مرتبط: `ai-edit-suggestions-review-first-with-locate-guard`, `conservative-dedup-compare-all-columns`,
   `upsert-keys-must-cover-every-caller`, `startup-merge-must-be-fill-empty-only`
-EOF
-echo done
 ## Update 2026-07-10 — misclassification ≠ duplication؛ گاردِ نوعِ موجودیت لازم است
 
 گزارشِ «دوبله ثبت شده» گاهی اصلاً duplication نیست: در استخراجِ سندِ واقعی، متنِ
@@ -251,3 +249,20 @@ Borrower/Guarantor برای چکِ ریالی بی‌معناست چون صاد�
 موجود دست نخورد. و درسِ فرا-روشی: بازبین‌هایی که کد را «اجرا» می‌کنند
 (تست/هارنس/پروبِ زنده) در یک راند چیزهایی پیدا کردند که خواندنِ صرفِ
 کد نمی‌داد — این الگو را برای فیچرهای حساس تکرار کن.
+
+## Update 2026-08-18 (v106) — کارِ پس‌زمینهٔ طولانی باید ری‌استارت را زنده بماند: ورودی را با job ذخیره کن، در بوت resume کن، تلاش را سقف بزن
+
+هر background jobی که فقط در حافظهٔ پروسه زندگی می‌کند، روی پلتفرمی که
+پروسه را می‌کُشد (OOMِ فایلِ سنگین، autodeployِ «هر مرج») یک بمبِ
+ساعتی است — و علامتش گمراه‌کننده است: کاربر «خطای تحلیل» می‌بیند و
+سراغِ مدل/پرامپت می‌گردد، در حالی که لاگِ سرور
+(«==> Instance restarted» + «Marked N interrupted…») مقصرِ واقعی را
+نشان می‌دهد؛ اول لاگِ زیرساخت را بخوان. الگوی درمان: (۱) ورودیِ خام +
+پارامترهای اجرا را با خودِ سطرِ job در DB ذخیره کن (LargeBinary)؛
+(۲) reconciliationِ بوت به‌جای error کردن، از همان بایت‌ها resume کند
+— سطر running می‌ماند تا pollingِ کلاینت بی‌تغییر جواب بگیرد؛
+(۳) **سقفِ تلاش الزامی است**: بدونِ آن، فایلی که خودش عاملِ OOM است
+حلقهٔ restart→resume→OOM می‌سازد؛ در سقف، پیامِ صادقانه با راهِ عملی
+بده («فایل را تقسیم کن»)، نه خطای عمومی؛ (۴) blob را بلافاصله بعدِ
+اتمام پاک کن تا جدول باد نکند؛ (۵) مسیرِ قبلی (error برای سطرهای
+بدونِ blob) را به‌عنوانِ fallbackِ سطرهای قدیمی نگه دار.
