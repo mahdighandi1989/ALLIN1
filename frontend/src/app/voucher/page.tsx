@@ -605,10 +605,13 @@ export default function VoucherPage() {
     <Layout>
       <style>{`
         /* ---- Voucher (matches the source Excel form) ---- */
-        .vch { box-sizing: border-box; width: 100%; height: 135mm; border: 1.6pt solid #000;
+        /* v108 — slightly shorter slips (132mm) with a clear gap between them:
+           8mm top + 132+132 + 5mm gap = 277mm of 297mm ⇒ still one A4 page,
+           and each slip keeps its own full border (no shared edge). */
+        .vch { box-sizing: border-box; width: 100%; height: 132mm; border: 1.6pt solid #000;
                padding: 5mm 6mm 4mm; display: flex; flex-direction: column; color: #000;
                font-family: Arial, "Segoe UI", sans-serif; background: #fff; overflow: hidden; }
-        .vch + .vch { border-top: 0; }
+        .vch + .vch { margin-top: 5mm; }
         .vch-head { display: flex; justify-content: space-between; align-items: flex-start; }
         .vch-kind { font-size: 30pt; font-weight: 900; letter-spacing: 1px; line-height: 0.9; }
         .vch-logo { text-align: right; line-height: 1; }
@@ -623,7 +626,8 @@ export default function VoucherPage() {
         .vch-amt { font-size: 12pt; font-weight: 700; white-space: nowrap; }
         /* v107 — reversal slip per the owner's mock: centered header stamp,
            split account row with AED amount, bordered 2-row info grid */
-        .vch-hstamp { align-self: center; font-size: 15pt; font-weight: 800; letter-spacing: 0.5px; padding-top: 2mm; }
+        /* v108 — one line always (it wrapped beside the wider CREDIT) */
+        .vch-hstamp { align-self: center; font-size: 13.5pt; font-weight: 800; letter-spacing: 0.5px; padding-top: 2mm; white-space: nowrap; }
         .vch-acct2 { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6mm; }
         .vch-acct2 .lbl { font-size: 13pt; font-weight: 800; }
         .vch-acct2 .val { font-size: 14pt; font-weight: 800; letter-spacing: 0.5px; }
