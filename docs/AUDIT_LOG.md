@@ -2820,3 +2820,19 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   فاصله 5.0mm، جمعِ کل 277mm؛ شمارشِ خطِ متنِ مهر با Range.getClientRects
   = ۱ خط در هر دو سند (بدونِ overflow: scrollW = clientW)؛ هارنسِ صفحه
   ۳۳/۳۳ بدونِ رگرسیون؛ pytest کامل + type-check + build؛ static سینک.
+
+## 2026-08-20 — v109: قالبِ گریدی برای سندهای حالتِ عادی هم (به خواستِ مالک)
+
+- **[FEATURE]** همان چیدمانِ v107 (سطرِ «Account No. :» با شعبهٔ
+  فاصله‌دار + سلولِ جدای AED و مبلغ + جدولِ دوردیفهٔ
+  Ref./Borrower/A-c و Cheque/by X/Issuer/A-c) روی سندهای حالتِ عادی
+  (DEBIT/SECURITIES و CREDIT/PER CONTRA) هم اعمال شد — بدونِ مهرِ
+  سربرگ (که مخصوصِ برگشتی است) و با همان عنوان‌ها/حساب‌های قبلیِ حالتِ
+  عادی (860185-784-090 / 869900-784-590). پیاده‌سازی: بازاستفادهٔ
+  کامپوننتِ VoucherRev با stamp خالی؛ کامپوننتِ عمومیِ Voucher برای IRR
+  سرِ جای خودش. buildSlips هم برای هر دو خروجی (Excel/Word) همین spec
+  گریدی را می‌دهد (headerStamp خالی، currencyLabel، grid).
+- **[VERIFY]** هارنسِ صفحه ۳۴/۳۴ (GLهای فاصله‌دار + گرید + نبودِ مهر در
+  عادی، برگشتی/IRR بدونِ رگرسیون)؛ هارنسِ خروجی‌ها ۱۷/۱۷ (payloadِ
+  اکسلِ حالتِ عادی حالا grid و currency_label دارد)؛ اسکرین‌شاتِ بصری
+  تأیید شد؛ pytest کامل + type-check + build؛ static سینک.
