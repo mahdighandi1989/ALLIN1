@@ -1,8 +1,8 @@
-// v105 — Contra/security-cheque voucher as a REAL, EDITABLE Word (.docx):
+// v105/v107 — Contra/security-cheque voucher as a REAL, EDITABLE Word (.docx):
 // both slips on one A4 page, each slip a bordered form table (the voucher's
-// original home was an Excel form — cells are what the officer fills later),
-// laid out like the print: kind + logo/INTERNAL VOUCHER, lavender banner,
-// DATE, A/c No + amount, the OUR REF box, signature rules.
+// original home was an Excel form — cells are what the officer fills later).
+// v107 adds the reversal mock's shapes: a centered header stamp, the split
+// account row with a currency label, and the bordered 2-row info grid.
 //
 // Direction lessons (letter chain v74→v83, binding): the voucher is an
 // ENGLISH, LTR document — every paragraph stays LTR-base (digit groups can
@@ -16,11 +16,13 @@ import {
 } from 'docx'
 import { BANK_LOGO } from './logo'
 
+export type GridCell = { t: string; b?: boolean; span?: number }
 export type SlipSpec = {
   kind: string; title: string; date: string; acNo: string
   amount: string; amountBoxed: boolean
   ourRef: string; description: string; acName: string
   extraLines: string[]
+  headerStamp?: string; currencyLabel?: string; grid?: GridCell[][]
 }
 
 const FONT = 'Arial'
@@ -42,13 +44,14 @@ const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
 const THIN = { style: BorderStyle.SINGLE, size: 8, color: '000000' }
 const MED = { style: BorderStyle.SINGLE, size: 10, color: '000000' }
 const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE } as any
+const allThin = { top: THIN, bottom: THIN, left: THIN, right: THIN } as any
 const b64bytes = (dataUrl: string) => Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0))
 const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => {
   const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src
 })
 
 function cell(paras: Paragraph[], opts: {
-  span?: number; borders?: any; fill?: string; width?: number; vAlign?: any
+  span?: number; borders?: any; fill?: string; vAlign?: any
 } = {}): TableCell {
   return new TableCell({
     children: paras.length ? paras : [new Paragraph('')],
@@ -56,13 +59,13 @@ function cell(paras: Paragraph[], opts: {
     borders: opts.borders || noBorders,
     shading: opts.fill ? { fill: opts.fill, type: ShadingType.CLEAR, color: 'auto' } : undefined,
     verticalAlign: opts.vAlign ?? VerticalAlign.CENTER,
-    width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
     margins: { top: 30, bottom: 30, left: 60, right: 60 },
   })
 }
 
-// column grid inside a slip (≈176 mm usable): [label | mid | mid | right]
-const COLS = [2600, 2600, 2400, 2400]
+// 7-column grid inside a slip (≈166 mm usable) — the mock's A..G columns
+const COLS = [1500, 1300, 1100, 1500, 1500, 1100, 1300]
+const NCOLS = COLS.length
 const FULL = COLS.reduce((a, b) => a + b, 0)
 
 async function slipTable(s: SlipSpec): Promise<Table> {
@@ -71,10 +74,13 @@ async function slipTable(s: SlipSpec): Promise<Table> {
   const logoW = Math.round(logoH * (logo.naturalWidth / Math.max(1, logo.naturalHeight)))
   const rows: TableRow[] = []
 
-  // header: kind (left) | logo + INTERNAL VOUCHER (right)
+  // header: kind | (v107) centered stamp | logo + INTERNAL VOUCHER
   rows.push(new TableRow({
     children: [
       cell([P(s.kind.toUpperCase(), 52, { bold: true })], { span: 2 }),
+      cell(s.headerStamp
+        ? [P(s.headerStamp, 30, { bold: true, align: AlignmentType.CENTER, after: 0 })]
+        : [new Paragraph('')], { span: 3 }),
       cell([
         new Paragraph({
           alignment: AlignmentType.RIGHT,
@@ -87,64 +93,88 @@ async function slipTable(s: SlipSpec): Promise<Table> {
   // lavender banner
   rows.push(new TableRow({
     children: [cell([P(s.title, 32, { bold: true, align: AlignmentType.CENTER, after: 0 })],
-      { span: 4, fill: 'CCCCFF', borders: { top: THIN, bottom: THIN, left: THIN, right: THIN } })],
+      { span: NCOLS, fill: 'CCCCFF', borders: allThin })],
   }))
   // DATE
   rows.push(new TableRow({
-    children: [cell([P(`DATE :  ${s.date}`, 22, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 4 })],
+    children: [cell([P(`DATE :  ${s.date}`, 22, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: NCOLS })],
   }))
-  // A/c No + amount
-  rows.push(new TableRow({
-    children: [
-      cell([P(`A/c No. :   ${s.acNo}`, 26, { bold: true, after: 0 })], { span: s.amountBoxed ? 2 : 3 }),
-      ...(s.amountBoxed
-        ? [
-            cell([P('AMOUNT / QUANTITY', 18, { bold: true, align: AlignmentType.RIGHT, after: 0 })]),
-            cell([P(s.amount || '—', 24, { bold: true, align: AlignmentType.CENTER, after: 0 })],
-              { borders: { top: MED, bottom: MED, left: MED, right: MED } }),
-          ]
-        : [cell([P(s.amount || '**********', 24, { bold: true, align: AlignmentType.RIGHT, after: 0 })])]),
-    ],
-  }))
-  // OUR REF box: label cell (with its separator) + body lines
-  const bodyParas: Paragraph[] = [
-    P(s.ourRef || ' ', 22, { bold: true, after: 0 }),
-    P(s.description || ' ', 19, { after: 0 }),
-  ]
-  const refBody = [
-    cell(bodyParas, { span: 3, borders: { top: MED, bottom: NONE, left: MED, right: MED } }),
-  ]
-  rows.push(new TableRow({
-    children: [
-      cell([P('OUR REF :', 20, { bold: true, after: 0 })], { borders: { top: MED, bottom: NONE, left: MED, right: MED } }),
-      ...refBody,
-    ],
-  }))
-  // name line (top rule, like the form) + extra stamp lines
-  rows.push(new TableRow({
-    children: [
-      cell([new Paragraph('')], { borders: { top: NONE, bottom: MED, left: MED, right: MED } }),
-      cell([
-        P(s.acName || ' ', 21, { bold: true, after: 0 }),
-        ...s.extraLines.map((ln) => P(ln, 19, { bold: true, after: 0 })),
-      ], { span: 3, borders: { top: THIN, bottom: MED, left: MED, right: MED } }),
-    ],
-  }))
+  // account row — three shapes: reversal (currency label), IRR (boxed count), normal
+  if (s.currencyLabel) {
+    rows.push(new TableRow({
+      children: [
+        cell([P(`Account No. :   ${s.acNo}`, 26, { bold: true, after: 0 })], { span: 4 }),
+        cell([P(s.currencyLabel, 24, { bold: true, align: AlignmentType.RIGHT, after: 0 })]),
+        cell([P(s.amount || '**********', 24, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 2 }),
+      ],
+    }))
+  } else if (s.amountBoxed) {
+    rows.push(new TableRow({
+      children: [
+        cell([P(`A/c No. :   ${s.acNo}`, 26, { bold: true, after: 0 })], { span: 4 }),
+        cell([P('AMOUNT / QUANTITY', 18, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 2 }),
+        cell([P(s.amount || '—', 24, { bold: true, align: AlignmentType.CENTER, after: 0 })],
+          { borders: { top: MED, bottom: MED, left: MED, right: MED } }),
+      ],
+    }))
+  } else {
+    rows.push(new TableRow({
+      children: [
+        cell([P(`A/c No. :   ${s.acNo}`, 26, { bold: true, after: 0 })], { span: 5 }),
+        cell([P(s.amount || '**********', 24, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 2 }),
+      ],
+    }))
+  }
+
+  if (s.grid && s.grid.length) {
+    // v107 — the bordered info grid, exactly the mock's rows
+    for (const row of s.grid) {
+      const cells: TableCell[] = []
+      let used = 0
+      for (const c of row) {
+        const span = Math.max(1, Math.min(NCOLS, c.span || 1))
+        cells.push(cell([P(c.t || ' ', 20, { bold: !!c.b, after: 0 })], { span, borders: allThin }))
+        used += span
+      }
+      if (used < NCOLS) cells.push(cell([new Paragraph('')], { span: NCOLS - used, borders: allThin }))
+      rows.push(new TableRow({ children: cells }))
+    }
+  } else {
+    // OUR REF box (normal / IRR slips)
+    rows.push(new TableRow({
+      children: [
+        cell([P('OUR REF :', 20, { bold: true, after: 0 })], { borders: { top: MED, bottom: NONE, left: MED, right: MED } }),
+        cell([
+          P(s.ourRef || ' ', 22, { bold: true, after: 0 }),
+          P(s.description || ' ', 19, { after: 0 }),
+        ], { span: NCOLS - 1, borders: { top: MED, bottom: NONE, left: MED, right: MED } }),
+      ],
+    }))
+    rows.push(new TableRow({
+      children: [
+        cell([new Paragraph('')], { borders: { top: NONE, bottom: MED, left: MED, right: MED } }),
+        cell([
+          P(s.acName || ' ', 21, { bold: true, after: 0 }),
+          ...s.extraLines.map((ln) => P(ln, 19, { bold: true, after: 0 })),
+        ], { span: NCOLS - 1, borders: { top: THIN, bottom: MED, left: MED, right: MED } }),
+      ],
+    }))
+  }
+
   // stamp room
-  rows.push(new TableRow({ children: [cell([P(' ', 22, { after: 0 }), P(' ', 22, { after: 0 }), P(' ', 22, { after: 0 })], { span: 4 })] }))
+  rows.push(new TableRow({ children: [cell([P(' ', 22, { after: 0 }), P(' ', 22, { after: 0 }), P(' ', 22, { after: 0 })], { span: NCOLS })] }))
   // signature labels + rules
   rows.push(new TableRow({
     children: [
-      cell([P('Prepared By.', 20, { bold: true, after: 0 })], { span: 2 }),
-      cell([P('Authorized Signatures', 20, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 2 }),
+      cell([P('Prepared By.', 20, { bold: true, after: 0 })], { span: 3 }),
+      cell([P('Authorized Signatures', 20, { bold: true, align: AlignmentType.RIGHT, after: 0 })], { span: 4 }),
     ],
   }))
   rows.push(new TableRow({
     children: [
-      cell([new Paragraph('')], { borders: { ...noBorders, top: THIN } }),
-      cell([new Paragraph('')]),
-      cell([new Paragraph('')]),
-      cell([new Paragraph('')], { borders: { ...noBorders, top: THIN } }),
+      cell([new Paragraph('')], { span: 2, borders: { ...noBorders, top: THIN } }),
+      cell([new Paragraph('')], { span: 3 }),
+      cell([new Paragraph('')], { span: 2, borders: { ...noBorders, top: THIN } }),
     ],
   }))
 

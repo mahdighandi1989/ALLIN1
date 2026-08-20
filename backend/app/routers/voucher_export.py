@@ -34,6 +34,13 @@ router = APIRouter(tags=["voucher-export"], dependencies=[Depends(get_current_ac
 _MAX_LOGO_B64 = 400_000            # ~300 KB decoded — the bundled logo is far smaller
 
 
+class GridCell(BaseModel):
+    """v107 — one cell of the reversal info grid (label cells are bold)."""
+    t: str = Field("", max_length=200)
+    b: bool = False
+    span: int = Field(1, ge=1, le=7)
+
+
 class SlipSpec(BaseModel):
     kind: str = Field(..., max_length=10)          # DEBIT | CREDIT
     title: str = Field("", max_length=60)          # banner text
@@ -45,6 +52,10 @@ class SlipSpec(BaseModel):
     description: str = Field("", max_length=200)
     ac_name: str = Field("", max_length=200)
     extra_lines: List[str] = Field(default_factory=list)
+    # v107 — the reversal mock's shapes
+    header_stamp: str = Field("", max_length=60)    # centered in the head row
+    currency_label: str = Field("", max_length=10)  # separate AED cell before the amount
+    grid: List[List[GridCell]] = Field(default_factory=list, max_length=6)
 
 
 class VoucherExportIn(BaseModel):
@@ -112,6 +123,12 @@ def build_voucher_workbook(payload: VoucherExportIn) -> bytes:
         c = ws.cell(row=row, column=1, value=slip.kind.strip().upper()[:10])
         c.font = Font(name="Arial", size=26, bold=True)
         c.alignment = Alignment(horizontal="left", vertical="center")
+        if slip.header_stamp.strip():
+            # v107 — the reversal stamp sits centered in the head row (B..E)
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=LAST - 2)
+            hs = ws.cell(row=row, column=2, value=slip.header_stamp.strip())
+            hs.font = Font(name="Arial", size=14, bold=True)
+            hs.alignment = Alignment(horizontal="center", vertical="center")
         if logo:
             try:
                 img = XLImage(io.BytesIO(logo))
@@ -149,10 +166,20 @@ def build_voucher_workbook(payload: VoucherExportIn) -> bytes:
 
         # -- A/c No (left) + amount (right) --
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
-        c = ws.cell(row=row, column=1, value=f"A/c No. :   {slip.ac_no.strip()}")
+        acc_label = "Account No. :" if slip.currency_label.strip() else "A/c No. :"
+        c = ws.cell(row=row, column=1, value=f"{acc_label}   {slip.ac_no.strip()}")
         c.font = Font(name="Arial", size=13, bold=True)
         c.alignment = Alignment(horizontal="left")
-        if slip.amount_boxed:
+        if slip.currency_label.strip():
+            # v107 — separate currency cell before the amount (the mock's AED)
+            cl = ws.cell(row=row, column=LAST - 2, value=slip.currency_label.strip())
+            cl.font = Font(name="Arial", size=12, bold=True)
+            cl.alignment = Alignment(horizontal="right")
+            ws.merge_cells(start_row=row, start_column=LAST - 1, end_row=row, end_column=LAST)
+            a = ws.cell(row=row, column=LAST - 1, value=slip.amount.strip() or "**********")
+            a.font = Font(name="Arial", size=12, bold=True)
+            a.alignment = Alignment(horizontal="right")
+        elif slip.amount_boxed:
             c = ws.cell(row=row, column=LAST - 2, value="AMOUNT / QUANTITY")
             c.font = Font(name="Arial", size=9, bold=True)
             c.alignment = Alignment(horizontal="right", vertical="center")
@@ -167,6 +194,48 @@ def build_voucher_workbook(payload: VoucherExportIn) -> bytes:
             a.font = Font(name="Arial", size=12, bold=True)
             a.alignment = Alignment(horizontal="right")
         row += 2
+
+        # -- v107: the reversal info grid replaces the OUR REF box --
+        if slip.grid:
+            for grow in slip.grid[:6]:
+                col = 1
+                for gc in grow:
+                    if col > LAST:
+                        break
+                    span = max(1, min(gc.span, LAST - col + 1))
+                    if span > 1:
+                        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=col + span - 1)
+                    c = ws.cell(row=row, column=col, value=gc.t.strip())
+                    c.font = Font(name="Arial", size=10, bold=gc.b)
+                    c.alignment = Alignment(horizontal="left", vertical="center")
+                    for cc in range(col, col + span):
+                        cell = ws.cell(row=row, column=cc)
+                        cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
+                    col += span
+                while col <= LAST:   # pad an underfull row so the box closes
+                    cell = ws.cell(row=row, column=col)
+                    cell.border = Border(top=thin, bottom=thin, left=thin, right=thin)
+                    col += 1
+                row += 1
+            row += 2
+            # -- signature footer (same as below) --
+            ws.row_dimensions[row].height = 34
+            row += 1
+            c = ws.cell(row=row, column=1, value="Prepared By.")
+            c.font = Font(name="Arial", size=10, bold=True)
+            c = ws.cell(row=row, column=LAST - 2, value="Authorized Signatures")
+            c.font = Font(name="Arial", size=10, bold=True)
+            row += 1
+            for col in (1, 2):
+                cell = ws.cell(row=row, column=col)
+                cell.border = Border(top=thin, left=cell.border.left, right=cell.border.right, bottom=cell.border.bottom)
+            for col in (LAST - 2, LAST - 1, LAST):
+                cell = ws.cell(row=row, column=col)
+                cell.border = Border(top=thin, left=cell.border.left, right=cell.border.right, bottom=cell.border.bottom)
+            row += 1
+            box(top_row, 1, row - 1, LAST, thick)
+            row += 2
+            continue
 
         # -- OUR REF box --
         ref_top = row

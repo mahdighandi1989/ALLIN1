@@ -65,6 +65,43 @@ async def test_voucher_excel_export(client, auth_headers):
     assert len(ws._images) == 2
 
 
+async def test_voucher_excel_reversal_grid(client, auth_headers):
+    """v107 — the reversal mock: centered header stamp, split account row with a
+    separate AED cell, and the bordered 2-row info grid instead of OUR REF."""
+    payload = {
+        "mode": "reversal",
+        "logo_png": _LOGO,
+        "slips": [{
+            "kind": "DEBIT", "title": "PER - CONTRA", "date": "18/08/2026",
+            "ac_no": "2624 860185-784-090", "amount": "12,345,678.00",
+            "amount_boxed": False, "header_stamp": "SECURITY CHQ REVERSAL",
+            "currency_label": "AED",
+            "our_ref": "", "description": "", "ac_name": "", "extra_lines": [],
+            "grid": [
+                [{"t": "Ref. No.", "b": True}, {"t": "BLC1260817000001", "span": 2},
+                 {"t": "Borrower Name", "b": True}, {"t": "Maya Ocean"},
+                 {"t": "A/c No.", "b": True}, {"t": "115553"}],
+                [{"t": "Cheque No.", "b": True}, {"t": "3254856"}, {"t": "by Borrower"},
+                 {"t": "Issuer Name", "b": True}, {"t": "ABC Gen. Trd."},
+                 {"t": "A/c No.", "b": True}, {"t": "112233"}],
+            ],
+        }],
+    }
+    r = await client.post("/api/vouchers/export-excel", headers=auth_headers, json=payload)
+    assert r.status_code == 200, r.text
+    ws = load_workbook(io.BytesIO(r.content))["Voucher"]
+    vals = [str(c.value) for row in ws.iter_rows() for c in row if c.value is not None]
+    for needle in ("SECURITY CHQ REVERSAL", "PER - CONTRA", "Account No. :   2624 860185-784-090",
+                   "AED", "12,345,678.00", "Ref. No.", "BLC1260817000001", "Borrower Name",
+                   "Maya Ocean", "Cheque No.", "3254856", "by Borrower", "Issuer Name",
+                   "ABC Gen. Trd.", "112233", "Prepared By."):
+        assert any(needle in v for v in vals), f"missing: {needle}"
+    assert not any("OUR REF" in v for v in vals)   # the grid replaces the ref box
+    # the grid's label cells are bold and bordered
+    ref = next(c for row in ws.iter_rows() for c in row if c.value == "Ref. No.")
+    assert ref.font.bold and ref.border.top.style == "thin"
+
+
 async def test_voucher_excel_requires_auth(client):
     r = await client.post("/api/vouchers/export-excel", json=_payload())
     assert r.status_code in (401, 403)

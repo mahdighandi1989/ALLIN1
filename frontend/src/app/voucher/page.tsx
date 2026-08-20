@@ -89,6 +89,61 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
   )
 }
 
+// v107 — REVERSAL slip, restyled to the owner's Excel mock: the reversal stamp
+// sits CENTERED in the header row (not in the ref box), the account row splits
+// branch + GL with a space and carries the AED amount at the right, and the
+// cheque/borrower/issuer details live in a bordered 2-row grid — the issuer's
+// own A/c No. added (the owner's ask: guarantor cheques carry the guarantor's
+// account). Same .vch frame/banner/footer as every other slip; both slips still
+// share one A4. Normal/IRR modes are untouched.
+type RevProps = {
+  kind: 'DEBIT' | 'CREDIT'; stamp: string; title: string; date: string
+  branch: string; gl: string; currency: string; amount: string
+  refNo: string; borrower: string; borrowerAcct: string
+  chqNo: string; byWho: string; issuer: string; issuerAcct: string
+}
+function VoucherRev({ kind, stamp, title, date, branch, gl, currency, amount, refNo, borrower, borrowerAcct, chqNo, byWho, issuer, issuerAcct, d, prefix }: RevProps & { d: DesignState; prefix: string }) {
+  const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
+  return (
+    <div className="vch" dir="ltr">
+      <div className="vch-head">
+        <div className="vch-kind">{M('kind', kind)}</div>
+        <div className="vch-hstamp">{M('stamp', stamp)}</div>
+        <div className="vch-logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+          <div className="vch-iv">INTERNAL VOUCHER</div>
+        </div>
+      </div>
+      <div className="vch-banner">{M('title', title)}</div>
+      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
+      <div className="vch-acct2">
+        <div><span className="lbl">Account No. :</span>{M('acno', <span className="val">&nbsp;&nbsp;{[branch, gl].filter(Boolean).join(' ')}</span>)}</div>
+        {M('amount', <div><span className="cur">{currency}</span><span className="val">&nbsp;&nbsp;{amount || '**********'}</span></div>, true)}
+      </div>
+      {M('grid', (
+        <table className="vch-grid"><tbody>
+          <tr>
+            <td className="b">Ref. No.</td><td colSpan={2}>{refNo}</td>
+            <td className="b">Borrower Name</td><td>{borrower}</td>
+            <td className="b">A/c No.</td><td>{borrowerAcct}</td>
+          </tr>
+          <tr>
+            <td className="b">Cheque No.</td><td>{chqNo}</td><td>{byWho}</td>
+            <td className="b">Issuer Name</td><td>{issuer}</td>
+            <td className="b">A/c No.</td><td>{issuerAcct}</td>
+          </tr>
+        </tbody></table>
+      ), true)}
+      <div className="vch-spacer" />
+      <div className="vch-foot">
+        <div>Prepared By.<span className="vch-sigline" /></div>
+        <div>Authorized Signatures<span className="vch-sigline" /></div>
+      </div>
+    </div>
+  )
+}
+
 // v99 → QUARANTINED in v100 (docs/REMOVAL_CANDIDATES.md): this boxed layout
 // copied the IRR workbook's look; the owner rejected it — the IRR slip must use
 // the SAME Voucher frame as the normal/reversal slips, only the contents differ.
@@ -155,6 +210,9 @@ export default function VoucherPage() {
   const [branch, setBranch] = useState('')
   const [nameType, setNameType] = useState<'Borrower Name' | 'Guarantor Name'>('Borrower Name')
   const [guarantorName, setGuarantorName] = useState('')
+  // v107 — the guarantor's OWN account number (printed as the issuer A/c in the
+  // reversal grid when the cheque is a guarantor's)
+  const [guarantorAcct, setGuarantorAcct] = useState('')
   const [chqNo, setChqNo] = useState('')
   const [chqAmount, setChqAmount] = useState('')
   const [facilityId, setFacilityId] = useState('')
@@ -265,6 +323,7 @@ export default function VoucherPage() {
       if (acName && nm === acName) setNameType('Borrower Name')
       else { setNameType('Guarantor Name'); setGuarantorName(nm) }
     }
+    if (g.guarantor_account) setGuarantorAcct(String(g.guarantor_account))   // v107
     // v101 — an IRR cheque record also carries the rial details the import
     // extraction stored; picking the cheque fills them (still editable).
     if (g.irr_amount) setIrrAmount(String(g.irr_amount))
@@ -475,9 +534,22 @@ export default function VoucherPage() {
       ]
     }
     if (reversal) {
+      // v107 — the grid layout of the owner's mock (shared by Excel/Word)
+      const refNo = facilityId.trim() || settledFacility.trim()
+      const byWho = nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'
+      const issuerAcct = nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()
+      const grid = [
+        [{ t: 'Ref. No.', b: true }, { t: refNo, span: 2 }, { t: 'Borrower Name', b: true }, { t: acName }, { t: 'A/c No.', b: true }, { t: acNo.trim() }],
+        [{ t: 'Cheque No.', b: true }, { t: chqNo }, { t: byWho }, { t: 'Issuer Name', b: true }, { t: nameOnCheque }, { t: 'A/c No.', b: true }, { t: issuerAcct }],
+      ]
+      const common = {
+        date, amount: chqAmount ? money(chqAmount) : '', amountBoxed: false,
+        headerStamp: 'SECURITY CHQ REVERSAL', currencyLabel: currency,
+        grid, ourRef: '', description: '', acName: '', extraLines: [] as string[],
+      }
       return [
-        { kind: 'CREDIT', title: 'PER CONTRA', date, acNo: revCreditGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: revLines },
-        { kind: 'DEBIT', title: 'SECURITY HELD CHEQUES', date, acNo: revDebitGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: revLines },
+        { kind: 'DEBIT', title: 'PER - CONTRA', acNo: [branch.trim(), '860185-784-090'].filter(Boolean).join(' '), ...common },
+        { kind: 'CREDIT', title: 'SECURITIES', acNo: [branch.trim(), '869900-784-590'].filter(Boolean).join(' '), ...common },
       ]
     }
     return [
@@ -499,10 +571,12 @@ export default function VoucherPage() {
     setExporting('xlsx')
     const tId = toast.loading('در حالِ ساختِ فایلِ Excel…')
     try {
-      const blob = await vouchersApi.exportExcel({ mode, slips: buildSlips().map((s) => ({
+      const blob = await vouchersApi.exportExcel({ mode, slips: buildSlips().map((s: any) => ({
         kind: s.kind, title: s.title, date: s.date, ac_no: s.acNo, amount: s.amount,
         amount_boxed: s.amountBoxed, our_ref: s.ourRef, description: s.description,
         ac_name: s.acName, extra_lines: s.extraLines,
+        header_stamp: s.headerStamp || '', currency_label: s.currencyLabel || '',
+        grid: (s.grid || []).map((row: any[]) => row.map((c) => ({ t: c.t || '', b: !!c.b, span: c.span || 1 }))),
       })), logo_png: BANK_LOGO })
       saveBlobFile(blob, `${exportBase()}.xlsx`)
       toast.success('فایلِ Excel دانلود شد — سلول‌ها قابلِ پرکردن‌اند و پرینتِ خودِ Excel یک‌صفحهٔ A4 با همین قالب است', { id: tId })
@@ -547,6 +621,16 @@ export default function VoucherPage() {
         .vch-aclbl { font-size: 13pt; font-weight: 800; margin-right: 4mm; }
         .vch-ac { font-size: 14pt; font-weight: 800; letter-spacing: 0.5px; }
         .vch-amt { font-size: 12pt; font-weight: 700; white-space: nowrap; }
+        /* v107 — reversal slip per the owner's mock: centered header stamp,
+           split account row with AED amount, bordered 2-row info grid */
+        .vch-hstamp { align-self: center; font-size: 15pt; font-weight: 800; letter-spacing: 0.5px; padding-top: 2mm; }
+        .vch-acct2 { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6mm; }
+        .vch-acct2 .lbl { font-size: 13pt; font-weight: 800; }
+        .vch-acct2 .val { font-size: 14pt; font-weight: 800; letter-spacing: 0.5px; }
+        .vch-acct2 .cur { font-size: 12pt; font-weight: 700; }
+        .vch-grid { width: 100%; border-collapse: collapse; margin-top: 6mm; }
+        .vch-grid td { border: 1pt solid #000; font-size: 10pt; padding: 1.2mm 1.5mm; }
+        .vch-grid td.b { font-weight: 800; white-space: nowrap; }
         /* v101 — boxed cheque-count cell for the IRR slip */
         .vch-qty { display: flex; align-items: center; gap: 2.5mm; }
         .vch-qty-lbl { font-size: 9pt; font-weight: 800; letter-spacing: 0.2mm; }
@@ -671,6 +755,13 @@ export default function VoucherPage() {
                     <datalist id="vch-gnames">{guarantorNames.map((n) => <option key={n} value={n} />)}</datalist>
                   </label>
                 )}
+                {nameType === 'Guarantor Name' && (
+                  <label className="col-span-2 text-sm">
+                    <span className="text-gray-600">حسابِ ضامن (A/C NO)</span>
+                    <input className={field} value={guarantorAcct} onChange={(e) => setGuarantorAcct(e.target.value)} inputMode="numeric" list="vch-gaccts" />
+                    <datalist id="vch-gaccts">{Array.from(new Set(guarantors.map((g) => g.guarantor_account).filter(Boolean))).map((n) => <option key={String(n)} value={String(n)} />)}</datalist>
+                  </label>
+                )}
               </>)}
               <label className="text-sm">
                 <span className="text-gray-600">شماره چک (CHQ NO)</span>
@@ -783,9 +874,23 @@ export default function VoucherPage() {
                   <Voucher kind="CREDIT" title={irrCrTitle} date={date} acNo={irrCreditGL} amount="" amountText={irrCount.trim()} currency="" ourRef={ourRef} description={irrChqLine} acName={acName} extraLines={irrExtraLines} d={d} prefix="irrc" />
                 </>
               ) : reversal ? (
+                // v107 — the owner's mock: DEBIT/PER - CONTRA first, then
+                // CREDIT/SECURITIES, stamp centered in the head, details in the
+                // bordered grid. (The pre-v107 extraLines slips are superseded;
+                // the generic Voucher path itself stays for the other modes.)
                 <>
-                  <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={revCreditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvc" />
-                  <Voucher kind="DEBIT" title="SECURITY HELD CHEQUES" date={date} acNo={revDebitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} extraLines={revLines} d={d} prefix="rvd" />
+                  <VoucherRev kind="DEBIT" stamp="SECURITY CHQ REVERSAL" title="PER - CONTRA" date={date}
+                    branch={branch.trim()} gl="860185-784-090" currency={currency} amount={chqAmount ? money(chqAmount) : ''}
+                    refNo={facilityId.trim() || settledFacility.trim()} borrower={acName} borrowerAcct={acNo.trim()}
+                    chqNo={chqNo} byWho={nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'}
+                    issuer={nameOnCheque} issuerAcct={nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()}
+                    d={d} prefix="rvd2" />
+                  <VoucherRev kind="CREDIT" stamp="SECURITY CHQ REVERSAL" title="SECURITIES" date={date}
+                    branch={branch.trim()} gl="869900-784-590" currency={currency} amount={chqAmount ? money(chqAmount) : ''}
+                    refNo={facilityId.trim() || settledFacility.trim()} borrower={acName} borrowerAcct={acNo.trim()}
+                    chqNo={chqNo} byWho={nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'}
+                    issuer={nameOnCheque} issuerAcct={nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()}
+                    d={d} prefix="rvc2" />
                 </>
               ) : (
                 <>
