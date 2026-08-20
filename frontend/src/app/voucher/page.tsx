@@ -552,9 +552,21 @@ export default function VoucherPage() {
         { kind: 'CREDIT', title: 'SECURITIES', acNo: [branch.trim(), '869900-784-590'].filter(Boolean).join(' '), ...common },
       ]
     }
+    // v109 — normal slips share the grid layout (no stamp, normal titles/GLs)
+    const nByWho = nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'
+    const nIssuerAcct = nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()
+    const nGrid = [
+      [{ t: 'Ref. No.', b: true }, { t: facilityId.trim(), span: 2 }, { t: 'Borrower Name', b: true }, { t: acName }, { t: 'A/c No.', b: true }, { t: acNo.trim() }],
+      [{ t: 'Cheque No.', b: true }, { t: chqNo }, { t: nByWho }, { t: 'Issuer Name', b: true }, { t: nameOnCheque }, { t: 'A/c No.', b: true }, { t: nIssuerAcct }],
+    ]
+    const nCommon = {
+      date, amount: chqAmount ? money(chqAmount) : '', amountBoxed: false,
+      headerStamp: '', currencyLabel: currency,
+      grid: nGrid, ourRef: '', description: '', acName: '', extraLines: [] as string[],
+    }
     return [
-      { kind: 'DEBIT', title: 'SECURITIES', date, acNo: debitGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: [] as string[] },
-      { kind: 'CREDIT', title: 'PER CONTRA', date, acNo: creditGL, amount: amt, amountBoxed: false, ourRef, description, acName, extraLines: [] as string[] },
+      { kind: 'DEBIT', title: 'SECURITIES', acNo: [branch.trim(), '860185-784-090'].filter(Boolean).join(' '), ...nCommon },
+      { kind: 'CREDIT', title: 'PER CONTRA', acNo: [branch.trim(), '869900-784-590'].filter(Boolean).join(' '), ...nCommon },
     ]
   }
   const saveBlobFile = (blob: Blob, name: string) => {
@@ -897,9 +909,24 @@ export default function VoucherPage() {
                     d={d} prefix="rvc2" />
                 </>
               ) : (
+                // v109 — the owner asked for the SAME grid layout on the normal
+                // slips too: split Account No row + AED cell + the bordered info
+                // grid. No header stamp (that wording is reversal-specific);
+                // titles/GLs stay the normal ones. (The generic OUR REF Voucher
+                // remains in use for the IRR mode.)
                 <>
-                  <Voucher kind="DEBIT" title="SECURITIES" date={date} acNo={debitGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="sec" />
-                  <Voucher kind="CREDIT" title="PER CONTRA" date={date} acNo={creditGL} amount={chqAmount} currency={currency} ourRef={ourRef} description={description} acName={acName} d={d} prefix="pc" />
+                  <VoucherRev kind="DEBIT" stamp="" title="SECURITIES" date={date}
+                    branch={branch.trim()} gl="860185-784-090" currency={currency} amount={chqAmount ? money(chqAmount) : ''}
+                    refNo={facilityId.trim()} borrower={acName} borrowerAcct={acNo.trim()}
+                    chqNo={chqNo} byWho={nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'}
+                    issuer={nameOnCheque} issuerAcct={nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()}
+                    d={d} prefix="secg" />
+                  <VoucherRev kind="CREDIT" stamp="" title="PER CONTRA" date={date}
+                    branch={branch.trim()} gl="869900-784-590" currency={currency} amount={chqAmount ? money(chqAmount) : ''}
+                    refNo={facilityId.trim()} borrower={acName} borrowerAcct={acNo.trim()}
+                    chqNo={chqNo} byWho={nameType === 'Borrower Name' ? 'by Borrower' : 'by Guarantor'}
+                    issuer={nameOnCheque} issuerAcct={nameType === 'Borrower Name' ? acNo.trim() : guarantorAcct.trim()}
+                    d={d} prefix="pcg" />
                 </>
               )}
             </div>
