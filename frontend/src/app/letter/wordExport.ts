@@ -425,11 +425,17 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const nBlank = Math.min(4, Math.round(staggerPx / 26))
   for (let i = 0; i < nBlank; i++) recCol.unshift(P(' ', { pt: 10 }))
 
+  // v113 — the page's subject box is TITR **without bold** at the layout's own
+  // size (bold B Titr is much wider and wrapped the one-line subject onto two
+  // lines — owner's report). Size follows the layout so a resized subject
+  // exports faithfully.
+  const subjPt = (a.L as any).subject?.size || 12
   const subjectPara = new Paragraph({
     bidirectional: true, alignment: jcBidi(AlignmentType.RIGHT),
+    spacing: exactLine(subjPt, BOX_LH),
     children: [
-      mkRun(lbl('subject'), TITR, 24, { bold: true }),
-      ...(plainText(a.f.subject) ? [mkRun(plainText(a.f.subject), TITR, 24, { bold: true })] : []),
+      mkRun(lbl('subject'), TITR, subjPt * 2),
+      ...(plainText(a.f.subject) ? [mkRun(plainText(a.f.subject), TITR, subjPt * 2)] : []),
     ],
   })
   // v83 — the dashed rule under the subject is REAL text now (the old paragraph
@@ -465,13 +471,30 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   }
 
   // -- closing --
+  // v113 — the printed letter PINS the closing block low on the page (sender at
+  // y≈234mm, رونوشت at 250, اقدام‌کننده at 264); flowing it after a short body
+  // floated it far too high (owner's report). Same v83 technique as the meta
+  // block: page-anchored frames at each element's OWN layout coordinates.
+  // Consecutive paragraphs with identical frame options merge into one frame,
+  // so the extra رونوشت recipients stack inside the copyto frame.
+  const Lb = a.L as any
+  const frameFor = (key: string) => {
+    const b = Lb[key]
+    return b ? {
+      type: 'absolute',
+      position: { x: twips(b.x), y: twips(b.y) },
+      width: twips(b.w || 100), height: 240, rule: 'atLeast',
+      anchor: { horizontal: 'page', vertical: 'page' },
+      wrap: 'around',
+    } as any : undefined
+  }
   const copyLines = plainLines(a.f.copyTo)
   const closing = [
-    P(a.f.sender || '', { bold: true, align: AlignmentType.CENTER, font: TITR, pt: 13 }),
-    P(lbl('copyto'), { pt: 10, value: copyLines[0] || '' }),
+    P(a.f.sender || '', { bold: true, align: AlignmentType.CENTER, font: TITR, pt: Lb.sender?.size || 13, frame: frameFor('sender') }),
+    P(lbl('copyto'), { pt: Lb.copyto?.size || 10, value: copyLines[0] || '', frame: frameFor('copyto') }),
     // extra recipients: one paragraph each, stacked under the first
-    ...copyLines.slice(1).map((li) => P(li, { pt: 10 })),
-    P(lbl('action'), { pt: 10, value: `${plainText(a.f.actionName)} ${lbl('actionExt')}`.trim(), ltrValue: a.f.actionExt || '' }),
+    ...copyLines.slice(1).map((li) => P(li, { pt: Lb.copyto?.size || 10, frame: frameFor('copyto') })),
+    P(lbl('action'), { pt: Lb.action?.size || 10, value: `${plainText(a.f.actionName)} ${lbl('actionExt')}`.trim(), ltrValue: a.f.actionExt || '', frame: frameFor('action') }),
   ]
 
   // -- letter section margins from the designed body box --
