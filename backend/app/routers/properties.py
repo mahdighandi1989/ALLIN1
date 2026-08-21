@@ -35,6 +35,11 @@ _WRITABLE = {
     "prop_type", "building_age", "land_area", "cnbc", "zone", "infra_area", "owner",
     "valuation", "valuation_currency", "insurance_expiry", "insurance_no",
     "last_valuation_date", "mortgage_date", "mortgage_amount", "remarks",
+    # v58 columns that never made it into the manual-edit whitelist + the v110
+    # insurance-policy identity block (the owner's collateral table)
+    "owner_national_id", "postal_code", "insurance_issue", "insurance_computer_code",
+    "insurance_policyholder", "insurance_subject", "insurance_activity",
+    "insurance_coverage_total", "insurance_issuing_unit",
 }
 _NUMERIC = {"valuation", "mortgage_amount"}
 
@@ -77,6 +82,15 @@ class PropertyWrite(BaseModel):
     mortgage_date: str = ""
     mortgage_amount: Optional[float] = None
     remarks: str = ""
+    owner_national_id: str = ""
+    postal_code: str = ""
+    insurance_issue: str = ""
+    insurance_computer_code: str = ""
+    insurance_policyholder: str = ""
+    insurance_subject: str = ""
+    insurance_activity: str = ""
+    insurance_coverage_total: str = ""
+    insurance_issuing_unit: str = ""
 
 
 class PropertyPatch(BaseModel):
@@ -102,6 +116,15 @@ class PropertyPatch(BaseModel):
     mortgage_date: Optional[str] = None
     mortgage_amount: Optional[float] = None
     remarks: Optional[str] = None
+    owner_national_id: Optional[str] = None
+    postal_code: Optional[str] = None
+    insurance_issue: Optional[str] = None
+    insurance_computer_code: Optional[str] = None
+    insurance_policyholder: Optional[str] = None
+    insurance_subject: Optional[str] = None
+    insurance_activity: Optional[str] = None
+    insurance_coverage_total: Optional[str] = None
+    insurance_issuing_unit: Optional[str] = None
 
 
 def _conds(search: str, city: str, ptype: str, currency: str):

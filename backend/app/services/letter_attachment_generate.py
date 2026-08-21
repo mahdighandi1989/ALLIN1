@@ -35,7 +35,11 @@ MAX_DATASET_ROWS = 300
 # server runs the deterministic capped query, and a second round produces the
 # spec from those rows. The model never queries the DB itself.
 DATASETS: Dict[str, str] = {
-    "properties": "املاک رهنی: شمارهٔ حساب، نام مشتری، شعبه، مدیرِ حساب، پلاک ثبتی، شمارهٔ سند رهنی، شهر، نوع، مالک، ارزیابی، شماره و تاریخ انقضای بیمه‌نامه، تاریخ/مبلغ ترهین، ملاحظات",
+    "properties": ("املاک رهنی: شمارهٔ حساب، نام مشتری، شعبه، مدیرِ حساب، پلاک ثبتی، شمارهٔ سند رهنی، "
+                   "شهر، آدرس، کد پستی، نوع، مالک/راهن + کد ملی، متراژ زمین/زیربنا، سن بنا، منطقه، "
+                   "ارزیابی + تاریخ آخرین ارزیابی، تاریخ/مبلغ ترهین، ملاحظات، و بیمه‌نامهٔ کامل: "
+                   "شماره، کد رایانه، تاریخ صدور/انقضا، بیمه‌گذار، مورد بیمه، شرح دقیق فعالیت شغلی، "
+                   "مجموع سرمایهٔ تحت پوشش، واحد کاری صدور"),
     "customers": "مشتریان: شمارهٔ حساب، نام، شعبه، مدیرِ حساب",
     "facilities": "تسهیلات: حساب، نام مشتری، شعبه، مدیرِ حساب، نوع/نام تسهیلات، مبلغ، مانده، نرخ، تاریخ‌های شروع/پایان/انقضا",
     "securities": "تضامین/وثایق چندساله: سال، شعبه، حساب، نام مشتری، FD، ضامن، چک‌ها، مبلغ چک، شمارهٔ ملک، مبلغ ترهین، ملاحظات",
@@ -272,6 +276,19 @@ async def fetch_datasets(db, datasets: List[str], branch: str = "",
                 "insurance_no": _s(p.insurance_no), "insurance_expiry": _s(p.insurance_expiry),
                 "mortgage_date": _s(p.mortgage_date), "mortgage_amount": _s(p.mortgage_amount),
                 "remarks": _s(p.remarks),
+                # v110 — the stored-but-unexposed fields + the policy identity
+                # block, so the collateral/insurance table can be built from DB
+                "owner_national_id": _s(p.owner_national_id), "postal_code": _s(p.postal_code),
+                "address": _s(p.address), "land_area": _s(p.land_area),
+                "infra_area": _s(p.infra_area), "building_age": _s(p.building_age),
+                "zone": _s(p.zone), "last_valuation_date": _s(p.last_valuation_date),
+                "insurance_issue": _s(p.insurance_issue),
+                "insurance_computer_code": _s(p.insurance_computer_code),
+                "insurance_policyholder": _s(p.insurance_policyholder),
+                "insurance_subject": _s(p.insurance_subject),
+                "insurance_activity": _s(p.insurance_activity),
+                "insurance_coverage_total": _s(p.insurance_coverage_total),
+                "insurance_issuing_unit": _s(p.insurance_issuing_unit),
             })
         out["properties"] = _cap("املاک رهنی", items, warnings)
 
