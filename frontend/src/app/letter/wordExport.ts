@@ -319,17 +319,24 @@ function letterheadFooter(L: WordExportArgs['L'], font: string) {
     anchor: { horizontal: 'page', vertical: 'page' },
     wrap: 'around',
   } as any : undefined
+  // v112 (owner's report: «آرم و مارک فوتر رفت») — the floating banner must ride
+  // its OWN UNFRAMED paragraph: Word DISCARDS a floating drawing whose anchor
+  // paragraph carries w:framePr, so putting the banner inside the framed
+  // page-number paragraph silently deleted it. Banner = plain paragraph
+  // (pre-v111 shape), page number = its own framed paragraph.
   return new Footer({
-    children: [new Paragraph({
-      alignment: AlignmentType.CENTER, bidirectional: true, frame: pnFrame,
-      children: [
-        ...kids,
-        mkRun('صفحه ', font, 20),
-        new TextRun({ children: [PageNumber.CURRENT], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
-        mkRun(' از ', font, 20),
-        new TextRun({ children: [PageNumber.TOTAL_PAGES], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
-      ],
-    })],
+    children: [
+      new Paragraph({ children: kids }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER, bidirectional: true, frame: pnFrame,
+        children: [
+          mkRun('صفحه ', font, 20),
+          new TextRun({ children: [PageNumber.CURRENT], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
+          mkRun(' از ', font, 20),
+          new TextRun({ children: [PageNumber.TOTAL_PAGES], font: { ascii: font, hAnsi: font, cs: font } as any, size: 20, sizeComplexScript: 20 }),
+        ],
+      }),
+    ],
   })
 }
 
