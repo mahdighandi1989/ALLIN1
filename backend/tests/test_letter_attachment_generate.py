@@ -120,7 +120,17 @@ async def _seed_branch_data(db_session):
                             relationship_manager="خانم دیگری"))
     db_session.add(MortgagedProperty(id="P1", account_no="ACC1", plate_no="1234/56",
                                      mortgage_deed_no="MD-77", insurance_no="INS-9",
-                                     insurance_expiry="2026-09-01", city="دبی"))
+                                     insurance_expiry="2026-09-01", city="دبی",
+                                     owner="Ali Rahen", owner_national_id="0012345678",
+                                     postal_code="1966733114", address="Valiasr St 12",
+                                     land_area="250", infra_area="480", building_age="12",
+                                     insurance_issue="1404/01/15",
+                                     insurance_computer_code="CC-889",
+                                     insurance_policyholder="Bank Saderat Iran",
+                                     insurance_subject="ساختمان مسکونی",
+                                     insurance_activity="سکونت شخصی",
+                                     insurance_coverage_total="85,000,000,000",
+                                     insurance_issuing_unit="شعبه مرکزی تهران"))
     db_session.add(MortgagedProperty(id="P2", account_no="ACC2", plate_no="9999/99",
                                      mortgage_deed_no="MD-88"))
     await db_session.commit()
@@ -135,6 +145,19 @@ async def test_fetch_datasets_branch_filter(db_session):
     assert props[0]["mortgage_deed_no"] == "MD-77"
     assert props[0]["insurance_no"] == "INS-9" and props[0]["insurance_expiry"] == "2026-09-01"
     assert props[0]["account_manager"] == "آقای مدیری" and props[0]["branch"] == "Sheikh Zayed"
+    # v110 — the collateral/insurance-table fields are all exposed to the generator
+    assert props[0]["owner_national_id"] == "0012345678"
+    assert props[0]["postal_code"] == "1966733114" and props[0]["address"] == "Valiasr St 12"
+    assert props[0]["land_area"] == "250" and props[0]["infra_area"] == "480"
+    assert props[0]["building_age"] == "12" and props[0]["insurance_issue"] == "1404/01/15"
+    assert props[0]["insurance_computer_code"] == "CC-889"
+    assert props[0]["insurance_policyholder"] == "Bank Saderat Iran"
+    assert props[0]["insurance_subject"] == "ساختمان مسکونی"
+    assert props[0]["insurance_activity"] == "سکونت شخصی"
+    assert props[0]["insurance_coverage_total"] == "85,000,000,000"
+    assert props[0]["insurance_issuing_unit"] == "شعبه مرکزی تهران"
+    # and the catalog description names the policy block so the model asks for it
+    assert "بیمه‌گذار" in gen.DATASETS["properties"] and "واحد کاری صدور" in gen.DATASETS["properties"]
     assert [c["account_no"] for c in data["customers"]] == ["ACC1"]
     # unknown branch → FULL capped list with a warning (model filters), never silently empty
     data2, warnings2 = await gen.fetch_datasets(db_session, ["properties"], "ناموجود")

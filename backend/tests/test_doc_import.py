@@ -868,3 +868,42 @@ async def test_import_silent_model_gets_honest_fallback_report(client, auth_head
     res = job["result"]
     assert res["instructions_used"] is True
     assert "گزارشِ اعمالِ دستور برنگرداند" in res["instruction_report"]
+
+
+async def test_import_persists_insurance_policy_block(db_session):
+    """v110 — the owner's collateral/insurance table columns flow end-to-end:
+    policyholder, insured subject, business activity, total sum insured and the
+    issuing unit persist on the property row (fill-empty)."""
+    payload = {
+        "account_no": "113334", "name": "TEHRAN PROPS LLC", "account_type": "corporate",
+        "properties": [{
+            "prop_type": "residential", "address": "Valiasr St 12", "city": "TEHRAN",
+            "plate_no": "37-745", "mortgage_deed_no": "1187",
+            "owner": "Ali Rahen", "owner_national_id": "0012345678",
+            "postal_code": "1966733114",
+            "insurance_no": "880/140", "insurance_computer_code": "CC-889",
+            "insurance_issue": "1404/01/15", "insurance_expiry": "1405/01/15",
+            "insurance_policyholder": "Bank Saderat Iran",
+            "insurance_subject": "ساختمان مسکونی",
+            "insurance_activity": "سکونت شخصی",
+            "insurance_coverage_total": "85,000,000,000",
+            "insurance_issuing_unit": "شعبه مرکزی تهران",
+        }],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["properties_added"] == 1
+    await db_session.commit()
+    from app.models.profile_entities import MortgagedProperty
+    from sqlalchemy import select
+    row = (await db_session.execute(select(MortgagedProperty).where(
+        MortgagedProperty.account_no == "113334"))).scalars().first()
+    assert row.insurance_policyholder == "Bank Saderat Iran"
+    assert row.insurance_subject == "ساختمان مسکونی"
+    assert row.insurance_activity == "سکونت شخصی"
+    assert row.insurance_coverage_total == "85,000,000,000"
+    assert row.insurance_issuing_unit == "شعبه مرکزی تهران"
+    assert row.owner_national_id == "0012345678" and row.postal_code == "1966733114"
+    # the extraction prompt demands every one of them
+    for key in ("insurance_policyholder", "insurance_subject", "insurance_activity",
+                "insurance_coverage_total", "insurance_issuing_unit"):
+        assert key in doc_ingest.EXTRACTION_PROMPT, key

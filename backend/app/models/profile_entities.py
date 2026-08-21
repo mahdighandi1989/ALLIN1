@@ -46,6 +46,13 @@ class MortgagedProperty(Base):
     insurance_issue = Column(String(30))     # تاریخ صدور بیمه‌نامه
     insurance_no = Column(String(80))        # شماره بیمه‌نامه
     insurance_computer_code = Column(String(80))  # کد رایانهٔ بیمه
+    # v110 — the full insurance-policy identity block the owner's collateral
+    # table needs (db_init auto-migrates; all fill-empty on import):
+    insurance_policyholder = Column(String(200))   # بیمه‌گذار
+    insurance_subject = Column(String(300))        # مورد بیمه
+    insurance_activity = Column(String(300))       # شرح دقیق فعالیت شغلی
+    insurance_coverage_total = Column(String(60))  # مجموع سرمایهٔ تحت پوشش (رقم‌به‌رقم)
+    insurance_issuing_unit = Column(String(120))   # واحد کاری صدور
     last_valuation_date = Column(String(30)) # تاریخ آخرین ارزیابی
     mortgage_date = Column(String(30))       # تاریخ ترهین
     mortgage_amount = Column(Numeric(18, 2)) # مبلغ ترهین
