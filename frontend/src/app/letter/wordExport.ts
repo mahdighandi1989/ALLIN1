@@ -21,6 +21,9 @@ export type WordExportArgs = {
   // stamped into docProps (description) so a problematic file tells us WHICH
   // deployed build produced it — deploy-lag debugging without guesswork
   buildTag?: string
+  // v111 — the page's body line-height multiplier (L.body.lh || 1.7): Word must
+  // reproduce the CSS line BOX exactly, not «1.5 × the font's natural metrics»
+  bodyLh?: number
   f: Record<string, string>
   labels: Record<string, string>
   L: Record<string, { x: number; y: number; w: number; h?: number; size?: number }>
@@ -35,6 +38,16 @@ export type WordExportArgs = {
 }
 
 const hasPersian = (t: string) => /[\u0600-\u06FF]/.test(t)
+// v111 \u2014 the owner's file proved the spread-out look: docx `line` WITHOUT a
+// lineRule means \u00ABmultiple of the FONT'S OWN line height\u00BB, and B Nazanin's
+// natural metrics are tall \u2014 so 1.5 rendered far looser than the page's CSS
+// line-height (an exact 1.7 \u00D7 font-size box). lineRule:"exact" reproduces the
+// CSS box: line = pt \u00D7 lh \u00D7 20 twips. NEVER put an exact rule on a paragraph
+// that carries an inline image \u2014 exact clips it (image paragraphs fall back
+// to auto spacing). Non-body boxes render at the page's 1.25 box line-height.
+const BOX_LH = 1.25
+const exactLine = (pt: number, lh: number) =>
+  ({ line: Math.max(200, Math.round(pt * lh * 20)), lineRule: 'exact' } as any)
 // Inside Persian text, ASCII digits must become REAL Persian digits: Word picks
 // a Latin fallback font for them (they rendered western/slanted), while the
 // letter's B Nazanin shows them Persian-shaped — real ۰-۹ codepoints match the
@@ -183,26 +196,34 @@ const jcBidi = (a: any): any =>
   a === AlignmentType.RIGHT ? AlignmentType.LEFT : a === AlignmentType.LEFT ? AlignmentType.RIGHT : a
 
 // ---------- one HTML block → docx paragraph(s)/table ----------
-function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, justify: boolean): (Paragraph | Table)[] {
+function blockToDocx(el: HTMLElement, font: string, half: number, imgs: ImgMap, justify: boolean, lh = 1.7): (Paragraph | Table)[] {
   if (el.tagName === 'TABLE') return [tableToDocx(el as HTMLTableElement, font, half, imgs)]
   if (el.querySelector('table')) {
     // paste-wrapper: recurse into its children
     const out: (Paragraph | Table)[] = []
-    Array.from(el.children).forEach((c) => out.push(...blockToDocx(c as HTMLElement, font, half, imgs, justify)))
+    Array.from(el.children).forEach((c) => out.push(...blockToDocx(c as HTMLElement, font, half, imgs, justify, lh)))
     return out
   }
+  // v111 — a paragraph with an inline image must NOT get an exact line rule
+  // (exact clips the image to the line box)
+  const spacingFor = (runs: (TextRun | ImageRun)[]) =>
+    runs.some((r) => r instanceof ImageRun) ? undefined : exactLine(half / 2, lh)
   if (el.tagName === 'UL' || el.tagName === 'OL') {
-    return Array.from(el.querySelectorAll('li')).map((li, i) => new Paragraph({
-      bidirectional: true, alignment: jcBidi(alignOf(el, AlignmentType.RIGHT)),
-      children: [mkRun(el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, half),
-        ...inlineRuns(li, font, half, {}, imgs, hasPersian(li.textContent || ''))],
-    }))
+    return Array.from(el.querySelectorAll('li')).map((li, i) => {
+      const runs = [mkRun(el.tagName === 'OL' ? `${fa(i + 1)}. ` : '• ', font, half),
+        ...inlineRuns(li, font, half, {}, imgs, hasPersian(li.textContent || ''))]
+      return new Paragraph({
+        bidirectional: true, alignment: jcBidi(alignOf(el, AlignmentType.RIGHT)),
+        spacing: spacingFor(runs),
+        children: runs,
+      })
+    })
   }
   const runs = inlineRuns(el, font, half, {}, imgs, hasPersian(el.textContent || ''))
   return [new Paragraph({
     bidirectional: true,
     alignment: jcBidi(alignOf(el, justify ? AlignmentType.JUSTIFIED : AlignmentType.RIGHT)),
-    spacing: justify ? { line: 360 } : undefined,
+    spacing: spacingFor(runs),
     children: runs.length ? runs : [mkRun('', font, half)],
   })]
 }
@@ -220,10 +241,13 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
         const wPct = /%$/.test(td.style.width || '') ? parseFloat(td.style.width) : 0
         const va = (td.style.verticalAlign || '').toLowerCase()
         const inner = td.childNodes.length ? td : null
+        const cellRuns = inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs, hasPersian(td.textContent || '')) : [mkRun('', font, half)]
         const para = new Paragraph({
           bidirectional: true,
           alignment: jcBidi(alignOf(td, isTh ? AlignmentType.CENTER : AlignmentType.RIGHT)),
-          children: inner ? inlineRuns(td, font, half, isTh ? { bold: true } : {}, imgs, hasPersian(td.textContent || '')) : [mkRun('', font, half)],
+          // v111 — the page renders table cells at line-height 1.35 (exact box)
+          spacing: cellRuns.some((r) => r instanceof ImageRun) ? undefined : exactLine(half / 2, 1.35),
+          children: cellRuns,
         })
         return new TableCell({
           children: [para],
@@ -282,9 +306,22 @@ function letterheadFooter(L: WordExportArgs['L'], font: string) {
       wrap: { type: TextWrappingType.NONE },
     },
   }))
+  // v111 — the page anchors its «صفحه X از Y» element at the letter's OWN
+  // pagenum coordinates; a centered footer line landed somewhere else (owner's
+  // report: the Word footer differs from the print). Same v83 technique as the
+  // meta block: a page-anchored frame at L.pagenum — falls back to the old
+  // centered line only when the layout has no pagenum box.
+  const pn = (L as any).pagenum
+  const pnFrame = pn ? {
+    type: 'absolute',
+    position: { x: Math.round(pn.x * PX2TW), y: Math.round(pn.y * PX2TW) },
+    width: Math.round(Math.max(60, pn.w || 120) * PX2TW), height: 240, rule: 'atLeast',
+    anchor: { horizontal: 'page', vertical: 'page' },
+    wrap: 'around',
+  } as any : undefined
   return new Footer({
     children: [new Paragraph({
-      alignment: AlignmentType.CENTER, bidirectional: true,
+      alignment: AlignmentType.CENTER, bidirectional: true, frame: pnFrame,
       children: [
         ...kids,
         mkRun('صفحه ', font, 20),
@@ -313,6 +350,9 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
   const P = (text: string, opts: { bold?: boolean; align?: any; font?: string; pt?: number; ltrValue?: string; value?: string; frame?: any } = {}) =>
     new Paragraph({
       bidirectional: true, alignment: jcBidi(opts.align || AlignmentType.RIGHT), frame: opts.frame,
+      // v111 — the page's boxes render at an exact 1.25 line box, not B Nazanin's
+      // tall natural metrics
+      spacing: exactLine(opts.pt || a.bodyFontPt, BOX_LH),
       children: [
         mkRun(text, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold }),
         ...((opts.value || '').trim() ? [mkRun(opts.value as string, opts.font || FONT, Math.round((opts.pt || a.bodyFontPt) * 2), { bold: opts.bold })] : []),
@@ -331,6 +371,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
     const labelText = plainText(a.labels[labelKey] || '').replace(/[\s:،–-]+$/, '')
     return new Paragraph({
       alignment: AlignmentType.RIGHT, frame,
+      spacing: exactLine(pt, BOX_LH),   // v111 — match the page's 1.25 box
       children: [
         mkRun(value, FONT, pt * 2),
         mkRun(' : ', FONT, pt * 2),
@@ -395,7 +436,7 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
 
   // -- body --
   const bodyBlocks: (Paragraph | Table)[] = []
-  Array.from(bodyDiv.children).forEach((c) => bodyBlocks.push(...blockToDocx(c as HTMLElement, FONT, half, imgs, true)))
+  Array.from(bodyDiv.children).forEach((c) => bodyBlocks.push(...blockToDocx(c as HTMLElement, FONT, half, imgs, true, a.bodyLh || 1.7)))
   if (!bodyDiv.children.length && (bodyDiv.textContent || '').trim()) bodyBlocks.push(P(bodyDiv.textContent || ''))
 
   // -- behind-text floats → floating behind-document images (anchored to page) --
