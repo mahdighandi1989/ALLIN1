@@ -353,8 +353,15 @@ async def stage_extraction(
 # transcription call (the frontend runs attachments sequentially, one HTTP
 # request each, so every call stays under the gateway limit).
 # ---------------------------------------------------------------------------
-_TEXT_CAP = 20000          # chars returned per attachment (prompt budget)
-_TRANSCRIBE_MAX_BYTES = 12 * 1024 * 1024
+# v114 — the 20k cap silently amputated long PDFs (a 30-page source kept only
+# ~7 pages and the generated attachment came out badly incomplete — owner's
+# report). PDFs are now transcribed CHUNK BY CHUNK (every page reaches the
+# model) and the per-attachment budget is big enough for long documents; the
+# attachment-generation prompt applies its own total budget on top.
+_TEXT_CAP = 120000         # chars returned per attachment (prompt budget)
+_TRANSCRIBE_MAX_BYTES = 40 * 1024 * 1024
+_PDF_CHUNK_BYTES = 4 * 1024 * 1024   # per-transcription-call page-chunk bounds
+_PDF_CHUNK_PAGES = 8
 
 
 async def attachment_text(
@@ -371,11 +378,12 @@ async def attachment_text(
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             text = data.decode("cp1256", errors="replace")
-        return {"ok": True, "text": text[:_TEXT_CAP]}
+        return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
 
     if lower.endswith(_EXCEL_EXT) or mimetype in ("text/csv",):
         try:
-            return {"ok": True, "text": doc_ingest.workbook_to_text(data, filename)[:_TEXT_CAP]}
+            text = doc_ingest.workbook_to_text(data, filename)
+            return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
         except Exception as exc:
             return {"ok": False, "error": f"جدول قابلِ خواندن نبود: {exc}"}
 
@@ -388,13 +396,14 @@ async def attachment_text(
             for tb in doc.tables:
                 for row in tb.rows:
                     parts.append(" | ".join((c.text or "").strip() for c in row.cells))
-            return {"ok": True, "text": "\n".join(parts)[:_TEXT_CAP]}
+            text = "\n".join(parts)
+            return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
         except Exception as exc:
             return {"ok": False, "error": f"فایل Word قابلِ خواندن نبود: {exc}"}
 
     if is_pdf or (mimetype or "").startswith("image/"):
         if len(data) > _TRANSCRIBE_MAX_BYTES:
-            return {"ok": False, "error": "فایل برای رونویسیِ سریع بزرگ است — از «استخراجِ کامل از پیوست‌ها» استفاده کن."}
+            return {"ok": False, "error": "فایل برای رونویسی بزرگ است (سقف ۴۰MB) — آن را کوچک‌تر کن."}
         rr = await inference.resolve_multimodal(db, [{"mimetype": mimetype}], model_id=model_id)
         if not rr.get("ok"):
             return {"ok": False, "error": rr.get("error")}
@@ -404,12 +413,53 @@ async def attachment_text(
             "reference number, date and amount, exactly as printed. Persian stays Persian, "
             "English stays English. Output ONLY the transcription, no commentary."
         )
-        res = await inference.send_multimodal(
-            rr["resolved"], prompt,
-            [{"filename": filename, "mimetype": mimetype, "data": data}], max_tokens=8000)
-        if not res.get("ok"):
-            return {"ok": False, "error": str(res.get("error"))}
-        return {"ok": True, "text": (res.get("text") or "")[:_TEXT_CAP],
+        # v114 — a single call's OUTPUT-token cap silently cut long PDFs; split
+        # into page-chunks so EVERY page is transcribed, with one retry per
+        # chunk on a transient failure. A failed chunk is reported loudly,
+        # never skipped in silence.
+        if is_pdf:
+            try:
+                chunks = list(doc_ingest.pdf_chunks(data, max_bytes=_PDF_CHUNK_BYTES,
+                                                    max_pages=_PDF_CHUNK_PAGES))
+            except Exception:
+                chunks = [(0, data)]
+        else:
+            chunks = [(0, data)]
+        import asyncio as _aio
+        # send_multimodal is DB-free by design so page-chunks can run
+        # CONCURRENTLY (bounded) — this whole transcription happens inside one
+        # HTTP request, and a big PDF done serially would blow the gateway
+        # deadline that a single bounded call used to stay under.
+        sem = _aio.Semaphore(3)
+
+        async def _one(start: int, cbytes: bytes):
+            async with sem:
+                res = await inference.send_multimodal(
+                    rr["resolved"], prompt,
+                    [{"filename": filename, "mimetype": mimetype, "data": cbytes}], max_tokens=8000)
+                err0 = str(res.get("error") or "")
+                if not res.get("ok") and ("timed out" in err0 or "connection failed" in err0 or "429" in err0):
+                    await _aio.sleep(3)
+                    res = await inference.send_multimodal(
+                        rr["resolved"], prompt,
+                        [{"filename": filename, "mimetype": mimetype, "data": cbytes}], max_tokens=8000)
+            return start, res
+
+        results = await _aio.gather(*(_one(s, b) for s, b in chunks))
+        parts: list = []
+        failed: list = []
+        for start, res in results:  # gather keeps input order ⇒ pages stay in order
+            if res.get("ok"):
+                parts.append((res.get("text") or "").strip())
+            else:
+                failed.append(start or 1)
+                parts.append(f"[⚠ رونویسیِ بخشِ شروع‌شده از صفحهٔ {start or 1} ناموفق بود: {res.get('error')}]")
+        if failed and len(failed) == len(chunks):
+            return {"ok": False, "error": f"رونویسی ناموفق بود: {parts[0] if parts else ''}"}
+        text = "\n\n".join(p for p in parts if p)
+        return {"ok": True, "text": text[:_TEXT_CAP],
+                "truncated": len(text) > _TEXT_CAP,
+                "failed_parts": failed,
                 "model": rr["resolved"].display_name}
 
     return {"ok": False, "error": "فرمتِ این پیوست پشتیبانی نمی‌شود (PDF/تصویر/Excel/CSV/Word/متن)."}

@@ -631,6 +631,14 @@ export default function LetterPage() {
       // reproduce exactly — read server-side, nothing stored.
       let tplText = ''
       let tplName = ''
+      // v114 — a partially read file must be LOUD: chunked PDF transcription can
+      // fail on some page-chunks or hit the size cap; both surface as warnings.
+      const readWarns: string[] = []
+      const noteReadGaps = (label: string, tx: any) => {
+        const fp: number[] = tx.failed_parts || []
+        if (fp.length) readWarns.push(`${label}: رونویسیِ ${fa(fp.length)} بخش (شروع از صفحه‌های ${fp.join('، ')}) ناموفق بود — دوباره تلاش کن`)
+        if (tx.truncated) readWarns.push(`${label}: متن به سقفِ حجم رسید و انتهای فایل حذف شد`)
+      }
       if (genTpl) {
         setExtracting2(`خواندنِ قالب: ${genTpl.name}…`)
         const tx = await letterAiApi.templateText(genTpl, aiModelId === '' ? undefined : Number(aiModelId))
@@ -640,6 +648,7 @@ export default function LetterPage() {
         }
         tplText = tx.text || ''
         tplName = genTpl.name
+        noteReadGaps(`قالب «${genTpl.name}»`, tx)
       }
       // SOURCE/DATA files: each one becomes text too (same no-store endpoint) —
       // their content is an allowed data source alongside the DB facts. A file
@@ -655,6 +664,7 @@ export default function LetterPage() {
           return
         }
         srcTexts.push({ name: sf.name, text: tx.text || '' })
+        noteReadGaps(`فایلِ منبع «${sf.name}»`, tx)
       }
       setExtracting2('')
       const r = await letterAiApi.generateAttachment({
@@ -676,7 +686,7 @@ export default function LetterPage() {
           : aiErrorText(r.error))
         return
       }
-      setGenWarnings(r.warnings || [])
+      setGenWarnings([...readWarns, ...(r.warnings || []).filter((w: string) => !readWarns.includes(w))])
       toast.success(`پیوست «${r.attachment?.original_name || ''}» ساخته و ثبت شد (${r.kind === 'word' ? 'ورد' : 'اکسل'})`)
       setGenInstruction(''); setGenTpl(null); setGenSrcs([])
       await loadAtts(letterId)
