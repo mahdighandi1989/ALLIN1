@@ -531,6 +531,9 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
 
     documents: list = []
     chunk_errors: list = []
+    # v114 — honest coverage accounting: how many chunks the file split into and
+    # which ones never made it, so a partial extraction is loud, not silent.
+    chunk_stats: dict = {"chunks_total": 0, "chunks_failed": 0, "failed_pages": []}
     kb_raw: list = []
     if lower.endswith(_EXCEL_EXT) or mime in ("text/csv",):
         # Office/Excel/CSV tables: parse locally to text and let the model extract
@@ -586,6 +589,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                     doc_ingest.merge_customer(merged[key], c)
                 else:
                     merged[key] = c
+        chunk_stats = {"chunks_total": len(chunks), "chunks_failed": 0, "failed_pages": []}
         customers = list(merged.values())
         if not customers:
             # the model answered but produced nothing usable — fall back to the
@@ -655,21 +659,9 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
 
         merged: dict = {}
         errs: list = []
-        for start, pbytes in chunk_iter:
-            xprompt = doc_ingest.EXTRACTION_PROMPT + _import_rules(fname) + op_block
-            res = await inference.send_multimodal(
-                resolved, xprompt,
-                [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
-            if not res.get("ok") and "429" in str(res.get("error", "")):
-                await asyncio.sleep(3)  # single backoff retry on rate-limit
-                res = await inference.send_multimodal(
-                    resolved, xprompt,
-                    [{"filename": fname, "mimetype": mime, "data": pbytes}], max_tokens=8000)
-            pbytes = None  # free this chunk's bytes before the next one
-            if not res.get("ok"):
-                errs.append(res.get("error"))
-                continue
-            parsed = doc_ingest.parse_model_json(res.get("text", ""))
+        xprompt = doc_ingest.EXTRACTION_PROMPT + _import_rules(fname) + op_block
+
+        def _absorb(start: int, parsed: dict) -> None:
             kb_raw.extend(k for k in (parsed.get("kb_items") or []) if isinstance(k, dict))
             _ir = parsed.get("instruction_report")
             if isinstance(_ir, str) and _ir.strip():
@@ -688,10 +680,56 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                     if off:
                         d["pages"] = doc_ingest.offset_pages(d.get("pages", ""), off)
                     documents.append(d)
+
+        async def _send_chunk(pb: bytes) -> dict:
+            # v114 — retry once on ANY transient failure (timeout / dropped
+            # connection / rate-limit), not just 429: a slow provider minute must
+            # not silently amputate pages from the extraction.
+            r = await inference.send_multimodal(
+                resolved, xprompt,
+                [{"filename": fname, "mimetype": mime, "data": pb}], max_tokens=8000)
+            e0 = str(r.get("error") or "")
+            if not r.get("ok") and ("timed out" in e0 or "connection failed" in e0 or "429" in e0):
+                await asyncio.sleep(3)
+                r = await inference.send_multimodal(
+                    resolved, xprompt,
+                    [{"filename": fname, "mimetype": mime, "data": pb}], max_tokens=8000)
+            return r
+
+        # v114 — a failed chunk's bytes are KEPT (bounded) for one deferred
+        # second pass at the end of the run: transient provider trouble usually
+        # clears within the minutes a big import takes. Beyond the bound we only
+        # record the failure — memory safety beats a retry.
+        _RETRY_KEEP = 6
+        retry_later: list = []          # [(start, bytes, first_error)]
+        chunks_total = 0
+        failed_pages: list = []         # 1-based page start of each lost chunk
+        for start, pbytes in chunk_iter:
+            chunks_total += 1
+            res = await _send_chunk(pbytes)
+            if res.get("ok"):
+                _absorb(start, doc_ingest.parse_model_json(res.get("text", "")))
+            elif len(retry_later) < _RETRY_KEEP:
+                retry_later.append((start, pbytes, str(res.get("error") or "")))
+            else:
+                errs.append(f"بخشِ شروع‌شده از صفحهٔ {start or 1}: {res.get('error')}")
+                failed_pages.append(start or 1)
+            pbytes = None  # free this chunk's bytes before the next one
+        for start, pbytes, first_err in retry_later:
+            await asyncio.sleep(3)
+            res = await _send_chunk(pbytes)
+            if res.get("ok"):
+                _absorb(start, doc_ingest.parse_model_json(res.get("text", "")))
+            else:
+                errs.append(f"بخشِ شروع‌شده از صفحهٔ {start or 1}: {res.get('error') or first_err}")
+                failed_pages.append(start or 1)
+        retry_later = []
         customers = list(merged.values())
         if not customers and not kb_raw:
             raise HTTPException(status_code=502, detail=f"استخراج ناموفق بود: {errs[0] if errs else 'داده‌ای یافت نشد'}")
         chunk_errors = errs  # surfaced in the response so partial failures are visible
+        chunk_stats = {"chunks_total": chunks_total, "chunks_failed": len(failed_pages),
+                       "failed_pages": sorted(failed_pages)}
     else:
         raise HTTPException(status_code=415, detail="فقط PDF، تصویر یا Word (.docx) پشتیبانی می‌شود.")
 
@@ -850,6 +888,10 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         "ok": True, "model": model_name, "filename": fname,
         "customers": results, "multi_customer": len(saved) > 1, "documents": documents,
         "chunk_errors": [e for e in chunk_errors if e],
+        # v114 — coverage: the UI shows a loud warning when chunks_failed > 0
+        "chunks_total": chunk_stats["chunks_total"],
+        "chunks_failed": chunk_stats["chunks_failed"],
+        "failed_pages": chunk_stats["failed_pages"],
         "kb": kb_summary,
         "instructions_used": bool(instructions),
         "instruction_report": instruction_report,

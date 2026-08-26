@@ -184,6 +184,24 @@ export default function ImportPage() {
                   <div className="text-[12px] text-indigo-900 whitespace-pre-wrap leading-5">{r.data.instruction_report || '—'}</div>
                 </div>
               )}
+              {/* v114 — loud coverage warning: a partial extraction must never look complete */}
+              {r.ok && ((r.data?.chunks_failed || 0) > 0 || (r.data?.chunk_errors || []).length > 0) && (
+                <div className="mb-1 rounded-lg border border-amber-300 bg-amber-50 p-2">
+                  <div className="text-[12px] font-bold text-amber-800">
+                    ⚠️ استخراج ناقص بود — {r.data?.chunks_failed || (r.data?.chunk_errors || []).length} بخش از {r.data?.chunks_total || '؟'} بخشِ فایل خوانده نشد
+                  </div>
+                  {(r.data?.failed_pages || []).length > 0 && (
+                    <div className="text-[11px] text-amber-800">بخش‌های شروع‌شده از صفحه‌های: {(r.data.failed_pages as number[]).join('، ')}</div>
+                  )}
+                  <div className="text-[11px] text-amber-700">همین فایل را دوباره تحلیل کن تا بخش‌های جامانده هم استخراج شود؛ داده‌های قبلاً ثبت‌شده تکراری نمی‌شوند.</div>
+                  {(r.data?.chunk_errors || []).length > 0 && (
+                    <details className="mt-1">
+                      <summary className="text-[11px] text-amber-700 cursor-pointer select-none">جزئیاتِ خطاها</summary>
+                      <div className="text-[10px] text-amber-800 whitespace-pre-wrap leading-4">{(r.data.chunk_errors as string[]).join('\n')}</div>
+                    </details>
+                  )}
+                </div>
+              )}
               {r.incapable && (
                 <div className="text-xs text-amber-800">
                   {r.incapable.message || `«${r.incapable.model}» از پسِ این فایل برنمی‌آید.`}

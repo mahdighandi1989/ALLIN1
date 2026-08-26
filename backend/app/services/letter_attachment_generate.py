@@ -29,6 +29,19 @@ MAX_PARAGRAPHS = 150
 MAX_CELL = 500
 MAX_DATASET_ROWS = 300
 
+# v114 — the owner's «the attachment built from my source file was badly
+# incomplete»: build_prompt used to hard-slice every source file (and the
+# template) at 20k chars, silently amputating anything past ~10 pages. The
+# caps now fit a whole transcription (letter_attachment_extract caps its text
+# at 120k) and any cut is EXPLICIT — an inline marker inside the prompt plus a
+# Persian warning surfaced in the API reply (prompt_size_warnings). A very
+# large total prompt may still exceed a small model's context window; that
+# fails loudly with the provider's error, never silently with missing rows.
+SRC_FILE_CAP = 120_000
+SRC_TOTAL_CAP = 360_000
+TEMPLATE_CAP = 120_000
+MAX_SOURCE_FILES = 8
+
 # Cross-customer datasets the model may REQUEST via the need_data protocol —
 # a single-account letter (or a general one) can still build branch-wide /
 # bank-wide lists: the model names the dataset(s) + an exact branch value, the
@@ -98,6 +111,45 @@ SYSTEM_PROMPT = (
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
+def fit_sources(source_files: List[Dict[str, str]] | None) -> Tuple[List[Tuple[str, str, int]], List[str]]:
+    """Apply the v114 source budgets ONCE — build_prompt renders exactly what
+    this returns and the endpoint surfaces the same warnings, so the prompt and
+    the API reply can never disagree about what was cut.
+
+    Returns ``([(name, fitted_text, dropped_chars)], warnings)``."""
+    srcs = [s for s in (source_files or []) if isinstance(s, dict) and (s.get("text") or "").strip()]
+    warns: List[str] = []
+    if len(srcs) > MAX_SOURCE_FILES:
+        warns.append(
+            f"فقط {MAX_SOURCE_FILES} فایلِ منبعِ نخست به مدل داده شد ({len(srcs)} فایل ارسال شده بود)"
+        )
+    out: List[Tuple[str, str, int]] = []
+    budget = SRC_TOTAL_CAP
+    for s in srcs[:MAX_SOURCE_FILES]:
+        nm = str(s.get("name") or "فایل منبع")[:120]
+        txt = str(s.get("text") or "").strip()
+        cut = txt[: min(SRC_FILE_CAP, max(0, budget))]
+        budget -= len(cut)
+        dropped = len(txt) - len(cut)
+        if dropped:
+            warns.append(
+                f"فایلِ منبع «{nm}» کامل به مدل نرسید ({len(cut):,} از {len(txt):,} نویسه) — "
+                "برای منابعِ خیلی حجیم مسیرِ مطمئن‌تر: اول استخراج در صفحهٔ ایمپورت، بعد ساختِ پیوست از داده‌های پایگاه"
+            )
+        out.append((nm, cut, dropped))
+    return out, warns
+
+
+def prompt_size_warnings(source_files: List[Dict[str, str]] | None, template_text: str = "") -> List[str]:
+    """Persian warnings for ANY prompt-side truncation (v114 — a cut source or
+    template must never be silent in the API reply)."""
+    warns = fit_sources(source_files)[1]
+    tt = (template_text or "").strip()
+    if len(tt) > TEMPLATE_CAP:
+        warns.append(f"فایلِ قالب کامل به مدل نرسید ({TEMPLATE_CAP:,} از {len(tt):,} نویسه)")
+    return warns
+
+
 def build_prompt(
     facts: Dict[str, Any],
     letter_ctx: Dict[str, str],
@@ -125,15 +177,22 @@ def build_prompt(
         parts.append(json.dumps(fetched, ensure_ascii=False, separators=(",", ":")))
         parts.append("دیگر need_data مجاز نیست؛ همین حالا spec نهایی را از همین داده‌ها بساز. "
                      "اگر پس از فیلترِ درست هیچ ردیفی نماند، جدول را خالی بده و دلیل را در warnings بنویس.")
-    srcs = [s for s in (source_files or []) if isinstance(s, dict) and (s.get("text") or "").strip()][:8]
+    srcs, _src_warns = fit_sources(source_files)
     if srcs:
         parts.append("\n### فایل‌های منبعِ داده (قاعدهٔ ۱۰ — دادهٔ پیوست از این‌ها هم می‌آید):")
-        for s in srcs:
-            nm = str(s.get("name") or "فایل منبع")[:120]
-            parts.append(f"[فایلِ منبع: {nm}]\n{str(s.get('text')).strip()[:20000]}")
+        for nm, txt, dropped in srcs:
+            marker = (
+                f"\n[⚠ ادامهٔ این فایل ({dropped:,} نویسه) به سقفِ حجم نرسید — ناقص‌بودنِ داده را در warnings اعلام کن]"
+                if dropped else ""
+            )
+            parts.append(f"[فایلِ منبع: {nm}]\n{txt}{marker}")
     if (template_text or "").strip():
         parts.append(f"\n### قالب/نمونهٔ داده‌شده توسط کاربر ({(template_name or 'فایل نمونه')[:120]}) — فرمتِ الزامیِ خروجی (قاعدهٔ ۹):")
-        parts.append(template_text.strip()[:20000])
+        tt = template_text.strip()
+        parts.append(tt[:TEMPLATE_CAP] + (
+            "\n[⚠ ادامهٔ قالب به سقفِ حجم نرسید — ناقص‌بودنِ قالب را در warnings اعلام کن]"
+            if len(tt) > TEMPLATE_CAP else ""
+        ))
         parts.append(
             "قواعدِ قالب: ساختار/سرستون‌ها/ترتیب/عنوان‌ها را عیناً بازتولید کن؛ فقط داده‌ها را از "
             "«حقایقِ پایگاه‌داده» پر کن؛ خواسته‌های اضافهٔ دستورِ کاربر را روی همین قالب اعمال کن؛ "

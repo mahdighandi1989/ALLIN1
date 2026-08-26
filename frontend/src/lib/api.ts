@@ -852,7 +852,7 @@ export const letterAiApi = {
     return data
   },
   // Readable TEXT of a local TEMPLATE/SAMPLE file (any format) — nothing stored.
-  async templateText(file: File, modelId?: number | null): Promise<{ ok: boolean; error?: string; file?: string; text?: string; model?: string }> {
+  async templateText(file: File, modelId?: number | null): Promise<{ ok: boolean; error?: string; file?: string; text?: string; model?: string; truncated?: boolean; failed_parts?: number[] }> {
     const form = new FormData()
     form.append('file', file)
     if (modelId != null) form.append('model_id', String(modelId))

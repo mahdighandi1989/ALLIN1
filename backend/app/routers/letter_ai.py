@@ -564,7 +564,8 @@ async def attachment_text_endpoint(
     user=Depends(require_editor),
 ):
     """Readable TEXT of one attachment for the full_check pass — deterministic
-    for Excel/CSV/Word/plain text, one bounded transcription call for PDF/image.
+    for Excel/CSV/Word/plain text; PDFs are transcribed page-chunk by page-chunk
+    (v114 — every page reaches the model, gaps reported in failed_parts).
     Writes NOTHING (unlike extract-attachment, which stages DB facts)."""
     from app.models.crm import Attachment
     from app.services import attachments as attachments_store
@@ -605,7 +606,8 @@ async def attachment_text_endpoint(
                                   model_id=payload.model_id)
     if not r.get("ok"):
         return {"ok": False, "error": r.get("error"), "file": fname}
-    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model")}
+    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model"),
+            "truncated": bool(r.get("truncated")), "failed_parts": r.get("failed_parts") or []}
 
 
 @router.post("/template-text")
@@ -617,8 +619,9 @@ async def template_text_endpoint(
 ):
     """Readable TEXT of a TEMPLATE/SAMPLE file the user picked from their machine
     (a blank table another department sent, in any format) — for the attachment
-    GENERATOR. Nothing is stored; deterministic for Excel/CSV/Word/plain text,
-    one bounded transcription call for PDF/image."""
+    GENERATOR. Nothing is stored; deterministic for Excel/CSV/Word/plain text;
+    PDFs are transcribed page-chunk by page-chunk (v114 — full coverage, gaps
+    reported in failed_parts)."""
     from app.services import letter_attachment_extract as lax
 
     data = await file.read()
@@ -647,7 +650,8 @@ async def template_text_endpoint(
     r = await lax.attachment_text(db, data=data, filename=fname, mimetype=mime, model_id=mid)
     if not r.get("ok"):
         return {"ok": False, "error": r.get("error"), "file": fname}
-    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model")}
+    return {"ok": True, "file": fname, "text": r.get("text") or "", "model": r.get("model"),
+            "truncated": bool(r.get("truncated")), "failed_parts": r.get("failed_parts") or []}
 
 
 class GenerateAttachmentRequest(BaseModel):
@@ -663,11 +667,13 @@ class GenerateAttachmentRequest(BaseModel):
     model_id: Optional[int] = None
     # v63: a sample/template file's TEXT (extracted via /template-text) — the
     # output must reproduce this exact format, filled from DB facts.
-    template_text: str = Field(default="", max_length=20000)
+    # v114: cap follows letter_attachment_extract._TEXT_CAP (120k) + headroom.
+    template_text: str = Field(default="", max_length=130000)
     template_name: str = Field(default="", max_length=200)
     # v65: SOURCE/DATA files' TEXT ([{name, text}], extracted via /template-text)
     # — an allowed data source alongside the DB facts; any format, any count
-    # (server caps at 8 files x 20k chars in the prompt).
+    # (v114: server budgets 8 files × 120k chars, 360k total, in the prompt —
+    # any cut is warned, never silent).
     source_files: List[Dict[str, str]] = Field(default_factory=list)
 
 
@@ -707,7 +713,7 @@ async def generate_attachment(
     prompt = gen.build_prompt(facts, letter_ctx, instruction, catalog=gen.catalog_text(branches),
                               template_text=tpl_text, template_name=payload.template_name or "",
                               source_files=payload.source_files or [])
-    # v89 — the source-files prompt can reach ~160k chars (8×20k caps): the
+    # v89 — the source-files prompt is long (v114: budgeted 360k chars): the
     # 60s default inference deadline regularly expired with several files
     # attached (owner: «دوبار امتحان کردم نشد … قبلا میشد»). Long deadline +
     # ONE retry on a transient failure, the same treatment the import path got
@@ -727,15 +733,20 @@ async def generate_attachment(
             )
         return res
 
-    result = await _gen_complete(prompt, 8000)
+    # v114: 16000-token output budget in round 1 too — a big source-file table
+    # needs the room even when no need_data round happens.
+    result = await _gen_complete(prompt, 16000)
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error") or "ai_failed", "model": result.get("model")}
 
-    fetch_warnings: list = []
+    # v114: any prompt-side truncation of source files / template surfaces as a
+    # warning in the reply — an incomplete attachment must never look complete.
+    fetch_warnings: list = gen.prompt_size_warnings(payload.source_files or [], tpl_text)
     need = gen.parse_need_data(result.get("text") or "")
     if need:
-        fetched, fetch_warnings = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "",
-                                                           logs_filter=need.get("logs_filter"))
+        fetched, _fw = await gen.fetch_datasets(db, need["datasets"], need.get("branch") or "",
+                                                logs_filter=need.get("logs_filter"))
+        fetch_warnings.extend(w for w in _fw if w not in fetch_warnings)
         prompt2 = gen.build_prompt(facts, letter_ctx, instruction, fetched=fetched,
                                    template_text=tpl_text, template_name=payload.template_name or "",
                                    source_files=payload.source_files or [])
