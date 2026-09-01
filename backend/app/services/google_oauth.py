@@ -44,9 +44,17 @@ def build_auth_url(
         "scope": " ".join(scopes),
         "state": state,
         "access_type": "offline",     # ask for a refresh token (for backups)
-        "include_granted_scopes": "true",
         "prompt": "consent",          # ensure a refresh token is returned
     }
+    # v115 — include_granted_scopes=true made Google MERGE every scope the user
+    # ever granted this client_id into our request; the owner's account carried
+    # YouTube grants (another tool reuses the client) and Google now refuses
+    # drive.file + YouTube scopes in one request ⇒ «Access blocked: Error 400»
+    # on every login. We request everything we need each time, so incremental
+    # authorization buys us nothing — off by default, old behavior kept behind
+    # the flag for rollback.
+    if settings.GOOGLE_INCLUDE_GRANTED_SCOPES:
+        params["include_granted_scopes"] = "true"
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 
