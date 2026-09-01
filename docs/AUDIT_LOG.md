@@ -2982,3 +2982,34 @@ env.py؛ stage «development» فرانت + `NEXT_PUBLIC_API_URL` به‌عنو�
   بگذرد — این حالا «با صدای بلند» با خطای providerِ همان مدل شکست می‌خورد و
   هشدارِ مسیرِ جایگزین (ایمپورت + need_data) در پاسخ هست؛ هرگز بی‌صدا ناقص
   نمی‌شود. برای منابعِ چندده‌مگابایتی مسیرِ توصیه‌شده همان دومرحله‌ای است.
+
+## 2026-09-01 — v115: رفعِ قفلِ لاگینِ گوگل — Error 400 (ترکیبِ scopeهای ناسازگار)
+
+- **[BUG از مالک]** «میخوام لاگین کنم همش این پیام میاد» — گوگل روی
+  Sign-In می‌گفت: «This request contains scopes that cannot be requested
+  together: [drive.file, youtube.force-ssl, youtube, youtube.upload]» و
+  با Error 400: invalid_request لاگین را به‌کل مسدود می‌کرد.
+- **[ROOT CAUSE]** `google_oauth.build_auth_url` پارامترِ
+  `include_granted_scopes=true` (incremental authorization) می‌فرستاد؛
+  یعنی گوگل همهٔ scopeهایی که حسابِ کاربر «قبلاً» به همین client_id داده
+  را با درخواستِ جاری ادغام می‌کند. حسابِ مالک از ابزارِ دیگری (که همین
+  client را استفاده می‌کند) grantهای YouTube داشت؛ سیاستِ جدیدِ گوگل
+  ترکیبِ drive.file با scopeهای YouTube در یک درخواست را رد می‌کند ⇒
+  هر لاگین 400 می‌گرفت. خودِ اپ به ادغامِ افزایشی نیازی ندارد — هر بار
+  همهٔ scopeهای لازم (openid/email/profile + drive.file) را صریح
+  می‌خواهد و prompt=consent + access_type=offline توکنِ refresh را
+  تضمین می‌کند.
+- **[FIX — قانون ۳: کوچک، برگشت‌پذیر، مسیرِ قبلی پشتِ فلگ]**
+  `include_granted_scopes` دیگر به‌صورتِ پیش‌فرض فرستاده نمی‌شود؛ رفتارِ
+  قبلی با ستِ `GOOGLE_INCLUDE_GRANTED_SCOPES=true` در env برمی‌گردد
+  (config جدید، پیش‌فرض False). هیچ endpoint/scope/قابلیتی حذف نشد؛
+  بکاپِ Drive همان drive.file صریح را می‌گیرد.
+- **[VERIFY]** تستِ جدید در `test_google_auth.py`: URL لاگین به‌طورِ
+  پیش‌فرض `include_granted_scopes` ندارد ولی drive.file +
+  access_type=offline + prompt=consent را دارد، و با فلگِ روشن پارامتر
+  برمی‌گردد. pytest کامل + type-check + build سبز (فرانت‌اند بدونِ تغییر؛
+  خروجیِ rebuildِ صرفاً-تأییدی به حالتِ کامیت‌شده برگردانده شد).
+- **[NOTE]** راهِ جایگزینِ بدونِ دیپلوی برای کاربر: حذفِ دسترسیِ قبلیِ
+  همین client در myaccount.google.com/connections — ولی چون ریشه در
+  کدِ ماست، همان‌جا بسته شد. اگر روزی ادغامِ افزایشی لازم شد، client_id
+  جدا برای هر ابزار الزامی است.

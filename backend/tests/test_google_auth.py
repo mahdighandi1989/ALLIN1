@@ -44,6 +44,24 @@ class TestGoogleLogin:
         # https://bank.example.com/api/auth/google/callback (url-encoded)
         assert "https%3A%2F%2Fbank.example.com%2Fapi%2Fauth%2Fgoogle%2Fcallback" in loc
 
+    async def test_login_url_has_no_incremental_scopes_by_default(self, client: AsyncClient, monkeypatch):
+        # v115 — include_granted_scopes=true let Google merge unrelated grants
+        # (YouTube, from another tool on the same client_id) into our request;
+        # drive.file + YouTube cannot be requested together ⇒ login blocked with
+        # Error 400. Default OFF; the old behavior stays behind the flag.
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "cid")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+        monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "https://app/api/auth/google/callback")
+        r = await client.get("/api/auth/google/login", follow_redirects=False)
+        loc = r.headers["location"]
+        assert "include_granted_scopes" not in loc
+        # the scopes we DO need are all still requested, with offline consent
+        assert "drive.file" in loc and "access_type=offline" in loc and "prompt=consent" in loc
+
+        monkeypatch.setattr(settings, "GOOGLE_INCLUDE_GRANTED_SCOPES", True)
+        r2 = await client.get("/api/auth/google/login", follow_redirects=False)
+        assert "include_granted_scopes=true" in r2.headers["location"]
+
     async def test_login_errors_when_not_configured(self, client: AsyncClient, monkeypatch):
         monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
         r = await client.get("/api/auth/google/login", follow_redirects=False)

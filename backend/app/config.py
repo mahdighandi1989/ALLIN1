@@ -164,6 +164,12 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = Field(
         default="", description="Must match the Authorized redirect URI in Google Console"
     )
+    # v115 — send include_granted_scopes=true on the consent URL (Google's
+    # incremental authorization). OFF by default: it merges every scope the user
+    # ever granted this client_id into the request, and unrelated grants (e.g.
+    # YouTube, from another tool sharing the client) make Google reject the
+    # combination with drive.file (Error 400: invalid_request) and block login.
+    GOOGLE_INCLUDE_GRANTED_SCOPES: bool = Field(default=False)
     # Emails that are always granted the admin role on Google sign-in (comma/space
     # separated). Everyone else signs in as 'pending' until an admin grants a role.
     ADMIN_EMAILS: str = Field(default="")
