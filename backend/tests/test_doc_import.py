@@ -907,3 +907,39 @@ async def test_import_persists_insurance_policy_block(db_session):
     for key in ("insurance_policyholder", "insurance_subject", "insurance_activity",
                 "insurance_coverage_total", "insurance_issuing_unit"):
         assert key in doc_ingest.EXTRACTION_PROMPT, key
+
+async def test_import_persists_v116_policy_fields_and_attribution_rule(db_session):
+    """v116 — the rest of the printed policy page (unique code, beneficiary,
+    premium, perils, type) persists on the property row, and the prompt both
+    demands the keys and forbids treating the policyholder BANK as the customer
+    (the 95-policy batch: policyholder = the bank, customer = debtor/mortgagor)."""
+    payload = {
+        "account_no": "113399", "name": "WORLDSTAR TRADING LLC", "account_type": "corporate",
+        "properties": [{
+            "prop_type": "residential", "address": "Pasdaran, Bahestan 1", "city": "TEHRAN",
+            "plate_no": "37/9937", "owner": "Fatemeh Sekati", "owner_national_id": "0053281144",
+            "insurance_no": "2216/60/2/2/05", "insurance_computer_code": "4988529",
+            "insurance_unique_code": "52002909465",
+            "insurance_beneficiary": "بانک صادرات ایران شعبه مرشد بازار",
+            "insurance_premium_total": "34,155,000",
+            "insurance_perils": "آتش‌سوزی، صاعقه، انفجار، زلزله و آتشفشان، طوفان",
+            "insurance_type": "آتش‌سوزی - مسکونی / قطعی",
+        }],
+    }
+    r = await doc_ingest.persist_customer(db_session, payload, "tester")
+    assert r["ok"] and r["properties_added"] == 1
+    await db_session.commit()
+    from app.models.profile_entities import MortgagedProperty
+    from sqlalchemy import select
+    row = (await db_session.execute(select(MortgagedProperty).where(
+        MortgagedProperty.account_no == "113399"))).scalars().first()
+    assert row.insurance_unique_code == "52002909465"
+    assert row.insurance_beneficiary == "بانک صادرات ایران شعبه مرشد بازار"
+    assert row.insurance_premium_total == "34,155,000"
+    assert "زلزله" in row.insurance_perils
+    assert row.insurance_type == "آتش‌سوزی - مسکونی / قطعی"
+    for key in ("insurance_unique_code", "insurance_beneficiary", "insurance_premium_total",
+                "insurance_perils", "insurance_type"):
+        assert key in doc_ingest.EXTRACTION_PROMPT, key
+    # attribution rule: the bank on the policy is never the customer
+    assert "NEVER the customer" in doc_ingest.EXTRACTION_PROMPT

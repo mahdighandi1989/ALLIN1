@@ -755,6 +755,11 @@ function CustomerDetailInner() {
                     ['mortgage_date', 'Mortgage Date'], ['last_valuation_date', 'Last Valuation Date'],
                     ['insurance_no', 'Insurance No (شماره بیمه‌نامه)'], ['insurance_computer_code', 'Insurance Computer Code (کد رایانه)'],
                     ['insurance_issue', 'Insurance Issue'], ['insurance_expiry', 'Insurance Expiry'],
+                    ['insurance_unique_code', 'کد یکتای بیمه مرکزی'], ['insurance_policyholder', 'بیمه‌گذار'],
+                    ['insurance_beneficiary', 'ذینفع (بنفعِ …)'], ['insurance_subject', 'مورد بیمه'],
+                    ['insurance_activity', 'شرح فعالیت شغلی'], ['insurance_type', 'نوع بیمه'],
+                    ['insurance_perils', 'خطرات تحت پوشش'], ['insurance_coverage_total', 'مجموع سرمایه تحت پوشش'],
+                    ['insurance_premium_total', 'جمع کل حق بیمه'], ['insurance_issuing_unit', 'واحد کاری صدور'],
                   ] as [string, string][]).map(([k, ph]) => (
                     <input key={k} value={np[k] || ''} onChange={(e) => setNp((s: any) => ({ ...s, [k]: e.target.value }))}
                       placeholder={ph} inputMode={(k === 'valuation' || k === 'mortgage_amount') ? 'numeric' : undefined}

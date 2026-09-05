@@ -1742,6 +1742,12 @@ _PROPERTY_FIELDS = {
     "zone", "infra_area", "owner", "owner_national_id", "postal_code",
     "valuation", "valuation_currency", "insurance_expiry", "insurance_issue",
     "insurance_no", "insurance_computer_code",
+    # v116 — the whole printed-policy block is editable here too (the v110 five
+    # had been writable only through /api/properties, not this CRM path)
+    "insurance_policyholder", "insurance_subject", "insurance_activity",
+    "insurance_coverage_total", "insurance_issuing_unit",
+    "insurance_unique_code", "insurance_beneficiary", "insurance_premium_total",
+    "insurance_perils", "insurance_type",
     "last_valuation_date", "mortgage_date", "mortgage_amount", "mortgage_currency", "remarks",
 }
 
@@ -1768,6 +1774,16 @@ class PropertyCreate(BaseModel):
     insurance_issue: str = ""
     insurance_no: str = ""
     insurance_computer_code: str = ""
+    insurance_policyholder: str = ""
+    insurance_subject: str = ""
+    insurance_activity: str = ""
+    insurance_coverage_total: str = ""
+    insurance_issuing_unit: str = ""
+    insurance_unique_code: str = ""
+    insurance_beneficiary: str = ""
+    insurance_premium_total: str = ""
+    insurance_perils: str = ""
+    insurance_type: str = ""
     last_valuation_date: str = ""
     mortgage_date: str = ""
     mortgage_amount: Optional[float] = None
@@ -1797,6 +1813,16 @@ class PropertyUpdate(BaseModel):
     insurance_issue: Optional[str] = None
     insurance_no: Optional[str] = None
     insurance_computer_code: Optional[str] = None
+    insurance_policyholder: Optional[str] = None
+    insurance_subject: Optional[str] = None
+    insurance_activity: Optional[str] = None
+    insurance_coverage_total: Optional[str] = None
+    insurance_issuing_unit: Optional[str] = None
+    insurance_unique_code: Optional[str] = None
+    insurance_beneficiary: Optional[str] = None
+    insurance_premium_total: Optional[str] = None
+    insurance_perils: Optional[str] = None
+    insurance_type: Optional[str] = None
     last_valuation_date: Optional[str] = None
     mortgage_date: Optional[str] = None
     mortgage_amount: Optional[float] = None

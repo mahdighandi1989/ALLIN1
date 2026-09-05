@@ -51,8 +51,9 @@ DATASETS: Dict[str, str] = {
     "properties": ("املاک رهنی: شمارهٔ حساب، نام مشتری، شعبه، مدیرِ حساب، پلاک ثبتی، شمارهٔ سند رهنی، "
                    "شهر، آدرس، کد پستی، نوع، مالک/راهن + کد ملی، متراژ زمین/زیربنا، سن بنا، منطقه، "
                    "ارزیابی + تاریخ آخرین ارزیابی، تاریخ/مبلغ ترهین، ملاحظات، و بیمه‌نامهٔ کامل: "
-                   "شماره، کد رایانه، تاریخ صدور/انقضا، بیمه‌گذار، مورد بیمه، شرح دقیق فعالیت شغلی، "
-                   "مجموع سرمایهٔ تحت پوشش، واحد کاری صدور"),
+                   "شماره، کد رایانه، کد یکتای بیمه مرکزی، تاریخ صدور/انقضا، بیمه‌گذار، ذینفع، "
+                   "مورد بیمه، شرح دقیق فعالیت شغلی، نوع بیمه، خطرات تحت پوشش، "
+                   "مجموع سرمایهٔ تحت پوشش، جمع کل حق بیمه، واحد کاری صدور"),
     "customers": "مشتریان: شمارهٔ حساب، نام، شعبه، مدیرِ حساب",
     "facilities": "تسهیلات: حساب، نام مشتری، شعبه، مدیرِ حساب، نوع/نام تسهیلات، مبلغ، مانده، نرخ، تاریخ‌های شروع/پایان/انقضا",
     "securities": "تضامین/وثایق چندساله: سال، شعبه، حساب، نام مشتری، FD، ضامن، چک‌ها، مبلغ چک، شمارهٔ ملک، مبلغ ترهین، ملاحظات",
@@ -348,6 +349,12 @@ async def fetch_datasets(db, datasets: List[str], branch: str = "",
                 "insurance_activity": _s(p.insurance_activity),
                 "insurance_coverage_total": _s(p.insurance_coverage_total),
                 "insurance_issuing_unit": _s(p.insurance_issuing_unit),
+                # v116 — the rest of the printed policy page
+                "insurance_unique_code": _s(p.insurance_unique_code),
+                "insurance_beneficiary": _s(p.insurance_beneficiary),
+                "insurance_premium_total": _s(p.insurance_premium_total),
+                "insurance_perils": _s(p.insurance_perils),
+                "insurance_type": _s(p.insurance_type),
             })
         out["properties"] = _cap("املاک رهنی", items, warnings)
 
