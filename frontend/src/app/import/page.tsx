@@ -9,12 +9,10 @@ import React, { useEffect, useState } from 'react'
 import Layout from '@/components/Layout'
 import { Upload, FileText, Loader2, CheckCircle2, AlertTriangle, ExternalLink, Cpu, X } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { importsApi, policyInboxApi, parseApiError } from '@/lib/api'
+import { importsApi, parseApiError } from '@/lib/api'
 
 type Model = { id: number; display_name: string; capabilities: string[]; supports_pdf?: boolean }
 type FileResult = { filename: string; ok: boolean; data?: any; error?: string; incapable?: any }
-// v117 — one line per Drive-inbox file (rename result or import result)
-type InboxLine = { name: string; text: string; ok: boolean }
 
 export default function ImportPage() {
   const [models, setModels] = useState<Model[]>([])
@@ -28,75 +26,11 @@ export default function ImportPage() {
   // v103 — optional operator instructions the extraction model MUST follow;
   // the per-file result then reports exactly what was done because of them.
   const [instructions, setInstructions] = useState('')
-  // v117 — Drive policy inbox state
-  const [inbox, setInbox] = useState<{ link: string; warning?: string } | null>(null)
-  const [inboxScan, setInboxScan] = useState<any>(null)
-  const [inboxBusy, setInboxBusy] = useState('')
-  const [inboxLines, setInboxLines] = useState<InboxLine[]>([])
-
-  const inboxEnsure = async () => {
-    setInboxBusy('پوشه…')
-    try {
-      const r = await policyInboxApi.ensure()
-      setInbox({ link: r.link, warning: r.warning })
-      if (r.warning) toast(r.warning, { icon: '⚠️', duration: 9000 })
-      if (r.link) window.open(r.link, '_blank')
-    } catch (e) { toast.error(parseApiError(e)) } finally { setInboxBusy('') }
-  }
-  const inboxDoScan = async () => {
-    setInboxBusy('اسکن…')
-    try {
-      const r = await policyInboxApi.scan()
-      setInboxScan(r)
-      if (r.warning) toast(r.warning, { icon: '⚠️', duration: 9000 })
-    } catch (e) { toast.error(parseApiError(e)) } finally { setInboxBusy('') }
-  }
-  const inboxRename = async () => {
-    setInboxBusy('نام‌گذاری…')
-    const lines: InboxLine[] = []
-    const tried: string[] = []
-    try {
-      // bounded batches per HTTP call; unmatched files are excluded from the
-      // next round so the loop always terminates
-      for (let guard = 0; guard < 40; guard++) {
-        const r = await policyInboxApi.apply(tried, modelId === 'auto' ? undefined : modelId)
-        for (const p of r.processed || []) {
-          if (p.renamed) lines.push({ name: p.name, ok: true, text: `→ ${p.new_name} (تطبیق: ${p.matched_by}${p.customer ? ` — ${p.customer}` : ''})` })
-          else { tried.push(p.id); lines.push({ name: p.name, ok: false, text: p.reason || 'نامشخص' }) }
-        }
-        setInboxLines([...lines])
-        setInboxBusy(`نام‌گذاری… (${lines.length})`)
-        if (!r.processed?.length && !r.remaining) break
-        if (r.remaining === 0 && (r.processed || []).every((p: any) => !p.renamed)) break
-        if (r.remaining === 0) break
-      }
-      const okN = lines.filter((l) => l.ok).length
-      toast[okN ? 'success' : 'error'](`${okN} فایل نام‌گذاری شد` + (lines.length - okN ? ` — ${lines.length - okN} مورد نیاز به بررسی` : ''))
-      await inboxDoScan()
-    } catch (e) { toast.error(parseApiError(e)) } finally { setInboxBusy('') }
-  }
-  const inboxImportAll = async () => {
-    if (!inboxScan) { toast.error('اول «اسکن پوشه» را بزن'); return }
-    const named = (inboxScan.files || []).filter((f: any) => f.named)
-    if (!named.length) { toast.error('هیچ فایلِ نام‌گذاری‌شده‌ای در پوشه نیست — اول نام‌گذاری کن'); return }
-    const lines: InboxLine[] = []
-    try {
-      for (let i = 0; i < named.length; i++) {
-        setInboxBusy(`تحلیل ${i + 1} از ${named.length}: ${named[i].name}`)
-        try {
-          const r = await policyInboxApi.importFile(named[i].id, modelId === 'auto' ? undefined : modelId, instructions)
-          const saved = (r.customers || []).filter((c: any) => c.ok)
-          const warn = r.chunks_failed > 0 ? ` — ⚠️ ${r.chunks_failed} بخش خوانده نشد` : ''
-          lines.push({ name: named[i].name, ok: true, text: `${saved.length} مشتری/رکورد ثبت شد${warn}` })
-        } catch (e) {
-          lines.push({ name: named[i].name, ok: false, text: parseApiError(e) })
-        }
-        setInboxLines([...lines])
-      }
-      const okN = lines.filter((l) => l.ok).length
-      toast[okN ? 'success' : 'error'](`${okN} از ${named.length} فایل تحلیل و ثبت شد`)
-    } finally { setInboxBusy('') }
-  }
+  // v118 — the v117 «Drive policy inbox» card was REMOVED from this page at the
+  // owner's explicit request (2026-09-05: the one-off batch was handled outside
+  // the app, and production Drive runs in OAuth mode where the app cannot see
+  // user-dropped files). The backend /api/policy-inbox endpoints are kept,
+  // quarantined — see docs/REMOVAL_CANDIDATES.md.
 
   useEffect(() => {
     importsApi.aiModels()
@@ -238,59 +172,6 @@ export default function ImportPage() {
               ? <><Loader2 size={16} className="animate-spin" /> در حال تحلیل… ({progress.done}/{progress.total})</>
               : <><Cpu size={16} /> تحلیل و ثبت در دیتابیس{files.length > 1 ? ` (${files.length} فایل)` : ''}</>}
           </button>
-
-          {/* v117 — Drive policy inbox: drop 90+ policies + a mapping Excel in a
-              Drive folder; auto-rename to شعبه-حساب-نام, then import from Drive */}
-          <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
-            <div className="text-[13px] font-bold text-sky-900 mb-1">☁️ بیمه‌نامه‌های درایو — نام‌گذاری و تحلیلِ خودکار</div>
-            <div className="text-[11px] text-sky-800 leading-5 mb-2">
-              بیمه‌نامه‌ها + یک اکسلِ نگاشت (ستون‌های «شماره حساب»، «شعبه» و دست‌کم یکی از «کد رایانه / کد یکتا / شماره بیمه‌نامه / کد ملی») را در پوشهٔ درایو بگذار؛
-              سیستم هر بیمه‌نامه را می‌خواند، با ردیفِ اکسل تطبیق می‌دهد، نامِ فایل را «شعبه-حساب-نامِ قبلی» می‌کند و بعد می‌توانی همه را از همان‌جا تحلیل و ثبت کنی.
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={inboxEnsure} disabled={!!inboxBusy} type="button"
-                className="bg-white border border-sky-300 hover:bg-sky-100 text-sky-900 rounded-lg px-3 py-1.5 text-xs font-semibold">
-                📁 پوشه در درایو{inbox?.link ? ' (باز کردن)' : ' (ساخت/نمایش)'}
-              </button>
-              <button onClick={inboxDoScan} disabled={!!inboxBusy} type="button"
-                className="bg-white border border-sky-300 hover:bg-sky-100 text-sky-900 rounded-lg px-3 py-1.5 text-xs font-semibold">
-                🔍 اسکن پوشه
-              </button>
-              <button onClick={inboxRename} disabled={!!inboxBusy || !inboxScan} type="button"
-                className="bg-white border border-sky-300 hover:bg-sky-100 text-sky-900 rounded-lg px-3 py-1.5 text-xs font-semibold">
-                🏷️ نام‌گذاری بر اساس اکسل
-              </button>
-              <button onClick={inboxImportAll} disabled={!!inboxBusy || !inboxScan} type="button"
-                className="bg-sky-600 hover:bg-sky-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold">
-                🚀 تحلیل و ثبتِ نام‌گذاری‌شده‌ها (از درایو)
-              </button>
-              {inboxBusy && <span className="text-xs text-sky-700 inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> {inboxBusy}</span>}
-            </div>
-            {inboxScan && (
-              <div className="mt-2 text-[11px] text-sky-900">
-                {inboxScan.pdf_count} بیمه‌نامه در پوشه ({inboxScan.named_count} نام‌گذاری‌شده)
-                {inboxScan.excel
-                  ? (inboxScan.excel.ok
-                    ? <> · اکسلِ نگاشت: «{inboxScan.excel.file}» با {inboxScan.excel.rows} ردیف</>
-                    : <> · <span className="text-red-700">اکسل: {inboxScan.excel.error}</span></>)
-                  : <> · <span className="text-amber-700">اکسلِ نگاشت هنوز آپلود نشده</span></>}
-                {(inboxScan.excel?.warnings || []).map((w: string, i: number) => (
-                  <div key={i} className="text-amber-700">⚠️ {w}</div>
-                ))}
-              </div>
-            )}
-            {inboxLines.length > 0 && (
-              <div className="mt-2 max-h-56 overflow-auto divide-y divide-sky-100 text-[11px] bg-white rounded border border-sky-200">
-                {inboxLines.map((l, i) => (
-                  <div key={i} className="px-2 py-1 flex gap-1 items-start">
-                    <span>{l.ok ? '✅' : '❌'}</span>
-                    <span className="text-gray-800 break-all">{l.name}</span>
-                    <span className={l.ok ? 'text-green-700' : 'text-red-700'}>{l.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* Per-file results */}
           {results.length > 0 && results.map((r, i) => (
