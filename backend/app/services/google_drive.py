@@ -427,6 +427,70 @@ def download_file(file_id: str) -> bytes:
         raise _drive_error(f"download '{file_id}'", exc) from exc
 
 
+def list_folder(folder_id: str) -> list[dict]:
+    """List the non-trashed files directly inside ``folder_id``.
+
+    Returns ``[{id, name, mimeType, size}]`` (size may be absent for Google-native
+    types). Paginates so a big drop-folder (e.g. 95 policy scans) comes back whole.
+    """
+    if not folder_id:
+        raise DriveError("list_folder called with empty folder id")
+    service = _get_service()
+    out: list[dict] = []
+    token = None
+    try:
+        while True:
+            resp = (
+                service.files()
+                .list(
+                    q=f"'{folder_id}' in parents and trashed = false",
+                    fields="nextPageToken, files(id, name, mimeType, size)",
+                    pageSize=200,
+                    pageToken=token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            out.extend(resp.get("files", []))
+            token = resp.get("nextPageToken")
+            if not token:
+                return out
+    except Exception as exc:
+        raise _drive_error(f"list folder '{folder_id}'", exc) from exc
+
+
+def rename_file(file_id: str, new_name: str) -> dict:
+    """Rename a Drive file in place (content untouched). Returns {id, name}."""
+    if not file_id or not (new_name or "").strip():
+        raise DriveError("rename_file needs a file id and a non-empty name")
+    service = _get_service()
+    try:
+        result = (
+            service.files()
+            .update(fileId=file_id, body={"name": new_name.strip()},
+                    fields="id, name", supportsAllDrives=True)
+            .execute()
+        )
+    except Exception as exc:
+        raise _drive_error(f"rename '{file_id}'", exc) from exc
+    return {"id": result.get("id"), "name": result.get("name")}
+
+
+def file_link(file_id: str) -> str:
+    """The webViewLink of a file/folder (empty string when unavailable)."""
+    service = _get_service()
+    try:
+        result = (
+            service.files()
+            .get(fileId=file_id, fields="webViewLink", supportsAllDrives=True)
+            .execute()
+        )
+        return result.get("webViewLink") or ""
+    except Exception as exc:
+        raise _drive_error(f"link '{file_id}'", exc) from exc
+
+
 def delete_file(file_id: str) -> None:
     """Permanently delete a Drive file by id (best-effort, raises on hard failure).
 
