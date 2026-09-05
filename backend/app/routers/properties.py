@@ -40,6 +40,9 @@ _WRITABLE = {
     "owner_national_id", "postal_code", "insurance_issue", "insurance_computer_code",
     "insurance_policyholder", "insurance_subject", "insurance_activity",
     "insurance_coverage_total", "insurance_issuing_unit",
+    # v116 — the rest of the printed policy page
+    "insurance_unique_code", "insurance_beneficiary", "insurance_premium_total",
+    "insurance_perils", "insurance_type",
 }
 _NUMERIC = {"valuation", "mortgage_amount"}
 
@@ -91,6 +94,11 @@ class PropertyWrite(BaseModel):
     insurance_activity: str = ""
     insurance_coverage_total: str = ""
     insurance_issuing_unit: str = ""
+    insurance_unique_code: str = ""
+    insurance_beneficiary: str = ""
+    insurance_premium_total: str = ""
+    insurance_perils: str = ""
+    insurance_type: str = ""
 
 
 class PropertyPatch(BaseModel):
@@ -125,6 +133,11 @@ class PropertyPatch(BaseModel):
     insurance_activity: Optional[str] = None
     insurance_coverage_total: Optional[str] = None
     insurance_issuing_unit: Optional[str] = None
+    insurance_unique_code: Optional[str] = None
+    insurance_beneficiary: Optional[str] = None
+    insurance_premium_total: Optional[str] = None
+    insurance_perils: Optional[str] = None
+    insurance_type: Optional[str] = None
 
 
 def _conds(search: str, city: str, ptype: str, currency: str):

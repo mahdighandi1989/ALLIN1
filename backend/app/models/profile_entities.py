@@ -53,6 +53,13 @@ class MortgagedProperty(Base):
     insurance_activity = Column(String(300))       # شرح دقیق فعالیت شغلی
     insurance_coverage_total = Column(String(60))  # مجموع سرمایهٔ تحت پوشش (رقم‌به‌رقم)
     insurance_issuing_unit = Column(String(120))   # واحد کاری صدور
+    # v116 — the remaining identity/financial fields printed on issued policies
+    # (e.g. Sarmad fire policies), so a batch-import captures the WHOLE page:
+    insurance_unique_code = Column(String(80))     # کد یکتای بیمه مرکزی
+    insurance_beneficiary = Column(String(300))    # ذینفع (بنفعِ …)
+    insurance_premium_total = Column(String(60))   # جمع کل حق بیمهٔ قابل پرداخت
+    insurance_perils = Column(String(500))         # خطرات تحت پوشش
+    insurance_type = Column(String(160))           # نوع بیمه / نوع بیمه‌نامه
     last_valuation_date = Column(String(30)) # تاریخ آخرین ارزیابی
     mortgage_date = Column(String(30))       # تاریخ ترهین
     mortgage_amount = Column(Numeric(18, 2)) # مبلغ ترهین
