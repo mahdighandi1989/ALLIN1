@@ -71,6 +71,12 @@ async def _prepare() -> None:
         google_drive.configure_oauth_token(token)
 
 
+async def prepare() -> None:
+    """Public alias of :func:`_prepare` for other Drive-facing features
+    (e.g. the policy inbox) so they never poke the private helper."""
+    await _prepare()
+
+
 def _utc_stamp() -> str:
     """Compact, sortable UTC timestamp: 20260610-202530Z."""
     return datetime.utcnow().strftime("%Y%m%d-%H%M%SZ")

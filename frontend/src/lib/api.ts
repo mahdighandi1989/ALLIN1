@@ -938,6 +938,52 @@ export const importsApi = {
 }
 
 // ---------------------------------------------------------------------------
+// Drive policy inbox (v117): drop-folder for issued insurance policies + a
+// mapping Excel; auto-rename to {branch}-{account}-{original}; import each
+// renamed file straight from Drive through the normal job pipeline.
+// ---------------------------------------------------------------------------
+export const policyInboxApi = {
+  async ensure(): Promise<{ ok: boolean; folder_id: string; link: string; name: string; warning?: string }> {
+    const { data } = await api.post('/api/policy-inbox/ensure', {}, { timeout: 60000 })
+    return data
+  },
+  async scan(): Promise<any> {
+    const { data } = await api.post('/api/policy-inbox/scan', {}, { timeout: 120000 })
+    return data
+  },
+  async apply(excludeIds: string[], modelId?: number): Promise<any> {
+    const { data } = await api.post('/api/policy-inbox/apply',
+      { exclude_ids: excludeIds, model_id: modelId ?? null }, { timeout: 300000 })
+    return data
+  },
+  async importFile(fileId: string, modelId?: number, instructions?: string): Promise<any> {
+    const { data: start } = await api.post('/api/policy-inbox/import-file',
+      { file_id: fileId, model_id: modelId ?? null, instructions: instructions || '' },
+      { timeout: 300000 })
+    const jobId = start.job_id
+    if (!jobId) return start
+    const deadline = Date.now() + 25 * 60 * 1000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000))
+      let j: any
+      try {
+        j = (await api.get(`/api/imports/jobs/${jobId}`)).data
+      } catch (e: any) {
+        if (!e?.response || e.response.status >= 500) continue
+        throw e
+      }
+      if (j.status === 'done') return j.result
+      if (j.status === 'error') {
+        const err: any = new Error('extraction failed')
+        err.response = { data: { detail: j.detail }, status: j.http_status || 500 }
+        throw err
+      }
+    }
+    throw new Error('Extraction is taking too long; please try a smaller file.')
+  },
+}
+
+// ---------------------------------------------------------------------------
 // In-app notifications
 // ---------------------------------------------------------------------------
 export const notificationsApi = {
