@@ -24,6 +24,12 @@ export type DesignState = {
   reset: () => void
   _ref: React.MutableRefObject<Record<string, Boxn>>
   acct: string
+  // v120 — SHEET METRICS: page-level numbers a form exposes for hand-tuning
+  // (e.g. slip height, gap between slips, signature offset — all in mm). They
+  // are NOT per-field boxes, so they live in their own `<key>__nums` record and
+  // follow the same base/account scoping, saving and reset as the layout.
+  nums: Record<string, number>
+  setNum: (id: string, v: number | undefined) => void
 }
 
 // SCOPING (owner rule): pass the current account number as `account`. While
@@ -35,36 +41,51 @@ export type DesignState = {
 export function useFormDesign(storageKey: string, account?: string): DesignState {
   const acct = (account || '').trim()
   const KEY = acct ? `${storageKey}::${acct}` : storageKey
+  const NKEY = `${KEY}__nums`
   const [own, setOwn] = useState<Record<string, Boxn>>({})
   const [base, setBase] = useState<Record<string, Boxn>>({})
+  const [ownN, setOwnN] = useState<Record<string, number>>({})
+  const [baseN, setBaseN] = useState<Record<string, number>>({})
   const [design, setDesign] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const layout: Record<string, Boxn> = acct
     ? (() => { const m: Record<string, Boxn> = { ...base }; for (const k in own) m[k] = { ...(base[k] || {}), ...own[k] }; return m })()
     : own
+  const nums: Record<string, number> = acct ? { ...baseN, ...ownN } : ownN
   const _ref = useRef(layout)
   useEffect(() => { _ref.current = layout })
   useEffect(() => {
     try { const r = localStorage.getItem(KEY); setOwn(r ? JSON.parse(r) : {}) } catch { setOwn({}) }
-    if (acct) { try { const r = localStorage.getItem(storageKey); setBase(r ? JSON.parse(r) : {}) } catch { setBase({}) } }
-    else setBase({})
+    try { const r = localStorage.getItem(NKEY); setOwnN(r ? JSON.parse(r) : {}) } catch { setOwnN({}) }
+    if (acct) {
+      try { const r = localStorage.getItem(storageKey); setBase(r ? JSON.parse(r) : {}) } catch { setBase({}) }
+      try { const r = localStorage.getItem(`${storageKey}__nums`); setBaseN(r ? JSON.parse(r) : {}) } catch { setBaseN({}) }
+    } else { setBase({}); setBaseN({}) }
     setEditing(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, acct])
   const setBox = (id: string, patch: Partial<Boxn>) => setOwn((p) => ({ ...p, [id]: { ...p[id], ...patch } }))
+  // undefined / NaN clears the override so the form's built-in default returns
+  const setNum = (id: string, v: number | undefined) => setOwnN((p) => {
+    const n = { ...p }
+    if (v === undefined || !Number.isFinite(v)) delete n[id]; else n[id] = v
+    return n
+  })
   const save = () => {
     try {
       localStorage.setItem(KEY, JSON.stringify(own))
+      if (Object.keys(ownN).length) localStorage.setItem(NKEY, JSON.stringify(ownN))
+      else localStorage.removeItem(NKEY)
       alert(acct ? `چیدمان فقط برای حسابِ ${acct} ذخیره شد — قالبِ اصلی دست‌نخورده ماند` : 'چیدمانِ قالبِ اصلی ذخیره شد')
     } catch { /* ignore */ }
   }
   const reset = () => {
     if (confirm(acct ? `چیدمانِ سفارشیِ حسابِ ${acct} پاک شود؟ (قالبِ اصلی دست نمی‌خورد)` : 'بازگشت به چیدمانِ پیش‌فرض؟ همۀ جابه‌جایی‌ها پاک می‌شوند.')) {
-      setOwn({}); setEditing(null)
-      try { localStorage.removeItem(KEY) } catch { /* ignore */ }
+      setOwn({}); setOwnN({}); setEditing(null)
+      try { localStorage.removeItem(KEY); localStorage.removeItem(NKEY) } catch { /* ignore */ }
     }
   }
-  return { layout, design, editing, setDesign, setEditing, setBox, save, reset, _ref, acct }
+  return { layout, design, editing, setDesign, setEditing, setBox, save, reset, _ref, acct, nums, setNum }
 }
 
 function hasTweak(b?: Boxn) { return !!b && !!(b.dx || b.dy || (b.scale && b.scale !== 1) || b.fontPt || b.ls) }

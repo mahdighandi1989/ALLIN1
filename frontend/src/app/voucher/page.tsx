@@ -42,6 +42,29 @@ type VProps = {
   amountText?: string     // v100 — verbatim amount cell (IRR mode prints the CHEQUE COUNT, not a money value)
 }
 
+// v120 — sheet geometry defaults (mm). Overridable per form/account from the
+// «چیدمان» panel (DesignState.nums); see the .vch CSS block for the arithmetic.
+const SHEET_DEFAULTS = { vchH: 123, vchGap: 32, vchSig: 3 }
+
+function MmInput({ label, hint, value, def, min, max, onChange }:
+  { label: string; hint: string; value: number; def: number; min: number; max: number; onChange: (v: number | undefined) => void }) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-[11px] font-bold text-gray-700">{label} <span className="font-normal text-gray-400">({hint})</span></span>
+      <span className="flex items-center gap-1">
+        <input type="number" value={value} min={min} max={max} step={1}
+          onChange={(e) => { const n = parseFloat(e.target.value); onChange(Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : undefined) }}
+          className="w-20 border rounded px-2 py-1 text-sm text-center" />
+        <span className="text-[11px] text-gray-500">م‌م</span>
+        {value !== def && (
+          <button type="button" onClick={() => onChange(undefined)}
+            className="text-[11px] text-indigo-600 hover:underline">پیش‌فرض {def}</button>
+        )}
+      </span>
+    </label>
+  )
+}
+
 function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, amountText, d, prefix }: VProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
@@ -254,6 +277,14 @@ export default function VoucherPage() {
   const d = useFormDesign('voucherLayout_v1', acNo)
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // v120 — sheet geometry in mm, hand-tunable from «چیدمان» (see SHEET_DEFAULTS).
+  // A4 height 297mm; the block starts 8mm from the top when printing.
+  const shH = d.nums.vchH ?? SHEET_DEFAULTS.vchH
+  const shGap = d.nums.vchGap ?? SHEET_DEFAULTS.vchGap
+  const shSig = d.nums.vchSig ?? SHEET_DEFAULTS.vchSig
+  const shTotal = 8 + shH * 2 + shGap
+  const sheetVars = { '--vch-h': `${shH}mm`, '--vch-gap': `${shGap}mm`, '--vch-sig': `${shSig}mm` } as React.CSSProperties
+
   // Live customer count for the helper text (instead of the bundled 556).
   useEffect(() => {
     customersApi.list({ page: 1, page_size: 1 }).then((r) => setAccountCount(r.total)).catch(() => {})
@@ -279,7 +310,9 @@ export default function VoucherPage() {
     ro.observe(wrap.parentElement || wrap)
     window.addEventListener('resize', fit)
     return () => { ro.disconnect(); window.removeEventListener('resize', fit) }
-  }, [])
+    // re-fit when the sheet geometry is hand-tuned (v120) — the wrapper height
+    // is collapsed to the scaled height, so it must follow the new slip heights
+  }, [shH, shGap, shSig])
 
   const onAcctLookup = (value: string) => {
     setAcNo(value)
@@ -617,13 +650,20 @@ export default function VoucherPage() {
     <Layout>
       <style>{`
         /* ---- Voucher (matches the source Excel form) ---- */
-        /* v108 — slightly shorter slips (132mm) with a clear gap between them:
-           8mm top + 132+132 + 5mm gap = 277mm of 297mm ⇒ still one A4 page,
-           and each slip keeps its own full border (no shared edge). */
-        .vch { box-sizing: border-box; width: 100%; height: 132mm; border: 1.6pt solid #000;
+        /* v120 — the owner asked for a MUCH wider cut line between the two slips
+           (~6-7× the old 5mm) without ever spilling to a 2nd page. A4 is fixed,
+           so the room comes out of each slip's own height: the signature row is
+           bottom-anchored by .vch-spacer, therefore a shorter slip pulls both
+           signatures UP toward the grid — exactly what was asked.
+             8mm top + 123 + 32 gap + 123 = 286mm of 297mm ⇒ 11mm bottom safety.
+           All three slip kinds (normal / reversal / IRR) share this .vch frame,
+           so every document on the page follows the same geometry.
+           The three numbers are CSS variables so «چیدمان» can hand-tune them
+           (defaults live here; overrides come as inline vars on #voucher-print). */
+        .vch { box-sizing: border-box; width: 100%; height: var(--vch-h, 123mm); border: 1.6pt solid #000;
                padding: 5mm 6mm 4mm; display: flex; flex-direction: column; color: #000;
                font-family: Arial, "Segoe UI", sans-serif; background: #fff; overflow: hidden; }
-        .vch + .vch { margin-top: 5mm; }
+        .vch + .vch { margin-top: var(--vch-gap, 32mm); }
         .vch-head { display: flex; justify-content: space-between; align-items: flex-start; }
         .vch-kind { font-size: 30pt; font-weight: 900; letter-spacing: 1px; line-height: 0.9; }
         .vch-logo { text-align: right; line-height: 1; }
@@ -660,7 +700,7 @@ export default function VoucherPage() {
         .vch-ref-name { font-size: 10.5pt; font-weight: 800; padding: 1.5mm 2mm; border-top: 1pt solid #000; }
         .vch-spacer { flex: 1; }
         .vch-foot { display: flex; justify-content: space-between; font-size: 10pt; font-weight: 700; }
-        .vch-sigline { display: block; width: 52mm; border-top: 1pt solid #000; margin-top: 8mm; }
+        .vch-sigline { display: block; width: 52mm; border-top: 1pt solid #000; margin-top: var(--vch-sig, 3mm); }
 
         /* on-screen preview: the fixed-mm sheet is scaled (transform, via JS) to
            fit its column so there is no horizontal scroll; print resets it. */
@@ -683,8 +723,9 @@ export default function VoucherPage() {
           .voucher-grid { display: block !important; margin: 0 !important; }
           /* Fixed, centred block — 188mm wide leaves ~11mm each side and 8mm top,
              so left/right borders never reach the printer's non-printable edge.
-             Two 135mm vouchers = 270mm; +8mm top = 278mm of a 297mm page →
-             ~19mm bottom safety → always one page with full borders visible. */
+             v120: two 123mm slips + a 32mm cut gap = 278mm; +8mm top = 286mm of
+             a 297mm page → 11mm bottom safety → always one page with full
+             borders visible. The «چیدمان» panel warns before a tweak exceeds it. */
           .vch-wrap { overflow: visible !important; height: auto !important; }
           #voucher-print { width: 188mm !important; margin: 8mm 11mm 0 11mm !important;
                            transform: none !important; page-break-inside: avoid; break-inside: avoid; }
@@ -878,12 +919,27 @@ export default function VoucherPage() {
             <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-2">
               <DesignControls d={d} />
               <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرۀ چیدمان».' : 'برای جابه‌جایی/اندازۀ فیلدهای سند روی «چیدمان» بزن.'}</span>
+              {/* v120 — sheet geometry (mm): the owner tunes the cut gap, the slip
+                  height and the signature offset by hand; «ذخیرۀ چیدمان» persists
+                  them and «بازنشانی» restores these defaults. */}
+              {d.design && (
+                <div className="w-full mt-2 p-2 rounded-lg bg-slate-50 border border-slate-200" dir="rtl">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <MmInput label="فاصلۀ بین دو سند" hint="محلِ برش" value={shGap} def={SHEET_DEFAULTS.vchGap} min={2} max={60} onChange={(v) => d.setNum('vchGap', v)} />
+                    <MmInput label="ارتفاع هر سند" hint="کمتر ⇒ امضا بالاتر" value={shH} def={SHEET_DEFAULTS.vchH} min={80} max={140} onChange={(v) => d.setNum('vchH', v)} />
+                    <MmInput label="فاصلۀ خطِ امضا" hint="از عنوانِ امضا" value={shSig} def={SHEET_DEFAULTS.vchSig} min={0} max={20} onChange={(v) => d.setNum('vchSig', v)} />
+                    <span className={`text-xs font-bold ${shTotal > 290 ? 'text-red-600' : 'text-green-700'}`}>
+                      مجموع {shTotal.toFixed(0)} از ۲۹۷ م‌م {shTotal > 290 ? '— بیش از حد، به صفحۀ دوم می‌افتد!' : `— ${(297 - shTotal).toFixed(0)} م‌م فضای امن`}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* ---- printable vouchers (A4 = two A5 halves) ---- */}
           <div className="vch-wrap" ref={wrapRef}>
-            <div id="voucher-print" ref={previewRef}>
+            <div id="voucher-print" ref={previewRef} style={sheetVars}>
               {mode === 'irr' ? (
                 <>
                   <Voucher kind="DEBIT" title={irrDrTitle} date={date} acNo={irrDebitGL} amount="" amountText={irrCount.trim()} currency="" ourRef={ourRef} description={irrChqLine} acName={acName} extraLines={irrExtraLines} d={d} prefix="irrd" />
