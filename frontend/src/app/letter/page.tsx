@@ -17,6 +17,7 @@ import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
+import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
 
 const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
@@ -167,23 +168,7 @@ function cleanPaste(html: string): string {
 // A row-selector safe for querySelector (CSS.escape where available).
 const cssEsc = (v: string) => (typeof CSS !== 'undefined' && (CSS as any).escape ? (CSS as any).escape(v) : v.replace(/[^\w-]/g, '\\$&'))
 
-// Re-merge tables that were split across pages (same header) so storage stays clean.
-function mergeAdjacentTables(container: HTMLElement) {
-  let node = container.firstElementChild
-  while (node) {
-    const next = node.nextElementSibling
-    if (node.tagName === 'TABLE' && next && next.tagName === 'TABLE') {
-      const h1 = node.querySelector('tr'), h2 = next.querySelector('tr')
-      if (h1 && h2 && (h1.textContent || '').trim() === (h2.textContent || '').trim()) {
-        const tb = node.querySelector('tbody') || node
-        Array.from(next.querySelectorAll('tr')).slice(1).forEach((r) => tb.appendChild(r))
-        next.remove()
-        continue // re-check the (now-extended) node against its new sibling
-      }
-    }
-    node = next
-  }
-}
+
 // A rich (contentEditable) page-cell. The body stores HTML so bold/underline can be
 // applied to SELECTED words only (via the floating toolbar / execCommand). Caret is
 // preserved across re-flows.
@@ -482,14 +467,19 @@ export default function LetterPage() {
 
   // --- ATTACHMENT TABLES (جدول‌های پیوست): tables registered as letter پیوست‌ها.
   // Unlike file attachments they are rendered as their OWN letterhead pages after
-  // the letter's last (closing) page, in order. Sizing is automatic: a table whose
-  // natural width doesn't fit portrait flips the page to LANDSCAPE (on screen the
-  // sheet simply becomes wider — text is never rotated, so editing stays normal);
-  // a too-tall table steps its font down before admitting defeat with a warning.
+  // the letter's last (closing) page, in order. Sizing is automatic and entirely
+  // content-driven (v124):
+  //   • ORIENTATION — a table whose natural width doesn't fit portrait flips its
+  //     page to LANDSCAPE (on screen the sheet simply becomes wider — text is never
+  //     rotated, so editing stays normal).
+  //   • FONT — steps down ONLY when the table is too WIDE for the chosen
+  //     orientation. Height never shrinks the font any more.
+  //   • HEIGHT — a long table simply FLOWS over as many pages as it needs, cut
+  //     between rows with the header repeated (see paginateAttHtml).
   // Stored inside values_json alongside the letter fields. ---
   type AttTable = { id: string; title: string; html: string; offY?: number }
   const [attTables, setAttTables] = useState<AttTable[]>([])
-  const [attMeta, setAttMeta] = useState<Record<string, { land: boolean; scale: number; tooTall: boolean }>>({})
+  const [attMeta, setAttMeta] = useState<Record<string, { land: boolean; scale: number; chunks: string[]; oversize: boolean }>>({})
   const ATT_MARGIN = m(15)                       // side margins of an attachment page
   const ATT_TOP = m(40)                          // content starts below the letterhead
   const ATT_BOTTOM = m(24)                       // clear of footer + page number
@@ -538,46 +528,60 @@ export default function LetterPage() {
   const removeFloat = (id: string) => { setFloats((list) => list.filter((x) => x.id !== id)); setFloatSel((v) => (v === id ? null : v)) }
   const letterSheets = () => Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet)')) as HTMLElement[]
   const letterCells = () => (Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))
-  // Auto-size every attachment table: orientation by NATURAL width, then font
-  // step-down if it's still too tall for one page.
+  // Auto-size every attachment table — orientation and font follow the CONTENT,
+  // and the height is solved by FLOWING over pages instead of shrinking (v124).
   useEffect(() => {
     if (!attTables.length) { setAttMeta({}); return }
     const holder = document.createElement('div')
     holder.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden'
     document.body.appendChild(holder)
-    const meta: Record<string, { land: boolean; scale: number; tooTall: boolean }> = {}
+    const meta: Record<string, { land: boolean; scale: number; chunks: string[]; oversize: boolean }> = {}
     const PORT_W = PAGE_W - 2 * ATT_MARGIN, LAND_W = PAGE_H - 2 * ATT_MARGIN
     const PORT_H = PAGE_H - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM, LAND_H = PAGE_W - ATT_TOP - ATT_TITLE_H - ATT_BOTTOM
     for (const t of attTables) {
-      // natural (unconstrained) width — in a huge container the table shrinks to fit content
-      const free = document.createElement('div')
-      free.style.cssText = 'width:2600px;font-size:13pt;line-height:1.7'
-      free.innerHTML = t.html
-      holder.appendChild(free)
-      const naturalW = (free.querySelector('table') as HTMLElement | null)?.offsetWidth || 0
-      holder.removeChild(free)
-      const land = naturalW > PORT_W
-      const availW = land ? LAND_W : PORT_W, availH = land ? LAND_H : PORT_H
-      // height at the real width (the .measure class carries the exact table CSS)
-      let scale = 1, tooTall = false
-      for (const s of [1, 0.85, 0.72, 0.6]) {
-        scale = s
-        const box = document.createElement('div')
-        box.className = 'measure'
-        box.style.cssText = `position:static;visibility:hidden;width:${availW}px;font-size:${13 * s}pt;line-height:1.7;white-space:pre-wrap`
-        box.innerHTML = t.html
-        holder.appendChild(box)
-        const hh = box.offsetHeight
-        holder.removeChild(box)
-        if (hh <= availH) { tooTall = false; break }
-        tooTall = true
+      // natural (unconstrained) width at a given font scale — in a very wide
+      // container the table settles on exactly the width its content wants
+      const naturalAt = (s: number) => {
+        const free = document.createElement('div')
+        free.style.cssText = `width:4000px;font-size:${13 * s}pt;line-height:1.7`
+        free.innerHTML = t.html
+        holder.appendChild(free)
+        const w = (free.querySelector('table') as HTMLElement | null)?.offsetWidth || 0
+        holder.removeChild(free)
+        return w
       }
-      meta[t.id] = { land, scale, tooTall }
+      const naturalW = naturalAt(1)
+      const land = naturalW > PORT_W                      // too wide for portrait ⇒ landscape sheet
+      const availW = land ? LAND_W : PORT_W, availH = land ? LAND_H : PORT_H
+      // Font step-down is WIDTH-driven only: a table too wide even for a landscape
+      // A4 would otherwise squeeze its columns into unreadable slivers. Height is
+      // NOT a reason to shrink any more — that is what the extra pages are for.
+      let scale = 1
+      if (naturalW > availW) {
+        for (const s of [0.85, 0.72, 0.6]) { scale = s; if (naturalAt(s) <= availW) break }
+      }
+      const { chunks, oversize } = paginateAttHtml(t.html, holder, availW, availH, 13 * scale)
+      meta[t.id] = { land, scale, chunks, oversize }
     }
     document.body.removeChild(holder)
     setAttMeta(meta)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attTables])
+  // How many A4 pages this attachment table occupies, and where it starts.
+  const attPageCount = (t: AttTable) => Math.max(1, attMeta[t.id]?.chunks?.length || 1)
+  const attPageOffset = (i: number) => attTables.slice(0, i).reduce((n, t) => n + attPageCount(t), 0)
+  // Edit of ONE page of a split table: put the edited chunk back in place, re-join,
+  // and fuse the same-header pieces into a single stored <table> (storage stays one
+  // clean table — the split only ever exists on screen).
+  const onAttChunk = (t: AttTable, ci: number, val: string) => {
+    const cur = attMeta[t.id]?.chunks
+    const chunks = cur && cur.length ? cur.slice() : [t.html]
+    chunks[Math.min(ci, chunks.length - 1)] = fixHehHamza(val)
+    const d = document.createElement('div')
+    d.innerHTML = chunks.join('')
+    mergeAdjacentTables(d)
+    updateAttTable(t.id, { html: d.innerHTML })
+  }
   const loadAtts = async (id: string | null) => {
     if (!id) { setLetterAtts([]); return }
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
@@ -2558,7 +2562,7 @@ export default function LetterPage() {
   const P = (k: string, node: React.ReactNode, extra?: React.CSSProperties) => isHidden(k) ? null : <div style={{ ...boxStyle(k), ...extra }}>{node}</div>  // print: positioned, hide-aware
   const H = (h: string) => <span dangerouslySetInnerHTML={{ __html: h || '' }} />  // render a rich (HTML) value
 
-  const totalPageCount = pages.length + attTables.length
+  const totalPageCount = pages.length + attTables.reduce((n, t) => n + attPageCount(t), 0)
 
   // Letterhead placement on an ATTACHMENT page. Portrait pages reuse the letter's
   // exact boxes; landscape pages keep each element's anchor: logo stays top-left,
@@ -2616,24 +2620,34 @@ export default function LetterPage() {
   const attEditorPage = (t: AttTable, i: number) => {
     const meta = attMeta[t.id]
     const land = !!meta?.land, scale = meta?.scale ?? 1
+    const chunks = meta?.chunks?.length ? meta.chunks : [t.html]
     const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
     const contentW = W - 2 * ATT_MARGIN
-    return (
-      <div className="lsheet attsheet" key={`att-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
+    const first = pages.length + attPageOffset(i)
+    // one sheet per chunk — `offY` (the manual nudge) belongs to the table's FIRST
+    // page only; continuation pages start right under their title.
+    return chunks.map((chunk, ci) => {
+      const off = ci === 0 ? (t.offY || 0) : 0
+      return (
+      <div className="lsheet attsheet" key={`att-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
         {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
-          <span className="att-badge">جدول {fa(i + 1)} پیوست</span>
-          <RichSpan value={t.title} onChange={(h) => updateAttTable(t.id, { title: h })} placeholder="عنوانِ جدولِ پیوست…" style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} />
-          <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌اش)" onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}>حذف</button>
+          <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
+          {ci === 0
+            ? <RichSpan value={t.title} onChange={(h) => updateAttTable(t.id, { title: h })} placeholder="عنوانِ جدولِ پیوست…" style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} />
+            : <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: `${t.title || ''}${t.title ? ' ' : ''}(ادامه)` }} />}
+          {ci === 0 && <button className="att-del no-print" title="حذفِ این جدولِ پیوست (و صفحه‌هایش)" onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}>حذف</button>}
         </div>
-        {meta?.tooTall && <div className="att-warn no-print">جدول از یک صفحه بلندتر است — چند ردیف را حذف یا جدول را کوچک‌تر کن</div>}
-        <BodyCell html={t.html} editable={!design} onChangeHtml={(h) => updateAttTable(t.id, { html: fixHehHamza(h) })} transformPaste={cleanPaste}
-          style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + (t.offY || 0), width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - (t.offY || 0) - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
+        {ci === 0 && chunks.length > 1 && <div className="att-note no-print" dir="rtl">این جدول خودکار در {fa(chunks.length)} صفحه چیده شد — سرستون در هر صفحه تکرار می‌شود</div>}
+        {ci === 0 && meta?.oversize && <div className="att-warn no-print" dir="rtl">یک ردیف از یک صفحهٔ کامل بلندتر است — متنِ آن ردیف را کوتاه‌تر کن</div>}
+        <BodyCell html={chunk} editable={!design} onChangeHtml={(h) => onAttChunk(t, ci, h)} transformPaste={cleanPaste}
+          style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
         {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
+        {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
-    )
+      )
+    })
   }
 
   // one attachment-table page in the PRINT view (landscape pages print via a
@@ -2641,21 +2655,28 @@ export default function LetterPage() {
   const attPrintPage = (t: AttTable, i: number) => {
     const meta = attMeta[t.id]
     const land = !!meta?.land, scale = meta?.scale ?? 1
+    const chunks = meta?.chunks?.length ? meta.chunks : [t.html]
     const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
     const contentW = W - 2 * ATT_MARGIN
-    return (
-      <div className={`psheet${land ? ' land' : ''}`} key={`patt-${t.id}`} style={land ? { width: W, height: Hh } : undefined}>
+    const first = pages.length + attPageOffset(i)
+    // Each chunk is its own `.psheet`, so print, PDF (one PNG per sheet) and the
+    // page numbering all follow the split without knowing anything about it.
+    return chunks.map((chunk, ci) => {
+      const off = ci === 0 ? (t.offY || 0) : 0
+      return (
+      <div className={`psheet${land ? ' land' : ''}`} key={`patt-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
         {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
-          <span className="att-badge">جدول {fa(i + 1)} پیوست</span>
-          <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: t.title || '' }} />
+          <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
+          <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: `${t.title || ''}${ci ? `${t.title ? ' ' : ''}(ادامه)` : ''}` }} />
         </div>
-        <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + (t.offY || 0), width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - (t.offY || 0) - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: t.html }} />
+        <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: chunk }} />
         {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(pages.length + i + 1)} از ${fa(totalPageCount)}`}</div>}
+        {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
-    )
+      )
+    })
   }
 
   // one A4 page in the editable view
@@ -2915,6 +2936,9 @@ export default function LetterPage() {
         .att-del{border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-size:11px;border-radius:6px;padding:1px 8px;opacity:.75}
         .att-del:hover{opacity:1;background:#fef2f2}
         .att-warn{position:absolute;top:6px;left:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 9px;font-size:11px;z-index:5}
+        /* v124 — informational (not an error): the table flowed over several pages */
+        .att-note{position:absolute;top:6px;left:10px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:8px;padding:3px 9px;font-size:11px;z-index:5}
+        .att-note + .att-warn{top:30px}
         /* ---- new-table dialog ---- */
         .tdlg-wrap{position:fixed;inset:0;z-index:420;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;font-family:${NAZ}}
         .tdlg{background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(15,23,42,.35);padding:16px 18px;width:min(360px,92vw);display:flex;flex-direction:column;gap:10px}
@@ -3161,7 +3185,9 @@ export default function LetterPage() {
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '5px 9px' }}>
                     <span>▦</span>
                     <b>جدول {fa(i + 1)} پیوست{plain(t.title) ? ` — ${plain(t.title)}` : ''}</b>
-                    <span className="ltr-hint">صفحۀ {fa(pages.length + i + 1)}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
+                    <span className="ltr-hint">{attPageCount(t) > 1
+                      ? `صفحه‌های ${fa(pages.length + attPageOffset(i) + 1)} تا ${fa(pages.length + attPageOffset(i) + attPageCount(t))}`
+                      : `صفحۀ ${fa(pages.length + attPageOffset(i) + 1)}`}{attMeta[t.id]?.land ? ' · افقی (landscape)' : ''}</span>
                     <button onClick={() => { if (confirm(`حذفِ جدول ${fa(i + 1)} پیوست؟`)) removeAttTable(t.id) }}
                       style={{ border: 0, background: 'transparent', color: '#dc2626', cursor: 'pointer', marginInlineStart: 'auto' }}>حذف</button>
                   </div>
@@ -3347,7 +3373,7 @@ export default function LetterPage() {
               </label>
               <label className="tchk">
                 <input type="checkbox" checked={tblDlg.asAtt} onChange={(e) => setTblDlg((d) => d && { ...d, asAtt: e.target.checked })} />
-                <span>ثبت به‌عنوانِ <b>پیوستِ نامه</b> — جدول صفحۀ جداگانه‌ای بعد از صفحۀ آخرِ نامه می‌گیرد؛ اگر عریض باشد صفحه خودکار افقی (landscape) می‌شود</span>
+                <span>ثبت به‌عنوانِ <b>پیوستِ نامه</b> — جدول صفحۀ جداگانه‌ای بعد از صفحۀ آخرِ نامه می‌گیرد؛ اگر عریض باشد صفحه خودکار افقی (landscape) می‌شود و اگر بلند باشد خودکار در چند صفحه با تکرارِ سرستون ادامه می‌یابد</span>
               </label>
               <div className="tbtns">
                 <button className="ltr-btn green" onClick={confirmInsertTable}><Table size={14} /> ساختِ جدول</button>

@@ -232,9 +232,13 @@ const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: '222222' }
 function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: ImgMap): Table {
   const trs = Array.from(tbl.rows)
   const nCols = Math.max(1, ...trs.map((r) => Array.from(r.cells).reduce((acc, c) => acc + (c.colSpan || 1), 0)))
-  const rows = trs.map((tr) => {
+  const rows = trs.map((tr, ri) => {
     const hPx = parseFloat((tr.style.height || '').replace('px', '')) || 0
     return new TableRow({
+      // v124 — Word flows a long table over pages by itself; mark the first row as
+      // the header so it REPEATS at the top of every page, matching what the app's
+      // own attachment pagination now does on screen and in the PDF.
+      tableHeader: ri === 0 || undefined,
       height: hPx ? { value: Math.round(hPx * PX2TW), rule: 'atLeast' as any } : undefined,
       children: Array.from(tr.cells).map((td) => {
         const isTh = td.tagName === 'TH'
