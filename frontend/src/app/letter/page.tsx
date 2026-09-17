@@ -410,6 +410,7 @@ export default function LetterPage() {
   const [attsOpen, setAttsOpen] = useState(false)
   const [letterAtts, setLetterAtts] = useState<LetterAttachment[]>([])
   const [attUploading, setAttUploading] = useState(false)
+  const [attProgress, setAttProgress] = useState('')   // v122 — «بارگذاری ۳ از ۱۲…»
   const [extracting2, setExtracting2] = useState('')   // progress text while extracting attachments
   // Which attachments the extraction tool should read — user-pickable. Default:
   // selected, EXCEPT AI-generated ones (ساختِ AI): their content came OUT of the
@@ -582,19 +583,40 @@ export default function LetterPage() {
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
   }
   useEffect(() => { loadAtts(letterId) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [letterId])
-  const uploadAtt = async (file?: File | null) => {
-    if (!file) return
+  // v122 — MULTI-file attach (owner: «باید پیوست‌ها رو دونه دونه وارد کنم»).
+  // The picker is now `multiple` and the files upload SEQUENTIALLY: the backend
+  // takes one file per request (Drive upload + profile row), and a parallel
+  // burst would both hammer Drive and lose per-file error attribution. Each
+  // file is isolated in its own try/catch, so one rejected file (too large /
+  // unsupported) never cancels the rest — the summary says exactly which failed.
+  const uploadAtt = async (files?: FileList | File[] | null) => {
+    const list = Array.from(files || [])
+    if (!list.length) return
     if (!letterId) { toast.error('اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد'); return }
     if (!acct.trim() && !general) { toast.error('شمارۀ حساب نامه لازم است'); return }
     setAttUploading(true)
+    const failed: string[] = []
+    let ok = 0
     try {
-      await crmApi.uploadAttachment(acct.trim() || 'general', file, {
-        facility_id: `LTR-${letterId}`,
-        notes: `پیوست نامه${plain(f.subject) ? ` — ${plain(f.subject)}` : ''}`,
-      })
-      toast.success(`پیوست «${file.name}» بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`)
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i]
+        if (list.length > 1) setAttProgress(`بارگذاری ${fa(i + 1)} از ${fa(list.length)}: ${file.name}`)
+        try {
+          await crmApi.uploadAttachment(acct.trim() || 'general', file, {
+            facility_id: `LTR-${letterId}`,
+            notes: `پیوست نامه${plain(f.subject) ? ` — ${plain(f.subject)}` : ''}`,
+          })
+          ok++
+        } catch (e) { failed.push(`${file.name}: ${parseApiError(e)}`) }
+      }
+      if (ok) {
+        toast.success(list.length === 1
+          ? `پیوست «${list[0].name}» بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`
+          : `${fa(ok)} پیوست از ${fa(list.length)} بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`)
+      }
+      for (const msg of failed) toast.error(msg)
       await loadAtts(letterId)
-    } catch (e) { toast.error(parseApiError(e)) } finally { setAttUploading(false) }
+    } finally { setAttUploading(false); setAttProgress('') }
   }
   const deleteAtt = async (id: string, name: string) => {
     if (!confirm(`حذفِ پیوست «${name}»؟`)) return
@@ -3012,17 +3034,22 @@ export default function LetterPage() {
           <div className="ltr-controls no-print" style={{ marginTop: -4, borderColor: '#99f6e4', background: '#f0fdfa', display: 'block' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span className="ltr-hint" style={{ fontWeight: 700, color: '#0f766e' }}>پیوست‌های نامه</span>
-              <label className="ltr-btn" style={{ background: '#0d9488', cursor: 'pointer' }}>
-                {attUploading ? '⏳ در حال بارگذاری…' : '⬆ افزودن پیوست'}
-                <input type="file" className="hidden" style={{ display: 'none' }} disabled={attUploading}
-                  onChange={(e) => { uploadAtt(e.target.files?.[0]); e.currentTarget.value = '' }} />
+              {/* v122 — multi-select + drag & drop; files upload one after the
+                  other so a failure is attributed to its own file */}
+              <label className="ltr-btn" style={{ background: '#0d9488', cursor: 'pointer' }}
+                onDragOver={(e) => { e.preventDefault() }}
+                onDrop={(e) => { e.preventDefault(); if (!attUploading) uploadAtt(e.dataTransfer?.files) }}
+                title="می‌توانی چند فایل را با هم انتخاب کنی (Ctrl/Shift) یا روی همین دکمه رها کنی">
+                {attUploading ? `⏳ ${attProgress || 'در حال بارگذاری…'}` : '⬆ افزودن پیوست (چندتایی)'}
+                <input type="file" multiple className="hidden" style={{ display: 'none' }} disabled={attUploading}
+                  onChange={(e) => { uploadAtt(e.target.files); e.currentTarget.value = '' }} />
               </label>
               <button className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} onClick={toggleGen}
                 title="هوش مصنوعی بر اساس دستور تو و داده‌های پایگاه‌داده یک فایل واقعی (اکسل یا ورد) می‌سازد و پیوستِ نامه می‌کند">
                 <Sparkles size={14} /> ساختِ پیوست با هوش مصنوعی
               </button>
               {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
-              <span className="ltr-hint">فایل در Google Drive (پوشۀ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
+              <span className="ltr-hint">چند فایل را با هم انتخاب کن (Ctrl/Shift) یا روی دکمه رها کن — یکی‌یکی و پشتِ‌سرِ هم بارگذاری می‌شوند و اگر فایلی رد شود، بقیه ادامه می‌دهند. هر فایل در Google Drive (پوشۀ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
             </div>
             {/* ---- AI attachment generator (ساختِ پیوست) ---- */}
             {genOpen && (
