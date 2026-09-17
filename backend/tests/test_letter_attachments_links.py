@@ -230,3 +230,161 @@ async def test_extraction_kb_items_staged_and_no_account_data(db_session):
     # kb_items instruction + the "no data is not an error" line reach the prompt
     p = lax.build_prompt({"subject": "س", "account_no": "1", "customer_name": "ش"})
     assert "kb_items" in p and "NOT an error" in p
+
+
+# ---------------- v121: nested collections reach the DB (Import parity) ----------------
+
+async def test_stage_extraction_stages_nested_collections(db_session):
+    """Facilities / mortgaged properties / partners / security used to be read by
+    the shared import prompt and then dropped (only scalars survived). They must
+    now come back as their own reviewable `entity_write` rows."""
+    db_session.add(Customer(account_no="L40", name="Nested Co"))
+    await db_session.commit()
+    extraction = {"customers": [{
+        "account_no": "L40", "name": "Nested Co",
+        "fields": {"city": "Dubai"},
+        "facilities": [{"facility_type": "overdraft", "amount": "500000", "currency": "AED"}],
+        "properties": [{"prop_type": "apartment", "mortgage_deed_no": "638/140",
+                        "plate_no": "1/16553", "address": "Tehran"}],
+        "partners": [{"name": "Ms. P", "role": "shareholder", "share_pct": "40"}],
+        "security": [{"type": "Underlien Deposits", "for_facility": "OD", "amount": "100000"}],
+    }]}
+    staged = await lax.stage_extraction(db_session, extraction, primary_account="L40",
+                                        primary_name="Nested Co", source_ref="sanction.pdf")
+    ents = [s for s in staged if s["op"] == "entity_write"]
+    kinds = {e["entity"] for e in ents}
+    assert kinds == {"facility", "property", "partner", "security"}
+    # every row is account-scoped, carries the raw payload and a readable summary
+    assert all(e["account_no"] == "L40" and e["payload"] and e["applicable"] for e in ents)
+    fac = next(e for e in ents if e["entity"] == "facility")
+    assert "overdraft" in fac["title"] and "500000" in fac["title"]
+    assert fac["entity_key"] == "facilities"
+    prop = next(e for e in ents if e["entity"] == "property")
+    assert prop["payload"]["mortgage_deed_no"] == "638/140"
+    # the flat field still goes through the ordinary gate — unchanged behaviour
+    assert any(s["op"] == "db_write" and s["key"] == "city" for s in staged)
+
+
+async def test_stage_extraction_never_guesses_an_owner_for_nested_records(db_session):
+    """With no account on the entry AND no primary account (a «general» letter),
+    a facility/property must NOT be attributed to anyone."""
+    extraction = {"customers": [{
+        "name": "Unknown Co", "fields": {},
+        "facilities": [{"facility_type": "loan", "amount": "1000"}],
+    }]}
+    staged = await lax.stage_extraction(db_session, extraction, primary_account="",
+                                        primary_name="", source_ref="x.pdf")
+    assert not [s for s in staged if s["op"] == "entity_write"]
+
+
+async def test_apply_db_writes_nested_collections(client, auth_headers, db_session):
+    """The approved rows are persisted by the IMPORT page's own writer, so the
+    facility/property really land in their tables."""
+    from app.models.facility import Facility
+    from app.models.profile_entities import MortgagedProperty
+
+    r = await client.post("/api/letter-ai/apply-db", headers=auth_headers, json={
+        "items": [], "source_ref": "ltr-9",
+        "entities": [
+            {"account_no": "L41", "customer_name": "Apply Co", "entity_key": "facilities",
+             "payload": {"facility_type": "loan", "amount": "250000", "currency": "AED"}},
+            {"account_no": "L41", "customer_name": "Apply Co", "entity_key": "properties",
+             "payload": {"prop_type": "villa", "mortgage_deed_no": "12/9", "address": "Dubai"}},
+        ],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] and not body.get("entity_errors")
+    assert body["entity_counts"].get("facilities_added") == 1
+    assert body["entity_counts"].get("properties_added") == 1
+
+    cust = (await db_session.execute(select(Customer).where(Customer.account_no == "L41"))).scalar_one()
+    facs = (await db_session.execute(select(Facility).where(Facility.customer_id == cust.id))).scalars().all()
+    assert len(facs) == 1 and str(facs[0].facility_type.value if hasattr(facs[0].facility_type, "value") else facs[0].facility_type) == "loan"
+    props = (await db_session.execute(select(MortgagedProperty).where(MortgagedProperty.account_no == "L41"))).scalars().all()
+    assert len(props) == 1 and props[0].mortgage_deed_no == "12/9"
+
+
+async def test_apply_db_ignores_unknown_entity_keys(client, auth_headers):
+    """Only the whitelisted collections may be written — a made-up key is a no-op,
+    never an error and never a stray table write."""
+    r = await client.post("/api/letter-ai/apply-db", headers=auth_headers, json={
+        "items": [],
+        "entities": [{"account_no": "L42", "entity_key": "customers",
+                      "payload": {"name": "nope"}}],
+    })
+    assert r.status_code == 200
+    assert r.json()["entity_counts"] == {}
+
+
+# ---------------- v121 (ب): batch extraction as a background job ----------------
+
+async def test_attachment_batch_job_queues_and_polls(client, auth_headers, monkeypatch, import_inline):
+    """The batch endpoint returns a job id immediately; the poll endpoint reports
+    live progress and finally the accumulated staged changes."""
+    from app.routers import letter_ai as la_router
+
+    calls: list = []
+
+    async def fake_extract(att_id, payload, request, db, user):
+        calls.append(att_id)
+        return {"ok": True, "file": f"{att_id}.pdf",
+                "changes": [{"id": f"c-{att_id}", "op": "db_write", "category": "db_extract",
+                             "field": "city", "account_no": "B1", "key": "city",
+                             "value": "Dubai", "applicable": True}],
+                "chunk_errors": []}
+
+    monkeypatch.setattr(la_router, "_extract_one_attachment", fake_extract)
+
+    async def _inline(job_id, ids, data, username):
+        await la_router._run_attachment_batch(job_id, ids, data, username)
+
+    monkeypatch.setattr(la_router, "_spawn_attachment_batch", _inline)
+
+    r = await client.post("/api/letter-ai/extract-attachments-job", headers=auth_headers,
+                          json={"attachment_ids": ["a1", "a2", "a3"], "account_no": "B1"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] and body["total"] == 3
+    job_id = body["job_id"]
+
+    p = await client.get(f"/api/letter-ai/attachment-job/{job_id}", headers=auth_headers)
+    assert p.status_code == 200
+    st = p.json()
+    assert st["status"] == "done", st
+    assert st["done"] == 3 and st["total"] == 3
+    assert len(st["changes"]) == 3
+    assert calls == ["a1", "a2", "a3"]          # strictly sequential, in order
+    assert all(c["source_file"] for c in st["changes"])
+
+
+async def test_attachment_batch_job_isolates_one_bad_file(client, auth_headers, monkeypatch, import_inline):
+    """A file that blows up becomes ONE error line — the rest still extract."""
+    from app.routers import letter_ai as la_router
+
+    async def flaky(att_id, payload, request, db, user):
+        if att_id == "bad":
+            raise RuntimeError("boom")
+        return {"ok": True, "file": att_id, "changes": [], "chunk_errors": []}
+
+    monkeypatch.setattr(la_router, "_extract_one_attachment", flaky)
+
+    async def _inline(job_id, ids, data, username):
+        await la_router._run_attachment_batch(job_id, ids, data, username)
+
+    monkeypatch.setattr(la_router, "_spawn_attachment_batch", _inline)
+    r = await client.post("/api/letter-ai/extract-attachments-job", headers=auth_headers,
+                          json={"attachment_ids": ["ok1", "bad", "ok2"]})
+    job_id = r.json()["job_id"]
+    st = (await client.get(f"/api/letter-ai/attachment-job/{job_id}", headers=auth_headers)).json()
+    assert st["status"] == "done"          # the batch itself did NOT fail
+    assert st["done"] == 3
+    assert any("boom" in e for e in st["errors"])
+
+
+async def test_attachment_batch_job_rejects_empty_and_unknown(client, auth_headers):
+    r = await client.post("/api/letter-ai/extract-attachments-job", headers=auth_headers,
+                          json={"attachment_ids": []})
+    assert r.status_code == 422
+    r = await client.get("/api/letter-ai/attachment-job/NOPE", headers=auth_headers)
+    assert r.status_code == 404

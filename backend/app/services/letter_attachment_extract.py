@@ -244,6 +244,45 @@ async def extract_attachment(
             "model": model_name, "chunk_errors": chunk_errors}
 
 
+# v121 — NESTED COLLECTIONS. The import prompt (shared verbatim) also returns
+# facilities / mortgaged properties / guarantors / partners / the security
+# matrix, but `_flatten_fields` keeps SCALARS only, so until now every one of
+# them was read by the model and then silently dropped at staging — the owner's
+# report: «از پیوست، تسهیلات و ملکِ وثیقه‌ای وارد دیتابیس نمی‌شود». They now
+# become their own reviewable rows and, once ticked, are written by the very
+# same ``doc_ingest.persist_customer`` the Import page calls, so every guard
+# (deposit-is-not-a-facility, fill-empty, dedup, the v116 insurance columns,
+# property events) applies unchanged — no parallel write path.
+_ENTITY_SPECS = (
+    ("facilities", "facility", "تسهیلات"),
+    ("properties", "property", "ملکِ وثیقه‌ای"),
+    ("guarantors", "guarantor", "ضامن"),
+    ("partners", "partner", "شریک/سهامدار"),
+    ("security", "security", "وثیقه/تضمین"),
+)
+
+
+def _entity_desc(kind: str, e: dict) -> str:
+    """One short Persian summary of ONE collection entry (the review-row text)."""
+    def g(*keys: str) -> str:
+        for k in keys:
+            v = e.get(k)
+            if v not in (None, "", "-") and not isinstance(v, (list, dict)):
+                return str(v).strip()
+        return ""
+    if kind == "facility":
+        parts = [g("facility_type"), g("amount"), g("currency"), g("expiry_date")]
+    elif kind == "property":
+        parts = [g("prop_type", "type"), g("mortgage_deed_no"), g("plate_no"), g("address"), g("city")]
+    elif kind == "guarantor":
+        parts = [g("guarantor_name", "name"), g("national_id"), g("cheque_no")]
+    elif kind == "partner":
+        parts = [g("name"), g("role"), g("share_pct", "share")]
+    else:
+        parts = [g("type"), g("for_facility"), g("amount_aed", "amount")]
+    return " — ".join([p for p in parts if p])[:180]
+
+
 def _flatten_fields(cust: dict) -> Dict[str, str]:
     """One flat {key: value} per extracted customer (fields + top-level extras)."""
     out: Dict[str, str] = {}
@@ -290,6 +329,33 @@ async def stage_extraction(
     raw_writes = [w for w in raw_writes if w["key"] and w["value"]]
 
     staged = await dbx.stage_db_writes(db, primary_account, primary_name, raw_writes)
+
+    # v121 — nested collections → their own reviewable rows (see _ENTITY_SPECS).
+    ent_n = 0
+    for cust in extraction.get("customers") or []:
+        acc = (doc_ingest._acc_of(cust) or "").strip() or (primary_account or "").strip()
+        if not acc:
+            # Never attribute a facility/property to a guessed owner — the same
+            # «unresolved is never guessed» rule the flat-field gate follows.
+            continue
+        cname = str(cust.get("name") or "").strip() or (primary_name or "")
+        for key, kind, label in _ENTITY_SPECS:
+            for e in (cust.get(key) or []):
+                if not isinstance(e, dict) or not e:
+                    continue
+                desc = _entity_desc(kind, e)
+                if not desc:
+                    continue
+                ent_n += 1
+                staged.append({
+                    "id": f"e{ent_n}", "op": "entity_write", "category": "db_extract",
+                    "field": kind, "entity": kind, "entity_key": key,
+                    "account_no": acc, "customer_name": cname,
+                    "payload": e, "value": desc,
+                    "title": f"{label}: {desc}",
+                    "detail": f"از پیوستِ «{source_ref}» — با تأیید، در همان جدولی ثبت می‌شود که صفحهٔ ایمپورت می‌نویسد",
+                    "severity": "medium", "applicable": True,
+                })
 
     # Relationship/link proposals (deduped by pair+kind) — reviewable, applied later.
     seen: set = set()

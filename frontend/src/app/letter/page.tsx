@@ -695,6 +695,8 @@ export default function LetterPage() {
   const hasAttachmentMode = f.attachment === 'دارد'
   const SEV_COLOR: Record<string, string> = { low: '#64748b', medium: '#d97706', high: '#dc2626' }
   const SEV_FA: Record<string, string> = { low: 'کم', medium: 'متوسط', high: 'زیاد' }
+  // v121 — nested-collection kinds staged from attachments
+  const ENTITY_FA: Record<string, string> = { facility: 'تسهیلات', property: 'ملکِ وثیقه‌ای', guarantor: 'ضامن', partner: 'شریک/سهامدار', security: 'وثیقه/تضمین' }
 
   const AI_MAX_SELECTIONS = 12
   // Capture the CURRENT text selection (from the body or any rich field) and add
@@ -803,7 +805,45 @@ export default function LetterPage() {
       if (aiSelTools.includes(ATT_TOOL) && letterAtts.length && !attsToRun.length) {
         toast.error('هیچ پیوستی برای استخراج انتخاب نشده — در فهرستِ زیرِ ابزار، پیوست(ها) را تیک بزن')
       }
+      // v121 (part ب) — one background JOB for the whole batch: the server keeps
+      // extracting even if this tab is closed, and there is no per-file browser
+      // timeout to lose a long file to. We poll for live progress; the previous
+      // per-file foreground loop is kept below as the fallback when the job
+      // endpoint is unavailable (an older backend still serving /extract-attachment).
+      let batchDone = false
       if (attsToRun.length) {
+        try {
+          const jb = await letterAiApi.extractAttachmentsJob({
+            attachment_ids: attsToRun.map((a) => a.id),
+            account_no: general ? undefined : (acct.trim() || undefined),
+            customer_name: plain(f.recipientName) || undefined,
+            subject: plain(f.subject) || undefined,
+            body_excerpt: plain(f.body).slice(0, 1500) || undefined,
+            model_id: aiModelId === '' ? undefined : Number(aiModelId),
+            allow_ai_generated: attsToRun.some((a) => a.ai_generated) ? true : undefined,
+          })
+          if (jb.ok && jb.job_id) {
+            setExtracting2(`استخراج از ${fa(jb.total)} پیوست در صف قرار گرفت…`)
+            // poll until done/error — progress comes straight off the job row
+            for (;;) {
+              await new Promise((r) => setTimeout(r, 3000))
+              const st = await letterAiApi.attachmentJob(jb.job_id)
+              setExtracting2(`استخراج از پیوست ${fa(st.done)} از ${fa(st.total || jb.total)}${st.current ? `: ${st.current}` : ''}…`)
+              if (st.status === 'done' || st.status === 'error') {
+                all = all.concat(st.changes || [])
+                for (const er of st.errors || []) toast.error(er)
+                if (st.status === 'error') toast.error('استخراجِ دسته‌ای ناتمام ماند: ' + String(st.detail || ''))
+                batchDone = true
+                break
+              }
+            }
+          }
+        } catch {
+          batchDone = false   // fall through to the per-file path below
+        }
+        setExtracting2('')
+      }
+      if (attsToRun.length && !batchDone) {
         for (let i = 0; i < attsToRun.length; i++) {
           const att = attsToRun[i]
           setExtracting2(`استخراج از پیوست ${fa(i + 1)} از ${fa(attsToRun.length)}: ${att.original_name}…`)
@@ -869,6 +909,8 @@ export default function LetterPage() {
     const dbItems: { id: string; account_no: string; customer_name: string; key: string; value: string }[] = []
     const linkItems: { id: string; account_no: string; related_account: string; kind: string; reason: string }[] = []
     const kbItems: { id: string; topic: string; content: string; category: string; source_note: string; account_no: string }[] = []
+    // v121 — nested collections (تسهیلات/املاک/ضامن/شریک/وثیقه) from attachments
+    const entItems: { id: string; account_no: string; customer_name: string; entity_key: string; payload: Record<string, unknown> }[] = []
     // table_insert results: collected here and committed once after the loop.
     const newAttTables: AttTable[] = []
     for (const ch of aiChanges) {
@@ -883,6 +925,10 @@ export default function LetterPage() {
       }
       if (ch.op === 'kb_write') {
         if (ch.topic && ch.content) kbItems.push({ id: ch.id, topic: ch.topic, content: ch.content, category: ch.kb_category || '', source_note: ch.source_note || '', account_no: general ? '' : (acct.trim() || '') })
+        continue
+      }
+      if (ch.op === 'entity_write') {
+        if (ch.account_no && ch.entity_key && ch.payload) entItems.push({ id: ch.id, account_no: ch.account_no, customer_name: ch.customer_name || '', entity_key: ch.entity_key, payload: ch.payload })
         continue
       }
       if (ch.op === 'table_insert') {
@@ -973,12 +1019,13 @@ export default function LetterPage() {
     if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
     // Persist the approved extracted facts + profile↔profile links + KB items.
-    if (dbItems.length || linkItems.length || kbItems.length) {
+    if (dbItems.length || linkItems.length || kbItems.length || entItems.length) {
       try {
         const r = await letterAiApi.applyDb({
           items: dbItems.map(({ id, ...rest }) => rest),
           links: linkItems.map(({ id, ...rest }) => rest),
           kb_items: kbItems.map(({ id, ...rest }) => rest),
+          entities: entItems.map(({ id, ...rest }) => rest),
           source_ref: letterId || '',
         })
         const c = r.counts || { added: 0, updated: 0, skipped: 0, profiles_created: 0 }
@@ -988,13 +1035,26 @@ export default function LetterPage() {
         if (c.profiles_created) parts.push(`${fa(c.profiles_created)} پروفایلِ نو`)
         if (r.links_created) parts.push(`${fa(r.links_created)} لینکِ پروفایلی`)
         if (r.kb_added) parts.push(`${fa(r.kb_added)} مطلب در پایگاه دانش`)
+        // v121 — nested collections written by the Import page's own writer
+        const ec = r.entity_counts || {}
+        const entSum = (...ks: string[]) => ks.reduce((n, k) => n + (ec[k] || 0), 0)
+        const nFac = entSum('facilities_added', 'facilities_updated')
+        const nProp = entSum('properties_added', 'properties_updated')
+        const nPpl = entSum('guarantors_added', 'guarantors_updated', 'partners_added', 'partners_updated')
+        if (nFac) parts.push(`${fa(nFac)} تسهیلات`)
+        if (nProp) parts.push(`${fa(nProp)} ملکِ وثیقه‌ای`)
+        if (ec.property_events_added) parts.push(`${fa(ec.property_events_added)} رویدادِ ملک`)
+        if (nPpl) parts.push(`${fa(nPpl)} ضامن/شریک`)
+        if (ec.security_added) parts.push(`${fa(ec.security_added)} وثیقه`)
+        if (ec.facilities_skipped_deposits) parts.push(`${fa(ec.facilities_skipped_deposits)} سپرده (تسهیلات نیست) رد شد`)
         if (c.skipped) parts.push(`${fa(c.skipped)} تکراری/کهنه رد شد`)
         toast.success('در پایگاه‌داده: ' + (parts.join(' · ') || 'بدون تغییر') + ' — در لاگ‌ها ثبت شد')
-        appliedIds.push(...dbItems.map((d) => d.id), ...linkItems.map((d) => d.id), ...kbItems.map((d) => d.id))
+        for (const err of r.entity_errors || []) toast.error(`ثبتِ تسهیلات/ملک ناموفق — ${err}`)
+        appliedIds.push(...dbItems.map((d) => d.id), ...linkItems.map((d) => d.id), ...kbItems.map((d) => d.id), ...entItems.map((d) => d.id))
       } catch (e) { toast.error('ثبت در پایگاه‌داده ناموفق: ' + parseApiError(e)) }
     }
 
-    if (!applied && !notLocated && !dbItems.length && !linkItems.length && !kbItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
+    if (!applied && !notLocated && !dbItems.length && !linkItems.length && !kbItems.length && !entItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
     // drop applied rows; keep the rest so the user can iterate
     setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
   }
@@ -3415,19 +3475,29 @@ export default function LetterPage() {
 
                     <div className="lai-list">
                       {aiChanges.map((c) => (
-                        <div key={c.id} className={`lai-item${c.applicable ? '' : ' note'}${c.op === 'db_write' ? ' dbw' : ''}`}>
+                        <div key={c.id} className={`lai-item${c.applicable ? '' : ' note'}${c.op === 'db_write' || c.op === 'entity_write' ? ' dbw' : ''}`}>
                           <div className="lai-itemhead">
                             {c.applicable
                               ? <input type="checkbox" checked={!!aiChecked[c.id]} onChange={(e) => setAiChecked((s) => ({ ...s, [c.id]: e.target.checked }))} />
                               : <span className="lai-noteicon" title="فقط تذکر — اعمال نمی‌شود">ℹ</span>}
                             <span className="lai-cat">{CAT_FA[c.category] || c.category}</span>
                             {c.op === 'db_write' && <span className="lai-dbbadge">{c.action === 'update' ? 'به‌روزرسانی' : 'ثبتِ نو'}</span>}
+                            {c.op === 'entity_write' && <span className="lai-dbbadge">{ENTITY_FA[c.entity || ''] || 'رکوردِ مرتبط'}</span>}
                             <span className="lai-sev" style={{ background: SEV_COLOR[c.severity] || '#64748b' }}>{SEV_FA[c.severity] || c.severity}</span>
                             <span className="lai-title">{c.title}</span>
                           </div>
                           {/* db_write: show the resolved target customer + the field/value going to the DB */}
                           {c.op === 'db_write' && (
                             <div className="lai-dbtarget">→ پروفایلِ <b>{c.customer_name || '—'}</b> <span dir="ltr">({c.account_no})</span>{!c.exists && <span className="lai-newprof"> پروفایلِ جدید ساخته می‌شود</span>}{c.source_file && <span className="lai-hint"> · از {c.source_file}</span>}</div>
+                          )}
+                          {/* entity_write (v121): a nested record (facility / mortgaged
+                              property / guarantor / partner / security) that the Import
+                              page would write — same writer, same guards */}
+                          {c.op === 'entity_write' && (
+                            <div className="lai-dbtarget">🗂 پروفایلِ <b>{c.customer_name || '—'}</b> <span dir="ltr">({c.account_no})</span> ← {ENTITY_FA[c.entity || ''] || 'رکورد'}
+                              {c.source_file && <span className="lai-hint"> · از {c.source_file}</span>}
+                              <div style={{ marginTop: 4, color: '#334155' }} dir="rtl">{c.value}</div>
+                            </div>
                           )}
                           {/* link: profile↔profile relationship with its exact reason */}
                           {c.op === 'link' && (

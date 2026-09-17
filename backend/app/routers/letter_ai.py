@@ -15,6 +15,7 @@ is gated to editors (it is an editing tool and costs tokens) and audited.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -31,6 +32,8 @@ from app.routers.auth import require_editor, get_current_active_user
 from app.services import letter_assistant as la
 from app.services import letter_db_extract as db_extract
 from app.services.audit import record_audit
+
+logger = logging.getLogger("app.letter_ai")
 
 router = APIRouter(tags=["letter-ai"])
 
@@ -355,10 +358,22 @@ class KbWriteItem(BaseModel):
     account_no: str = ""
 
 
+# v121 — ONE approved nested-collection entry (facility / mortgaged property /
+# guarantor / partner / security row). `payload` is the extractor's own dict,
+# handed unchanged to doc_ingest.persist_customer — the Import page's writer.
+class EntityWriteItem(BaseModel):
+    id: str = ""
+    account_no: str = ""
+    customer_name: str = ""
+    entity_key: str = ""
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
 class ApplyDbRequest(BaseModel):
     items: List[DbWriteItem] = Field(default_factory=list)
     links: List[LinkItem] = Field(default_factory=list)
     kb_items: List[KbWriteItem] = Field(default_factory=list)
+    entities: List[EntityWriteItem] = Field(default_factory=list)
     source_ref: str = ""
 
 
@@ -441,7 +456,63 @@ async def apply_db(
             )
     result["kb_added"] = kb_added
     result["kb_skipped"] = kb_skipped
+
+    # v121 — approved nested collections (facilities / mortgaged properties /
+    # guarantors / partners / security). Grouped per account and handed to the
+    # IMPORT page's own writer, so this path gains every guard it already has
+    # instead of growing a second, drifting one. A per-account failure is
+    # isolated and reported; it never aborts the rest of the apply.
+    ent_counts: Dict[str, int] = {}
+    ent_errors: List[str] = []
+    if payload.entities:
+        from app.services import doc_ingest
+        allowed = {k for k, _kind, _lbl in lax_specs()}
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for en in payload.entities:
+            acc = (en.account_no or "").strip()
+            key = (en.entity_key or "").strip()
+            if not acc or key not in allowed or not isinstance(en.payload, dict) or not en.payload:
+                continue
+            cust = grouped.setdefault(acc, {"account_no": acc, "fields": {},
+                                            "name": (en.customer_name or "").strip()})
+            cust.setdefault(key, []).append(en.payload)
+        username = getattr(user, "username", "") or ""
+        for acc, cust in grouped.items():
+            try:
+                res = await doc_ingest.persist_customer(
+                    db, cust, username, source="letter_attachment_ai")
+            except Exception as exc:  # noqa: BLE001 — one account must not sink the batch
+                logger.warning("entity apply failed for %s: %s", acc, exc)
+                ent_errors.append(f"{acc}: {exc}")
+                continue
+            if not res.get("ok"):
+                ent_errors.append(f"{acc}: {res.get('reason') or 'failed'}")
+                continue
+            for k in ("facilities_added", "facilities_updated", "properties_added",
+                      "properties_updated", "property_events_added", "guarantors_added",
+                      "guarantors_updated", "partners_added", "partners_updated",
+                      "security_added", "facilities_skipped_deposits"):
+                if res.get(k):
+                    ent_counts[k] = ent_counts.get(k, 0) + int(res[k])
+        await db.commit()
+        for acc in grouped:
+            await record_audit(
+                action="update", entity_type="letter_attachment_entities", entity_id=acc,
+                account_no=acc,
+                detail=("ثبتِ تسهیلات/املاک/ضامن/شریک/وثیقهٔ تأییدشده از پیوستِ نامه"
+                        + (f" ({payload.source_ref})" if payload.source_ref else "")),
+                user=user, request=request, db=db,
+            )
+    result["entity_counts"] = ent_counts
+    result["entity_errors"] = ent_errors
     return result
+
+
+def lax_specs():
+    """The nested-collection keys the attachment path may write (single source
+    of truth shared with the staging side)."""
+    from app.services.letter_attachment_extract import _ENTITY_SPECS
+    return _ENTITY_SPECS
 
 
 class ExtractAttachmentRequest(BaseModel):
@@ -464,9 +535,21 @@ async def extract_attachment_endpoint(
     db: AsyncSession = Depends(get_db),
     user=Depends(require_editor),
 ):
-    """Deep-extract ONE letter attachment (the UI runs attachments sequentially so
-    each request stays bounded). Returns staged, reviewable changes — writes
-    nothing. Pipeline + guards mirror the Import page (chunking/backoff/caps)."""
+    """Deep-extract ONE letter attachment, in the foreground (kept as-is: it is
+    still the single-file path and the batch job's building block)."""
+    return await _extract_one_attachment(attachment_id, payload, request, db, user)
+
+
+async def _extract_one_attachment(
+    attachment_id: str,
+    payload: "ExtractAttachmentRequest",
+    request: Optional[Request],
+    db: AsyncSession,
+    user,
+):
+    """Deep-extract ONE letter attachment. Returns staged, reviewable changes —
+    writes nothing. Pipeline + guards mirror the Import page (chunking/backoff/
+    caps). Shared by the single-file route and the v121 background batch job."""
     from app.models.crm import Attachment
     from app.services import attachments as attachments_store
     from app.services import letter_attachment_extract as lax
@@ -550,6 +633,174 @@ async def extract_attachment_endpoint(
     )
     return {"ok": True, "changes": staged, "model": extraction.get("model"),
             "chunk_errors": extraction.get("chunk_errors", []), "file": fname}
+
+
+# ---------------------------------------------------------------------------
+# v121 (part ب) — BATCH extraction as a background job.
+#
+# The UI used to loop the single-file route itself: N foreground requests that
+# only survive while the tab is open, each capped by the browser's timeout. With
+# 20+ attachments that is a 20-60 minute marathon the user must babysit. The
+# Import page solved exactly this with jobs, so the batch reuses the SAME
+# ImportJob table and helpers (`_job_session`, `_BG_TASKS`) instead of inventing
+# a second mechanism: the loop stays strictly sequential (one attachment in
+# memory at a time — the OOM lesson), each file is still isolated by its own
+# try/except, and progress + accumulated changes are written to the job row
+# after EVERY file so a poll always sees partial results.
+# The single-file route is untouched and remains the fallback (rule 2).
+# ---------------------------------------------------------------------------
+class ExtractAttachmentsBatchRequest(ExtractAttachmentRequest):
+    attachment_ids: List[str] = Field(default_factory=list)
+
+
+def _job_progress(job_row, *, done: int, total: int, current: str,
+                  changes: List[dict], errors: List[str]) -> None:
+    import json as _json
+    job_row.result_json = _json.dumps(
+        {"done": done, "total": total, "current": current,
+         "changes": changes, "errors": errors}, ensure_ascii=False)
+
+
+async def _run_attachment_batch(job_id: str, attachment_ids: List[str],
+                                payload_data: dict, username: str) -> None:
+    """Sequentially extract every attachment, recording progress on the job row."""
+    import json as _json
+    from sqlalchemy import func as _func
+    from app.models.import_job import ImportJob
+    from app.routers.imports import _job_session
+
+    changes: List[dict] = []
+    errors: List[str] = []
+    total = len(attachment_ids)
+    try:
+        for i, att_id in enumerate(attachment_ids):
+            # Each attachment gets its OWN session+transaction so one bad file
+            # can never poison the next one's unit of work.
+            async with _job_session() as db:
+                name = att_id
+                try:
+                    from app.models.crm import Attachment
+                    a = (await db.execute(select(Attachment).where(
+                        Attachment.id == att_id))).scalar_one_or_none()
+                    name = (a.original_name or a.file_name or att_id) if a else att_id
+                    res = await _extract_one_attachment(
+                        att_id, ExtractAttachmentRequest(**payload_data), None, db,
+                        _JobUser(username),
+                    )
+                    if res.get("ok"):
+                        for it in (res.get("changes") or []):
+                            it["source_file"] = name
+                        changes.extend(res.get("changes") or [])
+                        for ce in (res.get("chunk_errors") or []):
+                            errors.append(f"{name}: {ce}")
+                    else:
+                        errors.append(f"{name}: {res.get('error') or 'failed'}")
+                except HTTPException as exc:
+                    errors.append(f"{name}: {exc.detail}")
+                except Exception as exc:  # noqa: BLE001 — never sink the batch
+                    logger.warning("attachment batch %s failed on %s: %s", job_id, att_id, exc)
+                    errors.append(f"{name}: {exc}")
+            # progress after EVERY file, in its own short transaction
+            async with _job_session() as db:
+                row = await db.get(ImportJob, job_id)
+                if row is None or row.status != "running":
+                    return  # cancelled/pruned — stop quietly
+                _job_progress(row, done=i + 1, total=total, current=name,
+                              changes=changes, errors=errors)
+                await db.commit()
+        async with _job_session() as db:
+            row = await db.get(ImportJob, job_id)
+            if row is not None:
+                row.status = "done"
+                _job_progress(row, done=total, total=total, current="",
+                              changes=changes, errors=errors)
+                row.finished_at = _func.now()
+                await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("attachment batch %s crashed", job_id)
+        try:
+            async with _job_session() as db:
+                row = await db.get(ImportJob, job_id)
+                if row is not None:
+                    row.status = "error"
+                    row.http_status = 500
+                    row.detail_json = _json.dumps(str(exc), ensure_ascii=False)
+                    row.finished_at = _func.now()
+                    await db.commit()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _spawn_attachment_batch(job_id: str, ids: List[str], data: dict,
+                                  username: str) -> None:
+    """Fire-and-forget the batch. Overridden in tests to run it inline (the same
+    pattern the Import page's ``_spawn_job`` uses) so polling is deterministic."""
+    import asyncio as _aio
+    from app.routers.imports import _BG_TASKS
+    task = _aio.create_task(_run_attachment_batch(job_id, ids, data, username))
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
+
+class _JobUser:
+    """Minimal user stand-in for audit records written from the background job."""
+    def __init__(self, username: str):
+        self.username = username
+        self.id = None
+
+
+@router.post("/extract-attachments-job")
+async def extract_attachments_job(
+    payload: ExtractAttachmentsBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(require_editor),
+):
+    """Queue a batch extraction of several attachments; poll /attachment-job/{id}."""
+    import uuid as _uuid
+    from app.models.import_job import ImportJob
+
+    ids = [i for i in (payload.attachment_ids or []) if (i or "").strip()]
+    if not ids:
+        raise HTTPException(status_code=422, detail="هیچ پیوستی انتخاب نشده است")
+    job_id = f"LAX-{_uuid.uuid4().hex[:12]}"
+    username = getattr(user, "username", "") or ""
+    db.add(ImportJob(id=job_id, status="running",
+                     filename=f"{len(ids)} پیوستِ نامه", username=username, attempts=1))
+    await db.commit()
+    data = payload.model_dump(exclude={"attachment_ids"})
+    await _spawn_attachment_batch(job_id, ids, data, username)
+    return {"ok": True, "job_id": job_id, "total": len(ids)}
+
+
+@router.get("/attachment-job/{job_id}")
+async def attachment_job_status(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Poll a batch extraction: status + live progress + what it has staged so far."""
+    import json as _json
+    from app.models.import_job import ImportJob
+
+    row = await db.get(ImportJob, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="کارِ استخراج پیدا نشد")
+    prog: Dict[str, Any] = {}
+    if row.result_json:
+        try:
+            prog = _json.loads(row.result_json)
+        except Exception:  # noqa: BLE001
+            prog = {}
+    detail = None
+    if row.detail_json:
+        try:
+            detail = _json.loads(row.detail_json)
+        except Exception:  # noqa: BLE001
+            detail = row.detail_json
+    return {"ok": row.status != "error", "status": row.status,
+            "done": prog.get("done", 0), "total": prog.get("total", 0),
+            "current": prog.get("current", ""), "changes": prog.get("changes", []),
+            "errors": prog.get("errors", []), "detail": detail}
 
 
 class AttachmentTextRequest(BaseModel):

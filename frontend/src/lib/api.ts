@@ -781,7 +781,7 @@ export const aiApi = {
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'paragraph_merge' | 'kb_write'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'paragraph_merge' | 'kb_write' | 'entity_write'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
@@ -798,6 +798,10 @@ export type LetterAiChange = {
   related_account?: string; related_name?: string; kind?: string; reason?: string
   // kb_write only — general/educational content grouped under a KB topic
   topic?: string; kb_category?: string; content?: string; source_note?: string
+  // entity_write only (v121) — ONE nested-collection entry from an attachment
+  // (facility / mortgaged property / guarantor / partner / security row),
+  // written by the Import page's own persist_customer once approved
+  entity?: string; entity_key?: string; payload?: Record<string, unknown>
   source_file?: string
 }
 export type KbEntry = { id: string; content: string; source_kind: string; source_ref: string; account_no?: string; created_by?: string; created_at?: string }
@@ -829,7 +833,10 @@ export const letterAiApi = {
   // Persist the user-approved extracted facts into the right customer profile(s)
   // + create approved profile↔profile links (kind + exact reason) + approved
   // Knowledge-Base items (grouped under topics with provenance).
-  async applyDb(body: { items: { account_no: string; customer_name?: string; key: string; value: string }[]; links?: { account_no: string; related_account: string; kind: string; reason: string }[]; kb_items?: { topic: string; content: string; category?: string; source_note?: string; account_no?: string }[]; source_ref?: string }): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number }; links_created?: number; kb_added?: number; kb_skipped?: number }> {
+  // v121 — `entities` carries approved nested collections (facilities /
+  // mortgaged properties / guarantors / partners / security); the server hands
+  // each payload to the Import page's own writer.
+  async applyDb(body: { items: { account_no: string; customer_name?: string; key: string; value: string }[]; links?: { account_no: string; related_account: string; kind: string; reason: string }[]; kb_items?: { topic: string; content: string; category?: string; source_note?: string; account_no?: string }[]; entities?: { account_no: string; customer_name?: string; entity_key: string; payload: Record<string, unknown> }[]; source_ref?: string }): Promise<{ ok: boolean; outcomes: LetterAiDbOutcome[]; counts: { added: number; updated: number; skipped: number; profiles_created: number }; links_created?: number; kb_added?: number; kb_skipped?: number; entity_counts?: Record<string, number>; entity_errors?: string[] }> {
     const { data } = await api.post('/api/letter-ai/apply-db', body)
     return data
   },
@@ -838,7 +845,18 @@ export const letterAiApi = {
     const { data } = await api.post(`/api/letter-ai/attachment-text/${encodeURIComponent(attachmentId)}`, body, { timeout: 300000 })
     return data
   },
-  // Deep extraction from ONE letter attachment (UI runs them sequentially).
+  // v121 — BATCH extraction as a background job: queue every ticked attachment
+  // and poll. Survives closing the tab (the server keeps working) and removes
+  // the per-file browser timeout that a 20-attachment run used to fight.
+  async extractAttachmentsJob(body: { attachment_ids: string[]; account_no?: string; customer_name?: string; subject?: string; body_excerpt?: string; model_id?: number; allow_ai_generated?: boolean }): Promise<{ ok: boolean; job_id: string; total: number }> {
+    const { data } = await api.post('/api/letter-ai/extract-attachments-job', body, { timeout: 60000 })
+    return data
+  },
+  async attachmentJob(jobId: string): Promise<{ ok: boolean; status: string; done: number; total: number; current: string; changes: LetterAiChange[]; errors: string[]; detail?: unknown }> {
+    const { data } = await api.get(`/api/letter-ai/attachment-job/${encodeURIComponent(jobId)}`, { timeout: 60000 })
+    return data
+  },
+  // Deep extraction from ONE letter attachment (kept: single-file fallback).
   // Long timeout: chunked model calls over a large file can take minutes.
   async extractAttachment(attachmentId: string, body: { account_no?: string; customer_name?: string; subject?: string; body_excerpt?: string; model_id?: number | null; allow_ai_generated?: boolean }): Promise<{ ok: boolean; error?: string; changes: LetterAiChange[]; model?: string; chunk_errors?: string[]; file?: string; suggestions?: any[] }> {
     const { data } = await api.post(`/api/letter-ai/extract-attachment/${encodeURIComponent(attachmentId)}`, body, { timeout: 420000 })
