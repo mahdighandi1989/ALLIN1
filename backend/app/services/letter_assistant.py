@@ -218,6 +218,68 @@ _TBL_STYLE_PROPS = {"text-align", "font-weight", "font-style", "text-decoration"
                     "direction", "background"}
 MAX_TABLES = 8
 
+# v123 — ATTACHMENT BUDGETS. The owner's report: a letter with 12 attachments
+# had its table filled from only 10 of them. Root cause: this module dropped
+# attachments past a hard `[:10]` and trimmed each text at 20k chars, ALL
+# SILENTLY — neither the model nor the user was told anything was missing, so
+# an incomplete answer looked like a complete one.
+#
+# Rules now (mirroring the generator's proven v114 `fit_sources`):
+#   * NO fixed count cap while a fair share of the budget still fits — with N
+#     attachments each gets TOTAL//N, so 12 of 12 are present. Being trimmed is
+#     far better than being absent: the user's table has one row PER attachment.
+#   * Whatever is still cut is announced LOUDLY — inside the prompt (so the
+#     model reports it instead of quietly summarising) and back to the caller
+#     as warnings the UI shows as review rows.
+ATT_TOTAL_CAP = 360_000      # same total prompt budget the generator proved
+ATT_FILE_CAP = 60_000        # no single attachment may eat the whole budget
+ATT_MIN_CHARS = 4_000        # below this a "share" is useless — cap the count instead
+ATT_TBL_CAP = 15_000         # per in-flow attachment table
+
+
+def fit_attachments(attachments_text, attachment_tables):
+    """Fit EVERY attachment into the prompt budget, applied ONCE.
+
+    Returns ``([(name, fitted_text)], [table_html], warnings)`` — build_user_prompt
+    renders exactly this and the endpoint surfaces the same warnings, so the
+    prompt and the API reply can never disagree about what the model saw."""
+    atts = [a for a in (attachments_text or [])
+            if isinstance(a, dict) and (a.get("text") or "").strip()]
+    warns: List[str] = []
+    n = len(atts)
+    used = atts
+    if n:
+        share = ATT_TOTAL_CAP // n
+        if share < ATT_MIN_CHARS:
+            # Too many to give each a usable share: only NOW is a count cap
+            # justified — and it is reported, never silent.
+            keep = max(1, ATT_TOTAL_CAP // ATT_MIN_CHARS)
+            warns.append(
+                f"تعدادِ پیوست‌ها ({n}) از ظرفیتِ یک درخواست بیشتر است — فقط {keep} پیوستِ نخست به مدل رسید. "
+                "برای پوششِ کامل، پیوست‌ها را در دو یا چند نوبت تحلیل کن."
+            )
+            used = atts[:keep]
+            share = ATT_MIN_CHARS
+        per = min(ATT_FILE_CAP, share)
+        out = []
+        for a in used:
+            nm = str(a.get("name") or "پیوست")[:120]
+            txt = str(a.get("text") or "")
+            cut = txt[:per]
+            if len(txt) > len(cut):
+                warns.append(
+                    f"متنِ پیوست «{nm}» کامل به مدل نرسید ({len(cut):,} از {len(txt):,} نویسه) — "
+                    "اگر ردیف‌های این پیوست ناقص پر شد، همین علت است."
+                )
+            out.append((nm, cut))
+    else:
+        out = []
+    tbls_in = [t for t in (attachment_tables or []) if (t or "").strip()]
+    tbls = [t[:ATT_TBL_CAP] for t in tbls_in]
+    if any(len(a) > ATT_TBL_CAP for a in tbls_in):
+        warns.append("یک یا چند جدولِ پیوستِ داخلِ نامه بسیار بزرگ بود و بریده شد.")
+    return out, tbls, warns
+
 
 def _clean_style(style: str) -> str:
     parts = []
@@ -632,7 +694,8 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
                       tables: Optional[List[str]] = None,
                       attachments_text: Optional[List[Dict[str, str]]] = None,
                       attachment_tables: Optional[List[str]] = None,
-                      style_samples: Optional[List[Dict[str, str]]] = None) -> str:
+                      style_samples: Optional[List[Dict[str, str]]] = None,
+                      warnings_out: Optional[List[str]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -693,9 +756,11 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     # The user's SELECTED tables (raw HTML) — full AI control over these only.
     # Attachment CONTENT (for the full_check tool): in-flow attachment tables +
     # extracted text of attached files — the material the letter must agree with.
-    atts = [a for a in (attachments_text or []) if isinstance(a, dict) and (a.get("text") or "").strip()][:10]
-    att_tbls = [t for t in (attachment_tables or []) if (t or "").strip()][:MAX_TABLES]
+    atts, att_tbls, _att_warns = fit_attachments(attachments_text, attachment_tables)
+    if warnings_out is not None:
+        warnings_out.extend(_att_warns)
     if atts or att_tbls:
+        n_att = len(atts) + len(att_tbls)
         parts.append(
             "\n### محتوای پیوست‌های نامه (برای بررسیِ مغایرت با پایگاه‌داده و انطباق با متنِ نامه — "
             "این‌ها قابلِ text_replace نیستند؛ مغایرت‌شان را با note/اصلاحِ متنِ نامه گزارش کن. "
@@ -703,11 +768,33 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
             "پر کردنِ جدولی را می‌خواهد که داده‌اش این‌جاست، همان مقدارهای دقیق را بردار و در "
             "note بگو از کدام پیوست آمده):"
         )
+        # v123 — COMPLETENESS CONTRACT. The failure the owner keeps hitting is a
+        # silently PARTIAL answer (10 of 12 rows). State the exact count, forbid
+        # summarising, and require an explicit note when something is missing —
+        # a reported gap is recoverable, a silent one is not.
+        parts.append(
+            f"⚠️ تعدادِ دقیقِ منابعِ پیوستِ زیر: {n_att} مورد "
+            f"({len(atts)} فایلِ پیوست + {len(att_tbls)} جدولِ پیوستِ داخلِ نامه). "
+            "قاعدهٔ الزامی: اگر دستورِ کاربر به پیوست‌ها مربوط است، باید **هر "
+            f"{n_att} مورد** را پردازش کنی — یکی‌یکی و کامل. هرگز خلاصه نکن، "
+            "«و غیره/سایر موارد» ننویس، و هیچ موردی را جا نینداز. اگر جدولی را پر "
+            "می‌کنی، به‌ازای هر منبع ردیف(های) خودش باید ساخته شود. اگر برای موردی "
+            "داده‌ای پیدا نکردی، آن را حذف نکن: ردیفش را با مقدارِ خالی بیاور و در یک "
+            "note بنویس کدام مورد و چرا. پیش از پایان، شمارشِ خودت را چک کن: تعدادِ "
+            f"موردهای پوشش‌داده‌شده باید {n_att} باشد؛ اگر کمتر است، ادامه بده."
+        )
         for i, t in enumerate(att_tbls, 1):
-            parts.append(f"[جدولِ پیوست {i} — صفحهٔ پیوستِ داخلِ خودِ نامه]\n{t[:15000]}")
-        for a in atts:
-            nm = str(a.get("name") or "پیوست")[:120]
-            parts.append(f"[فایلِ پیوست: {nm}]\n{str(a.get('text'))[:20000]}")
+            parts.append(f"[جدولِ پیوست {i} — صفحهٔ پیوستِ داخلِ خودِ نامه]\n{t}")
+        for i, (nm, txt) in enumerate(atts, 1):
+            parts.append(f"[فایلِ پیوست {i} از {len(atts)}: {nm}]\n{txt}")
+        if _att_warns:
+            # The model must not present a trimmed input as a complete answer.
+            parts.append(
+                "توجه: بخشی از محتوای پیوست‌ها به‌خاطرِ محدودیتِ اندازه به تو نرسید — "
+                + " | ".join(_att_warns)
+                + " . در چنین حالتی نتیجه را «کامل» جا نزن؛ در یک note دقیقاً بگو کدام "
+                "پیوست ناقص بود."
+            )
 
     tbls = [t for t in (tables or []) if (t or "").strip()][:MAX_TABLES]
     if tbls:

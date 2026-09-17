@@ -216,6 +216,10 @@ async def analyze(
     style = await _style_samples(db, str((payload.fields or {}).get("body") or ""))
 
     system = la.SYSTEM_PROMPT
+    # v123 — anything the budget had to cut comes back here and is surfaced to
+    # the user as review rows; a silently trimmed input is what made partial
+    # answers look complete.
+    prompt_warnings: List[str] = []
     prompt = la.build_user_prompt(
         payload.fields or {}, facts, tools, style_samples=style,
         instruction=payload.instruction or "", selection=payload.selection or "",
@@ -227,6 +231,7 @@ async def analyze(
         # it is not replaceable).
         attachments_text=(payload.attachments_text or []) if ({"full_check", "db_extract"} & set(tools)) else [],
         attachment_tables=(payload.attachment_tables or []) if ({"full_check", "db_extract"} & set(tools)) else [],
+        warnings_out=prompt_warnings,
     )
 
     # v93 — the analyze prompt can be very large (attachment PDFs' text, all
@@ -237,7 +242,7 @@ async def analyze(
         import asyncio as _aio
         res = await inference.complete(
             db, p_, task="report_drafting", system=system,
-            model_id=payload.model_id, max_tokens=8000, timeout=240.0,
+            model_id=payload.model_id, max_tokens=16000, timeout=240.0,
             # No explicit temperature: newer reasoning models (Opus 4.8) reject it
             # with a 400. inference.complete also strips+retries as a backstop for
             # any model that carries a configured temperature.
@@ -247,7 +252,7 @@ async def analyze(
             await _aio.sleep(3)
             res = await inference.complete(
                 db, p_, task="report_drafting", system=system,
-                model_id=payload.model_id, max_tokens=8000, timeout=240.0,
+                model_id=payload.model_id, max_tokens=16000, timeout=240.0,
             )
         return res
 
@@ -320,10 +325,23 @@ async def analyze(
                 "content": kb["content"], "source_note": kb["source_note"],
             })
 
+    # v123 — a trimmed input must never masquerade as a complete answer: every
+    # budget cut becomes a HIGH-severity advisory row at the TOP of the review
+    # list, so «چرا ناقص بود؟» is answered before the user asks.
+    if prompt_warnings:
+        notes = [{
+            "id": f"trunc-{i}", "op": "note", "category": "consistency", "field": "",
+            "severity": "high", "applicable": False,
+            "title": "هشدار: همهٔ محتوای پیوست‌ها به مدل نرسید — نتیجه ممکن است ناقص باشد",
+            "detail": w,
+        } for i, w in enumerate(prompt_warnings, 1)]
+        changes = notes + changes
+
     await record_audit(
         action="analyze", entity_type="letter_ai", entity_id=None,
         account_no=(payload.account_no or None),
-        detail=f"دستیار هوشمندِ نامه — {len(changes)} پیشنهاد ({', '.join(tools)})",
+        detail=f"دستیار هوشمندِ نامه — {len(changes)} پیشنهاد ({', '.join(tools)})"
+               + (f" — {len(prompt_warnings)} هشدارِ بریده‌شدنِ ورودی" if prompt_warnings else ""),
         user=user, request=request, db=db,
     )
     return {
@@ -333,6 +351,7 @@ async def analyze(
         "count": len(changes),
         "facts_used": bool(facts),
         "tools": tools,
+        "input_warnings": prompt_warnings,
     }
 
 

@@ -819,6 +819,8 @@ export default function LetterPage() {
         if (!r.ok) { setAiError(aiErrorText(r.error)); setAiRan(true); setAiChanges([]); return }
         all = (r.changes || []).concat(fcNotes)
         modelUsed = r.model || ''
+        // v123 — never let a trimmed input pass as a complete answer
+        for (const w of r.input_warnings || []) toast.error(w, { duration: 9000 })
       }
       // Deep extraction from the letter's attachments — only the ones the user
       // ticked, one attachment per request (bounded), mirroring the Import

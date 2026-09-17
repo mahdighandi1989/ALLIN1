@@ -487,3 +487,58 @@ class TestStyleSamples:
     def test_system_prompt_has_rule_16(self):
         from app.services import letter_assistant as la
         assert "لحنِ بازنویسی از آرشیو" in la.SYSTEM_PROMPT
+
+
+# ---------------- v123: no attachment is ever silently dropped ----------------
+
+def test_all_attachments_reach_the_prompt_no_count_cap():
+    """The owner's bug: 12 attachments, only 10 were used (a hard `[:10]`).
+    Every attachment must now appear, and the prompt must state the exact count."""
+    atts = [{"name": f"file{i}.pdf", "text": f"محتوای پیوست شماره {i}"} for i in range(1, 13)]
+    warns: list = []
+    p = la.build_user_prompt({}, {}, ["full_check"], attachments_text=atts, warnings_out=warns)
+    for i in range(1, 13):
+        assert f"file{i}.pdf" in p, f"attachment {i} missing from the prompt"
+        assert f"محتوای پیوست شماره {i}" in p
+    assert "12 مورد" in p                 # explicit count contract
+    assert not warns                      # nothing was cut ⇒ nothing to warn about
+
+
+def test_attachment_budget_is_shared_not_first_come_first_served():
+    """A huge first attachment must not starve the rest: each gets its share."""
+    atts = [{"name": "big.pdf", "text": "x" * 500_000},
+            {"name": "small.pdf", "text": "داده مهم"}]
+    fitted, _tbls, warns = la.fit_attachments(atts, [])
+    assert [n for n, _ in fitted] == ["big.pdf", "small.pdf"]
+    assert "داده مهم" in dict(fitted)["small.pdf"]          # survived intact
+    assert len(dict(fitted)["big.pdf"]) <= la.ATT_TOTAL_CAP // 2
+    assert any("big.pdf" in w for w in warns)               # and the cut is REPORTED
+
+
+def test_truncation_is_announced_in_the_prompt():
+    """A trimmed input must be visible to the model, so it cannot present a
+    partial answer as a complete one."""
+    atts = [{"name": "huge.pdf", "text": "y" * 500_000}]
+    warns: list = []
+    p = la.build_user_prompt({}, {}, ["full_check"], attachments_text=atts, warnings_out=warns)
+    assert warns and "huge.pdf" in warns[0]
+    assert "کامل به مدل نرسید" in p
+    assert "«کامل» جا نزن" in p
+
+
+def test_too_many_attachments_caps_loudly_never_silently():
+    """Past the point where a usable share exists, a count cap is allowed — but
+    it must be reported with the real numbers, never applied quietly."""
+    atts = [{"name": f"f{i}.pdf", "text": "z" * 10_000} for i in range(200)]
+    fitted, _t, warns = la.fit_attachments(atts, [])
+    assert len(fitted) < 200
+    assert any("200" in w and "نوبت" in w for w in warns)
+
+
+def test_completeness_contract_demands_every_source():
+    atts = [{"name": "a.pdf", "text": "A"}, {"name": "b.pdf", "text": "B"}]
+    p = la.build_user_prompt({}, {}, ["full_check"], attachments_text=atts,
+                             attachment_tables=["<table><tr><td>t</td></tr></table>"])
+    assert "3 مورد" in p                        # 2 files + 1 in-flow table
+    assert "هرگز خلاصه نکن" in p
+    assert "جا نینداز" in p
