@@ -1,4 +1,5 @@
 """Excel/CSV import endpoints. Wired at /api/imports."""
+import os
 import re
 import logging
 from decimal import Decimal, InvalidOperation
@@ -366,8 +367,32 @@ _DOC_MAX_BYTES = 60 * 1024 * 1024
 # payload freed before the next). Sending several big chunks at once is what
 # blew the 512 MB limit and got the instance OOM-killed mid-import.
 _PDF_SPLIT_BYTES = 5 * 1024 * 1024   # split any PDF bigger than this
-_PDF_CHUNK_BYTES = 5 * 1024 * 1024   # peak-memory lever: each chunk's bytes are bounded here
+# v125 — every live chunk costs ~4x its own size in RAM (raw bytes + base64 str +
+# the serialized JSON body + httpx's copy of it), so 5 MB per chunk meant a ~26 MB
+# spike on top of the whole upload. 3 MB keeps that spike near 16 MB.
+_PDF_CHUNK_BYTES = int(os.getenv("IMPORT_PDF_CHUNK_MB", "3")) * 1024 * 1024
 _PDF_CHUNK_PAGES = 12                 # page cap per chunk (bytes cap usually bites first)
+# v125 — how many failed chunks may keep their bytes for the deferred second pass.
+# Was 6, i.e. up to 6 x chunk-size (30 MB) retained for the WHOLE run on top of
+# everything else. Two is enough for a transient provider blip.
+_RETRY_KEEP = int(os.getenv("IMPORT_RETRY_KEEP", "2"))
+# v125 — the upload is copied into the job row so a restart can resume it. That
+# copy costs another full-size buffer in the DB driver on the upload request, so
+# it is only worth it for files small enough not to endanger the instance; bigger
+# ones keep working, they just get the honest "re-upload" error after a restart.
+_RESUME_STORE_MAX_BYTES = int(os.getenv("IMPORT_RESUME_MAX_MB", "16")) * 1024 * 1024
+# v125 — at most ONE heavy extraction runs at a time in a worker. Uploads, resumed
+# jobs and a user clicking twice all queue behind it instead of stacking their
+# peaks. This is the single guard that makes the memory budget predictable.
+_EXTRACT_SEM = None                   # lazily created: needs a running event loop
+
+
+def _extract_sem():
+    global _EXTRACT_SEM
+    if _EXTRACT_SEM is None:
+        import asyncio
+        _EXTRACT_SEM = asyncio.Semaphore(int(os.getenv("IMPORT_MAX_CONCURRENT", "1")))
+    return _EXTRACT_SEM
 _IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/tiff", "image/bmp")
 _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 _EXCEL_EXT = (".xlsx", ".xlsm", ".xls", ".csv")
@@ -700,7 +725,6 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
         # second pass at the end of the run: transient provider trouble usually
         # clears within the minutes a big import takes. Beyond the bound we only
         # record the failure — memory safety beats a retry.
-        _RETRY_KEEP = 6
         retry_later: list = []          # [(start, bytes, first_error)]
         chunks_total = 0
         failed_pages: list = []         # 1-based page start of each lost chunk
@@ -938,6 +962,10 @@ async def _prune_jobs(db: AsyncSession, keep: int = 300) -> None:
 # restart). 2 = exactly one resume: a file that keeps killing the instance gets
 # an honest error instead of an endless restart→resume→OOM loop.
 _MAX_JOB_ATTEMPTS = 2
+# v125 — how many interrupted jobs a single boot may resume. The rest get the
+# honest "re-upload" error instead of queueing hours of heavy work on a small
+# instance right after it has just been restarted.
+_MAX_RESUME_PER_BOOT = int(os.getenv("IMPORT_MAX_RESUME_PER_BOOT", "3"))
 
 
 async def _create_job(db: AsyncSession, job_id: str, fname: str, username: str,
@@ -965,6 +993,18 @@ async def _record_job_error(db: AsyncSession, job_id: str, http_status: int, det
 
 async def _run_import_job(job_id: str, data: bytes, fname: str, mime: str, model_id, username: str,
                           instructions: str = "") -> None:
+    # v125 — ONE extraction at a time per worker. The instance has 512 MB and a
+    # single extraction legitimately needs a large slice of it; two of them
+    # overlapping (two uploads, or a resumed job meeting a fresh one) is what
+    # pushed the worker over the limit and got it OOM-restarted mid-import.
+    # Waiting here is invisible to the user: the job row stays 'running' and the
+    # browser keeps polling it.
+    async with _extract_sem():
+        await _run_import_job_inner(job_id, data, fname, mime, model_id, username, instructions)
+
+
+async def _run_import_job_inner(job_id: str, data: bytes, fname: str, mime: str, model_id, username: str,
+                                instructions: str = "") -> None:
     async with _job_session() as db:
         try:
             result = await _process_document(db, data, fname, mime, model_id, username,
@@ -1012,35 +1052,85 @@ async def fail_orphaned_jobs() -> int:
     resumed = 0
     try:
         async with _job_session() as db:
-            rows = (await db.execute(select(ImportJob).where(ImportJob.status == "running"))).scalars().all()
+            # v125 — read METADATA ONLY. The old query pulled whole ORM rows, so
+            # every stuck job's upload blob was loaded into RAM at once, and then
+            # every one of them was spawned concurrently. After an OOM restart
+            # that re-ran the exact workload that had just killed the instance —
+            # several copies of it, simultaneously. It was the restart AMPLIFIER,
+            # not the recovery. `file_data` is now fetched one job at a time, just
+            # before that job runs, and released right after.
+            rows = (await db.execute(
+                select(ImportJob.id, ImportJob.filename, ImportJob.mime, ImportJob.model_id,
+                       ImportJob.username, ImportJob.instructions, ImportJob.attempts,
+                       func.length(ImportJob.file_data))
+                .where(ImportJob.status == "running")
+                .order_by(ImportJob.started_at.asc()))).all()
             to_resume: list = []
-            for r in rows:
-                if r.file_data and (r.attempts or 0) < _MAX_JOB_ATTEMPTS:
-                    r.attempts = (r.attempts or 0) + 1
-                    to_resume.append((r.id, bytes(r.file_data), r.filename or "document",
-                                      r.mime or "", r.model_id, r.username or "",
-                                      r.instructions or ""))
+            errored = 0
+            for rid, fname, mime, model_id, username, instr, attempts, blob_len in rows:
+                has_blob = bool(blob_len)
+                # Only the first few are resumed; a long backlog of heavy files
+                # would otherwise keep the instance busy (and at risk) for hours.
+                if has_blob and (attempts or 0) < _MAX_JOB_ATTEMPTS and len(to_resume) < _MAX_RESUME_PER_BOOT:
+                    row = await db.get(ImportJob, rid)
+                    if row is not None:
+                        row.attempts = (row.attempts or 0) + 1
+                    to_resume.append((rid, fname or "document", mime or "", model_id,
+                                      username or "", instr or ""))
                     continue
-                r.status = "error"
-                r.http_status = 503
-                r.detail_json = _json.dumps(
+                row = await db.get(ImportJob, rid)
+                if row is None:
+                    continue
+                row.status = "error"
+                row.http_status = 503
+                row.detail_json = _json.dumps(
                     ("پردازش دوبار به‌خاطرِ ری‌استارتِ سرور قطع شد — فایل برای این سرور سنگین است؛ "
                      "آن را به چند فایلِ کوچک‌تر تقسیم کن و دوباره بارگذاری کن.")
-                    if r.file_data else
+                    if has_blob else
                     "پردازش به‌خاطر ری‌استارتِ سرور نیمه‌کاره ماند؛ لطفاً دوباره فایل را بارگذاری کنید.",
                     ensure_ascii=False)
-                r.finished_at = func.now()
-                r.file_data = None
+                row.finished_at = func.now()
+                row.file_data = None
+                errored += 1
             await db.commit()
-            for job_id, data, fname, mime, model_id, username, instructions in to_resume:
-                await _spawn_job(job_id, data, fname, mime, model_id, username,
-                                 instructions=instructions)
-                resumed += 1
-            if resumed:
-                logger.info("Resumed %d interrupted import job(s) from their stored uploads", resumed)
-            return len(rows) - resumed        # = jobs actually marked errored
+        if to_resume:
+            await _spawn_resume_driver(to_resume)
+            resumed = len(to_resume)
+            logger.info("Queued %d interrupted import job(s) for sequential resume", resumed)
+        return errored
     except Exception:  # pragma: no cover - best-effort startup housekeeping
         return 0
+
+
+async def _run_resume_driver(jobs: list) -> None:
+    """v125 — resume interrupted jobs STRICTLY ONE AT A TIME, loading each stored
+    upload only when its turn comes and dropping it immediately afterwards.
+
+    Boot must not be blocked and the blobs must never be in memory together, so
+    this runs as a single background task that walks the list serially. A job
+    whose blob has vanished (finished or pruned meanwhile) is simply skipped."""
+    for job_id, fname, mime, model_id, username, instructions in jobs:
+        data = b""
+        try:
+            async with _job_session() as db:
+                row = await db.get(ImportJob, job_id)
+                if row is None or row.status != "running" or not row.file_data:
+                    continue
+                data = bytes(row.file_data)
+            await _run_import_job(job_id, data, fname, mime, model_id, username,
+                                  instructions=instructions)
+        except Exception:  # pragma: no cover - one bad job must not stop the rest
+            logger.exception("resume of import job %s failed", job_id)
+        finally:
+            data = b""
+
+
+async def _spawn_resume_driver(jobs: list) -> None:
+    """Fire-and-forget the serial resume driver (overridden in tests to run inline)."""
+    import asyncio
+    task = asyncio.create_task(_run_resume_driver(jobs))
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 
 @router.post("/analyze")
@@ -1074,9 +1164,20 @@ async def analyze_document(
     job_id = _uuid.uuid4().hex[:12]
     instr = (instructions or "").strip()[:_INSTRUCTIONS_MAX_CHARS]
     # v106 — the upload is stored WITH the job so a mid-extraction instance
-    # restart resumes it on boot instead of erroring (blob cleared on finish)
-    await _create_job(db, job_id, fname, username, data=data, mime=mime,
+    # restart resumes it on boot instead of erroring (blob cleared on finish).
+    # v125 — but only up to _RESUME_STORE_MAX_BYTES: writing the blob costs another
+    # full-size buffer in the DB driver on THIS request, right before the
+    # extraction claims its own memory. Above the cap the file is still imported
+    # normally; it just cannot auto-resume after a restart (the existing, clear
+    # "please re-upload" error covers that).
+    store = data if len(data) <= _RESUME_STORE_MAX_BYTES else b""
+    if not store:
+        logger.info("import %s: %.1f MB upload not stored for resume (cap %d MB)",
+                    job_id, len(data) / 1048576, _RESUME_STORE_MAX_BYTES // 1048576)
+    await _create_job(db, job_id, fname, username, data=store, mime=mime,
                       model_id=model_id, instructions=instr)
+    store = b""
+
     await _spawn_job(job_id, data, fname, mime, model_id, username, instructions=instr)
     return {"job_id": job_id, "status": "running", "filename": fname}
 

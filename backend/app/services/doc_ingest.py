@@ -1095,11 +1095,21 @@ def pdf_chunks(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 
             buf = io.BytesIO()
             w.write(buf)
             b = buf.getvalue()
+            buf.close()
+            del w, buf                      # v125 — drop the writer's own copy now
             if len(b) <= max_bytes or (end - i) == 1:
                 yield (i + 1, b)
+                b = b""                     # v125 — the caller has it; we must not
                 i = end
                 break
-            end -= 1
+            # v125 — shrink PROPORTIONALLY instead of one page at a time. A scanned
+            # page can be many times the budget, and the old `end -= 1` rebuilt the
+            # whole writer (and a fresh multi-MB buffer) on every step — up to 11
+            # wasted build/free cycles per chunk, which is exactly the allocation
+            # churn that pushes a small instance over its limit.
+            guess = i + max(1, int((end - i) * max_bytes / len(b)))
+            end = min(end - 1, guess)
+            del b
 
 
 def split_pdf(data: bytes, max_bytes: int = 18 * 1024 * 1024, max_pages: int = 12):

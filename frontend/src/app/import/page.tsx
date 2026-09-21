@@ -166,6 +166,26 @@ export default function ImportPage() {
             <span className="text-[11px] text-gray-400">مدل موظف است دقیقاً طبقِ این نوشته عمل کند و بعد از استخراج گزارش می‌دهد که بر اساسِ آن چه کرده است.</span>
           </label>
 
+          {/* v125 — the API instance has a fixed memory budget and extracts ONE file
+              at a time; a very large batch used to be sent anyway and the worker was
+              OOM-restarted mid-run. The size is now visible BEFORE the click. */}
+          {files.length > 0 && (() => {
+            const totalMb = files.reduce((n, f) => n + f.size, 0) / (1024 * 1024)
+            const biggest = Math.max(...files.map((f) => f.size)) / (1024 * 1024)
+            const heavy = totalMb > 60 || biggest > 16
+            return (
+              <div dir="rtl" className={`rounded-lg border p-2 text-[12px] ${heavy ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-600'}`}>
+                {files.length} فایل · مجموعاً {totalMb.toFixed(1)} مگابایت · بزرگ‌ترین فایل {biggest.toFixed(1)} مگابایت
+                {heavy && (
+                  <div className="mt-1 font-semibold">
+                    این حجم برای سرور سنگین است. فایل‌ها یکی‌یکی پردازش می‌شوند، ولی بهتر است این دسته را به چند دستهٔ کوچک‌تر بشکنی
+                    (هر بار زیر ۶۰ مگابایت و هر فایل زیر ۱۶ مگابایت) تا پردازش نصفه‌کاره قطع نشود.
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           <button onClick={analyzeAll} disabled={busy || !files.length}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg px-4 py-2.5 text-sm font-semibold">
             {busy

@@ -140,8 +140,14 @@ def import_inline(db_session: AsyncSession, monkeypatch):
         await imports_router._run_import_job(job_id, data, fname, mime, model_id, username,
                                              instructions=instructions)
 
+    # v125 — resumed jobs go through their own SERIAL driver (one stored upload in
+    # memory at a time); run that inline too so a resume is deterministic here.
+    async def _inline_resume(jobs):
+        await imports_router._run_resume_driver(jobs)
+
     monkeypatch.setattr(imports_router, "_job_session", _reuse)
     monkeypatch.setattr(imports_router, "_spawn_job", _inline)
+    monkeypatch.setattr(imports_router, "_spawn_resume_driver", _inline_resume)
 
 
 @pytest.fixture
