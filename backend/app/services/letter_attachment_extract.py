@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import inference
 from app.services import doc_ingest
+from app.services import mojibake
 from app.services import letter_db_extract as dbx
 
 logger = logging.getLogger(__name__)
@@ -430,6 +431,25 @@ _PDF_CHUNK_BYTES = 4 * 1024 * 1024   # per-transcription-call page-chunk bounds
 _PDF_CHUNK_PAGES = 8
 
 
+def _finish_text(out: Dict[str, Any]) -> Dict[str, Any]:
+    """v126 — last stop before any transcription leaves this module.
+
+    Some PDFs carry a text layer written with a non-standard font encoding, so
+    everything that reads that layer (an extractor, or an LLM handed the PDF)
+    reproduces reversible garbage — "Statement NO" arrives as "Í¬¿¬»³»²¬ ÒÑ".
+    It is repaired here, at the single choke point, and the repair is REPORTED
+    (never silent) so a caller can tell the user their source file is faulty.
+    """
+    txt = out.get("text") or ""
+    if not txt:
+        return out
+    n = mojibake.count_garbled(txt)
+    if n:
+        out["text"] = mojibake.repair_block(txt)
+        out["mojibake_repaired"] = n
+    return out
+
+
 async def attachment_text(
     db: AsyncSession, *, data: bytes, filename: str, mimetype: str,
     model_id: Optional[int] = None,
@@ -444,12 +464,12 @@ async def attachment_text(
             text = data.decode("utf-8")
         except UnicodeDecodeError:
             text = data.decode("cp1256", errors="replace")
-        return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
+        return _finish_text({"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP})
 
     if lower.endswith(_EXCEL_EXT) or mimetype in ("text/csv",):
         try:
             text = doc_ingest.workbook_to_text(data, filename)
-            return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
+            return _finish_text({"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP})
         except Exception as exc:
             return {"ok": False, "error": f"جدول قابلِ خواندن نبود: {exc}"}
 
@@ -463,7 +483,7 @@ async def attachment_text(
                 for row in tb.rows:
                     parts.append(" | ".join((c.text or "").strip() for c in row.cells))
             text = "\n".join(parts)
-            return {"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP}
+            return _finish_text({"ok": True, "text": text[:_TEXT_CAP], "truncated": len(text) > _TEXT_CAP})
         except Exception as exc:
             return {"ok": False, "error": f"فایل Word قابلِ خواندن نبود: {exc}"}
 
@@ -523,9 +543,9 @@ async def attachment_text(
         if failed and len(failed) == len(chunks):
             return {"ok": False, "error": f"رونویسی ناموفق بود: {parts[0] if parts else ''}"}
         text = "\n\n".join(p for p in parts if p)
-        return {"ok": True, "text": text[:_TEXT_CAP],
-                "truncated": len(text) > _TEXT_CAP,
-                "failed_parts": failed,
-                "model": rr["resolved"].display_name}
+        return _finish_text({"ok": True, "text": text[:_TEXT_CAP],
+                             "truncated": len(text) > _TEXT_CAP,
+                             "failed_parts": failed,
+                             "model": rr["resolved"].display_name})
 
     return {"ok": False, "error": "فرمتِ این پیوست پشتیبانی نمی‌شود (PDF/تصویر/Excel/CSV/Word/متن)."}

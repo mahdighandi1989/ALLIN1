@@ -18,6 +18,7 @@ import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
+import { repairHtml, countGarbledHtml } from '@/lib/mojibake'
 
 const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
@@ -526,6 +527,44 @@ export default function LetterPage() {
   const updateFloat = (id: string, patch: Partial<FloatObj>) =>
     setFloats((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   const removeFloat = (id: string) => { setFloats((list) => list.filter((x) => x.id !== id)); setFloatSel((v) => (v === id ? null : v)) }
+  // --- v126 — MOJIBAKE REPAIR («ترمیمِ متنِ به‌هم‌ریخته»).
+  // A PDF whose embedded font carries a non-standard encoding hands every reader
+  // — extractor or AI — reversibly scrambled text ("Statement NO" arrives as
+  // "Í¬¿¬»³»²¬ ÒÑ"). The garbling is arithmetic, so it can be undone exactly.
+  // Detection runs on the letter body, the in-flow tables and the attachment
+  // tables; repair rewrites TEXT NODES only, so every column width, style and
+  // merged cell survives untouched. It is a one-click, undoable action — the
+  // stored letter is NEVER rewritten behind the user's back. ---
+  const garbledCount = (() => {
+    let n = 0
+    try {
+      n += countGarbledHtml(f.body || '')
+      for (const t of attTables) n += countGarbledHtml(t.html || '')
+      for (const fl of floats) if (fl.kind === 'table') n += countGarbledHtml(fl.html || '')
+    } catch { return 0 }
+    return n
+  })()
+  const repairGarbled = () => {
+    let fixed = 0
+    const b = repairHtml(f.body || '')
+    fixed += b.fixed
+    const nextAtts = attTables.map((t) => {
+      const r = repairHtml(t.html || '')
+      fixed += r.fixed
+      return r.fixed ? { ...t, html: r.html } : t
+    })
+    const nextFloats = floats.map((fl) => {
+      if (fl.kind !== 'table') return fl
+      const r = repairHtml(fl.html || '')
+      fixed += r.fixed
+      return r.fixed ? { ...fl, html: r.html } : fl
+    })
+    if (!fixed) { toast('متنِ به‌هم‌ریخته‌ای پیدا نشد', { icon: '✅' }); return }
+    if (b.fixed) setF((s) => ({ ...s, body: b.html }))
+    setAttTables(nextAtts)
+    setFloats(nextFloats)
+    toast.success(`${fa(fixed)} بخشِ به‌هم‌ریخته ترمیم شد — اگر درست نبود «برگشت» را بزن، و برای ماندگاری «ذخیره» کن`, { duration: 8000 })
+  }
   const letterSheets = () => Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet)')) as HTMLElement[]
   const letterCells = () => (Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))
   // Auto-size every attachment table — orientation and font follow the CONTENT,
@@ -3026,6 +3065,12 @@ export default function LetterPage() {
             <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
               title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
               📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
+            </button>
+          )}
+          {garbledCount > 0 && (
+            <button onClick={repairGarbled} className="ltr-btn" style={{ background: '#b45309' }}
+              title="متنِ این نامه در چند جا به‌هم‌ریخته است (فایلِ PDF منبع با فونتِ غیراستاندارد ساخته شده). این دکمه آن را دقیقاً به حالتِ درست برمی‌گرداند — فقط متن، بدونِ دست‌زدن به چیدمان و عرضِ ستون‌ها.">
+              🩹 ترمیمِ متنِ به‌هم‌ریخته ({fa(garbledCount)})
             </button>
           )}
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
