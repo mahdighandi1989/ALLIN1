@@ -93,9 +93,18 @@ function setCaret(el: HTMLElement, off: number) { setSel(el, off) }
 // Plain text → paragraph HTML (legacy bodies are plain); rich bodies already carry tags.
 function normalizeBodyHtml(s: string): string {
   if (!s) return ''
+  // v128 — repair "custom PDF font encoding" mojibake HERE, because every path
+  // that touches body HTML (load, paste, AI apply, table insert, pagination,
+  // print, PDF, Word) funnels through this one function. A React effect over the
+  // body state could be missed by a path that renders from a derived value; this
+  // cannot. `repairHtml` is a no-op (one cheap regex) for normal text.
+  s = repairHtml(s).html
   if (s.indexOf('<') === -1) return s.split('\n').map((line) => `<div>${escapeHtml(line) || '<br>'}</div>`).join('')
   return s
 }
+// Attachment-table HTML does not pass through normalizeBodyHtml — same repair,
+// applied where those tables are measured and rendered.
+const cleanAttHtml = (h: string): string => repairHtml(h || '').html
 
 // Clean pasted (Word/Excel) HTML: keep structure (paragraphs, lists, tables, b/u/i)
 // and only bold/underline/size/align inline styles; strip Word's mso junk, classes,
@@ -578,10 +587,11 @@ export default function LetterPage() {
     for (const t of attTables) {
       // natural (unconstrained) width at a given font scale — in a very wide
       // container the table settles on exactly the width its content wants
+      const html = cleanAttHtml(t.html)
       const naturalAt = (s: number) => {
         const free = document.createElement('div')
         free.style.cssText = `width:4000px;font-size:${13 * s}pt;line-height:1.7`
-        free.innerHTML = t.html
+        free.innerHTML = html
         holder.appendChild(free)
         const w = (free.querySelector('table') as HTMLElement | null)?.offsetWidth || 0
         holder.removeChild(free)
@@ -597,7 +607,7 @@ export default function LetterPage() {
       if (naturalW > availW) {
         for (const s of [0.85, 0.72, 0.6]) { scale = s; if (naturalAt(s) <= availW) break }
       }
-      const { chunks, oversize } = paginateAttHtml(t.html, holder, availW, availH, 13 * scale)
+      const { chunks, oversize } = paginateAttHtml(html, holder, availW, availH, 13 * scale)
       meta[t.id] = { land, scale, chunks, oversize }
     }
     document.body.removeChild(holder)
@@ -2007,7 +2017,7 @@ export default function LetterPage() {
         pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
         bodyLh: L.body.lh || 1.7,   // v111 — Word reproduces the page's exact line box
         renderFloatPng: renderFloatPngForWord,
-        buildTag: 'reflow-v113',   // kept in lock-step with the visible marker by the release sed
+        buildTag: 'v128',   // kept in lock-step with the visible marker by the release sed
       })
       saveBlob(blob, `${exportName()}.docx`)
       toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و فیلدها همه قابلِ ویرایش‌اند', { id: tId })
@@ -2657,7 +2667,7 @@ export default function LetterPage() {
   const attEditorPage = (t: AttTable, i: number) => {
     const meta = attMeta[t.id]
     const land = !!meta?.land, scale = meta?.scale ?? 1
-    const chunks = meta?.chunks?.length ? meta.chunks : [t.html]
+    const chunks = meta?.chunks?.length ? meta.chunks : [cleanAttHtml(t.html)]
     const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
     const contentW = W - 2 * ATT_MARGIN
     const first = pages.length + attPageOffset(i)
@@ -2692,7 +2702,7 @@ export default function LetterPage() {
   const attPrintPage = (t: AttTable, i: number) => {
     const meta = attMeta[t.id]
     const land = !!meta?.land, scale = meta?.scale ?? 1
-    const chunks = meta?.chunks?.length ? meta.chunks : [t.html]
+    const chunks = meta?.chunks?.length ? meta.chunks : [cleanAttHtml(t.html)]
     const W = land ? PAGE_H : PAGE_W, Hh = land ? PAGE_W : PAGE_H
     const contentW = W - 2 * ATT_MARGIN
     const first = pages.length + attPageOffset(i)
@@ -3068,7 +3078,7 @@ export default function LetterPage() {
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: reflow-v113</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v128</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>

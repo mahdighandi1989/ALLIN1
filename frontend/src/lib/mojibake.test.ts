@@ -150,3 +150,45 @@ describe('repairHtml is safe to run repeatedly on live content', () => {
     expect(second.html).toBe(first.html)
   })
 })
+
+describe('the exact letter table the owner reported (in-body, two rows + total)', () => {
+  // Rebuilt from the screenshot: a table sitting in the LETTER BODY (not an
+  // attachment page), with a header row, two data rows and a totals row.
+  const BODY =
+    '<div>با سلام و احترام</div>' +
+    '<table class="tblw" style="width:100%">' +
+    '<tr><th>Î»°±®¬ Ü¿¬»</th><th>ß³±«²¬ (×ÎÎ)</th><th>Ê¿´«» Ü¿¬»</th>' +
+    '<th>Í¬¿¬»³»²¬ ÒÑ</th><th>ß½½±«²¬ Ò¿³»</th><th>Ð®±°»®¬§ Ò±</th><th>ÒÑ</th></tr>' +
+    '<tr><td>182/4/567/2026</td><td>140,415,000</td><td>14/09/2026</td><td>56</td>' +
+    '<td>ÐÛÎÍ×ßÒ ÙËÔÚ ÌÎßÜ×ÒÙ ÔÔÝ</td><td>6933/3511</td><td>1</td></tr>' +
+    '<tr><td>182/4/567/2026</td><td>18,975,000</td><td>14/09/2026</td><td>56</td>' +
+    '<td>ßÔ×  ÎÛÆß</td><td>677/9</td><td>2</td></tr>' +
+    '<tr><td></td><td>159,390,000</td><td colspan="5">Ì±¬¿´</td></tr>' +
+    '</table>'
+
+  it('repairs every header, name and the totals label', () => {
+    const { html, fixed } = repairHtml(BODY)
+    expect(fixed).toBe(10)   // 7 headers + 2 names + the totals label
+    for (const want of ['>Report Date<', '>Amount (IRR)<', '>Value Date<', '>Statement NO<',
+                        '>Account Name<', '>Property No<', '>NO<',
+                        '>PERSIAN GULF TRADING LLC<', '>Total<']) {
+      expect(html).toContain(want)
+    }
+  })
+
+  it('leaves the Persian sentence, the numbers and the table structure alone', () => {
+    const { html } = repairHtml(BODY)
+    expect(html).toContain('با سلام و احترام')
+    for (const n of ['182/4/567/2026', '140,415,000', '14/09/2026', '159,390,000', '6933/3511'])
+      expect(html).toContain(`>${n}<`)
+    expect(html).toContain('class="tblw"')
+    expect(html).toContain('width:100%')
+    expect(html).toContain('colspan="5"')
+    expect((html.match(/<tr/g) || []).length).toBe(4)
+  })
+
+  it('a double space inside a garbled cell survives (names are not re-spaced)', () => {
+    const { html } = repairHtml(BODY)
+    expect(html).toContain('>ALI  REZA<')
+  })
+})
