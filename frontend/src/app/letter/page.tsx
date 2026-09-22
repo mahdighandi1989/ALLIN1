@@ -2017,7 +2017,7 @@ export default function LetterPage() {
         pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
         bodyLh: L.body.lh || 1.7,   // v111 — Word reproduces the page's exact line box
         renderFloatPng: renderFloatPngForWord,
-        buildTag: 'v128',   // kept in lock-step with the visible marker by the release sed
+        buildTag: 'v129',   // kept in lock-step with the visible marker by the release sed
       })
       saveBlob(blob, `${exportName()}.docx`)
       toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و فیلدها همه قابلِ ویرایش‌اند', { id: tId })
@@ -2809,8 +2809,21 @@ export default function LetterPage() {
       <div dir="rtl">
         <style>{`
         /* English serif for LATIN LETTERS ONLY — Persian letters, digits (both ۰-۹ and
-           0-9) and punctuation keep the chosen Persian font. */
-        @font-face{font-family:'LtrMix';src:local('Times New Roman'),local('Times New Roman Regular'),local('Times');unicode-range:U+0041-005A,U+0061-007A,U+00C0-024F}
+           0-9) and punctuation keep the chosen Persian font.
+           v129 — this face used to be sourced from the LOCALLY INSTALLED Times New
+           Roman (a by-name lookup on the viewer's machine), which
+           asks the VIEWER'S machine for a font by name. On a PC where that name resolves
+           to a broken/legacy font, every Latin letter in a letter rendered as garbage
+           ("Account Name" drew as "ß½½±«²¬ Ò¿³»") while the underlying text was perfectly
+           fine — copy-paste proved it. Digits looked right only because they are outside
+           the unicode-range below. The font is now SHIPPED with the app, so what the user
+           sees no longer depends on what is installed on their PC. Liberation Serif is
+           metric-compatible with Times New Roman, so line breaks and column widths in
+           existing letters are unchanged. No local() fallback on purpose: a local font
+           winning is exactly the bug. */
+        @font-face{font-family:'LtrMix';src:url('/fonts/ltrmix-regular.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;unicode-range:U+0041-005A,U+0061-007A,U+00C0-024F}
+        @font-face{font-family:'LtrMix';src:url('/fonts/ltrmix-bold.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap;unicode-range:U+0041-005A,U+0061-007A,U+00C0-024F}
+        @font-face{font-family:'LtrMix';src:url('/fonts/ltrmix-italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap;unicode-range:U+0041-005A,U+0061-007A,U+00C0-024F}
         .ltr-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
         .ltr-btn { padding:8px 12px; border-radius:6px; font-weight:600; cursor:pointer; border:0; display:inline-flex; align-items:center; gap:6px; color:#fff; }
         .ltr-btn.blue{background:#2563eb}.ltr-btn.green{background:#16a34a}.ltr-btn.gray{background:#475569}.ltr-btn.amber{background:#d97706}
@@ -3078,7 +3091,7 @@ export default function LetterPage() {
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v128</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v129</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
