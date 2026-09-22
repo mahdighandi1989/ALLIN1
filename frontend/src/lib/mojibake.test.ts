@@ -5,7 +5,7 @@
  * matter are: the text must come back EXACTLY right, and the table around it —
  * column widths, styles, merged cells — must not be touched at all.
  */
-import { repairText, repairBlock, repairHtml, countGarbledHtml, looksGarbled } from './mojibake'
+import { repairText, repairBlock, repairHtml, countGarbledHtml, looksGarbled, mightBeGarbled } from './mojibake'
 
 // Read off a real garbled bank-statement table rendered in the app.
 const REAL: [string, string][] = [
@@ -115,5 +115,38 @@ describe('countGarbledHtml', () => {
     const src = '<p>گزارشِ شعبه</p><table><tr><th>ÒÑ</th><th>ß³±«²¬ (×ÎÎ)</th></tr></table>'
     expect(countGarbledHtml(src)).toBe(2)
     expect(countGarbledHtml('<p>همه‌چیز سالم است</p>')).toBe(0)
+  })
+})
+
+describe('mightBeGarbled (the cheap pre-filter)', () => {
+  it('lets every real garbled string through', () => {
+    for (const [garbled] of REAL) expect(mightBeGarbled(garbled)).toBe(true)
+  })
+
+  it('rejects ordinary Persian and Latin, so no DOM work is done while typing', () => {
+    for (const s of [
+      'مشخصات املاک و صورت حساب',
+      'نامِ شرکت «Alpha Trading LLC» ثبت شد',
+      'Statement NO | Account Name | 4,819,650',
+      '۳۶°C و ±۵ درصد',
+      '<p>گزارشِ شعبه — ۱۴۰۵/۰۶/۳۱</p>',
+    ]) expect(mightBeGarbled(s)).toBe(false)
+  })
+
+  it('is consistent with the full check: anything repairable passes the filter', () => {
+    const table = '<table><tr><th>ÒÑ</th></tr></table>'
+    expect(mightBeGarbled(table)).toBe(true)
+    expect(countGarbledHtml(table)).toBe(1)
+  })
+})
+
+describe('repairHtml is safe to run repeatedly on live content', () => {
+  it('reaches a fixed point after one repair (no edit loop)', () => {
+    let html = '<table><tr><th>ß½½±«²¬ Ò¿³»</th></tr></table>'
+    const first = repairHtml(html)
+    expect(first.fixed).toBe(1)
+    const second = repairHtml(first.html)
+    expect(second.fixed).toBe(0)
+    expect(second.html).toBe(first.html)
   })
 })

@@ -110,6 +110,14 @@ async def extract_attachment(
     model_name = None
 
     def _fold(parsed: dict) -> None:
+        # v127 — the SECOND entry point for mojibake: this path hands the model the
+        # PDF directly and parses its JSON, so a faulty text layer would otherwise
+        # be written straight into customer/facility/property records. Repair the
+        # whole parsed structure before anything is folded in (HTML/entity aware,
+        # and it never touches a chunk containing Persian).
+        parsed, _n = mojibake.repair_json(parsed)
+        if _n:
+            logger.info("attachment extraction: repaired %d garbled text run(s)", _n)
         for c in (parsed.get("customers") or []):
             a = doc_ingest._acc_of(c)
             if not a:

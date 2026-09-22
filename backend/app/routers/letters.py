@@ -6,6 +6,7 @@ Each letter keeps its own values + layout, so per-letter edits never touch the
 master template.
 """
 import json
+import logging
 from typing import Optional, List, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -19,6 +20,9 @@ from app.models.letter import Letter, generate_letter_id
 from app.routers.auth import require_editor, get_current_active_user
 from app.services.audit import record_audit
 from app.services.customer_link import ensure_customer
+from app.services import mojibake
+
+logger = logging.getLogger("app.letters")
 
 router = APIRouter(tags=["letters"], dependencies=[Depends(get_current_active_user)])
 
@@ -32,6 +36,31 @@ def _loads(s: Optional[str]) -> Any:
         return json.loads(s) if s else None
     except Exception:
         return None
+
+
+def _values(l: Letter) -> Any:
+    """v127 — the letter's form values, with "custom PDF font encoding" mojibake
+    repaired automatically.
+
+    Some source PDFs carry a text layer written with a non-standard font
+    encoding, so anything that reads it (an extractor, or an LLM handed the PDF)
+    returns reversibly scrambled text — "Statement NO" arrives as "Í¬¿¬»³»²¬ ÒÑ".
+    Letters written before the extraction-side fix already hold that text, and the
+    owner should not have to press anything to see them correctly: the repair runs
+    on READ here and on WRITE in ``_apply``, so a letter reads correct immediately
+    and becomes permanently correct the next time it is saved.
+
+    It is HTML-aware (only the text BETWEEN tags is touched, so column widths and
+    styles are untouched) and conservative (a chunk containing any Persian letter
+    is never touched — Persian «quotes» live in the same character range).
+    """
+    v = _loads(l.values_json)
+    if v is None:
+        return None
+    repaired, n = mojibake.repair_json(v)
+    if n:
+        logger.info("letter %s: repaired %d garbled text run(s) on read", l.id, n)
+    return repaired
 
 
 class LetterSummary(BaseModel):
@@ -90,7 +119,7 @@ async def get_letter(letter_id: str, db: AsyncSession = Depends(get_db)):
     if l is None:
         raise HTTPException(status_code=404, detail="Letter not found")
     out = LetterFull.model_validate(l)
-    out.values, out.layout, out.labels = _loads(l.values_json), _loads(l.layout_json), _loads(l.labels_json)
+    out.values, out.layout, out.labels = _values(l), _loads(l.layout_json), _loads(l.labels_json)
     return out
 
 
@@ -108,7 +137,13 @@ async def _apply(l: Letter, p: LetterSave, db, user):
     l.recipient_dept = (p.recipient_dept or "").strip()[:200] or None
     l.recipient_manager = (p.recipient_manager or "").strip()[:200] or None
     if p.values is not None:
-        l.values_json = _dumps(p.values)
+        # v127 — repair on WRITE too, so an already-garbled letter becomes
+        # permanently correct the first time it is saved (and a letter built from
+        # a faulty PDF can never be stored garbled in the first place).
+        vals, n = mojibake.repair_json(p.values)
+        if n:
+            logger.info("letter %s: repaired %d garbled text run(s) on save", l.id, n)
+        l.values_json = _dumps(vals)
     if p.layout is not None:
         l.layout_json = _dumps(p.layout)
     if p.labels is not None:
@@ -127,7 +162,7 @@ async def create_letter(payload: LetterSave, request: Request, db: AsyncSession 
                        detail=f"ذخیرهٔ نامه{(' — ' + l.title) if l.title else ''}{'' if l.account_no else ' (عمومی)'}",
                        user=user, request=request, db=db)
     out = LetterFull.model_validate(l)
-    out.values, out.layout, out.labels = _loads(l.values_json), _loads(l.layout_json), _loads(l.labels_json)
+    out.values, out.layout, out.labels = _values(l), _loads(l.layout_json), _loads(l.labels_json)
     return out
 
 
@@ -142,7 +177,7 @@ async def update_letter(letter_id: str, payload: LetterSave, request: Request, d
     await record_audit(action="update", entity_type="letter", entity_id=l.id, account_no=l.account_no,
                        detail=f"ویرایشِ نامه{(' — ' + l.title) if l.title else ''}", user=user, request=request, db=db)
     out = LetterFull.model_validate(l)
-    out.values, out.layout, out.labels = _loads(l.values_json), _loads(l.layout_json), _loads(l.labels_json)
+    out.values, out.layout, out.labels = _values(l), _loads(l.layout_json), _loads(l.labels_json)
     return out
 
 

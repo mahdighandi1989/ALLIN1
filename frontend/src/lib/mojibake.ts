@@ -33,6 +33,19 @@ const PERSIAN = /[؀-ۿﭐ-﷿ﹰ-﻿]/
 const isMapped = (code: number) =>
   (code >= LO_LO && code <= LO_HI) || (code >= UP_LO && code <= UP_HI)
 
+/**
+ * Cheap pre-filter: could this string possibly contain mojibake at all?
+ *
+ * The real check parses HTML into a DOM, which is far too expensive to run on
+ * every keystroke of a long letter. Two ADJACENT characters from the affected
+ * ranges is the minimum any repairable chunk can have, and ordinary Persian or
+ * Latin text never produces that — so this regex skips the DOM work entirely in
+ * the overwhelmingly common case.
+ */
+export function mightBeGarbled(s: string): boolean {
+  return !!s && /[\u00A6-\u00BF\u00C6-\u00DF]{2,}/.test(s)
+}
+
 /** True when this chunk is almost certainly a garbled Latin string. */
 export function looksGarbled(text: string, minChars = 2, minRatio = 0.5): boolean {
   if (!text) return false
@@ -71,7 +84,7 @@ export function repairBlock(text: string): string {
  * the layout the user built. Returns the new HTML and how many nodes changed.
  */
 export function repairHtml(html: string): { html: string; fixed: number } {
-  if (!html || typeof document === 'undefined') return { html, fixed: 0 }
+  if (!html || typeof document === 'undefined' || !mightBeGarbled(html)) return { html, fixed: 0 }
   const host = document.createElement('div')
   host.innerHTML = html
   const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
@@ -88,7 +101,7 @@ export function repairHtml(html: string): { html: string; fixed: number } {
 
 /** How many text nodes of this HTML fragment would be repaired (0 = clean). */
 export function countGarbledHtml(html: string): number {
-  if (!html || typeof document === 'undefined') return 0
+  if (!html || typeof document === 'undefined' || !mightBeGarbled(html)) return 0
   const host = document.createElement('div')
   host.innerHTML = html
   const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)

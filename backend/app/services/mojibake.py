@@ -91,3 +91,62 @@ def count_garbled(text: str) -> int:
     if not text:
         return 0
     return sum(1 for m in _CHUNK.finditer(text) if looks_garbled(m.group()))
+
+
+# --- HTML / JSON aware repair -------------------------------------------------
+# A letter's body and its tables are stored as HTML, so the repair must never see
+# a tag: rewriting inside `<td style="width:30%">` would destroy the column widths
+# the user set. Splitting on tags AND entities keeps both verbatim — entities also
+# stay out of the ratio test, so a cell full of `&nbsp;` is still judged on its
+# real letters.
+_TAG_OR_ENTITY = re.compile(r"<[^>]*>|&[#0-9A-Za-z]+;")
+
+
+def repair_html(html: str) -> str:
+    """Repair the TEXT between tags only; tags, attributes and entities verbatim."""
+    if not html:
+        return html
+    out, pos = [], 0
+    for m in _TAG_OR_ENTITY.finditer(html):
+        out.append(repair_block(html[pos:m.start()]))
+        out.append(m.group())
+        pos = m.end()
+    out.append(repair_block(html[pos:]))
+    return "".join(out)
+
+
+def count_garbled_html(html: str) -> int:
+    """How many text runs between tags would be repaired (0 = clean)."""
+    if not html:
+        return 0
+    n, pos = 0, 0
+    for m in _TAG_OR_ENTITY.finditer(html):
+        n += count_garbled(html[pos:m.start()])
+        pos = m.end()
+    return n + count_garbled(html[pos:])
+
+
+def repair_json(value):
+    """Repair every string inside a nested dict/list structure (HTML-aware).
+
+    Returns ``(repaired_value, n_fixed)``. Dict KEYS are never touched — they are
+    field names, not content.
+    """
+    if isinstance(value, str):
+        fixed = count_garbled_html(value)
+        return (repair_html(value) if fixed else value), fixed
+    if isinstance(value, list):
+        out, n = [], 0
+        for v in value:
+            rv, rn = repair_json(v)
+            out.append(rv)
+            n += rn
+        return out, n
+    if isinstance(value, dict):
+        out, n = {}, 0
+        for k, v in value.items():
+            rv, rn = repair_json(v)
+            out[k] = rv
+            n += rn
+        return out, n
+    return value, 0

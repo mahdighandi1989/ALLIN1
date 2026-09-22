@@ -94,3 +94,73 @@ def test_empty_and_none_safe():
 def test_a_single_stray_character_is_not_enough():
     assert mj.repair_text("درجه ± ۵") == "درجه ± ۵"
     assert mj.repair_text("5 ± 1") == "5 ± 1"
+
+
+# --- v127: HTML / JSON aware repair -------------------------------------------
+
+_TABLE = (
+    '<table class="tblw" style="width:96%">'
+    '<tr><th style="width:12%">ÒÑ</th><th style="width:30%">ß½½±«²¬ Ò¿³»</th><th>ß³±«²¬ (×ÎÎ)</th></tr>'
+    '<tr><td>1</td><td colspan="2">ßÓ×Î ØÑÍÍÛ×Ò&nbsp;ÓÑÌßÙØ×</td></tr>'
+    "</table>"
+)
+
+
+def test_repair_html_fixes_every_garbled_cell():
+    out = mj.repair_html(_TABLE)
+    for expected in (">NO<", ">Account Name<", ">Amount (IRR)<", "AMIR HOSSEIN&nbsp;MOTAGHI"):
+        assert expected in out
+
+
+def test_repair_html_never_touches_tags_attributes_or_widths():
+    """Rewriting inside a tag would destroy the column widths the user set."""
+    out = mj.repair_html(_TABLE)
+    for kept in ('class="tblw"', "width:96%", "width:12%", "width:30%", 'colspan="2"'):
+        assert kept in out
+    assert out.count("<tr") == 2 and out.count("<td") == 2 and out.count("<th") == 3
+
+
+def test_repair_html_keeps_entities_verbatim():
+    assert "&nbsp;" in mj.repair_html(_TABLE)
+    assert mj.repair_html("<p>&amp; &lt; &#1740;</p>") == "<p>&amp; &lt; &#1740;</p>"
+
+
+def test_repair_html_is_idempotent():
+    once = mj.repair_html(_TABLE)
+    assert mj.repair_html(once) == once
+    assert mj.count_garbled_html(once) == 0
+
+
+def test_repair_html_leaves_a_clean_persian_table_alone():
+    clean = "<table><tr><th>ردیف</th><th>شرح</th></tr><tr><td>۱</td><td>تسهیلات «ویژه»</td></tr></table>"
+    assert mj.repair_html(clean) == clean
+    assert mj.count_garbled_html(clean) == 0
+
+
+def test_repair_json_walks_nested_letter_values():
+    values = {
+        "subject": "گزارشِ «شعبه»",
+        "body": "<p>ÒÑ</p>",
+        "attTables": [{"id": "t1", "title": "صورت حساب", "html": _TABLE}],
+        "serial": 182,
+        "copyTo": None,
+    }
+    out, n = mj.repair_json(values)
+    assert n > 0
+    assert out["subject"] == "گزارشِ «شعبه»"          # Persian untouched
+    assert out["body"] == "<p>NO</p>"
+    assert ">Account Name<" in out["attTables"][0]["html"]
+    assert out["attTables"][0]["title"] == "صورت حساب"
+    assert out["serial"] == 182 and out["copyTo"] is None
+
+
+def test_repair_json_never_touches_dict_keys():
+    out, _ = mj.repair_json({"ÒÑ": "ÒÑ"})
+    assert list(out.keys()) == ["ÒÑ"]                 # a field name is not content
+    assert out["ÒÑ"] == "NO"
+
+
+def test_repair_json_reports_zero_for_clean_values():
+    values = {"subject": "نامهٔ عمومی", "body": "<p>متنِ سالم</p>", "attTables": []}
+    out, n = mj.repair_json(values)
+    assert n == 0 and out == values

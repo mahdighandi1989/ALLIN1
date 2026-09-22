@@ -48,3 +48,70 @@ class TestLetters:
         await client.post("/api/letters/", json={"account_no": "LET-3", "title": "ث", "values": {}}, headers=admin_headers)
         a = await client.get("/api/audit/?account_no=LET-3", headers=admin_headers)
         assert any(e["entity_type"] == "letter" for e in a.json()["items"])
+
+
+class TestLetterMojibakeAutoRepair:
+    """v127 — letters written from a PDF with a non-standard font encoding hold
+    reversibly scrambled text. The owner must not have to press anything: the
+    repair runs on READ (so an old letter looks right immediately) and on WRITE
+    (so it becomes permanently right the next time it is saved)."""
+
+    GARBLED_TABLE = (
+        '<table class="tblw" style="width:96%">'
+        '<tr><th style="width:12%">ÒÑ</th><th>ß½½±«²¬ Ò¿³»</th><th>ß³±«²¬ (×ÎÎ)</th></tr>'
+        '<tr><td>1</td><td>ßÓ×Î ØÑÍÍÛ×Ò ÓÑÌßÙØ×</td><td>4,819,650</td></tr>'
+        "</table>"
+    )
+
+    async def test_an_already_garbled_letter_reads_back_correct(
+            self, client: AsyncClient, admin_headers: dict, db_session):
+        """Simulates a letter saved BEFORE the fix: the DB row stays as it was,
+        but the API must hand the browser the repaired text."""
+        import json as _json
+        from app.models.letter import Letter, generate_letter_id
+
+        lid = generate_letter_id()
+        db_session.add(Letter(
+            id=lid, category="general", title="صورت حساب",
+            values_json=_json.dumps({
+                "subject": "مشخصات املاک و صورت حساب",
+                "body": "<p>گزارشِ «شعبه»</p>",
+                "attTables": [{"id": "t1", "title": "جدول", "html": self.GARBLED_TABLE}],
+            }, ensure_ascii=False)))
+        await db_session.commit()
+
+        vals = (await client.get(f"/api/letters/{lid}", headers=admin_headers)).json()["values"]
+        html = vals["attTables"][0]["html"]
+        assert ">NO<" in html and ">Account Name<" in html and ">Amount (IRR)<" in html
+        assert ">AMIR HOSSEIN MOTAGHI<" in html
+        # ...and the table the user built is structurally untouched
+        assert 'class="tblw"' in html and "width:96%" in html and "width:12%" in html
+        assert ">4,819,650<" in html            # numbers were never garbled
+        assert vals["subject"] == "مشخصات املاک و صورت حساب"
+        assert vals["body"] == "<p>گزارشِ «شعبه»</p>"   # Persian «quotes» untouched
+
+    async def test_saving_a_garbled_letter_stores_it_repaired(
+            self, client: AsyncClient, admin_headers: dict, db_session):
+        from app.models.letter import Letter
+
+        r = await client.post("/api/letters/", json={
+            "title": "صورت حساب", "general": True,
+            "values": {"body": "<p>ÒÑ</p>", "attTables": [{"id": "t1", "title": "x", "html": self.GARBLED_TABLE}]},
+        }, headers=admin_headers)
+        assert r.status_code == 201
+        row = await db_session.get(Letter, r.json()["id"])
+        assert "ÒÑ" not in (row.values_json or "")      # stored clean, not just shown clean
+        assert ">Account Name<" in row.values_json
+
+    async def test_a_clean_letter_is_stored_byte_for_byte(
+            self, client: AsyncClient, admin_headers: dict, db_session):
+        """The repair must be a no-op for every normal letter."""
+        import json as _json
+        from app.models.letter import Letter
+
+        values = {"subject": "افتتاح حساب", "body": "<p>متنِ «عادی» — ۱۴۰۵/۰۶/۳۱</p>",
+                  "attTables": [], "serial": 182}
+        r = await client.post("/api/letters/", json={"title": "t", "general": True, "values": values},
+                              headers=admin_headers)
+        row = await db_session.get(Letter, r.json()["id"])
+        assert _json.loads(row.values_json) == values

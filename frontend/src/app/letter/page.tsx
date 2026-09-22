@@ -18,7 +18,7 @@ import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
-import { repairHtml, countGarbledHtml } from '@/lib/mojibake'
+import { repairHtml } from '@/lib/mojibake'
 
 const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
@@ -527,24 +527,18 @@ export default function LetterPage() {
   const updateFloat = (id: string, patch: Partial<FloatObj>) =>
     setFloats((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   const removeFloat = (id: string) => { setFloats((list) => list.filter((x) => x.id !== id)); setFloatSel((v) => (v === id ? null : v)) }
-  // --- v126 — MOJIBAKE REPAIR («ترمیمِ متنِ به‌هم‌ریخته»).
+  // --- v127 — MOJIBAKE REPAIR, AUTOMATIC (owner: «دکمه اضافه نکن … همش رو درست کن»).
   // A PDF whose embedded font carries a non-standard encoding hands every reader
   // — extractor or AI — reversibly scrambled text ("Statement NO" arrives as
-  // "Í¬¿¬»³»²¬ ÒÑ"). The garbling is arithmetic, so it can be undone exactly.
-  // Detection runs on the letter body, the in-flow tables and the attachment
-  // tables; repair rewrites TEXT NODES only, so every column width, style and
-  // merged cell survives untouched. It is a one-click, undoable action — the
-  // stored letter is NEVER rewritten behind the user's back. ---
-  const garbledCount = (() => {
-    let n = 0
-    try {
-      n += countGarbledHtml(f.body || '')
-      for (const t of attTables) n += countGarbledHtml(t.html || '')
-      for (const fl of floats) if (fl.kind === 'table') n += countGarbledHtml(fl.html || '')
-    } catch { return 0 }
-    return n
-  })()
-  const repairGarbled = () => {
+  // "Í¬¿¬»³»²¬ ÒÑ"). The backend now repairs it on read AND on save, so stored
+  // letters are correct; this pass catches whatever is already in the editor
+  // (a draft, a table just built by the assistant) without asking. It rewrites
+  // TEXT NODES only, so every column width, style and merged cell survives, and
+  // it runs at most once per distinct content, so typing is never disturbed. ---
+  const repairedRef = useRef<string>('')
+  useEffect(() => {
+    const sig = `${f.body || ''}|${attTables.map((t) => t.html).join('|')}|${floats.map((x) => x.html).join('|')}`
+    if (sig === repairedRef.current) return
     let fixed = 0
     const b = repairHtml(f.body || '')
     fixed += b.fixed
@@ -559,12 +553,16 @@ export default function LetterPage() {
       fixed += r.fixed
       return r.fixed ? { ...fl, html: r.html } : fl
     })
-    if (!fixed) { toast('متنِ به‌هم‌ریخته‌ای پیدا نشد', { icon: '✅' }); return }
+    if (!fixed) { repairedRef.current = sig; return }
     if (b.fixed) setF((s) => ({ ...s, body: b.html }))
-    setAttTables(nextAtts)
-    setFloats(nextFloats)
-    toast.success(`${fa(fixed)} بخشِ به‌هم‌ریخته ترمیم شد — اگر درست نبود «برگشت» را بزن، و برای ماندگاری «ذخیره» کن`, { duration: 8000 })
-  }
+    if (nextAtts.some((t, i) => t !== attTables[i])) setAttTables(nextAtts)
+    if (nextFloats.some((x, i) => x !== floats[i])) setFloats(nextFloats)
+    repairedRef.current = ''   // re-check the repaired content once, then settle
+    // eslint-disable-next-line no-console
+    console.info(`[letter] repaired ${fixed} garbled text run(s)`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.body, attTables, floats])
+
   const letterSheets = () => Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet)')) as HTMLElement[]
   const letterCells = () => (Array.from(document.querySelectorAll('#ltr-edit .lsheet:not(.attsheet) .bcell')) as HTMLElement[]).filter((c) => !c.closest('.lfloat'))
   // Auto-size every attachment table — orientation and font follow the CONTENT,
@@ -3065,12 +3063,6 @@ export default function LetterPage() {
             <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
               title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
               📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
-            </button>
-          )}
-          {garbledCount > 0 && (
-            <button onClick={repairGarbled} className="ltr-btn" style={{ background: '#b45309' }}
-              title="متنِ این نامه در چند جا به‌هم‌ریخته است (فایلِ PDF منبع با فونتِ غیراستاندارد ساخته شده). این دکمه آن را دقیقاً به حالتِ درست برمی‌گرداند — فقط متن، بدونِ دست‌زدن به چیدمان و عرضِ ستون‌ها.">
-              🩹 ترمیمِ متنِ به‌هم‌ریخته ({fa(garbledCount)})
             </button>
           )}
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
