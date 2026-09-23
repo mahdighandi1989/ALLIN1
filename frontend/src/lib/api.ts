@@ -283,6 +283,26 @@ export const statsApi = {
 // ---------------------------------------------------------------------------
 // CRM interactive actions (credit-file workflow)
 // ---------------------------------------------------------------------------
+
+// --- v130: data quality / completeness -------------------------------------
+export type GapItem = { field: string; label: string }
+export type CompletenessSection = { key: string; title: string; filled: number; total: number; percent: number; missing: GapItem[] }
+export type CompletenessReport = {
+  account_no: string; account_type: string; percent: number; filled: number; total: number
+  missing: string[]; sections: CompletenessSection[]
+}
+export type DataQualityRow = {
+  account_no: string; name: string; branch: string; account_type: string
+  percent: number; filled: number; total: number; missing_count: number
+  sections: { key: string; percent: number; missing: number }[]
+  top_missing: string[]
+}
+export type DataQuality = {
+  customers: DataQualityRow[]; total_customers: number; average_percent: number
+  sections: { key: string; title: string; filled: number; total: number; percent: number }[]
+  common_gaps: { field: string; label: string; section: string; section_title: string; count: number }[]
+}
+
 export const crmApi = {
   async toggleChecklistStep(accountNo: string, step: number, done: boolean): Promise<any> {
     const { data } = await api.patch(`/api/crm/checklist/${encodeURIComponent(accountNo)}`, { step, done })
@@ -320,8 +340,14 @@ export const crmApi = {
     const { data } = await api.patch(`/api/crm/profile/${encodeURIComponent(accountNo)}`, body)
     return data
   },
-  async completeness(accountNo: string): Promise<{ percent: number; filled: number; total: number; missing: string[] }> {
+  async completeness(accountNo: string): Promise<CompletenessReport> {
     const { data } = await api.get(`/api/crm/completeness/${encodeURIComponent(accountNo)}`)
+    return data
+  },
+  // v130 — one sweep over the whole book: worst records first, weakest section,
+  // and the single field missing most often.
+  async dataQuality(limit = 2000): Promise<DataQuality> {
+    const { data } = await api.get('/api/crm/data-quality', { params: { limit }, timeout: 120000 })
     return data
   },
   async runMerge(): Promise<any> {

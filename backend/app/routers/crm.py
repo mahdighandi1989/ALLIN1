@@ -14,7 +14,7 @@ from typing import Optional
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -733,6 +733,22 @@ async def get_completeness(
     result = await recompute_completeness(db, account_no)
     await db.commit()
     return result
+
+
+@router.get("/data-quality")
+async def data_quality(
+    limit: int = Query(2000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """v130 — one sweep over the WHOLE book: which customers are worst, which
+    section is weakest, and which single field is missing most often.
+
+    Read-only, and costs a fixed handful of queries no matter how many customers
+    exist (see :func:`completeness.sweep_all`), so it is safe to open on demand.
+    """
+    from app.services.completeness import sweep_all
+    return await sweep_all(db, limit=limit)
 
 
 # ---------------------------------------------------------------------------

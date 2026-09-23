@@ -172,16 +172,21 @@ class TestCompleteness:
         acc = test_customer.account_no
         r0 = await client.get(f"/api/crm/completeness/{acc}", headers=auth_headers)
         assert r0.status_code == 200, r0.text
-        assert r0.json()["percent"] < 100
-        assert "Trade licence no" in r0.json()["missing"]
-        base_missing = len(r0.json()["missing"])
+        body0 = r0.json()
+        assert body0["percent"] < 100
+        # v130 — the fixture customer is RETAIL, so it must be asked for a passport
+        # but NEVER marked down for a trade licence it cannot have.
+        assert body0["account_type"] == "retail"
+        assert "شمارهٔ پاسپورت" in body0["missing"]
+        assert "شمارهٔ مجوز تجاری" not in body0["missing"]
+        base_missing = len(body0["missing"])
 
         # fill some fields -> percent rises, fewer missing
-        await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json={"trade_license_no": "TL1", "rating": "A"})
+        await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json={"passport_no": "P1", "rating": "A"})
         r1 = await client.get(f"/api/crm/completeness/{acc}", headers=auth_headers)
         assert r1.json()["percent"] >= r0.json()["percent"]
         assert len(r1.json()["missing"]) < base_missing
-        assert "Trade licence no" not in r1.json()["missing"]
+        assert "شمارهٔ پاسپورت" not in r1.json()["missing"]
 
         # the profile PATCH itself returns the freshly stored completeness %
         upd = await client.patch(f"/api/crm/profile/{acc}", headers=auth_headers, json={"business_type": "Trading"})

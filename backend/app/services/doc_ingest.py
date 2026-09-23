@@ -14,6 +14,7 @@ light); only metadata/links are kept in the DB.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date
 
@@ -25,6 +26,8 @@ from app.models.crm import CustomerProfile
 from app.models.guarantor import Guarantor
 from app.models.profile_entities import MortgagedProperty
 from app.services.customer_link import ensure_customer
+
+logger = logging.getLogger("app.doc_ingest")
 
 # ---------------------------------------------------------------------------
 # Schema-driven field registry. The list of facts the model is asked to extract
@@ -39,10 +42,12 @@ _PROFILE_SKIP_COLS = {
     # housekeeping / computed
     "customer_status", "profile_completeness", "updated_by",
     "last_updated", "data_json", "created_at",
+    # Officer-authored notes — a document never states them, so the model must
+    # never write here (v130: briefly un-skipped, reverted — see AUDIT_LOG).
+    "trade_license_remarks", "passport_remarks", "emirates_id_remarks",
     # per-document file paths (populated by the upload feature, not from content)
     "trade_license_doc", "passport_doc", "emirates_id_doc", "visa_doc", "tenancy_doc",
     # officer-only free-text notes — never auto-filled by the model
-    "trade_license_remarks", "passport_remarks", "emirates_id_remarks",
 }
 # Friendlier key the model is more likely to emit  ->  real column it maps to.
 _FIELD_ALIASES = {"nationality": "passport_nationality"}
@@ -772,8 +777,27 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             if tnr and not (frow.tenor_months or "") and tnr.isdigit():
                 frow.tenor_months = tnr[:4]
 
+    # v130 — the honest "where does this customer stand NOW" report, computed with
+    # the SAME spec the Credit File Summary form and the data-quality page use.
+    # Until now an import only reported 10 headline KYC fields it had not found, so
+    # everything else was silently absent and the gap was discovered later, by hand,
+    # while filling the Summary form. `kyc_missing` is kept unchanged for the
+    # existing UI; `profile_gaps` is the full, sectioned picture.
+    profile_gaps = None
+    try:
+        from app.services import completeness as _comp
+        await db.flush()   # the writes above must be visible to the tallies
+        profile_gaps = _comp.build_report(
+            acc, (customer.account_type if customer is not None else None), cp,
+            await _comp.gather_counts(db, acc))
+        if cp is not None:
+            cp.profile_completeness = f"{profile_gaps['percent']}%"
+    except Exception:  # never let the report break an import that already succeeded
+        logger.exception("profile gap report failed for %s", acc)
+
     return {"ok": True, "account_no": acc, "name": name or acc,
             "customer_id": (customer.id if customer is not None else None),
+            "profile_gaps": profile_gaps,
             "facility_hint": (cust.get("fields", {}).get("proposed_facility")
                               or (cust.get("review", {}) or {}).get("proposed_facility") or ""),
             "fields_saved": sorted(fields.keys()),
