@@ -138,7 +138,10 @@ export function Movable({ d, id, children, block = false, label, style, classNam
     const scope = (self.closest('.mv-group') as HTMLElement | null) || document.body
     const all = Array.from(scope.querySelectorAll<HTMLElement>('[data-mvid]'))
     const at = all.indexOf(self)
+    // A descendant already moves with its ancestor's transform, so including it
+    // would apply the delta twice.
     const followers = e.altKey || at < 0 ? [] : all.slice(at + 1)
+      .filter((n) => !self.contains(n))
       .map((n) => n.dataset.mvid || '').filter(Boolean)
     const origin: Record<string, number> = {}
     for (const fid of followers) origin[fid] = d._ref.current[fid]?.dy || 0
@@ -170,6 +173,61 @@ export function Movable({ d, id, children, block = false, label, style, classNam
       </>}
     </span>
   )
+}
+
+// v132 — grab the WHOLE document frame (owner: «خودِ این کادرِ سراسریِ سند را
+// اصلاً نمی‌شود با ماوس گرفت و کشید»).
+//
+// Deliberately NOT a <Movable> wrapper: the voucher's cut gap comes from the
+// sibling rule `.vch + .vch { margin-top: … }`, and slipping a wrapper element
+// between the two slips would silently kill that gap. So this hands the caller a
+// style to put on the frame element ITSELF, plus two handles to render inside it.
+//
+// The handles matter: the frame's own hit area is only its padding, which is a
+// few millimetres — "click the background to move the page" would be a guess.
+// A visible grip and a corner sizer are unambiguous, and they only exist in
+// «چیدمان» mode, so the printed document is untouched.
+export function useFrame(d: DesignState, id: string): {
+  style?: React.CSSProperties; handles: React.ReactNode
+} {
+  const b = d.layout[id] || {}
+  const moved = !!(b.dx || b.dy || (b.scale && b.scale !== 1))
+  const style: React.CSSProperties | undefined = (d.design || moved)
+    ? {
+        transform: `translate(${b.dx || 0}px, ${b.dy || 0}px) scale(${b.scale || 1})`,
+        // top-center: scaling a sheet grows it evenly sideways and downward,
+        // which is how a page is read — not anchored to one corner.
+        transformOrigin: 'top center',
+      }
+    : undefined
+
+  const start = (mode: 'move' | 'size') => (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation(); d.setEditing(id)
+    const sxp = e.clientX, syp = e.clientY, o = d._ref.current[id] || {}
+    const ox = o.dx || 0, oy = o.dy || 0, os = o.scale || 1
+    const mv = (ev: PointerEvent) => {
+      if (mode === 'move') {
+        d.setBox(id, { dx: Math.round(ox + (ev.clientX - sxp)), dy: Math.round(oy + (ev.clientY - syp)) })
+      } else {
+        // down/right grows it; clamped so a sheet can never be scaled away
+        const k = ((ev.clientX - sxp) + (ev.clientY - syp)) / 2
+        d.setBox(id, { scale: Math.min(2, Math.max(0.4, Math.round((os + k / 300) * 100) / 100)) })
+      }
+    }
+    const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
+  }
+
+  const handles = d.design ? (
+    <>
+      <span className={`mv-fr${d.editing === id ? ' on' : ''}`} />
+      <span className="mv-fh" onPointerDown={start('move')} onDoubleClick={(e) => { e.stopPropagation(); d.setEditing(id) }}
+            title="جابه‌جاییِ کلِ این سند">✥</span>
+      <span className="mv-fs" onPointerDown={start('size')} title="بزرگ/کوچک‌کردنِ کلِ این سند" />
+    </>
+  ) : null
+
+  return { style, handles }
 }
 
 // Toolbar buttons — drop into a page's no-print controls area.
@@ -208,6 +266,16 @@ export function DesignPanel({ d }: { d: DesignState }) {
         .mv-wrap.mv-sel{outline:2px solid #2563eb;background:rgba(37,99,235,.06)}
         .mv-tag{position:absolute;top:-13px;right:0;font-size:8px;line-height:1;color:#2563eb;background:#eff6ff;padding:1px 3px;border-radius:3px;white-space:nowrap;font-family:sans-serif;pointer-events:none;z-index:5}
         .mv-rs{position:absolute;left:-5px;bottom:-5px;width:12px;height:12px;background:#2563eb;border:2px solid #fff;border-radius:50%;cursor:nesw-resize;z-index:6}
+        /* v132 — whole-sheet affordances: a dashed frame you can see, a grip to
+           move the document and a corner to size it. All no-print. */
+        /* The frame clips its content (overflow:hidden), so these live INSIDE it —
+           an outside-anchored handle is simply invisible, and an outline would be
+           clipped too, hence a border on an inset:0 box. */
+        .mv-fr{position:absolute;inset:0;pointer-events:none;border:1px dashed #86efac;z-index:2}
+        .mv-fr.on{border:2px solid #16a34a}
+        .mv-fh{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;background:#16a34a;color:#fff;
+               display:flex;align-items:center;justify-content:center;font-size:12px;cursor:move;z-index:7;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+        .mv-fs{position:absolute;left:3px;bottom:3px;width:16px;height:16px;background:#16a34a;border:2px solid #fff;border-radius:50%;cursor:nwse-resize;z-index:7}
         /* v131 — the two-column rows used to burst OUT of the panel (measured in a
            real browser: each .r stayed ~240px inside a 206px box, so the second
            column rendered off the left edge). A flex item's automatic minimum is
@@ -226,7 +294,7 @@ export function DesignPanel({ d }: { d: DesignState }) {
         .mv-pp .hint{font-size:10.5px;line-height:1.5;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 6px;margin:2px 0 7px}
         .mv-pp .two{display:flex;gap:6px;min-width:0}.mv-pp .two .r{flex:1 1 0;min-width:0}
         .mv-pp .rm{width:100%;border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;padding:5px;cursor:pointer;font-size:12px;margin-top:2px;color:#334155}
-        @media print { .mv-controls,.mv-pp,.mv-tag,.mv-rs{display:none!important} .mv-wrap{outline:0!important;background:transparent!important} }
+        @media print { .mv-controls,.mv-pp,.mv-tag,.mv-rs,.mv-fr,.mv-fh,.mv-fs{display:none!important} .mv-wrap{outline:0!important;background:transparent!important} }
       `}</style>
       {id && (
         <div className="mv-pp no-print" dir="rtl">

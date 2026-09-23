@@ -117,3 +117,64 @@ describe('printing keeps the heading tinted', () => {
     expect(lum).toBeLessThan(250)        // but clearly not white
   })
 })
+
+describe('v132 — the whole document frame is grabbable', () => {
+  it('is applied to the frame element itself, never through a wrapper', () => {
+    // A wrapper between the two slips would break `.vch + .vch`, which is what
+    // draws the cut gap between them.
+    expect(VOUCHER).toContain('className="vch mv-group" dir="ltr" style={frame.style}')
+    expect(VOUCHER).toContain('.vch + .vch { margin-top: var(--vch-gap, 32mm); }')
+    expect(FD).toContain('export function useFrame')
+  })
+
+  it('every slip gets its own frame', () => {
+    expect((VOUCHER.match(/useFrame\(d, `\$\{prefix\}-sheet`\)/g) || []).length).toBe(3)
+    expect((VOUCHER.match(/\{frame\.handles\}/g) || []).length).toBe(3)
+  })
+
+  it('the frame is a positioning context, so the handles can anchor to it', () => {
+    expect(rule(VOUCHER, '.vch { position: relative;')).toContain('position: relative')
+  })
+
+  it('handles sit INSIDE the frame, which clips its content', () => {
+    // .vch has overflow:hidden — a handle at a negative offset is invisible, and
+    // an `outline` would be clipped too, so the frame marker uses a border.
+    expect(rule(VOUCHER, '.vch { position: relative;')).toContain('overflow: hidden')
+    for (const sel of ['.mv-fh{', '.mv-fs{']) {
+      const r = rule(FD, sel)
+      expect(r).not.toMatch(/(top|right|left|bottom):-\d/)
+    }
+    expect(rule(FD, '.mv-fr{')).toContain('border:1px dashed')
+    expect(rule(FD, '.mv-fr{')).not.toContain('outline')
+  })
+
+  it('none of the frame affordances reach the printer', () => {
+    const pr = rule(FD, '@media print {')
+    for (const cls of ['.mv-fr', '.mv-fh', '.mv-fs']) expect(pr).toContain(cls)
+  })
+
+  it('sheet scaling is clamped so a document cannot be scaled away', () => {
+    expect(FD).toMatch(/Math\.min\(2, Math\.max\(0\.4,/)
+  })
+})
+
+describe('group drag never double-applies to nested parts', () => {
+  it('a descendant is excluded — it already moves with its ancestor', () => {
+    expect(FD).toContain('.filter((n) => !self.contains(n))')
+  })
+})
+
+describe('CSS written inside a template literal', () => {
+  // I have broken the build three times by putting a backtick in a CSS comment
+  // inside <style>{`…`}</style> — it ends the template literal and the file stops
+  // parsing. Cheap to catch, so catch it.
+  const styleBlocks = (src: string) =>
+    Array.from(src.matchAll(/<style>\{`([\s\S]*?)`\}<\/style>/g)).map((m) => m[1])
+
+  it.each([['formDesign.tsx', FD], ['voucher/page.tsx', VOUCHER]])(
+    '%s has no backtick inside a <style> template literal', (_name, src) => {
+      const blocks = styleBlocks(src)
+      expect(blocks.length).toBeGreaterThan(0)
+      for (const b of blocks) expect(b).not.toContain('`')
+    })
+})

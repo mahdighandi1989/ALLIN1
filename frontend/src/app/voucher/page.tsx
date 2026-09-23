@@ -7,7 +7,7 @@ import { lookupAccount, BRANCHES, ACCOUNT_COUNT } from './accounts'
 import { BANK_LOGO } from './logo'
 import { customersApi, crmApi, auditApi, vouchersApi, parseApiError } from '@/lib/api'
 import { dmySlash } from '@/lib/dates'
-import { useFormDesign, Movable, DesignControls, DesignPanel, DesignState } from '@/lib/formDesign'
+import { useFormDesign, Movable, DesignControls, DesignPanel, useFrame, DesignState } from '@/lib/formDesign'
 import toast from 'react-hot-toast'
 
 // Faithful re-implementation of the macro workbook
@@ -67,8 +67,13 @@ function MmInput({ label, hint, value, def, min, max, onChange }:
 
 function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, amountText, d, prefix }: VProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
+  // v132 — the whole sheet is grabbable: drag it by the green grip, size it by
+  // the green corner. Applied to the .vch element itself so the `.vch + .vch`
+  // cut-gap rule keeps working.
+  const frame = useFrame(d, `${prefix}-sheet`)
   return (
-    <div className="vch mv-group" dir="ltr">
+    <div className="vch mv-group" dir="ltr" style={frame.style}>
+      {frame.handles}
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-logo">
@@ -129,8 +134,13 @@ type RevProps = {
 }
 function VoucherRev({ kind, stamp, title, date, branch, gl, currency, amount, refNo, borrower, borrowerAcct, chqNo, byWho, issuer, issuerAcct, d, prefix }: RevProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
+  // v132 — the whole sheet is grabbable: drag it by the green grip, size it by
+  // the green corner. Applied to the .vch element itself so the `.vch + .vch`
+  // cut-gap rule keeps working.
+  const frame = useFrame(d, `${prefix}-sheet`)
   return (
-    <div className="vch mv-group" dir="ltr">
+    <div className="vch mv-group" dir="ltr" style={frame.style}>
+      {frame.handles}
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-hstamp">{M('stamp', stamp)}</div>
@@ -179,6 +189,10 @@ function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, 
   { kind: 'DEBIT' | 'CREDIT'; title: string; date: string; branchNo: string; acctNo: string;
     tranCode: string; narrative: string[]; count: string; d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
+  // v132 — the whole sheet is grabbable: drag it by the green grip, size it by
+  // the green corner. Applied to the .vch element itself so the `.vch + .vch`
+  // cut-gap rule keeps working.
+  const frame = useFrame(d, `${prefix}-sheet`)
   const box = (label: string, value: string, wide = false) => (
     <div style={{ marginTop: '2.5mm' }}>
       <div style={{ border: '1.2pt solid #000', display: 'inline-block', fontSize: '8.5pt', fontWeight: 800, padding: '0.4mm 1.5mm' }}>{label}</div>
@@ -190,7 +204,8 @@ function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, 
     </div>
   )
   return (
-    <div className="vch mv-group" dir="ltr">
+    <div className="vch mv-group" dir="ltr" style={frame.style}>
+      {frame.handles}
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-logo">
@@ -666,7 +681,9 @@ export default function VoucherPage() {
            so every document on the page follows the same geometry.
            The three numbers are CSS variables so «چیدمان» can hand-tune them
            (defaults live here; overrides come as inline vars on #voucher-print). */
-        .vch { box-sizing: border-box; width: 100%; height: var(--vch-h, 123mm); border: 1.6pt solid #000;
+        /* position:relative — v132 anchors the whole-sheet grip/sizer handles to the
+           frame. It does not move anything: the children stay in normal flow. */
+        .vch { position: relative; box-sizing: border-box; width: 100%; height: var(--vch-h, 123mm); border: 1.6pt solid #000;
                padding: 5mm 6mm 4mm; display: flex; flex-direction: column; color: #000;
                font-family: Arial, "Segoe UI", sans-serif; background: #fff; overflow: hidden; }
         .vch + .vch { margin-top: var(--vch-gap, 32mm); }
@@ -937,7 +954,7 @@ export default function VoucherPage() {
               {/* v131 — visible deploy marker, same purpose as the letter page's:
                   «is the fix live yet?» must never be a guess. */}
               <span style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr', fontSize: 12 }}
-                    title="نسخۀ کد — برای تأییدِ استقرار">build: v131</span>
+                    title="نسخۀ کد — برای تأییدِ استقرار">build: v132</span>
               <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرۀ چیدمان».' : 'برای جابه‌جایی/اندازۀ فیلدهای سند روی «چیدمان» بزن.'}</span>
               {/* v120 — sheet geometry (mm): the owner tunes the cut gap, the slip
                   height and the signature offset by hand; «ذخیرۀ چیدمان» persists
