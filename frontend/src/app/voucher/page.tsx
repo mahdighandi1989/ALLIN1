@@ -954,7 +954,7 @@ export default function VoucherPage() {
               {/* v131 — visible deploy marker, same purpose as the letter page's:
                   «is the fix live yet?» must never be a guess. */}
               <span style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr', fontSize: 12 }}
-                    title="نسخۀ کد — برای تأییدِ استقرار">build: v133</span>
+                    title="نسخۀ کد — برای تأییدِ استقرار">build: v134</span>
               <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرۀ چیدمان».' : 'برای جابه‌جایی/اندازۀ فیلدهای سند روی «چیدمان» بزن.'}</span>
               {/* v120 — sheet geometry (mm): the owner tunes the cut gap, the slip
                   height and the signature offset by hand; «ذخیرۀ چیدمان» persists

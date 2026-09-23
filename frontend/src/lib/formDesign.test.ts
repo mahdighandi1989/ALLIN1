@@ -153,8 +153,13 @@ describe('v132 — the whole document frame is grabbable', () => {
     for (const cls of ['.mv-fr', '.mv-fh', '.mv-fs']) expect(pr).toContain(cls)
   })
 
-  it('sheet scaling is clamped so a document cannot be scaled away', () => {
-    expect(FD).toMatch(/Math\.min\(2, Math\.max\(0\.4,/)
+  it('a sheet cannot be dragged down to nothing', () => {
+    // v134 replaced the uniform-scale corner with real width/height sizers, so
+    // the guard is now a minimum box size rather than a scale clamp. The panel's
+    // «اندازه ٪» keeps its own 0.4 floor.
+    expect(FD).toMatch(/const MIN = \d+/)
+    expect(FD).toMatch(/Math\.max\(MIN, Math\.round\(w0/)
+    expect(FD).toMatch(/Math\.max\(MIN, Math\.round\(h0/)
   })
 })
 
@@ -212,5 +217,58 @@ describe('v133 — the boxes move, not just the text inside them', () => {
     expect(rule(VOUCHER, '.vch-banner {')).toContain('margin-top: 4mm')
     expect(rule(VOUCHER, '.vch-daterow {')).toContain('margin-top: 2mm')
     expect(rule(VOUCHER, '.vch-acrow {')).toContain('margin-top: 6mm')
+  })
+})
+
+describe('v134 — width and height resize independently', () => {
+  it('a size drag sets a real width/height, not a uniform scale', () => {
+    // The first frame sizer only changed `scale`, so you could not make a sheet
+    // taller without also making it wider. These set the actual box.
+    expect(FD).toMatch(/patch\.w = Math\.max\(MIN, Math\.round\(w0 \+ rawX/)
+    expect(FD).toMatch(/patch\.h = Math\.max\(MIN, Math\.round\(h0 \+ rawY/)
+    expect(FD).toContain("start = (mode: 'move' | 'w' | 'h' | 'wh')")
+  })
+
+  it('there is a handle for width only, height only, and both', () => {
+    expect(FD).toContain(`onPointerDown={start('w')}`)
+    expect(FD).toContain(`onPointerDown={start('h')}`)
+    expect(FD).toContain(`onPointerDown={start('wh')}`)
+  })
+
+  it('each sizer reads as the axis it changes', () => {
+    const w = rule(FD, '.mv-fw{'), h = rule(FD, '.mv-fhh{')
+    expect(w).toContain('right:3px')            // a tall bar on the right edge
+    expect(w).toContain('cursor:ew-resize')
+    expect(h).toContain('bottom:3px')           // a wide bar on the bottom edge
+    expect(h).toContain('cursor:ns-resize')
+    expect(rule(FD, '.mv-fs{')).toContain('cursor:nwse-resize')
+  })
+
+  it('w/h survive as first-class box state', () => {
+    expect(FD).toMatch(/w\?: number; h\?: number/)
+    expect(FD).toContain('b.w || b.h')                       // counts as a tweak
+    expect(FD).toMatch(/hasTweak[\s\S]{0,140}b\.w \|\| b\.h/)
+  })
+
+  it('uniform zoom is NOT removed — it moves to the panel', () => {
+    expect(FD).toContain('اندازه ٪')
+    expect(FD).toMatch(/scale: Math\.max\(0\.4,/)
+  })
+
+  it('exact width/height can be typed, and cleared back to automatic', () => {
+    expect(FD).toContain('placeholder="خودکار"')
+    expect(FD).toMatch(/w: undefined, h: undefined/)
+  })
+
+  it('a size drag converts cursor travel out of the preview zoom', () => {
+    // the preview sheet is transform-scaled to fit its column; without this the
+    // dragged size would not match what prints
+    expect(FD).toContain('rect.width / host.offsetWidth')
+    expect(FD).toMatch(/rawX \/ \(k \|\| 1\)/)
+  })
+
+  it('no sizer reaches the printer', () => {
+    const pr = rule(FD, '@media print {')
+    for (const cls of ['.mv-fw', '.mv-fhh', '.mv-fs']) expect(pr).toContain(cls)
   })
 })
