@@ -178,3 +178,39 @@ describe('CSS written inside a template literal', () => {
       for (const b of blocks) expect(b).not.toContain('`')
     })
 })
+
+describe('v133 — the boxes move, not just the text inside them', () => {
+  it('the tinted title BOX is grabbable, and its text still is too', () => {
+    // Before: only M('title', …) — the caption moved while its coloured box
+    // stayed put, which reads as "the field is stuck".
+    expect((VOUCHER.match(/M\('titlebox', <div className="vch-banner">/g) || []).length).toBe(3)
+    expect((VOUCHER.match(/M\('title', title\)/g) || []).length).toBe(3)
+  })
+
+  it('the DATE row moves as a unit, label included', () => {
+    expect((VOUCHER.match(/M\('daterow', <div className="vch-daterow">/g) || []).length).toBe(3)
+    expect((VOUCHER.match(/M\('datelbl', 'DATE :'\)/g) || []).length).toBe(3)
+    expect((VOUCHER.match(/M\('date', date\)/g) || []).length).toBe(3)
+  })
+
+  it('every "account number" label is grabbable, in both slip layouts', () => {
+    expect(VOUCHER).toContain(`M('aclbl', <span className="vch-aclbl">A/c No. :</span>)`)
+    expect(VOUCHER).toContain(`M('aclbl', <span className="lbl">Account No. :</span>)`)
+  })
+
+  it('the account ROW moves as a unit, and its wrapper is properly closed', () => {
+    expect(VOUCHER).toContain(`M('acctrow', <div className="vch-acrow">`)
+    expect(VOUCHER).toContain(`M('acctrow', <div className="vch-acct2">`)
+    expect((VOUCHER.match(/<\/div>, true\)\}/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('wrapping a flex item does not move it — verified in a real browser', () => {
+    // A block wrapper around .vch-banner could have re-homed its 4mm top margin.
+    // Rendered side by side in headless Chromium: the banner, date row and
+    // account row land on identical Y positions wrapped and unwrapped. The
+    // margin lives on the inner element, which is what keeps that true.
+    expect(rule(VOUCHER, '.vch-banner {')).toContain('margin-top: 4mm')
+    expect(rule(VOUCHER, '.vch-daterow {')).toContain('margin-top: 2mm')
+    expect(rule(VOUCHER, '.vch-acrow {')).toContain('margin-top: 6mm')
+  })
+})

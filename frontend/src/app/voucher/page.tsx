@@ -85,10 +85,10 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
         </div>
       </div>
 
-      <div className="vch-banner">{M('title', title)}</div>
-      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
+      {M('titlebox', <div className="vch-banner">{M('title', title)}</div>, true)}
+      {M('daterow', <div className="vch-daterow">{M('datelbl', 'DATE :')}&nbsp;&nbsp;{M('date', date)}</div>, true)}
 
-      <div className="vch-acrow">
+      {M('acctrow', <div className="vch-acrow">
         <div>{M('aclbl', <span className="vch-aclbl">A/c No. :</span>)}{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
         {M('amount', amountText !== undefined ? (
           // v101 — the cheque COUNT sits in a labelled box (not loose on the page)
@@ -96,7 +96,7 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
         ) : (
           <div className="vch-amt">{amount ? `${currency} ${money(amount)}` : '**********'}</div>
         ), true)}
-      </div>
+      </div>, true)}
 
       <div className="vch-ref">
         <div className="vch-ref-lbl">{M('reflbl', 'OUR REF :')}</div>
@@ -152,12 +152,12 @@ function VoucherRev({ kind, stamp, title, date, branch, gl, currency, amount, re
           </>, true)}
         </div>
       </div>
-      <div className="vch-banner">{M('title', title)}</div>
-      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
-      <div className="vch-acct2">
-        <div><span className="lbl">Account No. :</span>{M('acno', <span className="val">&nbsp;&nbsp;{[branch, gl].filter(Boolean).join(' ')}</span>)}</div>
+      {M('titlebox', <div className="vch-banner">{M('title', title)}</div>, true)}
+      {M('daterow', <div className="vch-daterow">{M('datelbl', 'DATE :')}&nbsp;&nbsp;{M('date', date)}</div>, true)}
+      {M('acctrow', <div className="vch-acct2">
+        <div>{M('aclbl', <span className="lbl">Account No. :</span>)}{M('acno', <span className="val">&nbsp;&nbsp;{[branch, gl].filter(Boolean).join(' ')}</span>)}</div>
         {M('amount', <div><span className="cur">{currency}</span><span className="val">&nbsp;&nbsp;{amount || '**********'}</span></div>, true)}
-      </div>
+      </div>, true)}
       {M('grid', (
         <table className="vch-grid"><tbody>
           <tr>
@@ -216,8 +216,8 @@ function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, 
           </>, true)}
         </div>
       </div>
-      <div className="vch-banner">{M('title', title)}</div>
-      <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
+      {M('titlebox', <div className="vch-banner">{M('title', title)}</div>, true)}
+      {M('daterow', <div className="vch-daterow">{M('datelbl', 'DATE :')}&nbsp;&nbsp;{M('date', date)}</div>, true)}
       <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start' }}>
         <div style={{ flex: '0 0 auto' }}>
           {M('branch', box('BRANCH NO.', branchNo || '    '), true)}
@@ -954,7 +954,7 @@ export default function VoucherPage() {
               {/* v131 — visible deploy marker, same purpose as the letter page's:
                   «is the fix live yet?» must never be a guess. */}
               <span style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr', fontSize: 12 }}
-                    title="نسخۀ کد — برای تأییدِ استقرار">build: v132</span>
+                    title="نسخۀ کد — برای تأییدِ استقرار">build: v133</span>
               <span className="text-xs text-gray-400">{d.design ? 'فیلد را بکش، گوشه = اندازه، دبل‌کلیک = تنظیمِ دقیق، بعد «ذخیرۀ چیدمان».' : 'برای جابه‌جایی/اندازۀ فیلدهای سند روی «چیدمان» بزن.'}</span>
               {/* v120 — sheet geometry (mm): the owner tunes the cut gap, the slip
                   height and the signature offset by hand; «ذخیرۀ چیدمان» persists
