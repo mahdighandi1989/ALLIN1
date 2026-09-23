@@ -20,6 +20,10 @@ export type DesignState = {
   setDesign: (b: boolean) => void
   setEditing: (s: string | null) => void
   setBox: (id: string, patch: Partial<Boxn>) => void
+  // v131 — apply MANY boxes in one state update. A group drag moves every
+  // field below the one being dragged, so per-field setBox calls would queue
+  // dozens of updates per pointermove and stutter.
+  setBoxes: (patch: Record<string, Partial<Boxn>>) => void
   save: () => void
   reset: () => void
   _ref: React.MutableRefObject<Record<string, Boxn>>
@@ -65,6 +69,11 @@ export function useFormDesign(storageKey: string, account?: string): DesignState
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, acct])
   const setBox = (id: string, patch: Partial<Boxn>) => setOwn((p) => ({ ...p, [id]: { ...p[id], ...patch } }))
+  const setBoxes = (patch: Record<string, Partial<Boxn>>) => setOwn((p) => {
+    const n = { ...p }
+    for (const k in patch) n[k] = { ...n[k], ...patch[k] }
+    return n
+  })
   // undefined / NaN clears the override so the form's built-in default returns
   const setNum = (id: string, v: number | undefined) => setOwnN((p) => {
     const n = { ...p }
@@ -85,7 +94,7 @@ export function useFormDesign(storageKey: string, account?: string): DesignState
       try { localStorage.removeItem(KEY); localStorage.removeItem(NKEY) } catch { /* ignore */ }
     }
   }
-  return { layout, design, editing, setDesign, setEditing, setBox, save, reset, _ref, acct, nums, setNum }
+  return { layout, design, editing, setDesign, setEditing, setBox, setBoxes, save, reset, _ref, acct, nums, setNum }
 }
 
 function hasTweak(b?: Boxn) { return !!b && !!(b.dx || b.dy || (b.scale && b.scale !== 1) || b.fontPt || b.ls) }
@@ -108,13 +117,39 @@ export function Movable({ d, id, children, block = false, label, style, classNam
     letterSpacing: b?.ls != null ? `${b.ls}px` : style?.letterSpacing,
     zIndex: d.editing === id ? 30 : undefined,
   }
+  // v131 — GROUP DRAG (owner: «اگر جایی از سند را کشیدم، بقیهٔ فیلدها خودکار با آن
+  // تنظیم شوند»). Movable positions with `transform`, which does NOT reflow, so
+  // dragging one field used to slide it straight over its neighbours. Now a
+  // VERTICAL drag carries every field that comes after it inside the same group
+  // (`.mv-group`, i.e. one slip) — the document opens up or closes like text,
+  // instead of overlapping. Horizontal movement stays local to the dragged field:
+  // nudging one value sideways must not shove the whole column.
+  // Hold ALT to move the single field on its own.
   const startDrag = (e: React.PointerEvent) => {
     if (!d.design) return
     if ((e.target as HTMLElement).closest('.mv-rs')) return
     e.preventDefault(); e.stopPropagation(); d.setEditing(id)
     const sxp = e.clientX, syp = e.clientY, o = d._ref.current[id] || {}
     const ox = o.dx || 0, oy = o.dy || 0
-    const mv = (ev: PointerEvent) => d.setBox(id, { dx: Math.round(ox + (ev.clientX - sxp)), dy: Math.round(oy + (ev.clientY - syp)) })
+
+    // Followers = every Movable AFTER this one in document order, within the
+    // nearest `.mv-group` (falls back to the whole page when a form marks none).
+    const self = e.currentTarget as HTMLElement
+    const scope = (self.closest('.mv-group') as HTMLElement | null) || document.body
+    const all = Array.from(scope.querySelectorAll<HTMLElement>('[data-mvid]'))
+    const at = all.indexOf(self)
+    const followers = e.altKey || at < 0 ? [] : all.slice(at + 1)
+      .map((n) => n.dataset.mvid || '').filter(Boolean)
+    const origin: Record<string, number> = {}
+    for (const fid of followers) origin[fid] = d._ref.current[fid]?.dy || 0
+
+    const mv = (ev: PointerEvent) => {
+      const ddx = Math.round(ev.clientX - sxp), ddy = Math.round(ev.clientY - syp)
+      if (!followers.length) { d.setBox(id, { dx: ox + ddx, dy: oy + ddy }); return }
+      const patch: Record<string, Partial<Boxn>> = { [id]: { dx: ox + ddx, dy: oy + ddy } }
+      for (const fid of followers) patch[fid] = { dy: origin[fid] + ddy }
+      d.setBoxes(patch)
+    }
     const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up) }
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
@@ -126,7 +161,7 @@ export function Movable({ d, id, children, block = false, label, style, classNam
     document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up)
   }
   return (
-    <span className={`mv-wrap${d.design ? ' mv-dz' : ''}${d.editing === id ? ' mv-sel' : ''} ${className || ''}`} style={sx}
+    <span data-mvid={id} className={`mv-wrap${d.design ? ' mv-dz' : ''}${d.editing === id ? ' mv-sel' : ''} ${className || ''}`} style={sx}
       onPointerDown={startDrag} onDoubleClick={(e) => { e.stopPropagation(); d.setEditing(id) }}>
       {children}
       {d.design && <>
@@ -173,19 +208,30 @@ export function DesignPanel({ d }: { d: DesignState }) {
         .mv-wrap.mv-sel{outline:2px solid #2563eb;background:rgba(37,99,235,.06)}
         .mv-tag{position:absolute;top:-13px;right:0;font-size:8px;line-height:1;color:#2563eb;background:#eff6ff;padding:1px 3px;border-radius:3px;white-space:nowrap;font-family:sans-serif;pointer-events:none;z-index:5}
         .mv-rs{position:absolute;left:-5px;bottom:-5px;width:12px;height:12px;background:#2563eb;border:2px solid #fff;border-radius:50%;cursor:nesw-resize;z-index:6}
-        .mv-pp{position:fixed;top:90px;right:14px;z-index:80;width:230px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:12px;font-family:sans-serif}
+        /* v131 — the two-column rows used to burst OUT of the panel (measured in a
+           real browser: each .r stayed ~240px inside a 206px box, so the second
+           column rendered off the left edge). A flex item's automatic minimum is
+           its content's min-content size, and an <input> carries a large intrinsic
+           width — a min-width of 0 on the input alone does not release the ROW, so
+           every level in the chain needs it. The panel also caps to the viewport
+           and scrolls, so it can never spill off-screen on a short window. */
+        .mv-pp{position:fixed;top:90px;right:14px;z-index:80;box-sizing:border-box;
+               width:min(268px,calc(100vw - 28px));max-height:calc(100vh - 110px);overflow:auto;
+               background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:12px;font-family:sans-serif}
         .mv-pp h4{font-size:13px;font-weight:700;margin:0 0 8px;color:#1e3a8a;display:flex;justify-content:space-between;align-items:center}
-        .mv-pp .r{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12px;color:#334155}
-        .mv-pp .r>label{width:70px;flex:none;color:#64748b}
-        .mv-pp input{flex:1;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:12px;min-width:0}
-        .mv-pp .x{border:0;background:#ef4444;color:#fff;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:14px}
-        .mv-pp .two{display:flex;gap:6px}.mv-pp .two .r{flex:1}
+        .mv-pp .r{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12px;color:#334155;min-width:0}
+        .mv-pp .r>label{flex:0 1 auto;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .mv-pp input{flex:1 1 0;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:12px;min-width:0}
+        .mv-pp .x{border:0;background:#ef4444;color:#fff;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:14px;flex:none}
+        .mv-pp .hint{font-size:10.5px;line-height:1.5;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 6px;margin:2px 0 7px}
+        .mv-pp .two{display:flex;gap:6px;min-width:0}.mv-pp .two .r{flex:1 1 0;min-width:0}
         .mv-pp .rm{width:100%;border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;padding:5px;cursor:pointer;font-size:12px;margin-top:2px;color:#334155}
         @media print { .mv-controls,.mv-pp,.mv-tag,.mv-rs{display:none!important} .mv-wrap{outline:0!important;background:transparent!important} }
       `}</style>
       {id && (
         <div className="mv-pp no-print" dir="rtl">
           <h4>تنظیمِ فیلد <button className="x" onClick={() => d.setEditing(null)}>×</button></h4>
+          <div className="hint">با ماوس بکش تا جابه‌جا شود؛ جابه‌جاییِ عمودی، همهٔ قسمت‌های پایین‌تر را هم با خودش می‌برد. برای جابه‌جاییِ فقط همین یکی، کلیدِ Alt را نگه دار. گوشهٔ آبی = تغییرِ اندازه.</div>
           <div className="two">
             <div className="r"><label>افقی X</label><input type="number" value={b.dx || 0} onChange={(e) => d.setBox(id, { dx: +e.target.value || 0 })} /></div>
             <div className="r"><label>عمودی Y</label><input type="number" value={b.dy || 0} onChange={(e) => d.setBox(id, { dy: +e.target.value || 0 })} /></div>

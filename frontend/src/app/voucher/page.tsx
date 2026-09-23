@@ -68,13 +68,15 @@ function MmInput({ label, hint, value, def, min, max, onChange }:
 function Voucher({ kind, title, date, acNo, amount, currency, ourRef, description, acName, extraLines, amountText, d, prefix }: VProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
-    <div className="vch" dir="ltr">
+    <div className="vch mv-group" dir="ltr">
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-logo">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
-          <div className="vch-iv">INTERNAL VOUCHER</div>
+          {M('logo', <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+            <div className="vch-iv">INTERNAL VOUCHER</div>
+          </>, true)}
         </div>
       </div>
 
@@ -82,7 +84,7 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
       <div className="vch-daterow">DATE :&nbsp;&nbsp;{M('date', date)}</div>
 
       <div className="vch-acrow">
-        <div><span className="vch-aclbl">A/c No. :</span>{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
+        <div>{M('aclbl', <span className="vch-aclbl">A/c No. :</span>)}{M('acno', <span className="vch-ac">{acNo}</span>)}</div>
         {M('amount', amountText !== undefined ? (
           // v101 — the cheque COUNT sits in a labelled box (not loose on the page)
           <div className="vch-amt vch-qty"><span className="vch-qty-lbl">AMOUNT / QUANTITY</span><span className="vch-qty-box">{amountText || '—'}</span></div>
@@ -92,7 +94,7 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
       </div>
 
       <div className="vch-ref">
-        <div className="vch-ref-lbl">OUR REF :</div>
+        <div className="vch-ref-lbl">{M('reflbl', 'OUR REF :')}</div>
         <div className="vch-ref-body">
           {M('refno', <div className="vch-ref-no">{ourRef}</div>, true)}
           {M('refdesc', <div className="vch-ref-desc">{description}</div>, true)}
@@ -105,8 +107,8 @@ function Voucher({ kind, title, date, acNo, amount, currency, ourRef, descriptio
 
       <div className="vch-spacer" />
       <div className="vch-foot">
-        <div>Prepared By.<span className="vch-sigline" /></div>
-        <div>Authorized Signatures<span className="vch-sigline" /></div>
+        {M('sigprep', <div>Prepared By.<span className="vch-sigline" /></div>, true)}
+        {M('sigauth', <div>Authorized Signatures<span className="vch-sigline" /></div>, true)}
       </div>
     </div>
   )
@@ -128,14 +130,16 @@ type RevProps = {
 function VoucherRev({ kind, stamp, title, date, branch, gl, currency, amount, refNo, borrower, borrowerAcct, chqNo, byWho, issuer, issuerAcct, d, prefix }: RevProps & { d: DesignState; prefix: string }) {
   const M = (id: string, node: React.ReactNode, block = false) => <Movable d={d} id={`${prefix}-${id}`} label={id} block={block}>{node}</Movable>
   return (
-    <div className="vch" dir="ltr">
+    <div className="vch mv-group" dir="ltr">
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-hstamp">{M('stamp', stamp)}</div>
         <div className="vch-logo">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
-          <div className="vch-iv">INTERNAL VOUCHER</div>
+          {M('logo', <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+            <div className="vch-iv">INTERNAL VOUCHER</div>
+          </>, true)}
         </div>
       </div>
       <div className="vch-banner">{M('title', title)}</div>
@@ -160,8 +164,8 @@ function VoucherRev({ kind, stamp, title, date, branch, gl, currency, amount, re
       ), true)}
       <div className="vch-spacer" />
       <div className="vch-foot">
-        <div>Prepared By.<span className="vch-sigline" /></div>
-        <div>Authorized Signatures<span className="vch-sigline" /></div>
+        {M('sigprep', <div>Prepared By.<span className="vch-sigline" /></div>, true)}
+        {M('sigauth', <div>Authorized Signatures<span className="vch-sigline" /></div>, true)}
       </div>
     </div>
   )
@@ -186,13 +190,15 @@ function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, 
     </div>
   )
   return (
-    <div className="vch" dir="ltr">
+    <div className="vch mv-group" dir="ltr">
       <div className="vch-head">
         <div className="vch-kind">{M('kind', kind)}</div>
         <div className="vch-logo">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={BANK_LOGO} alt="Bank Saderat Iran" />
-          <div className="vch-iv">INTERNAL VOUCHER</div>
+          {M('logo', <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={BANK_LOGO} alt="Bank Saderat Iran" />
+            <div className="vch-iv">INTERNAL VOUCHER</div>
+          </>, true)}
         </div>
       </div>
       <div className="vch-banner">{M('title', title)}</div>
@@ -220,8 +226,8 @@ function VoucherIRR({ kind, title, date, branchNo, acctNo, tranCode, narrative, 
       </div>
       <div className="vch-spacer" />
       <div className="vch-foot">
-        <div>INTIATED BY<span className="vch-sigline" /></div>
-        <div>APPROVED BY<span className="vch-sigline" /></div>
+        {M('sigprep', <div>INTIATED BY<span className="vch-sigline" /></div>, true)}
+        {M('sigauth', <div>APPROVED BY<span className="vch-sigline" /></div>, true)}
       </div>
     </div>
   )
@@ -669,8 +675,14 @@ export default function VoucherPage() {
         .vch-logo { text-align: right; line-height: 1; }
         .vch-logo img { height: 14mm; width: auto; display: inline-block; }
         .vch-iv { font-size: 11pt; font-weight: 800; margin-top: 1.5mm; letter-spacing: 0.5px; }
+        /* v131 — the banner is deliberately tinted, and it must SURVIVE PRINTING.
+           Browsers drop background colours on print unless the page asks for them;
+           print-color-adjust:exact is that request. On a black-and-white printer
+           #CCCCFF lands as a light grey band — still clearly a heading, never a
+           solid black bar — which is exactly what was asked. */
         .vch-banner { background: #CCCCFF; border: 1pt solid #000; margin-top: 4mm; text-align: center;
-                      font-size: 16pt; font-weight: 800; letter-spacing: 2px; padding: 1.5mm 0; }
+                      font-size: 16pt; font-weight: 800; letter-spacing: 2px; padding: 1.5mm 0;
+                      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .vch-daterow { text-align: right; font-size: 11pt; font-weight: 700; margin-top: 2mm; }
         .vch-acrow { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6mm; }
         .vch-aclbl { font-size: 13pt; font-weight: 800; margin-right: 4mm; }
@@ -708,6 +720,10 @@ export default function VoucherPage() {
         #voucher-print { width: 190mm; margin: 0 auto; background: #fff; transform-origin: top left; }
 
         @media print {
+          /* v131 — keep every deliberate colour/shade on paper (the tinted title
+             band above all). Without this the browser prints the banner white and
+             the heading loses the emphasis the form is designed around. */
+          #voucher-print, #voucher-print * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           /* Own the whole sheet: no @page margin (so nothing spills to a 2nd
              page and the browser adds no header/footer); the safe inner margins
              live on the voucher block itself. */
