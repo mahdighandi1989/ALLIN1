@@ -1,0 +1,2692 @@
+{
+ "pages": [
+  {
+   "route": "/audit",
+   "file": "frontend/src/app/audit/page.tsx",
+   "lines": 155,
+   "buttons": 4,
+   "onclick": 3,
+   "inputs": 5,
+   "forms": 1,
+   "links": 0,
+   "api_calls": 1
+  },
+  {
+   "route": "/auth/callback",
+   "file": "frontend/src/app/auth/callback/page.tsx",
+   "lines": 53,
+   "buttons": 0,
+   "onclick": 0,
+   "inputs": 0,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 0
+  },
+  {
+   "route": "/charge-tariff",
+   "file": "frontend/src/app/charge-tariff/page.tsx",
+   "lines": 215,
+   "buttons": 5,
+   "onclick": 5,
+   "inputs": 12,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 3
+  },
+  {
+   "route": "/cleanup",
+   "file": "frontend/src/app/cleanup/page.tsx",
+   "lines": 344,
+   "buttons": 3,
+   "onclick": 3,
+   "inputs": 3,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 6
+  },
+  {
+   "route": "/credit-file",
+   "file": "frontend/src/app/credit-file/page.tsx",
+   "lines": 122,
+   "buttons": 3,
+   "onclick": 3,
+   "inputs": 1,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/credit-file-corporate",
+   "file": "frontend/src/app/credit-file-corporate/page.tsx",
+   "lines": 666,
+   "buttons": 15,
+   "onclick": 15,
+   "inputs": 41,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 7
+  },
+  {
+   "route": "/credit-file-retail",
+   "file": "frontend/src/app/credit-file-retail/page.tsx",
+   "lines": 613,
+   "buttons": 13,
+   "onclick": 13,
+   "inputs": 40,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 4
+  },
+  {
+   "route": "/customer-detail",
+   "file": "frontend/src/app/customer-detail/page.tsx",
+   "lines": 1423,
+   "buttons": 42,
+   "onclick": 44,
+   "inputs": 32,
+   "forms": 1,
+   "links": 0,
+   "api_calls": 27
+  },
+  {
+   "route": "/customers",
+   "file": "frontend/src/app/customers/page.tsx",
+   "lines": 564,
+   "buttons": 12,
+   "onclick": 13,
+   "inputs": 12,
+   "forms": 2,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/daily-log",
+   "file": "frontend/src/app/daily-log/page.tsx",
+   "lines": 71,
+   "buttons": 1,
+   "onclick": 1,
+   "inputs": 2,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 1
+  },
+  {
+   "route": "/dashboard",
+   "file": "frontend/src/app/dashboard/page.tsx",
+   "lines": 427,
+   "buttons": 0,
+   "onclick": 9,
+   "inputs": 0,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/data-quality",
+   "file": "frontend/src/app/data-quality/page.tsx",
+   "lines": 201,
+   "buttons": 3,
+   "onclick": 3,
+   "inputs": 2,
+   "forms": 0,
+   "links": 1,
+   "api_calls": 1
+  },
+  {
+   "route": "/facilities",
+   "file": "frontend/src/app/facilities/page.tsx",
+   "lines": 579,
+   "buttons": 13,
+   "onclick": 13,
+   "inputs": 18,
+   "forms": 2,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/facility-detail",
+   "file": "frontend/src/app/facility-detail/page.tsx",
+   "lines": 250,
+   "buttons": 5,
+   "onclick": 5,
+   "inputs": 2,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/forms",
+   "file": "frontend/src/app/forms/page.tsx",
+   "lines": 154,
+   "buttons": 0,
+   "onclick": 0,
+   "inputs": 0,
+   "forms": 0,
+   "links": 2,
+   "api_calls": 0
+  },
+  {
+   "route": "/general",
+   "file": "frontend/src/app/general/page.tsx",
+   "lines": 168,
+   "buttons": 6,
+   "onclick": 7,
+   "inputs": 4,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 9
+  },
+  {
+   "route": "/import",
+   "file": "frontend/src/app/import/page.tsx",
+   "lines": 296,
+   "buttons": 3,
+   "onclick": 3,
+   "inputs": 3,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/knowledge",
+   "file": "frontend/src/app/knowledge/page.tsx",
+   "lines": 247,
+   "buttons": 1,
+   "onclick": 1,
+   "inputs": 1,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/letter",
+   "file": "frontend/src/app/letter/page.tsx",
+   "lines": 3667,
+   "buttons": 101,
+   "onclick": 85,
+   "inputs": 37,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 26
+  },
+  {
+   "route": "/login",
+   "file": "frontend/src/app/login/page.tsx",
+   "lines": 219,
+   "buttons": 2,
+   "onclick": 1,
+   "inputs": 2,
+   "forms": 1,
+   "links": 1,
+   "api_calls": 0
+  },
+  {
+   "route": "/offer-letter",
+   "file": "frontend/src/app/offer-letter/page.tsx",
+   "lines": 1890,
+   "buttons": 38,
+   "onclick": 28,
+   "inputs": 35,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 8
+  },
+  {
+   "route": "/",
+   "file": "frontend/src/app/page.tsx",
+   "lines": 40,
+   "buttons": 0,
+   "onclick": 0,
+   "inputs": 0,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 0
+  },
+  {
+   "route": "/personal",
+   "file": "frontend/src/app/personal/page.tsx",
+   "lines": 107,
+   "buttons": 3,
+   "onclick": 3,
+   "inputs": 3,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/profile",
+   "file": "frontend/src/app/profile/page.tsx",
+   "lines": 150,
+   "buttons": 2,
+   "onclick": 0,
+   "inputs": 5,
+   "forms": 2,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/properties",
+   "file": "frontend/src/app/properties/page.tsx",
+   "lines": 287,
+   "buttons": 8,
+   "onclick": 11,
+   "inputs": 6,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/reports",
+   "file": "frontend/src/app/reports/page.tsx",
+   "lines": 194,
+   "buttons": 5,
+   "onclick": 6,
+   "inputs": 0,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 3
+  },
+  {
+   "route": "/sanction",
+   "file": "frontend/src/app/sanction/page.tsx",
+   "lines": 450,
+   "buttons": 9,
+   "onclick": 9,
+   "inputs": 25,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/settings",
+   "file": "frontend/src/app/settings/page.tsx",
+   "lines": 449,
+   "buttons": 12,
+   "onclick": 10,
+   "inputs": 2,
+   "forms": 2,
+   "links": 0,
+   "api_calls": 13
+  },
+  {
+   "route": "/staff",
+   "file": "frontend/src/app/staff/page.tsx",
+   "lines": 177,
+   "buttons": 6,
+   "onclick": 8,
+   "inputs": 14,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/trash",
+   "file": "frontend/src/app/trash/page.tsx",
+   "lines": 116,
+   "buttons": 1,
+   "onclick": 1,
+   "inputs": 0,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 2
+  },
+  {
+   "route": "/users",
+   "file": "frontend/src/app/users/page.tsx",
+   "lines": 275,
+   "buttons": 7,
+   "onclick": 7,
+   "inputs": 7,
+   "forms": 2,
+   "links": 0,
+   "api_calls": 5
+  },
+  {
+   "route": "/voucher",
+   "file": "frontend/src/app/voucher/page.tsx",
+   "lines": 1033,
+   "buttons": 10,
+   "onclick": 10,
+   "inputs": 28,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 10
+  }
+ ],
+ "menu": [
+  {
+   "href": "/dashboard",
+   "label": "Dashboard"
+  },
+  {
+   "href": "/customers",
+   "label": "Customers"
+  },
+  {
+   "href": "/facilities",
+   "label": "Facilities"
+  },
+  {
+   "href": "/properties",
+   "label": "Mortgaged Properties"
+  },
+  {
+   "href": "/forms",
+   "label": "Forms"
+  },
+  {
+   "href": "/general",
+   "label": "General Checklists"
+  },
+  {
+   "href": "/personal",
+   "label": "Personal Notes"
+  },
+  {
+   "href": "/staff",
+   "label": "Staff Directory"
+  },
+  {
+   "href": "/daily-log",
+   "label": "Daily Log"
+  },
+  {
+   "href": "/knowledge",
+   "label": "Knowledge Base"
+  },
+  {
+   "href": "/reports",
+   "label": "Reports"
+  },
+  {
+   "href": "/charge-tariff",
+   "label": "Charge Tariff"
+  },
+  {
+   "href": "/data-quality",
+   "label": "Data Quality"
+  },
+  {
+   "href": "/import",
+   "label": "Import"
+  },
+  {
+   "href": "/users",
+   "label": "Users"
+  },
+  {
+   "href": "/audit",
+   "label": "Audit Log"
+  },
+  {
+   "href": "/cleanup",
+   "label": "Database Cleanup"
+  },
+  {
+   "href": "/settings",
+   "label": "Settings"
+  },
+  {
+   "href": "/trash",
+   "label": "Recycle Bin"
+  }
+ ],
+ "api_client": [
+  {
+   "group": "authApi",
+   "method": "config"
+  },
+  {
+   "group": "authApi",
+   "method": "login"
+  },
+  {
+   "group": "authApi",
+   "method": "updateProfile"
+  },
+  {
+   "group": "authApi",
+   "method": "changePassword"
+  },
+  {
+   "group": "authApi",
+   "method": "me"
+  },
+  {
+   "group": "authApi",
+   "method": "logout"
+  },
+  {
+   "group": "authApi",
+   "method": "refresh"
+  },
+  {
+   "group": "customersApi",
+   "method": "list"
+  },
+  {
+   "group": "customersApi",
+   "method": "detail"
+  },
+  {
+   "group": "customersApi",
+   "method": "get"
+  },
+  {
+   "group": "customersApi",
+   "method": "create"
+  },
+  {
+   "group": "customersApi",
+   "method": "update"
+  },
+  {
+   "group": "customersApi",
+   "method": "delete"
+  },
+  {
+   "group": "customersApi",
+   "method": "bulkDelete"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "list"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "get"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "detail"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "create"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "update"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "delete"
+  },
+  {
+   "group": "facilitiesApi",
+   "method": "bulkDelete"
+  },
+  {
+   "group": "propertiesApi",
+   "method": "list"
+  },
+  {
+   "group": "propertiesApi",
+   "method": "facets"
+  },
+  {
+   "group": "propertiesApi",
+   "method": "create"
+  },
+  {
+   "group": "propertiesApi",
+   "method": "update"
+  },
+  {
+   "group": "propertiesApi",
+   "method": "remove"
+  },
+  {
+   "group": "statsApi",
+   "method": "dashboard"
+  },
+  {
+   "group": "statsApi",
+   "method": "captureSnapshot"
+  },
+  {
+   "group": "statsApi",
+   "method": "expiringDocuments"
+  },
+  {
+   "group": "crmApi",
+   "method": "toggleChecklistStep"
+  },
+  {
+   "group": "crmApi",
+   "method": "toggleFacilityChecklist"
+  },
+  {
+   "group": "crmApi",
+   "method": "createTask"
+  },
+  {
+   "group": "crmApi",
+   "method": "updateTask"
+  },
+  {
+   "group": "crmApi",
+   "method": "listGuarantors"
+  },
+  {
+   "group": "crmApi",
+   "method": "releaseCheque"
+  },
+  {
+   "group": "crmApi",
+   "method": "addGuarantor"
+  },
+  {
+   "group": "crmApi",
+   "method": "addFacility"
+  },
+  {
+   "group": "crmApi",
+   "method": "updateProfile"
+  },
+  {
+   "group": "crmApi",
+   "method": "completeness"
+  },
+  {
+   "group": "crmApi",
+   "method": "dataQuality"
+  },
+  {
+   "group": "crmApi",
+   "method": "runMerge"
+  },
+  {
+   "group": "crmApi",
+   "method": "mergeStatus"
+  },
+  {
+   "group": "crmApi",
+   "method": "runExpiryScan"
+  },
+  {
+   "group": "crmApi",
+   "method": "driveStatus"
+  },
+  {
+   "group": "crmApi",
+   "method": "driveSyncNow"
+  },
+  {
+   "group": "crmApi",
+   "method": "driveDisconnect"
+  },
+  {
+   "group": "crmApi",
+   "method": "dailyLog"
+  },
+  {
+   "group": "crmApi",
+   "method": "addNote"
+  },
+  {
+   "group": "crmApi",
+   "method": "emailSummary"
+  },
+  {
+   "group": "crmApi",
+   "method": "offerLetterData"
+  },
+  {
+   "group": "crmApi",
+   "method": "facilityTypes"
+  },
+  {
+   "group": "crmApi",
+   "method": "addFacilityType"
+  },
+  {
+   "group": "crmApi",
+   "method": "saveOfferLetterData"
+  },
+  {
+   "group": "crmApi",
+   "method": "saveSanction"
+  },
+  {
+   "group": "crmApi",
+   "method": "listCreditReviews"
+  },
+  {
+   "group": "crmApi",
+   "method": "extractDraft"
+  },
+  {
+   "group": "crmApi",
+   "method": "addProperty"
+  },
+  {
+   "group": "crmApi",
+   "method": "updateProperty"
+  },
+  {
+   "group": "crmApi",
+   "method": "deleteProperty"
+  },
+  {
+   "group": "crmApi",
+   "method": "addPropertyEvent"
+  },
+  {
+   "group": "crmApi",
+   "method": "deletePropertyEvent"
+  },
+  {
+   "group": "crmApi",
+   "method": "addFixedDeposit"
+  },
+  {
+   "group": "crmApi",
+   "method": "updateFixedDeposit"
+  },
+  {
+   "group": "crmApi",
+   "method": "deleteFixedDeposit"
+  },
+  {
+   "group": "crmApi",
+   "method": "addPartner"
+  },
+  {
+   "group": "crmApi",
+   "method": "partnerNames"
+  },
+  {
+   "group": "crmApi",
+   "method": "updatePartner"
+  },
+  {
+   "group": "crmApi",
+   "method": "deletePartner"
+  },
+  {
+   "group": "crmApi",
+   "method": "uploadAttachment"
+  },
+  {
+   "group": "crmApi",
+   "method": "deleteAttachment"
+  },
+  {
+   "group": "crmApi",
+   "method": "attachmentBlob"
+  },
+  {
+   "group": "chargeTariffApi",
+   "method": "list"
+  },
+  {
+   "group": "chargeTariffApi",
+   "method": "save"
+  },
+  {
+   "group": "chargeTariffApi",
+   "method": "remove"
+  },
+  {
+   "group": "chargeTariffApi",
+   "method": "compute"
+  },
+  {
+   "group": "generalApi",
+   "method": "listProfiles"
+  },
+  {
+   "group": "generalApi",
+   "method": "createProfile"
+  },
+  {
+   "group": "generalApi",
+   "method": "deleteProfile"
+  },
+  {
+   "group": "generalApi",
+   "method": "listChecklists"
+  },
+  {
+   "group": "generalApi",
+   "method": "createChecklist"
+  },
+  {
+   "group": "generalApi",
+   "method": "deleteChecklist"
+  },
+  {
+   "group": "generalApi",
+   "method": "addItem"
+  },
+  {
+   "group": "generalApi",
+   "method": "updateItem"
+  },
+  {
+   "group": "generalApi",
+   "method": "deleteItem"
+  },
+  {
+   "group": "personalApi",
+   "method": "list"
+  },
+  {
+   "group": "personalApi",
+   "method": "add"
+  },
+  {
+   "group": "personalApi",
+   "method": "update"
+  },
+  {
+   "group": "personalApi",
+   "method": "remove"
+  },
+  {
+   "group": "personalApi",
+   "method": "sendEmail"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "list"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "get"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "create"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "update"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "generateSchedule"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "setStatus"
+  },
+  {
+   "group": "offerLettersApi",
+   "method": "delete"
+  },
+  {
+   "group": "usersApi",
+   "method": "list"
+  },
+  {
+   "group": "usersApi",
+   "method": "create"
+  },
+  {
+   "group": "usersApi",
+   "method": "update"
+  },
+  {
+   "group": "usersApi",
+   "method": "deactivate"
+  },
+  {
+   "group": "fxApi",
+   "method": "list"
+  },
+  {
+   "group": "fxApi",
+   "method": "update"
+  },
+  {
+   "group": "settingsApi",
+   "method": "get"
+  },
+  {
+   "group": "settingsApi",
+   "method": "update"
+  },
+  {
+   "group": "telegramApi",
+   "method": "status"
+  },
+  {
+   "group": "telegramApi",
+   "method": "updatePrefs"
+  },
+  {
+   "group": "telegramApi",
+   "method": "test"
+  },
+  {
+   "group": "telegramApi",
+   "method": "webhookInfo"
+  },
+  {
+   "group": "telegramApi",
+   "method": "setWebhook"
+  },
+  {
+   "group": "telegramApi",
+   "method": "deleteWebhook"
+  },
+  {
+   "group": "aiApi",
+   "method": "overview"
+  },
+  {
+   "group": "aiApi",
+   "method": "updateProvider"
+  },
+  {
+   "group": "aiApi",
+   "method": "createModel"
+  },
+  {
+   "group": "aiApi",
+   "method": "updateModel"
+  },
+  {
+   "group": "aiApi",
+   "method": "deleteModel"
+  },
+  {
+   "group": "aiApi",
+   "method": "testModel"
+  },
+  {
+   "group": "aiApi",
+   "method": "syncModels"
+  },
+  {
+   "group": "aiApi",
+   "method": "updateRoute"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "list"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "addEntry"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "deleteEntry"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "models"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "analyze"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "applyDb"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "attachmentText"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "extractAttachmentsJob"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "attachmentJob"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "extractAttachment"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "generateAttachment"
+  },
+  {
+   "group": "letterAiApi",
+   "method": "templateText"
+  },
+  {
+   "group": "vouchersApi",
+   "method": "exportExcel"
+  },
+  {
+   "group": "importsApi",
+   "method": "customers"
+  },
+  {
+   "group": "importsApi",
+   "method": "facilities"
+  },
+  {
+   "group": "importsApi",
+   "method": "aiModels"
+  },
+  {
+   "group": "importsApi",
+   "method": "analyzeDocument"
+  },
+  {
+   "group": "policyInboxApi",
+   "method": "ensure"
+  },
+  {
+   "group": "policyInboxApi",
+   "method": "scan"
+  },
+  {
+   "group": "policyInboxApi",
+   "method": "apply"
+  },
+  {
+   "group": "policyInboxApi",
+   "method": "importFile"
+  },
+  {
+   "group": "notificationsApi",
+   "method": "list"
+  },
+  {
+   "group": "notificationsApi",
+   "method": "unreadCount"
+  },
+  {
+   "group": "notificationsApi",
+   "method": "markRead"
+  },
+  {
+   "group": "notificationsApi",
+   "method": "markAllRead"
+  },
+  {
+   "group": "auditApi",
+   "method": "list"
+  },
+  {
+   "group": "auditApi",
+   "method": "listForCustomer"
+  },
+  {
+   "group": "auditApi",
+   "method": "logActivity"
+  },
+  {
+   "group": "staffApi",
+   "method": "list"
+  },
+  {
+   "group": "staffApi",
+   "method": "departments"
+  },
+  {
+   "group": "staffApi",
+   "method": "create"
+  },
+  {
+   "group": "staffApi",
+   "method": "update"
+  },
+  {
+   "group": "staffApi",
+   "method": "remove"
+  },
+  {
+   "group": "departmentsApi",
+   "method": "list"
+  },
+  {
+   "group": "departmentsApi",
+   "method": "resolve"
+  },
+  {
+   "group": "departmentsApi",
+   "method": "update"
+  },
+  {
+   "group": "departmentsApi",
+   "method": "remove"
+  },
+  {
+   "group": "lettersApi",
+   "method": "attachments"
+  },
+  {
+   "group": "lettersApi",
+   "method": "list"
+  },
+  {
+   "group": "lettersApi",
+   "method": "get"
+  },
+  {
+   "group": "lettersApi",
+   "method": "save"
+  },
+  {
+   "group": "lettersApi",
+   "method": "remove"
+  },
+  {
+   "group": "trashApi",
+   "method": "list"
+  },
+  {
+   "group": "trashApi",
+   "method": "restore"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "scan"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "apply"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "history"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "getConfig"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "updateConfig"
+  },
+  {
+   "group": "cleanupApi",
+   "method": "aiReview"
+  },
+  {
+   "group": "reportsApi",
+   "method": "portfolio"
+  },
+  {
+   "group": "reportsApi",
+   "method": "topExposures"
+  }
+ ],
+ "routes": [
+  {
+   "path": "/openapi.json",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "name": "openapi"
+  },
+  {
+   "path": "/docs",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "name": "swagger_ui_html"
+  },
+  {
+   "path": "/docs/oauth2-redirect",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "name": "swagger_ui_redirect"
+  },
+  {
+   "path": "/redoc",
+   "methods": [
+    "GET",
+    "HEAD"
+   ],
+   "name": "redoc_html"
+  },
+  {
+   "path": "/metrics",
+   "methods": [
+    "GET"
+   ],
+   "name": "metrics"
+  },
+  {
+   "path": "/api/simulate-unhandled-error",
+   "methods": [
+    "GET"
+   ],
+   "name": "simulate_unhandled_error"
+  },
+  {
+   "path": "/api/auth/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "auth_config"
+  },
+  {
+   "path": "/api/auth/login",
+   "methods": [
+    "POST"
+   ],
+   "name": "login"
+  },
+  {
+   "path": "/api/auth/me",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_me"
+  },
+  {
+   "path": "/api/auth/me",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_me"
+  },
+  {
+   "path": "/api/auth/change-password",
+   "methods": [
+    "POST"
+   ],
+   "name": "change_password"
+  },
+  {
+   "path": "/api/auth/logout",
+   "methods": [
+    "POST"
+   ],
+   "name": "logout"
+  },
+  {
+   "path": "/api/auth/refresh",
+   "methods": [
+    "POST"
+   ],
+   "name": "refresh_token"
+  },
+  {
+   "path": "/api/auth/verify",
+   "methods": [
+    "POST"
+   ],
+   "name": "verify_token_endpoint"
+  },
+  {
+   "path": "/api/auth/google/login",
+   "methods": [
+    "GET"
+   ],
+   "name": "google_login"
+  },
+  {
+   "path": "/api/auth/google/callback",
+   "methods": [
+    "GET"
+   ],
+   "name": "google_callback"
+  },
+  {
+   "path": "/api/auth/google/drive/connect",
+   "methods": [
+    "GET"
+   ],
+   "name": "drive_connect"
+  },
+  {
+   "path": "/api/auth/google/drive/disconnect",
+   "methods": [
+    "POST"
+   ],
+   "name": "drive_disconnect"
+  },
+  {
+   "path": "/api/crm/checklist/{account_no}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "toggle_checklist_step"
+  },
+  {
+   "path": "/api/crm/tasks/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_task"
+  },
+  {
+   "path": "/api/crm/tasks/{task_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_task"
+  },
+  {
+   "path": "/api/crm/guarantors/{account_no}/release",
+   "methods": [
+    "POST"
+   ],
+   "name": "release_security_cheque"
+  },
+  {
+   "path": "/api/crm/guarantors/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_guarantors"
+  },
+  {
+   "path": "/api/crm/guarantors/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_guarantor"
+  },
+  {
+   "path": "/api/crm/facilities/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_facility"
+  },
+  {
+   "path": "/api/crm/facility-checklist/{facility_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "toggle_facility_checklist"
+  },
+  {
+   "path": "/api/crm/profile/{account_no}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_profile"
+  },
+  {
+   "path": "/api/crm/completeness/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_completeness"
+  },
+  {
+   "path": "/api/crm/data-quality",
+   "methods": [
+    "GET"
+   ],
+   "name": "data_quality"
+  },
+  {
+   "path": "/api/crm/run-merge",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "name": "run_merge"
+  },
+  {
+   "path": "/api/crm/run-expiry-scan",
+   "methods": [
+    "GET",
+    "POST"
+   ],
+   "name": "run_expiry_scan_endpoint"
+  },
+  {
+   "path": "/api/crm/merge-status",
+   "methods": [
+    "GET"
+   ],
+   "name": "merge_status"
+  },
+  {
+   "path": "/api/crm/email-summary/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "email_summary"
+  },
+  {
+   "path": "/api/crm/facility-types",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_facility_types"
+  },
+  {
+   "path": "/api/crm/facility-types",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_facility_type"
+  },
+  {
+   "path": "/api/crm/offer-letter-data/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "offer_letter_data"
+  },
+  {
+   "path": "/api/crm/offer-letter-data/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_offer_letter_data"
+  },
+  {
+   "path": "/api/crm/sanction/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "save_sanction"
+  },
+  {
+   "path": "/api/crm/credit-reviews/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_credit_reviews"
+  },
+  {
+   "path": "/api/crm/extract-draft",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_draft"
+  },
+  {
+   "path": "/api/crm/notes/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_note"
+  },
+  {
+   "path": "/api/crm/properties/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_property"
+  },
+  {
+   "path": "/api/crm/properties/{item_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_property"
+  },
+  {
+   "path": "/api/crm/properties/{item_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_property"
+  },
+  {
+   "path": "/api/crm/properties/{property_id}/events",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_property_event"
+  },
+  {
+   "path": "/api/crm/property-events/{event_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_property_event"
+  },
+  {
+   "path": "/api/crm/fixed-deposits/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_fixed_deposit"
+  },
+  {
+   "path": "/api/crm/fixed-deposits/{item_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_fixed_deposit"
+  },
+  {
+   "path": "/api/crm/fixed-deposits/{item_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_fixed_deposit"
+  },
+  {
+   "path": "/api/crm/partners/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_partner"
+  },
+  {
+   "path": "/api/crm/partners/{item_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_partner"
+  },
+  {
+   "path": "/api/crm/partners/{item_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_partner"
+  },
+  {
+   "path": "/api/crm/partner-names",
+   "methods": [
+    "GET"
+   ],
+   "name": "partner_names"
+  },
+  {
+   "path": "/api/crm/attachments/{account_no}",
+   "methods": [
+    "POST"
+   ],
+   "name": "upload_attachment"
+  },
+  {
+   "path": "/api/crm/attachments/{attachment_id}/download",
+   "methods": [
+    "GET"
+   ],
+   "name": "download_attachment"
+  },
+  {
+   "path": "/api/crm/attachments/{attachment_id}/view",
+   "methods": [
+    "GET"
+   ],
+   "name": "view_attachment"
+  },
+  {
+   "path": "/api/crm/attachments/{attachment_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_attachment"
+  },
+  {
+   "path": "/api/crm/summary/{account_no}/export.pdf",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_summary_pdf"
+  },
+  {
+   "path": "/api/crm/daily-log",
+   "methods": [
+    "POST"
+   ],
+   "name": "daily_log"
+  },
+  {
+   "path": "/api/crm/backup/export.json",
+   "methods": [
+    "GET"
+   ],
+   "name": "backup_export"
+  },
+  {
+   "path": "/api/crm/backup/drive/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "drive_sync_status"
+  },
+  {
+   "path": "/api/crm/backup/drive/sync",
+   "methods": [
+    "POST"
+   ],
+   "name": "drive_sync_now"
+  },
+  {
+   "path": "/api/general/profiles",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_profiles"
+  },
+  {
+   "path": "/api/general/profiles",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_profile"
+  },
+  {
+   "path": "/api/general/profiles/{profile_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_profile"
+  },
+  {
+   "path": "/api/general/profiles/{profile_id}/checklists",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_checklists"
+  },
+  {
+   "path": "/api/general/profiles/{profile_id}/checklists",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_checklist"
+  },
+  {
+   "path": "/api/general/checklists/{checklist_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_checklist"
+  },
+  {
+   "path": "/api/general/checklists/{checklist_id}/items",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_item"
+  },
+  {
+   "path": "/api/general/items/{item_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_item"
+  },
+  {
+   "path": "/api/general/items/{item_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_item"
+  },
+  {
+   "path": "/api/personal/notes",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_notes"
+  },
+  {
+   "path": "/api/personal/notes",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_note"
+  },
+  {
+   "path": "/api/personal/notes/{note_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_note"
+  },
+  {
+   "path": "/api/personal/notes/{note_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_note"
+  },
+  {
+   "path": "/api/personal/notes/send-email",
+   "methods": [
+    "POST"
+   ],
+   "name": "send_notes_email"
+  },
+  {
+   "path": "/api/staff/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_staff"
+  },
+  {
+   "path": "/api/staff/departments",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_departments"
+  },
+  {
+   "path": "/api/staff/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_staff"
+  },
+  {
+   "path": "/api/staff/{staff_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_staff"
+  },
+  {
+   "path": "/api/staff/{staff_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_staff"
+  },
+  {
+   "path": "/api/departments/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_departments"
+  },
+  {
+   "path": "/api/departments/resolve",
+   "methods": [
+    "POST"
+   ],
+   "name": "resolve_department"
+  },
+  {
+   "path": "/api/departments/{dept_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_department"
+  },
+  {
+   "path": "/api/departments/{dept_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_department"
+  },
+  {
+   "path": "/api/letters/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_letters"
+  },
+  {
+   "path": "/api/letters/{letter_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_letter"
+  },
+  {
+   "path": "/api/letters/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_letter"
+  },
+  {
+   "path": "/api/letters/{letter_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_letter"
+  },
+  {
+   "path": "/api/letters/{letter_id}/attachments",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_letter_attachments"
+  },
+  {
+   "path": "/api/letters/{letter_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_letter"
+  },
+  {
+   "path": "/api/letter-ai/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_models"
+  },
+  {
+   "path": "/api/letter-ai/analyze",
+   "methods": [
+    "POST"
+   ],
+   "name": "analyze"
+  },
+  {
+   "path": "/api/letter-ai/apply-db",
+   "methods": [
+    "POST"
+   ],
+   "name": "apply_db"
+  },
+  {
+   "path": "/api/letter-ai/extract-attachment/{attachment_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_attachment_endpoint"
+  },
+  {
+   "path": "/api/letter-ai/extract-attachments-job",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_attachments_job"
+  },
+  {
+   "path": "/api/letter-ai/attachment-job/{job_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "attachment_job_status"
+  },
+  {
+   "path": "/api/letter-ai/attachment-text/{attachment_id}",
+   "methods": [
+    "POST"
+   ],
+   "name": "attachment_text_endpoint"
+  },
+  {
+   "path": "/api/letter-ai/template-text",
+   "methods": [
+    "POST"
+   ],
+   "name": "template_text_endpoint"
+  },
+  {
+   "path": "/api/letter-ai/generate-attachment",
+   "methods": [
+    "POST"
+   ],
+   "name": "generate_attachment"
+  },
+  {
+   "path": "/api/customers/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_customers"
+  },
+  {
+   "path": "/api/customers/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_customers_csv"
+  },
+  {
+   "path": "/api/customers/export.xlsx",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_customers_xlsx"
+  },
+  {
+   "path": "/api/customers/bulk/delete",
+   "methods": [
+    "POST"
+   ],
+   "name": "bulk_delete_customers"
+  },
+  {
+   "path": "/api/customers/stats/summary",
+   "methods": [
+    "GET"
+   ],
+   "name": "customers_summary"
+  },
+  {
+   "path": "/api/customers/{customer_id}/facilities",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_customer_facilities"
+  },
+  {
+   "path": "/api/customers/{customer_id}/detail",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_customer_detail"
+  },
+  {
+   "path": "/api/customers/{customer_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_customer"
+  },
+  {
+   "path": "/api/customers/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_customer"
+  },
+  {
+   "path": "/api/customers/{customer_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_customer"
+  },
+  {
+   "path": "/api/customers/{customer_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_customer"
+  },
+  {
+   "path": "/api/customers/{customer_id}/restore",
+   "methods": [
+    "POST"
+   ],
+   "name": "restore_customer"
+  },
+  {
+   "path": "/api/facilities/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_facilities"
+  },
+  {
+   "path": "/api/facilities/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_facilities_csv"
+  },
+  {
+   "path": "/api/facilities/export.xlsx",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_facilities_xlsx"
+  },
+  {
+   "path": "/api/facilities/bulk/delete",
+   "methods": [
+    "POST"
+   ],
+   "name": "bulk_delete_facilities"
+  },
+  {
+   "path": "/api/facilities/search/advanced",
+   "methods": [
+    "GET"
+   ],
+   "name": "advanced_search_facilities"
+  },
+  {
+   "path": "/api/facilities/{facility_id}/detail",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_facility_detail"
+  },
+  {
+   "path": "/api/facilities/{facility_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_facility"
+  },
+  {
+   "path": "/api/facilities/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_facility"
+  },
+  {
+   "path": "/api/facilities/{facility_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_facility"
+  },
+  {
+   "path": "/api/facilities/{facility_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_facility"
+  },
+  {
+   "path": "/api/facilities/{facility_id}/restore",
+   "methods": [
+    "POST"
+   ],
+   "name": "restore_facility"
+  },
+  {
+   "path": "/api/facilities/{facility_id}/status",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_facility_status"
+  },
+  {
+   "path": "/api/properties/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_properties"
+  },
+  {
+   "path": "/api/properties/facets",
+   "methods": [
+    "GET"
+   ],
+   "name": "property_facets"
+  },
+  {
+   "path": "/api/properties/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_properties_csv"
+  },
+  {
+   "path": "/api/properties/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_property"
+  },
+  {
+   "path": "/api/properties/{item_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_property"
+  },
+  {
+   "path": "/api/properties/{item_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_property"
+  },
+  {
+   "path": "/api/stats/dashboard",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_dashboard_stats"
+  },
+  {
+   "path": "/api/stats/snapshot",
+   "methods": [
+    "POST"
+   ],
+   "name": "capture_snapshot_now"
+  },
+  {
+   "path": "/api/stats/expiring-documents",
+   "methods": [
+    "GET"
+   ],
+   "name": "expiring_documents"
+  },
+  {
+   "path": "/api/offer-letters/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_offers"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_offer"
+  },
+  {
+   "path": "/api/offer-letters/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_offer"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_offer"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}/generate-schedule",
+   "methods": [
+    "POST"
+   ],
+   "name": "generate_offer_schedule"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}/status",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_offer_status"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_offer"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}/restore",
+   "methods": [
+    "POST"
+   ],
+   "name": "restore_offer"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_offer_csv"
+  },
+  {
+   "path": "/api/offer-letters/{offer_id}/export.pdf",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_offer_pdf"
+  },
+  {
+   "path": "/api/reports/portfolio",
+   "methods": [
+    "GET"
+   ],
+   "name": "portfolio_report"
+  },
+  {
+   "path": "/api/reports/top-exposures",
+   "methods": [
+    "GET"
+   ],
+   "name": "top_exposures"
+  },
+  {
+   "path": "/api/reports/portfolio/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_portfolio_csv"
+  },
+  {
+   "path": "/api/reports/portfolio/export.pdf",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_portfolio_pdf"
+  },
+  {
+   "path": "/api/reports/portfolio/export.xlsx",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_portfolio_xlsx"
+  },
+  {
+   "path": "/api/users/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_users"
+  },
+  {
+   "path": "/api/users/{user_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_user"
+  },
+  {
+   "path": "/api/users/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_user"
+  },
+  {
+   "path": "/api/users/{user_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_user"
+  },
+  {
+   "path": "/api/users/{user_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_user"
+  },
+  {
+   "path": "/api/trash/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_trash"
+  },
+  {
+   "path": "/api/trash/{entity}/{item_id}/restore",
+   "methods": [
+    "POST"
+   ],
+   "name": "restore_item"
+  },
+  {
+   "path": "/api/audit/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_audit"
+  },
+  {
+   "path": "/api/audit/customer/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_customer_audit"
+  },
+  {
+   "path": "/api/audit/customer/{account_no}/export.csv",
+   "methods": [
+    "GET"
+   ],
+   "name": "export_customer_audit"
+  },
+  {
+   "path": "/api/audit/activity",
+   "methods": [
+    "POST"
+   ],
+   "name": "log_activity"
+  },
+  {
+   "path": "/api/notifications/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_notifications"
+  },
+  {
+   "path": "/api/notifications/unread-count",
+   "methods": [
+    "GET"
+   ],
+   "name": "unread_count"
+  },
+  {
+   "path": "/api/notifications/{notification_id}/read",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_read"
+  },
+  {
+   "path": "/api/notifications/read-all",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_all_read"
+  },
+  {
+   "path": "/api/imports/customers/template",
+   "methods": [
+    "GET"
+   ],
+   "name": "customers_template"
+  },
+  {
+   "path": "/api/imports/facilities/template",
+   "methods": [
+    "GET"
+   ],
+   "name": "facilities_template"
+  },
+  {
+   "path": "/api/imports/customers",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_customers"
+  },
+  {
+   "path": "/api/imports/facilities",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_facilities"
+  },
+  {
+   "path": "/api/imports/ai-models",
+   "methods": [
+    "GET"
+   ],
+   "name": "ai_import_models"
+  },
+  {
+   "path": "/api/imports/analyze",
+   "methods": [
+    "POST"
+   ],
+   "name": "analyze_document"
+  },
+  {
+   "path": "/api/imports/jobs/{job_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "import_job_status"
+  },
+  {
+   "path": "/api/policy-inbox/ensure",
+   "methods": [
+    "POST"
+   ],
+   "name": "ensure_inbox"
+  },
+  {
+   "path": "/api/policy-inbox/scan",
+   "methods": [
+    "POST"
+   ],
+   "name": "scan_inbox"
+  },
+  {
+   "path": "/api/policy-inbox/apply",
+   "methods": [
+    "POST"
+   ],
+   "name": "apply_renames"
+  },
+  {
+   "path": "/api/policy-inbox/import-file",
+   "methods": [
+    "POST"
+   ],
+   "name": "import_from_drive"
+  },
+  {
+   "path": "/api/settings/",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_settings"
+  },
+  {
+   "path": "/api/settings/",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_settings"
+  },
+  {
+   "path": "/api/fx/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_rates"
+  },
+  {
+   "path": "/api/fx/",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_rates"
+  },
+  {
+   "path": "/api/fx/convert",
+   "methods": [
+    "GET"
+   ],
+   "name": "convert"
+  },
+  {
+   "path": "/api/ai/overview",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_overview"
+  },
+  {
+   "path": "/api/ai/providers/{key}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_provider"
+  },
+  {
+   "path": "/api/ai/models",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_model"
+  },
+  {
+   "path": "/api/ai/models/{model_id}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_model"
+  },
+  {
+   "path": "/api/ai/providers/{key}/sync-models",
+   "methods": [
+    "POST"
+   ],
+   "name": "sync_provider_models_endpoint"
+  },
+  {
+   "path": "/api/ai/models/{model_id}/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_model_connection"
+  },
+  {
+   "path": "/api/ai/models/{model_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_model"
+  },
+  {
+   "path": "/api/ai/routes/{task}",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_route"
+  },
+  {
+   "path": "/api/telegram/webhook",
+   "methods": [
+    "POST"
+   ],
+   "name": "telegram_webhook"
+  },
+  {
+   "path": "/api/telegram/status",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_status"
+  },
+  {
+   "path": "/api/telegram/prefs",
+   "methods": [
+    "PUT"
+   ],
+   "name": "update_prefs"
+  },
+  {
+   "path": "/api/telegram/test",
+   "methods": [
+    "POST"
+   ],
+   "name": "test_send"
+  },
+  {
+   "path": "/api/telegram/webhook-info",
+   "methods": [
+    "GET"
+   ],
+   "name": "webhook_info"
+  },
+  {
+   "path": "/api/telegram/set-webhook",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_webhook"
+  },
+  {
+   "path": "/api/telegram/delete-webhook",
+   "methods": [
+    "POST"
+   ],
+   "name": "delete_webhook"
+  },
+  {
+   "path": "/api/charge-tariff/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_rules"
+  },
+  {
+   "path": "/api/charge-tariff",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_rules"
+  },
+  {
+   "path": "/api/charge-tariff/",
+   "methods": [
+    "POST"
+   ],
+   "name": "upsert_rule"
+  },
+  {
+   "path": "/api/charge-tariff",
+   "methods": [
+    "POST"
+   ],
+   "name": "upsert_rule"
+  },
+  {
+   "path": "/api/charge-tariff/{rule_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_rule"
+  },
+  {
+   "path": "/api/charge-tariff/compute",
+   "methods": [
+    "POST"
+   ],
+   "name": "compute"
+  },
+  {
+   "path": "/api/knowledge/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_kb"
+  },
+  {
+   "path": "/api/knowledge/entries",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_entry"
+  },
+  {
+   "path": "/api/knowledge/entries/{entry_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_entry"
+  },
+  {
+   "path": "/api/knowledge/topics/{topic_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_topic"
+  },
+  {
+   "path": "/api/cleanup/scan",
+   "methods": [
+    "POST"
+   ],
+   "name": "scan"
+  },
+  {
+   "path": "/api/cleanup/apply",
+   "methods": [
+    "POST"
+   ],
+   "name": "apply"
+  },
+  {
+   "path": "/api/cleanup/history",
+   "methods": [
+    "GET"
+   ],
+   "name": "history"
+  },
+  {
+   "path": "/api/cleanup/config",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_config"
+  },
+  {
+   "path": "/api/cleanup/config",
+   "methods": [
+    "PUT"
+   ],
+   "name": "put_config"
+  },
+  {
+   "path": "/api/cleanup/ai-review",
+   "methods": [
+    "POST"
+   ],
+   "name": "ai_review"
+  },
+  {
+   "path": "/api/vouchers/export-excel",
+   "methods": [
+    "POST"
+   ],
+   "name": "export_voucher_excel"
+  },
+  {
+   "path": "/health",
+   "methods": [
+    "GET"
+   ],
+   "name": "health_check"
+  },
+  {
+   "path": "",
+   "methods": [],
+   "name": "static_frontend"
+  }
+ ],
+ "services": [
+  "amortization",
+  "attachments",
+  "audit",
+  "backup",
+  "charge_calc",
+  "checklist",
+  "collateral",
+  "completeness",
+  "customer_link",
+  "data_merge",
+  "data_pipeline",
+  "data_scan",
+  "db_cleanup",
+  "doc_ingest",
+  "draft_extract",
+  "drive_settings",
+  "drive_sync",
+  "email",
+  "excel_import",
+  "expiry",
+  "exporters",
+  "facility_authorization",
+  "fx",
+  "google_drive",
+  "google_oauth",
+  "kb_store",
+  "letter_assistant",
+  "letter_attachment_extract",
+  "letter_attachment_generate",
+  "letter_db_extract",
+  "log_search",
+  "mojibake",
+  "notifications",
+  "notify_inapp",
+  "policy_inbox",
+  "relationships",
+  "snapshots",
+  "staff_seed",
+  "telegram"
+ ],
+ "models": [
+  "ai_config",
+  "audit_log",
+  "charge_tariff",
+  "cleanup_run",
+  "credit_review",
+  "crm",
+  "customer",
+  "customer_link_rel",
+  "department",
+  "enum_utils",
+  "exchange_rate",
+  "exposure_snapshot",
+  "facility",
+  "general",
+  "guarantor",
+  "import_job",
+  "kb",
+  "letter",
+  "notification",
+  "offer_letter",
+  "personal",
+  "profile_entities",
+  "security",
+  "staff",
+  "system_setting",
+  "user"
+ ],
+ "totals": {
+  "pages": 32,
+  "menu_items": 19,
+  "buttons": 333,
+  "inputs": 342,
+  "routes": 213,
+  "api_methods": 170,
+  "services": 39,
+  "models": 26
+ }
+}

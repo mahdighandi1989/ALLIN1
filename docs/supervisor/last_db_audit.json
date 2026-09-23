@@ -1,0 +1,17 @@
+{
+ "database": "sqlite+aiosqlite:///./_supervisor_audit.db",
+ "is_local_placeholder": true,
+ "counts": {
+  "customers": 0,
+  "profiles": 0,
+  "facilities": 0,
+  "guarantors": 0,
+  "properties": 0,
+  "fixed_deposits": 0,
+  "partners": 0
+ },
+ "findings": [],
+ "total_findings": 0,
+ "by_kind": {},
+ "by_severity": {}
+}

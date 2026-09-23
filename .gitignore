@@ -58,3 +58,7 @@ htmlcov/
 
 # Uploaded documents (stored on disk / a persistent volume, never committed)
 backend/uploads/
+
+# supervisor run artefacts (regenerated every run; the reports that matter are committed)
+docs/supervisor/last_server.log
+scripts/supervisor/__pycache__/

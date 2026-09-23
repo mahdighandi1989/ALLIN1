@@ -1,0 +1,1 @@
+{"date": "2026-09-23", "status": "setup", "pages_checked": 31, "endpoints_checked": 60, "buttons_clicked": 130, "routes": 213, "pages": 32, "buttons": 333, "tests_passed": 863, "open_issues": 4, "data_quality_avg": null, "database": "local sqlite (production unreachable)", "pages_blank": 0, "endpoints_5xx": 0}

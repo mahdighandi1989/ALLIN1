@@ -1,0 +1,728 @@
+{
+ "base": "http://127.0.0.1:42579",
+ "server_started": true,
+ "endpoints": [
+  {
+   "path": "/api/simulate-unhandled-error",
+   "status": 500,
+   "bytes": 142
+  },
+  {
+   "path": "/api/auth/config",
+   "status": 200,
+   "bytes": 22
+  },
+  {
+   "path": "/api/auth/me",
+   "status": 200,
+   "bytes": 257
+  },
+  {
+   "path": "/api/auth/google/login",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/auth/google/callback",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/auth/google/drive/connect",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/crm/data-quality",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/crm/run-merge",
+   "status": 200,
+   "bytes": 184
+  },
+  {
+   "path": "/api/crm/run-expiry-scan",
+   "status": 200,
+   "bytes": 116
+  },
+  {
+   "path": "/api/crm/merge-status",
+   "status": 200,
+   "bytes": 192
+  },
+  {
+   "path": "/api/crm/facility-types",
+   "status": 200,
+   "bytes": 175
+  },
+  {
+   "path": "/api/crm/partner-names",
+   "status": 200,
+   "bytes": 2
+  },
+  {
+   "path": "/api/crm/backup/export.json",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/crm/backup/drive/status",
+   "status": 200,
+   "bytes": 146
+  },
+  {
+   "path": "/api/general/profiles",
+   "status": 200,
+   "bytes": 22
+  },
+  {
+   "path": "/api/personal/notes",
+   "status": 200,
+   "bytes": 22
+  },
+  {
+   "path": "/api/staff/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/staff/departments",
+   "status": 200,
+   "bytes": 558
+  },
+  {
+   "path": "/api/departments/",
+   "status": 200,
+   "bytes": 2
+  },
+  {
+   "path": "/api/letters/",
+   "status": 200,
+   "bytes": 2
+  },
+  {
+   "path": "/api/letter-ai/models",
+   "status": 200,
+   "bytes": 1139
+  },
+  {
+   "path": "/api/customers/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/customers/export.csv",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/customers/export.xlsx",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/customers/stats/summary",
+   "status": 200,
+   "bytes": 141
+  },
+  {
+   "path": "/api/facilities/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/facilities/export.csv",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/facilities/export.xlsx",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/facilities/search/advanced",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/properties/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/properties/facets",
+   "status": 200,
+   "bytes": 494
+  },
+  {
+   "path": "/api/properties/export.csv",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/stats/dashboard",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/stats/expiring-documents",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/offer-letters/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/reports/portfolio",
+   "status": 200,
+   "bytes": 1650
+  },
+  {
+   "path": "/api/reports/top-exposures",
+   "status": 200,
+   "bytes": 1509
+  },
+  {
+   "path": "/api/reports/portfolio/export.csv",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/reports/portfolio/export.pdf",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/reports/portfolio/export.xlsx",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/users/",
+   "status": 200,
+   "bytes": 303
+  },
+  {
+   "path": "/api/trash/",
+   "status": 200,
+   "bytes": 80
+  },
+  {
+   "path": "/api/audit/",
+   "status": 200,
+   "bytes": 46
+  },
+  {
+   "path": "/api/notifications/",
+   "status": 200,
+   "bytes": 619
+  },
+  {
+   "path": "/api/notifications/unread-count",
+   "status": 200,
+   "bytes": 12
+  },
+  {
+   "path": "/api/imports/customers/template",
+   "status": 200,
+   "bytes": 146
+  },
+  {
+   "path": "/api/imports/facilities/template",
+   "status": 200,
+   "bytes": 120
+  },
+  {
+   "path": "/api/imports/ai-models",
+   "status": 200,
+   "bytes": 35
+  },
+  {
+   "path": "/api/settings/",
+   "status": 200,
+   "bytes": 1168
+  },
+  {
+   "path": "/api/fx/",
+   "status": 200,
+   "bytes": 269
+  },
+  {
+   "path": "/api/fx/convert",
+   "status": 422,
+   "bytes": 279
+  },
+  {
+   "path": "/api/ai/overview",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/telegram/status",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/telegram/webhook-info",
+   "status": 200,
+   "bytes": 47
+  },
+  {
+   "path": "/api/charge-tariff/",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/charge-tariff",
+   "status": 200,
+   "bytes": 2000
+  },
+  {
+   "path": "/api/knowledge/",
+   "status": 200,
+   "bytes": 39
+  },
+  {
+   "path": "/api/cleanup/history",
+   "status": 200,
+   "bytes": 11
+  },
+  {
+   "path": "/api/cleanup/config",
+   "status": 200,
+   "bytes": 150
+  },
+  {
+   "path": "/health",
+   "status": 200,
+   "bytes": 20
+  }
+ ],
+ "pages": [
+  {
+   "route": "/audit",
+   "rendered": true,
+   "text_len": 564,
+   "buttons": 3,
+   "inputs": 5,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+   ],
+   "console_error_count": 1,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/auth/callback",
+   "rendered": true,
+   "text_len": 3305,
+   "buttons": 5,
+   "inputs": 0,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [
+    "GET http://127.0.0.1:42579/api/auth/me"
+   ],
+   "server_alive_after": true
+  },
+  {
+   "route": "/charge-tariff",
+   "rendered": true,
+   "text_len": 2168,
+   "buttons": 19,
+   "inputs": 0,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/cleanup",
+   "rendered": true,
+   "text_len": 1001,
+   "buttons": 5,
+   "inputs": 2,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/credit-file",
+   "rendered": true,
+   "text_len": 533,
+   "buttons": 3,
+   "inputs": 1,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/credit-file-corporate",
+   "rendered": true,
+   "text_len": 2834,
+   "buttons": 16,
+   "inputs": 99,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/credit-file-retail",
+   "rendered": true,
+   "text_len": 2405,
+   "buttons": 12,
+   "inputs": 67,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/customer-detail",
+   "rendered": true,
+   "text_len": 358,
+   "buttons": 3,
+   "inputs": 0,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/customers",
+   "rendered": true,
+   "text_len": 1827,
+   "buttons": 68,
+   "inputs": 25,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/daily-log",
+   "rendered": true,
+   "text_len": 543,
+   "buttons": 3,
+   "inputs": 2,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/dashboard",
+   "rendered": true,
+   "text_len": 3305,
+   "buttons": 5,
+   "inputs": 0,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/data-quality",
+   "rendered": true,
+   "text_len": 45255,
+   "buttons": 27,
+   "inputs": 2,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/facilities",
+   "rendered": true,
+   "text_len": 1569,
+   "buttons": 68,
+   "inputs": 28,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/facility-detail",
+   "rendered": true,
+   "text_len": 360,
+   "buttons": 3,
+   "inputs": 0,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/forms",
+   "rendered": true,
+   "text_len": 2064,
+   "buttons": 2,
+   "inputs": 0,
+   "clicked": 2,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/general",
+   "rendered": true,
+   "text_len": 451,
+   "buttons": 3,
+   "inputs": 1,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/import",
+   "rendered": true,
+   "text_len": 877,
+   "buttons": 3,
+   "inputs": 2,
+   "clicked": 3,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/knowledge",
+   "rendered": true,
+   "text_len": 30307,
+   "buttons": 2,
+   "inputs": 1,
+   "clicked": 2,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/letter",
+   "rendered": true,
+   "text_len": 824,
+   "buttons": 13,
+   "inputs": 12,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/login",
+   "rendered": true,
+   "text_len": 3305,
+   "buttons": 5,
+   "inputs": 0,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/offer-letter",
+   "rendered": true,
+   "text_len": 10053,
+   "buttons": 9,
+   "inputs": 25,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/personal",
+   "rendered": true,
+   "text_len": 508,
+   "buttons": 4,
+   "inputs": 2,
+   "clicked": 4,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/profile",
+   "rendered": true,
+   "text_len": 550,
+   "buttons": 4,
+   "inputs": 5,
+   "clicked": 4,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/properties",
+   "rendered": true,
+   "text_len": 33610,
+   "buttons": 904,
+   "inputs": 4,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/reports",
+   "rendered": true,
+   "text_len": 1597,
+   "buttons": 7,
+   "inputs": 0,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/sanction",
+   "rendered": true,
+   "text_len": 2522,
+   "buttons": 14,
+   "inputs": 61,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/settings",
+   "rendered": true,
+   "text_len": 2268,
+   "buttons": 13,
+   "inputs": 16,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/staff",
+   "rendered": true,
+   "text_len": 18583,
+   "buttons": 377,
+   "inputs": 3,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/trash",
+   "rendered": true,
+   "text_len": 394,
+   "buttons": 2,
+   "inputs": 0,
+   "clicked": 2,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/users",
+   "rendered": true,
+   "text_len": 428,
+   "buttons": 7,
+   "inputs": 1,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/voucher",
+   "rendered": true,
+   "text_len": 1363,
+   "buttons": 10,
+   "inputs": 9,
+   "clicked": 5,
+   "skipped_destructive": 0,
+   "console_errors": [],
+   "console_error_count": 0,
+   "request_failures": [],
+   "server_alive_after": true
+  }
+ ],
+ "summary": {
+  "endpoints_checked": 60,
+  "endpoints_5xx": 0,
+  "endpoints_5xx_expected": 1,
+  "endpoints_dead": 0,
+  "pages_checked": 31,
+  "pages_blank": 0,
+  "pages_with_console_errors": 1,
+  "pages_that_killed_the_server": 0,
+  "pages_after_which_server_was_slow": 0,
+  "buttons_clicked": 130,
+  "buttons_skipped_destructive": 0
+ }
+}
