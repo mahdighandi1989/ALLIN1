@@ -5,6 +5,12 @@
 set -u
 cd "$(dirname "$0")/../.."
 ROOT="$PWD"
+# v136 — mirror everything to a log FILE as it happens. Piping this script into
+# `tail` buffers the whole run and shows nothing until the end, which makes a
+# 20-minute sweep look like a hang.
+LOG="docs/supervisor/last_run.log"
+mkdir -p "$(dirname "$LOG")"
+exec > >(tee "$LOG") 2>&1
 echo "=== supervisor run: $(date -u +%FT%TZ) ==="
 
 step () { echo; echo "--- $1 ---"; shift; timeout "$@" ; echo "exit=$?"; }

@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:42579",
+ "base": "http://127.0.0.1:51269",
  "server_started": true,
  "endpoints": [
   {
@@ -330,7 +330,7 @@
    "console_errors": [],
    "console_error_count": 0,
    "request_failures": [
-    "GET http://127.0.0.1:42579/api/auth/me"
+    "GET http://127.0.0.1:51269/api/auth/me"
    ],
    "server_alive_after": true
   },

@@ -32,10 +32,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -321,6 +322,55 @@ async def status() -> dict:
     return base
 
 
+# --- v136: a snapshot schedule that survives restarts ------------------------
+# The marker lives in system_settings so it outlasts the process. Both helpers are
+# defensive: a bookkeeping failure must never stop a backup from happening, and
+# must never stop the loop.
+SNAPSHOT_MARKER_KEY = "drive_last_snapshot_at"
+
+
+async def _seconds_until_due(db: AsyncSession, interval: int) -> float:
+    """How long until the next snapshot is due. 0 (or less) means "now".
+
+    An absent or unreadable marker means OVERDUE on purpose: right after this
+    change first deploys there is no marker, and the honest assumption for a
+    backup is that one is owed, not that one may be skipped.
+    """
+    from sqlalchemy import select
+    from app.models.system_setting import SystemSetting
+
+    try:
+        row = (await db.execute(
+            select(SystemSetting).where(SystemSetting.key == SNAPSHOT_MARKER_KEY))).scalar_one_or_none()
+        if row is None or not (row.value or "").strip():
+            return 0.0
+        last = datetime.fromisoformat(str(row.value).replace("Z", "+00:00"))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+        return max(0.0, interval - elapsed)
+    except Exception as exc:  # noqa: BLE001 - unreadable marker => back up
+        logger.warning("Drive snapshot marker unreadable (%s) - treating as due", exc)
+        return 0.0
+
+
+async def _mark_snapshot_done(db: AsyncSession) -> None:
+    from sqlalchemy import select
+    from app.models.system_setting import SystemSetting
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        row = (await db.execute(
+            select(SystemSetting).where(SystemSetting.key == SNAPSHOT_MARKER_KEY))).scalar_one_or_none()
+        if row:
+            row.value = now
+        else:
+            db.add(SystemSetting(key=SNAPSHOT_MARKER_KEY, value=now))
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 - the backup itself already succeeded
+        logger.error("Could not record the snapshot marker: %s", exc)
+
+
 async def run_periodic_snapshot_sync() -> None:
     """Background loop: push a DB snapshot every DRIVE_SYNC_INTERVAL_HOURS.
 
@@ -329,23 +379,50 @@ async def run_periodic_snapshot_sync() -> None:
     loop. Cancellation (app shutdown) is propagated cleanly.
     """
     interval = max(1, settings.DRIVE_SYNC_INTERVAL_HOURS) * 3600
-    logger.info("Drive periodic snapshot sync started (every %sh)", settings.DRIVE_SYNC_INTERVAL_HOURS)
+    # v136 — the schedule must SURVIVE RESTARTS.
+    #
+    # This loop used to sleep a full interval and then snapshot, with the deadline
+    # living only in memory. Every deploy, OOM restart or idle recycle therefore
+    # reset the clock to zero — so on a day with several deploys the backup simply
+    # never fired. The automated supervisor found the evidence in Drive: daily
+    # snapshots with holes on exactly the deploy-heavy days, and then a three-day
+    # gap across the v126→v135 run of deploys. A backup you believe in but that
+    # silently is not happening is worse than no backup.
+    #
+    # Now the last successful snapshot time is PERSISTED, so after a restart the
+    # loop asks "how long since the last one?" instead of "how long since I
+    # booted?". The original reason for not snapshotting at boot is respected with
+    # a short settle delay — long enough to be clear of the startup memory window,
+    # far short of a whole interval.
+    settle = max(60, int(os.getenv("DRIVE_SYNC_SETTLE_SECONDS", "900")))
+    logger.info("Drive periodic snapshot sync started (every %sh, settle %ss)",
+                settings.DRIVE_SYNC_INTERVAL_HOURS, settle)
     from app.database import AsyncSessionLocal
 
+    try:
+        await asyncio.sleep(settle)
+    except asyncio.CancelledError:
+        logger.info("Drive periodic snapshot sync stopped")
+        raise
+
     while True:
-        # Sleep BEFORE the first snapshot: a full-DB backup must never run during
-        # the startup window. On a large DB (e.g. ~44k customers/profiles after the
-        # listing import) it would compound startup memory and OOM the 512MB
-        # instance moments after boot. The first snapshot fires one interval after
-        # startup, once the app is steady.
         try:
-            await asyncio.sleep(interval)
-        except asyncio.CancelledError:
-            logger.info("Drive periodic snapshot sync stopped")
-            raise
+            async with AsyncSessionLocal() as session:
+                due_in = await _seconds_until_due(session, interval)
+        except Exception as exc:  # never let bookkeeping kill the loop
+            logger.error("Drive snapshot schedule check failed: %s", exc)
+            due_in = interval
+        if due_in > 0:
+            try:
+                await asyncio.sleep(min(due_in, interval))
+            except asyncio.CancelledError:
+                logger.info("Drive periodic snapshot sync stopped")
+                raise
+            continue
         try:
             async with AsyncSessionLocal() as session:
                 await sync_database_snapshot(session, reason="scheduled")
+                await _mark_snapshot_done(session)
         except asyncio.CancelledError:
             logger.info("Drive periodic snapshot sync stopped")
             raise

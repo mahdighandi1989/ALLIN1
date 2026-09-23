@@ -61,4 +61,5 @@ backend/uploads/
 
 # supervisor run artefacts (regenerated every run; the reports that matter are committed)
 docs/supervisor/last_server.log
+docs/supervisor/last_run.log
 scripts/supervisor/__pycache__/
