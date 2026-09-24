@@ -633,6 +633,12 @@ export default function LetterPage() {
     if (!id) { setLetterAtts([]); return }
     try { setLetterAtts(await lettersApi.attachments(id)) } catch { setLetterAtts([]) }
   }
+  // v137 — the printed «پیوست : …» field follows the real enclosures instead of
+  // gating them: attaching a file (or generating one) flips it to «دارد», the
+  // same way an attachment TABLE already does. Never flips back automatically —
+  // removing the last attachment leaves the field to the user, because a letter
+  // may legitimately announce an enclosure sent outside the system.
+  const markHasAttachment = () => setF((s) => (s.attachment === 'دارد' ? s : { ...s, attachment: 'دارد' }))
   useEffect(() => { loadAtts(letterId) /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [letterId])
   // v122 — MULTI-file attach (owner: «باید پیوست‌ها رو دونه دونه وارد کنم»).
   // The picker is now `multiple` and the files upload SEQUENTIALLY: the backend
@@ -661,6 +667,7 @@ export default function LetterPage() {
         } catch (e) { failed.push(`${file.name}: ${parseApiError(e)}`) }
       }
       if (ok) {
+        markHasAttachment()
         toast.success(list.length === 1
           ? `پیوست «${list[0].name}» بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`
           : `${fa(ok)} پیوست از ${fa(list.length)} بارگذاری شد (Drive/آرشیو + پروفایل مشتری)`)
@@ -760,6 +767,7 @@ export default function LetterPage() {
         return
       }
       setGenWarnings([...readWarns, ...(r.warnings || []).filter((w: string) => !readWarns.includes(w))])
+      markHasAttachment()
       toast.success(`پیوست «${r.attachment?.original_name || ''}» ساخته و ثبت شد (${r.kind === 'word' ? 'ورد' : 'اکسل'})`)
       setGenInstruction(''); setGenTpl(null); setGenSrcs([])
       await loadAtts(letterId)
@@ -2017,7 +2025,7 @@ export default function LetterPage() {
         pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
         bodyLh: L.body.lh || 1.7,   // v111 — Word reproduces the page's exact line box
         renderFloatPng: renderFloatPngForWord,
-        buildTag: 'v134',   // kept in lock-step with the visible marker by the release sed
+        buildTag: 'v137',   // kept in lock-step with the visible marker by the release sed
       })
       saveBlob(blob, `${exportName()}.docx`)
       toast.success('فایلِ Word دانلود شد — متن، جدول‌ها و فیلدها همه قابلِ ویرایش‌اند', { id: tId })
@@ -3082,16 +3090,19 @@ export default function LetterPage() {
           <input ref={imgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
             onChange={(e) => { onImageFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
           <button onClick={openAi} className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} title="بازبینی و اصلاحِ هوشمندِ نامه با هوش مصنوعی — پیش از اعمال، فهرست را می‌بینی و تیک می‌زنی"><Sparkles size={15} /> دستیارِ هوشمند</button>
-          {hasAttachmentMode && (
-            <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
-              title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
-              📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
-            </button>
-          )}
+          {/* v137 — ALWAYS visible. It used to be hidden whenever the letter's
+              «پیوست» select read «ندارد», so opening a letter saved that way made
+              the button disappear with no clue why (owner: «پس این پیوست کجا رفت
+              بین دکمه ها بود»). The select now FOLLOWS the attachments instead of
+              gating them: it flips to «دارد» the moment a real enclosure lands. */}
+          <button onClick={() => setAttsOpen((v) => !v)} className="ltr-btn" style={{ background: '#0d9488' }}
+            title="بارگذاری پیوست‌های نامه — در Drive با نامِ قابل‌ردیابی ذخیره و ذیلِ پروفایلِ مشتری ثبت می‌شود">
+            📎 پیوست‌ها{(letterAtts.length + attTables.length) ? ` (${fa(letterAtts.length + attTables.length)})` : ''}
+          </button>
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
-          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v134</span>
+          <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v137</span>
         </div>
 
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
@@ -3115,8 +3126,8 @@ export default function LetterPage() {
           </div>}
         </div>
 
-        {/* ---- Letter attachments panel (پیوست‌ها) — only when پیوست=دارد ---- */}
-        {hasAttachmentMode && attsOpen && (
+        {/* ---- Letter attachments panel (پیوست‌ها) — open/closed only (v137) ---- */}
+        {attsOpen && (
           <div className="ltr-controls no-print" style={{ marginTop: -4, borderColor: '#99f6e4', background: '#f0fdfa', display: 'block' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span className="ltr-hint" style={{ fontWeight: 700, color: '#0f766e' }}>پیوست‌های نامه</span>
@@ -3135,6 +3146,18 @@ export default function LetterPage() {
                 <Sparkles size={14} /> ساختِ پیوست با هوش مصنوعی
               </button>
               {!letterId && <span className="ltr-hint" style={{ color: '#b45309' }}>اول نامه را «ذخیره» کن تا پیوست به آن گره بخورد.</span>}
+              {/* v137 — the field and the reality can disagree on an old letter:
+                  say so plainly and offer the one-click fix, instead of hiding
+                  the whole panel the way the old gate did. */}
+              {!hasAttachmentMode && (letterAtts.length + attTables.length) > 0 && (
+                <span className="ltr-hint" style={{ color: '#b45309' }}>
+                  این نامه پیوست دارد، اما فیلدِ «پیوست» آن «ندارد» است.{' '}
+                  <button className="ltr-btn" style={{ background: '#0d9488', padding: '2px 8px' }} onClick={markHasAttachment}>اصلاح به «دارد»</button>
+                </span>
+              )}
+              {!hasAttachmentMode && (letterAtts.length + attTables.length) === 0 && (
+                <span className="ltr-hint">فیلدِ «پیوست» این نامه «ندارد» است — با افزودنِ اولین پیوست خودکار «دارد» می‌شود.</span>
+              )}
               <span className="ltr-hint">چند فایل را با هم انتخاب کن (Ctrl/Shift) یا روی دکمه رها کن — یکی‌یکی و پشتِ‌سرِ هم بارگذاری می‌شوند و اگر فایلی رد شود، بقیه ادامه می‌دهند. هر فایل در Google Drive (پوشۀ مشتری، نامِ قابل‌ردیابی) ذخیره و ذیلِ پروفایلِ مشتری هم ثبت می‌شود؛ در نبودِ Drive روی آرشیو دیسک.</span>
             </div>
             {/* ---- AI attachment generator (ساختِ پیوست) ---- */}
@@ -3480,8 +3503,10 @@ export default function LetterPage() {
                         <span>{t.label}</span>
                       </label>
                     ))}
-                    {/* Deep attachment extraction — only offered when the letter actually has enclosures */}
-                    {hasAttachmentMode && letterAtts.length > 0 && (
+                    {/* Deep attachment extraction — offered whenever real enclosures
+                        exist; v137: no longer also gated on the «پیوست» select, which
+                        hid the tool on letters whose select was left at «ندارد» */}
+                    {letterAtts.length > 0 && (
                       <label className={`lai-tool${aiSelTools.includes(ATT_TOOL) ? ' on' : ''}`} style={{ borderColor: '#5eead4' }}
                         title="مانند صفحۀ Import: همۀ داده‌های مرتبط با موضوع نامه و همۀ حساب‌های نام‌برده، کامل و بدون خلاصه‌سازی، استخراج و پس از تیکِ شما ثبت می‌شود">
                         <input type="checkbox" checked={aiSelTools.includes(ATT_TOOL)} onChange={() => toggleTool(ATT_TOOL)} />
