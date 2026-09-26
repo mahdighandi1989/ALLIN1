@@ -92,3 +92,104 @@ class TestInventory:
         assert len(menu) > 10
         assert any(m["href"] == "/import" for m in menu)
         assert all(m["label"] for m in menu)
+
+
+@pytest.fixture()
+def inv():
+    """The inventory script, loaded as a module (same pattern as `rc`)."""
+    assert INV.exists()
+    return sys.modules.get("sup_inventory") or _load(INV, "sup_inventory")
+
+
+class TestMeasurementFailureIsNotZero:
+    """v137 — a count that could not be TAKEN must never be reported as 0.
+
+    The supervisor's own rule is that any drop in an inventory count is a serious
+    capability-deletion alarm (project rule 2). `backend_routes()` used to catch
+    every exception and return `[]`, so a container whose dependencies were not
+    installed produced «213 → 0 API routes»: the loudest possible FALSE alarm
+    about the product, caused entirely by the environment. A supervisor that
+    cries wolf is not read — the run-0 lesson, in the opposite direction.
+    """
+
+    def test_import_failure_raises_instead_of_returning_empty(self, inv, monkeypatch):
+        class _R:
+            returncode = 1
+            stdout = ""
+            stderr = "ModuleNotFoundError: No module named 'fastapi'"
+
+        monkeypatch.setattr(inv.subprocess, "run", lambda *a, **k: _R())
+        with pytest.raises(inv.MeasurementFailed) as e:
+            inv.backend_routes()
+        # the reason must travel with the error — otherwise the next reader
+        # re-diagnoses it from scratch
+        assert "fastapi" in str(e.value)
+
+    def test_subprocess_blowing_up_also_raises(self, inv, monkeypatch):
+        def _boom(*a, **k):
+            raise OSError("no such executable")
+
+        monkeypatch.setattr(inv.subprocess, "run", _boom)
+        with pytest.raises(inv.MeasurementFailed):
+            inv.backend_routes()
+
+    def test_garbage_payload_raises(self, inv, monkeypatch):
+        class _R:
+            returncode = 0
+            stdout = "@@not json at all"
+            stderr = ""
+
+        monkeypatch.setattr(inv.subprocess, "run", lambda *a, **k: _R())
+        with pytest.raises(inv.MeasurementFailed):
+            inv.backend_routes()
+
+    def test_build_records_the_failure_and_leaves_routes_unmeasured(self, inv, monkeypatch):
+        def _fail():
+            raise inv.MeasurementFailed("boom")
+
+        monkeypatch.setattr(inv, "backend_routes", _fail)
+        built = inv.build()
+        assert built["routes"] is None, "None = not measured; 0 would read as «deleted»"
+        assert built["totals"]["routes"] is None
+        assert built["errors"] and "boom" in built["errors"][0]
+
+    def test_the_markdown_says_unmeasured_rather_than_a_number(self, inv, monkeypatch):
+        monkeypatch.setattr(inv, "backend_routes", lambda: (_ for _ in ()).throw(inv.MeasurementFailed("boom")))
+        md = inv.to_md(inv.build())
+        assert "اندازه‌گیری نشد" in md
+        assert "| مسیرهای API | 0 |" not in md
+
+    def test_a_real_zero_is_still_rendered_as_zero(self, inv, monkeypatch):
+        """The guard must not swing the other way: an app that genuinely exposes
+        no routes still reports 0, because that IS a measurement."""
+        monkeypatch.setattr(inv, "backend_routes", lambda: [])
+        built = inv.build()
+        assert built["routes"] == []
+        assert built["totals"]["routes"] == 0
+        assert not built["errors"]
+
+
+class TestRunAllReportsFailures:
+    """v137 — `cmd | tail` reports tail's status, which is always 0. Every piped
+    step in run_all.sh therefore filed a RED result as green; a pytest that never
+    ran ("No module named pytest") was recorded as «exit=0» by the very script
+    whose job is to catch red."""
+
+    RUN_ALL = ROOT / "scripts" / "supervisor" / "run_all.sh"
+
+    def test_every_piped_step_sets_pipefail(self):
+        for line in self.RUN_ALL.read_text(encoding="utf-8").splitlines():
+            if line.startswith("step ") and "|" in line:
+                assert "$PF" in line or "pipefail" in line, (
+                    f"piped step without pipefail — its exit code is tail's: {line}"
+                )
+
+    def test_pipefail_is_actually_defined(self):
+        assert "PF='set -o pipefail;'" in self.RUN_ALL.read_text(encoding="utf-8")
+
+    def test_dependencies_are_checked_before_anything_is_measured(self):
+        txt = self.RUN_ALL.read_text(encoding="utf-8")
+        assert "preflight" in txt
+        # preflight must come BEFORE the first measuring step, or it explains
+        # nothing about the numbers already printed
+        assert txt.index("preflight") < txt.index('step "inventory"')

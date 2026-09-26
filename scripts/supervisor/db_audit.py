@@ -41,6 +41,11 @@ os.environ["DATABASE_URL"] = DB_URL
 os.environ.setdefault("AUTH_DISABLED", "true")
 os.environ.setdefault("ENVIRONMENT", "development")
 
+# Markers the system files a document under when it cannot name the owner. They
+# are NOT customer accounts; matching them is what tells an unattributed file
+# apart from one pointing at a deleted customer.
+_RESERVED_ACCOUNTS = {"unknown", "general"}
+
 ACC_RE = re.compile(r"^\d{6}$")
 DATEISH = re.compile(r"\b\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b")
 DIGITS_ONLY = re.compile(r"^[\d\s\-/]+$")
@@ -76,6 +81,7 @@ async def run(session_factory=None) -> dict:
     from app.models.facility import Facility
     from app.models.guarantor import Guarantor
     from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner
+    from app.models.crm import Attachment
 
     findings: list[dict] = []
     counts: dict = {}
@@ -184,6 +190,39 @@ async def run(session_factory=None) -> dict:
             if len(vals) > 1 and not (95 <= total <= 105):
                 flag("contradictory", "partners", acc,
                      f"جمعِ سهمِ {len(vals)} شریک = {round(total, 2)}٪ (باید حدودِ ۱۰۰ باشد)", "medium")
+
+        # v137 — attachments that belong to nobody. An import that confirmed no
+        # account still archives its source file; those are filed under the
+        # reserved «unknown» marker ON PURPOSE (losing the file would be worse),
+        # but they must be VISIBLE, or they silently pile up in Drive exactly as
+        # the supervisor found on 2026-09-23. A file the bank holds and cannot
+        # attribute is a real problem, not a tidiness complaint.
+        attachments = (await db.execute(select(Attachment))).scalars().all()
+        counts["attachments"] = len(attachments)
+        unattributed = 0
+        for a in attachments:
+            acc = (a.account_no or "").strip()
+            fac = (a.facility_id or "").strip()
+            # An attachment on a GENERAL letter carries no account by design, but
+            # it is still reachable — the letter owns it through fac-LTR-<id>.
+            # Counting those as orphans would bury the real ones, so the test is
+            # «reachable from nothing», not «has no account».
+            reachable = fac.startswith("LTR-")
+            if not acc and not reachable:
+                flag("orphan", "attachments", a.id, "پیوست بدونِ شمارهٔ حساب و بدونِ نامهٔ مالک", "high")
+            elif acc in _RESERVED_ACCOUNTS and not reachable:
+                unattributed += 1
+            elif acc and acc not in accounts and acc not in _RESERVED_ACCOUNTS:
+                flag("orphan", "attachments", a.id,
+                     f"پیوست به حسابِ «{acc}» اشاره می‌کند که وجود ندارد", "high")
+        counts["attachments_unattributed"] = unattributed
+        if unattributed:
+            # ONE finding for the whole pile, not one per file: a per-file flood
+            # would drown every other finding in the report.
+            flag("orphan", "attachments", "unknown",
+                 f"{unattributed} پیوست زیرِ نشانگرِ «{'/'.join(sorted(_RESERVED_ACCOUNTS))}» — "
+                 "ایمپورتی که هیچ حسابی را تأیید نکرد. فایل‌ها سالم‌اند ولی به مشتری‌ای بند نیستند؛ "
+                 "باید به حسابِ درست منتسب شوند", "high")
 
     by_kind: dict = defaultdict(int)
     by_sev: dict = defaultdict(int)

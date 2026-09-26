@@ -943,3 +943,120 @@ async def test_import_persists_v116_policy_fields_and_attribution_rule(db_sessio
         assert key in doc_ingest.EXTRACTION_PROMPT, key
     # attribution rule: the bank on the policy is never the customer
     assert "NEVER the customer" in doc_ingest.EXTRACTION_PROMPT
+
+
+async def test_import_confirming_no_customer_still_records_its_archived_source(
+    client, auth_headers, db_session, import_inline, monkeypatch
+):
+    """v137 — an import that confirms NO account must not leave a Drive orphan.
+
+    The source file is uploaded to Drive under the reserved «unknown» marker on
+    purpose (losing the source of a failed import would be worse). But the row
+    that records it was written inside `for r in saved:`, which does not run when
+    nothing was confirmed — so the file sat in Drive and NOTHING in the database
+    knew it existed: invisible to every screen and every attachment query, which
+    for the officer looking for it is the same as lost.
+
+    `persist_customer` is the seam: when every extracted record fails to resolve
+    to a definite account (the real cause — names with no confirmed account go to
+    `unmatched`), `saved` comes back empty and the archive path runs with the
+    reserved marker.
+    """
+    from app.services import doc_ingest, drive_sync
+    from app.models.crm import Attachment
+    from sqlalchemy import select
+
+    async def _confirms_nothing(db, c, username):
+        return {"ok": False, "reason": "بدون شمارهٔ حسابِ قطعی"}
+
+    monkeypatch.setattr(doc_ingest, "persist_customer", _confirms_nothing)
+    monkeypatch.setattr(drive_sync, "is_enabled", lambda: True)
+
+    seen = {}
+
+    async def _fake_sync(**kw):
+        seen["account"] = kw.get("account_no")
+        return {"ok": True, "result": {"id": "drive-orphan-1", "name": "archived.docx",
+                                       "link": "https://drive/x"}}
+
+    monkeypatch.setattr(drive_sync, "sync_attachment", _fake_sync)
+
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("efco.docx", _draft_docx(),
+                                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+    assert r.status_code == 200, r.text
+    job = await _poll(client, auth_headers, r.json()["job_id"])
+    assert job["status"] == "done", job
+
+    # filed under the reserved marker — the same one the Drive folder uses, so
+    # the two halves point at each other and can be re-attributed together
+    assert seen["account"] == "unknown", seen
+
+    rows = (await db_session.execute(
+        select(Attachment).where(Attachment.drive_file_id == "drive-orphan-1"))).scalars().all()
+    assert len(rows) == 1, "the archived source must be findable in the database"
+    assert rows[0].account_no == "unknown"
+    assert "orphan_reason" in (rows[0].notes or ""), rows[0].notes
+
+
+async def test_the_orphan_row_is_written_once_per_file_not_per_upload(
+    client, auth_headers, db_session, import_inline, monkeypatch
+):
+    """Re-uploading the same unconfirmed file must not grow a second orphan row —
+    the content hash identifies it, exactly as for a confirmed import."""
+    from app.services import doc_ingest, drive_sync
+    from app.models.crm import Attachment
+    from sqlalchemy import select
+
+    async def _confirms_nothing(db, c, username):
+        return {"ok": False, "reason": "بدون شمارهٔ حسابِ قطعی"}
+
+    async def _ok_drive(**kw):
+        return {"ok": True, "result": {"id": "drive-orphan-2", "name": "a.docx", "link": ""}}
+
+    monkeypatch.setattr(doc_ingest, "persist_customer", _confirms_nothing)
+    monkeypatch.setattr(drive_sync, "is_enabled", lambda: True)
+    monkeypatch.setattr(drive_sync, "sync_attachment", _ok_drive)
+
+    payload = _draft_docx()
+    for _ in range(2):
+        r = await client.post("/api/imports/analyze", headers=auth_headers,
+                              files={"file": ("efco.docx", payload,
+                                              "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+        assert r.status_code == 200, r.text
+        await _poll(client, auth_headers, r.json()["job_id"])
+
+    rows = (await db_session.execute(
+        select(Attachment).where(Attachment.account_no == "unknown"))).scalars().all()
+    assert len(rows) == 1, f"one row per file, not per upload: {[x.id for x in rows]}"
+
+
+async def test_a_confirmed_import_still_files_under_its_real_account(
+    client, auth_headers, db_session, import_inline, monkeypatch
+):
+    """The guard must not swing the other way: when the import DOES confirm an
+    account, nothing goes to the orphan marker."""
+    from app.services import drive_sync
+    from app.models.crm import Attachment
+    from sqlalchemy import select
+
+    db_session.add(Customer(account_no="115524", name="Real Co"))
+    await db_session.commit()
+
+    async def _ok_drive(**kw):
+        _ok_drive.account = kw.get("account_no")
+        return {"ok": True, "result": {"id": "drive-real-1", "name": "r.docx", "link": ""}}
+
+    monkeypatch.setattr(drive_sync, "is_enabled", lambda: True)
+    monkeypatch.setattr(drive_sync, "sync_attachment", _ok_drive)
+
+    r = await client.post("/api/imports/analyze", headers=auth_headers,
+                          files={"file": ("efco.docx", _draft_docx(),
+                                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document")})
+    assert r.status_code == 200, r.text
+    assert (await _poll(client, auth_headers, r.json()["job_id"]))["status"] == "done"
+
+    assert _ok_drive.account == "115524"
+    orphans = (await db_session.execute(
+        select(Attachment).where(Attachment.account_no == "unknown"))).scalars().all()
+    assert not orphans, [x.id for x in orphans]

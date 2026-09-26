@@ -8,7 +8,9 @@
   "guarantors": 0,
   "properties": 0,
   "fixed_deposits": 0,
-  "partners": 0
+  "partners": 0,
+  "attachments": 0,
+  "attachments_unattributed": 0
  },
  "findings": [],
  "total_findings": 0,

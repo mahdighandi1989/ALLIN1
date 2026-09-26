@@ -370,6 +370,12 @@ _PDF_SPLIT_BYTES = 5 * 1024 * 1024   # split any PDF bigger than this
 # v125 — every live chunk costs ~4x its own size in RAM (raw bytes + base64 str +
 # the serialized JSON body + httpx's copy of it), so 5 MB per chunk meant a ~26 MB
 # spike on top of the whole upload. 3 MB keeps that spike near 16 MB.
+# v137 — the account marker used when an import confirms no customer at all.
+# It MUST match the folder drive_sync falls back to (attachments/cust-unknown),
+# so the Drive copy and its database row point at the same place and the pair can
+# be re-attributed together once someone identifies the owner.
+ORPHAN_ACCOUNT = "unknown"
+
 _PDF_CHUNK_BYTES = int(os.getenv("IMPORT_PDF_CHUNK_MB", "3")) * 1024 * 1024
 _PDF_CHUNK_PAGES = 12                 # page cap per chunk (bytes cap usually bites first)
 # v125 — how many failed chunks may keep their bytes for the deferred second pass.
@@ -807,7 +813,7 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
             drive_link = f"https://drive.google.com/file/d/{drive_id}/view"
         reused = True
     else:
-        primary = saved[0]["account_no"] if saved else "unknown"
+        primary = saved[0]["account_no"] if saved else ORPHAN_ACCOUNT
         drive = await drive_sync.sync_attachment(account_no=primary, facility_id="",
                                                  original_name=fname, data=data, mimetype=mime)
         if drive.get("ok"):
@@ -842,6 +848,35 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
                     pdata = {}
                 doc_ingest.record_documents_on_profile(pdata, my_docs, drive_link, drive_id, fname, sha)
                 cp.data_json = _json.dumps(pdata, ensure_ascii=False)
+
+    # v137 — an import that confirmed NO customer still uploads its source file to
+    # Drive (as cust-unknown, above), but the `for r in saved` loop just above
+    # never runs, so NOTHING in the database knew the file existed: it sat in
+    # Drive attached to no customer, invisible to every screen and to every
+    # attachment query. The file was never lost — but it was unfindable, which
+    # for the officer looking for it is the same thing.
+    #
+    # The upload itself is deliberately KEPT (losing the source of a failed
+    # import would be strictly worse). What is added is the missing record, under
+    # the same reserved marker the Drive folder already uses, so the two line up
+    # and the pair can be re-attributed to a real account later. The supervisor's
+    # db_audit reports these as orphans so they cannot accumulate unnoticed.
+    if drive_id and not saved:
+        exists = (await db.execute(select(Attachment).where(
+            Attachment.account_no == ORPHAN_ACCOUNT,
+            Attachment.content_sha256 == sha))).scalar_one_or_none()
+        if exists is None:
+            db.add(Attachment(
+                id=f"ATT-{ORPHAN_ACCOUNT}-{_dt.now().strftime('%Y%m%d%H%M%S')}-{_uuid.uuid4().hex[:3]}",
+                account_no=ORPHAN_ACCOUNT, facility_id="", file_name=drive_name or fname,
+                original_name=fname, drive_file_id=drive_id, content_sha256=sha,
+                file_size=str(len(data)), upload_date=_date.today().isoformat(),
+                uploaded_by=username, is_shared="false",
+                notes=_json.dumps({
+                    "title": _doc_title(documents if isinstance(documents, list) else [], fname),
+                    "link": drive_link, "source": "ai_import",
+                    "orphan_reason": "ایمپورت هیچ حسابِ قطعی‌ای را تأیید نکرد — فایل در Drive هست ولی به مشتری‌ای بند نیست",
+                }, ensure_ascii=False)))
 
     # v85 — knowledge harvested from the file goes to the دانشنامه through the
     # single shared write path: topic matched/created by normalized title, and

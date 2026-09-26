@@ -166,10 +166,19 @@ def check_pages(base: str, page_routes: list[str]) -> list[dict]:
             ctx = browser.new_context(viewport={"width": 1366, "height": 900}, ignore_https_errors=True)
             errs: list[str] = []
             failed: list[str] = []
+            bad: list[str] = []          # HTTP responses >= 400, WITH their URL
             page = ctx.new_page()
             page.on("console", lambda m: errs.append(m.text[:300]) if m.type == "error" else None)
             page.on("pageerror", lambda e: errs.append(f"pageerror: {e}"[:300]))
             page.on("requestfailed", lambda r: failed.append(f"{r.method} {r.url.split('?')[0]}"[:200]))
+            # v137 — Chromium's console text for a bad response is the generic
+            # "Failed to load resource: … 404 (Not Found)", with no URL in it. The
+            # /audit 404 therefore sat in OPEN_ITEMS for a run with nothing to act
+            # on. Record the RESPONSE instead: a finding nobody can locate is half
+            # a finding.
+            page.on("response", lambda r: (
+                bad.append(f"{r.status} {r.request.method} {r.url.split('?')[0]}"[:200])
+                if r.status >= 400 else None))
             entry = {"route": route}
             try:
                 page.goto(base + route, wait_until="domcontentloaded", timeout=PAGE_GOTO_MS)
@@ -213,6 +222,7 @@ def check_pages(base: str, page_routes: list[str]) -> list[dict]:
             # raw list so a human can judge, but count only the loud ones
             entry["console_errors"] = errs[:12]
             entry["console_error_count"] = len(errs)
+            entry["bad_responses"] = sorted(set(bad))[:12]
             entry["request_failures"] = sorted(set(failed))[:12]
             health = _alive(base, PROC[0])
             entry["server_alive_after"] = health["alive"]
@@ -237,6 +247,15 @@ def main() -> int:
         subprocess.run([sys.executable, str(ROOT / "scripts" / "supervisor" / "inventory.py")], check=False)
     inv = json.loads(inv_path.read_text(encoding="utf-8"))
     page_routes = [p["route"] for p in inv["pages"] if p["route"] not in ("/",)]
+    # v137 — `runtime_check.py /audit /import` re-checks just those pages. The
+    # full sweep is ~20 minutes, which made re-testing ONE page after a fix cost
+    # a whole sweep; the default with no arguments is still everything.
+    if len(sys.argv) > 1:
+        want = {a if a.startswith("/") else "/" + a for a in sys.argv[1:]}
+        page_routes = [r for r in page_routes if r in want]
+        if not page_routes:
+            print(f"no page matched {sorted(want)}", file=sys.stderr)
+            return 2
 
     port = free_port()
     proc, base, up = start_server(port)

@@ -201,9 +201,9 @@
   {
    "route": "/letter",
    "file": "frontend/src/app/letter/page.tsx",
-   "lines": 3667,
-   "buttons": 101,
-   "onclick": 85,
+   "lines": 3692,
+   "buttons": 102,
+   "onclick": 86,
    "inputs": 37,
    "forms": 0,
    "links": 0,
@@ -1113,6 +1113,7 @@
    "method": "topExposures"
   }
  ],
+ "errors": [],
  "routes": [
   {
    "path": "/openapi.json",
@@ -2682,7 +2683,7 @@
  "totals": {
   "pages": 32,
   "menu_items": 19,
-  "buttons": 333,
+  "buttons": 334,
   "inputs": 342,
   "routes": 213,
   "api_methods": 170,

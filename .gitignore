@@ -63,3 +63,14 @@ backend/uploads/
 docs/supervisor/last_server.log
 docs/supervisor/last_run.log
 scripts/supervisor/__pycache__/
+
+# Supervisor scratch databases — the auditor and the runtime sweep each open a
+# throwaway SQLite file next to the backend; they are rebuilt on every run and
+# must never be committed (they would also leak whatever was seeded into them).
+backend/_supervisor_audit.db
+backend/_supervisor_run.db
+backend/_sup_inv.db
+backend/_supervisor_*.db-wal
+backend/_supervisor_*.db-shm
+docs/supervisor/last_run.log
+docs/supervisor/last_server.log

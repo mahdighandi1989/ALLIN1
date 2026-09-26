@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:51269",
+ "base": "http://127.0.0.1:48465",
  "server_started": true,
  "endpoints": [
   {
@@ -312,10 +312,9 @@
    "inputs": 5,
    "clicked": 3,
    "skipped_destructive": 0,
-   "console_errors": [
-    "Failed to load resource: the server responded with a status of 404 (Not Found)"
-   ],
-   "console_error_count": 1,
+   "console_errors": [],
+   "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -329,8 +328,9 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [
-    "GET http://127.0.0.1:51269/api/auth/me"
+    "GET http://127.0.0.1:48465/api/auth/me"
    ],
    "server_alive_after": true
   },
@@ -344,6 +344,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -357,6 +358,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -370,6 +372,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -383,6 +386,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -396,6 +400,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -409,6 +414,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -422,6 +428,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -435,6 +442,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -448,19 +456,21 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
   {
    "route": "/data-quality",
    "rendered": true,
-   "text_len": 45255,
-   "buttons": 27,
-   "inputs": 2,
-   "clicked": 5,
-   "skipped_destructive": 0,
+   "text_len": 493,
+   "buttons": 3,
+   "inputs": 0,
+   "clicked": 2,
+   "skipped_destructive": 1,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -474,6 +484,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -487,6 +498,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -500,6 +512,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -513,6 +526,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -526,6 +540,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -539,6 +554,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -552,6 +568,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -565,6 +582,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -578,6 +596,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -591,6 +610,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -604,6 +624,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -617,19 +638,21 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
   {
    "route": "/reports",
    "rendered": true,
-   "text_len": 1597,
-   "buttons": 7,
+   "text_len": 316,
+   "buttons": 2,
    "inputs": 0,
-   "clicked": 5,
+   "clicked": 2,
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -643,6 +666,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -656,6 +680,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -669,6 +694,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -682,6 +708,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -695,6 +722,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   },
@@ -708,6 +736,7 @@
    "skipped_destructive": 0,
    "console_errors": [],
    "console_error_count": 0,
+   "bad_responses": [],
    "request_failures": [],
    "server_alive_after": true
   }
@@ -719,10 +748,10 @@
   "endpoints_dead": 0,
   "pages_checked": 31,
   "pages_blank": 0,
-  "pages_with_console_errors": 1,
+  "pages_with_console_errors": 0,
   "pages_that_killed_the_server": 0,
   "pages_after_which_server_was_slow": 0,
-  "buttons_clicked": 130,
-  "buttons_skipped_destructive": 0
+  "buttons_clicked": 124,
+  "buttons_skipped_destructive": 1
  }
 }
