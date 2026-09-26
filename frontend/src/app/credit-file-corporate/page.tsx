@@ -6,6 +6,7 @@ import { Printer, Search, Save, Plus, Trash2 } from 'lucide-react'
 import { customersApi, crmApi, facilitiesApi, parseApiError } from '@/lib/api'
 import { AmtInput, PctInput, WrapInput, DraftDrop, CountryInput, CountryDataList, CCY, fmtAmt, type PropRow, emptyProp, propFromRecord, savePropertyRows } from '@/components/creditFileBits'
 import { useDocLayout, DocLayoutStyles } from '@/lib/docLayout'
+import { useSheetExport } from '@/lib/useSheetExport'
 import { dmySlash } from '@/lib/dates'
 import type { Facility, FacilityForm } from '@/types'
 import toast from 'react-hot-toast'
@@ -390,6 +391,11 @@ export default function CreditFileCorporatePage() {
     el.style.setProperty('--pz', String(z))
   }, [])
   const printSheet = () => { fitSheet(); setTimeout(() => window.print(), 60) }
+  // v138 — «ورد» / «اکسل»: the SAME sheet the print preview shows, read out of
+  // the live DOM (unsaved edits and «حذف از پرینت» choices included) and
+  // rendered as a real, editable file. fitSheet runs first so the exported
+  // column widths are the printed ones.
+  const xp = useSheetExport({ sheetRef, account: a.accountNumber || acc, fit: fitSheet })
   useEffect(() => {
     const on = () => fitSheet()
     window.addEventListener('beforeprint', on)
@@ -479,6 +485,7 @@ export default function CreditFileCorporatePage() {
           <button onClick={() => loadAccount()} disabled={loading} className="cf-btn blue"><Search size={15} /> {loading ? '...' : 'بارگیری'}</button>
           <button onClick={save} disabled={saving || !a.accountNumber} className="cf-btn green"><Save size={15} /> {saving ? '...' : 'ذخیره در پروفایل'}</button>
           <button onClick={printSheet} className="cf-btn gray"><Printer size={15} /> پرینت</button>
+          {xp.buttons}
           <select className="no-print" title="حالتِ فیتِ پرینت" value={fitMode} onChange={(e) => setFitMode(e.target.value as any)} style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 6px', fontSize: 12 }}>
             <option value="one">فیت: یک‌صفحه‌ای (پیش‌فرض)</option>
             <option value="auto">خودکار (اگر خیلی ریز شود، چندصفحه‌ای)</option>

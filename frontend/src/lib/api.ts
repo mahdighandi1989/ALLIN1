@@ -918,6 +918,16 @@ export const vouchersApi = {
   },
 }
 
+// v138 — Credit File Summary → Excel. The page posts the spec it read out of
+// its own printed sheet; the server renders the workbook with openpyxl (same
+// split as the voucher export: client describes, server renders).
+export const creditFileApi = {
+  async exportExcel(payload: { title: string; account: string; blocks: any[] }): Promise<Blob> {
+    const { data } = await api.post('/api/credit-file/export-excel', payload, { responseType: 'blob' })
+    return data
+  },
+}
+
 export const importsApi = {
   async customers(file: File, dryRun = false): Promise<ImportResult> {
     const form = new FormData()
