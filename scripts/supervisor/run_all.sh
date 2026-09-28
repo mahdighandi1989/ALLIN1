@@ -40,5 +40,10 @@ step "jest"         900  bash -c "$PF cd frontend && npx jest 2>&1 | tail -4"
 step "next build"   1200 bash -c "$PF cd frontend && npm run build 2>&1 | tail -2"
 step "runtime"      2400 python3 scripts/supervisor/runtime_check.py
 step "db audit"     900  bash -c "$PF cd backend && python3 ../scripts/supervisor/db_audit.py"
+# v140 — the REAL book, over HTTPS through the app's own read-only API. A direct
+# database URL cannot work from here: outbound 5432 is refused, only 443 passes
+# the egress proxy. Exits 3 when it cannot see production, so a run that audited
+# nothing never looks like a clean run.
+step "prod audit"   600  python3 scripts/supervisor/prod_audit.py
 step "handbook"     300  python3 scripts/supervisor/update_handbook.py
 echo; echo "=== supervisor run finished: $(date -u +%FT%TZ) ==="

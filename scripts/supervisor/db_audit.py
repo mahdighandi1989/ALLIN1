@@ -280,6 +280,7 @@ async def run(session_factory=None) -> dict:
     return {
         "database": re.sub(r"://[^@/]*@", "://***@", DB_URL),
         "is_local_placeholder": DB_URL.startswith("sqlite"),
+        "connected": True,
         "counts": counts,
         "findings": findings[:500],
         "total_findings": len(findings),
@@ -288,12 +289,54 @@ async def run(session_factory=None) -> dict:
     }
 
 
+def _why(e: Exception) -> str:
+    """A connection failure must say what to FIX, not just that it failed.
+
+    asyncpg raises a bare ``TimeoutError`` with an empty message when a host is
+    unreachable, which told the reader nothing and cost a run.
+    """
+    name, msg = type(e).__name__, str(e).strip()
+    hints = {
+        "TimeoutError": "میزبان جواب نداد — آدرسِ External را گذاشته‌ای (نه Internal)؟ "
+                        "و دسترسیِ شبکه به آن میزبان باز است؟",
+        "InvalidPasswordError": "نام کاربری یا رمزِ داخلِ رشته درست نیست",
+        "InvalidCatalogNameError": "نامِ دیتابیس در انتهای رشته درست نیست",
+        "InvalidAuthorizationSpecificationError": "کاربر اجازهٔ اتصال به این دیتابیس را ندارد "
+                                                  "(GRANT CONNECT لازم است)",
+        "InsufficientPrivilegeError": "کاربر اجازهٔ SELECT روی بعضی جدول‌ها را ندارد "
+                                      "(GRANT SELECT ON ALL TABLES لازم است)",
+        "OSError": "میزبان پیدا نشد یا شبکه بسته است",
+        "ConnectionRefusedError": "میزبان اتصال را رد کرد",
+    }
+    hint = hints.get(name, "")
+    return f"{name}: {msg or '(بدون پیام)'}" + (f" — {hint}" if hint else "")
+
+
+#: The whole audit, including connecting. Bounded HERE rather than on the app's
+#: shared engine: a short connect timeout in production could fail real requests
+#: under load, and the supervisor's convenience must never reshape production.
+AUDIT_TIMEOUT_S = float(os.getenv("SUPERVISOR_AUDIT_TIMEOUT", "180"))
+
+
+async def _run_bounded():
+    return await asyncio.wait_for(run(), timeout=AUDIT_TIMEOUT_S)
+
+
 if __name__ == "__main__":
     try:
-        rep = asyncio.run(run())
+        rep = asyncio.run(_run_bounded())
     except Exception as e:  # a broken audit must be visible, not silent
-        rep = {"database": re.sub(r"://[^@/]*@", "://***@", DB_URL), "error": f"{type(e).__name__}: {e}"[:400],
+        rep = {"database": re.sub(r"://[^@/]*@", "://***@", DB_URL),
+               # v140 — the error path used to omit this, so a failed run said
+               # `is_local_placeholder: null`: the reader could not tell whether
+               # production or a local file had been attempted. «Could not
+               # measure» must never be ambiguous about WHAT was not measured.
+               "is_local_placeholder": DB_URL.startswith("sqlite"),
+               "connected": False,
+               "error": _why(e)[:400],
                "total_findings": -1, "counts": {}, "findings": [], "by_kind": {}, "by_severity": {}}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps({k: rep.get(k) for k in ("database", "is_local_placeholder", "counts", "total_findings", "by_kind", "error")}, ensure_ascii=False))
+    print(json.dumps({k: rep.get(k) for k in (
+        "database", "is_local_placeholder", "connected", "counts",
+        "total_findings", "by_kind", "error")}, ensure_ascii=False))
