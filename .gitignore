@@ -79,3 +79,6 @@ docs/supervisor/last_server.log
 # round. Only the README is tracked (the sheets themselves live in the API).
 docs/supervisor/inspection/QUEUE.md
 docs/supervisor/inspection/shots/
+# v146 — the owner's attached samples, pulled as text on every run. Working
+# copies of material that lives in Drive; never the record itself.
+docs/supervisor/inspection/files/

@@ -35,6 +35,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -44,6 +45,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "docs" / "supervisor" / "inspection"
 SHOTS = OUT_DIR / "shots"
+#: v146 — the owner's attached samples, pulled as TEXT so «it is too big» never
+#: becomes a reason not to read one. The bytes themselves stay in Drive; what
+#: lands here is what the supervisor has to actually read.
+FILES = OUT_DIR / "files"
 BRIEF = OUT_DIR / "QUEUE.md"
 
 BASE = (os.getenv("SUPERVISOR_API_BASE") or "").strip().rstrip("/")
@@ -125,12 +130,79 @@ def _save_shot(tok: str, shot_id: str, name: str) -> str | None:
     return str(path.relative_to(ROOT))
 
 
+def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
+    """Pull ONE attached sample completely, and write it where it can be read.
+
+    «کامل» is the operative word. The text arrives in slices and the server counts
+    what it served, so a partial pull leaves a debt that blocks the answer — which
+    is the point. This walks to the end, and says so.
+
+    For a file with no text (image, scanned PDF, .doc) the bytes are fetched
+    instead: fetching them IS «looked at it», and the server records that too.
+    """
+    FILES.mkdir(parents=True, exist_ok=True)
+    fid = f.get("id") or ""
+    name = f.get("filename") or fid
+    status = f.get("extract_status") or ""
+    safe = re.sub(r"[^\w.\-() ]+", "_", name)[:120]
+    out = {"filename": name, "extract_status": status, "chars": 0, "path": "",
+           "complete": False, "note": f.get("extract_note") or ""}
+
+    if status == "ok":
+        text = ""
+        offset = 0
+        # big bites on purpose: this is a machine reading, and 40k-char slices
+        # turned a 20M-character sample into 500 round trips
+        step = int(os.getenv("SUPERVISOR_READ_SLICE", "2000000"))
+        for _ in range(500):          # bounded: a runaway loop must end
+            st, raw = _req(f"/api/inspection/files/{fid}/text?offset={offset}&limit={step}",
+                           headers={"Authorization": f"Bearer {tok}"})
+            if st != 200:
+                out["note"] = f"خواندنِ متن شکست خورد: HTTP {st}"
+                break
+            page = json.loads(raw.decode("utf-8"))
+            text += page.get("text") or ""
+            if not page.get("has_more"):
+                out["complete"] = bool(page.get("fully_read"))
+                break
+            offset = int(page.get("next_offset") or 0)
+        path = FILES / f"r{report_number}-{safe}.txt"
+        path.write_text(text, encoding="utf-8")
+        out.update(chars=len(text), path=str(path.relative_to(ROOT)))
+        if not f.get("text_truncated"):
+            return out
+        # The text was cut at a ceiling, so it is NOT the whole file. Reading it
+        # all does not discharge the duty — the file itself has to be opened,
+        # and that is what the server counts. Fall through and fetch it.
+        out["note"] = ((out["note"] + " | ") if out["note"] else "") + \
+            "متنش بریده شده بود، پس خودِ فایل هم گرفته شد — بقیه‌اش فقط در آن است"
+        out["complete"] = False
+
+    # No text to read — so OPEN it, which is what «read it» means for these.
+    st, raw = _req(f"/api/inspection/files/{fid}/raw",
+                   headers={"Authorization": f"Bearer {tok}"})
+    if st == 200 and raw:
+        path = FILES / f"r{report_number}-{safe}"
+        path.write_bytes(raw)
+        out.update(raw_path=str(path.relative_to(ROOT)), complete=True)
+        out.setdefault("path", "")
+        if not out["path"]:
+            out.update(path=str(path.relative_to(ROOT)), chars=len(raw))
+    else:
+        out["note"] = (out["note"] + " | " if out["note"] else "") + \
+            f"گرفتنِ خودِ فایل نشد: HTTP {st}"
+    return out
+
+
 def cmd_pull() -> int:
     tok = login()
     q = api(tok, "/api/inspection/queue")
     reports = q.get("reports") or []
     if SHOTS.exists():
         for f in SHOTS.glob("*"):
+            f.unlink()
+    if FILES.exists():
+        for f in FILES.glob("*"):
             f.unlink()
     lines = [
         "# کارتابلِ «نظارت و سرکشی»",
@@ -141,6 +213,12 @@ def cmd_pull() -> int:
         "",
         "> تصویرها در `shots/` هستند. **بازشان کن و نگاه کن** — تمامِ نکتهٔ این",
         "> سامانه این است که مالک چیزی را *دیده* که تست‌ها نمی‌بینند.",
+        "",
+        f"- فایل‌های نمونه‌ای که باید خوانده شوند: **{q.get('files_to_read', 0)}**",
+        "",
+        "> فایل‌های پیوست در `files/` نوشته شده‌اند — متنِ **کاملشان**، نه خلاصه.",
+        "> «حجمش زیاد است» عذر نیست: متن تکه‌تکه خوانده شد و سرور شمرد. تا صفر",
+        "> نشدنِ این عدد، API جوابِ برگه را نمی‌پذیرد.",
         "",
     ]
     for r in reports:
@@ -169,6 +247,28 @@ def cmd_pull() -> int:
             if n.get("commits"):
                 lines.append("کامیت‌ها: " + " · ".join(n["commits"]))
             lines.append("")
+        if r.get("files"):
+            lines.append("**فایل‌های نمونهٔ مالک — متنِ کاملشان خوانده شد:**")
+            lines.append("")
+            for f in r["files"]:
+                got = _read_file_fully(tok, f, r["number"])
+                mark = "✅" if got["complete"] else "⚠️"
+                lines.append(
+                    f"- {mark} `{got['filename']}` ({f.get('size_label', '')}, "
+                    f"{f.get('extract_label') or got['extract_status']})")
+                if f.get("caption"):
+                    lines.append(f"  - توضیحِ مالک: {f['caption']}")
+                if got["path"]:
+                    lines.append(f"  - محتوا: `{got['path']}`"
+                                 + (f" — {got['chars']} نویسه" if got["chars"] else ""))
+                if got.get("raw_path") and got.get("raw_path") != got["path"]:
+                    lines.append(f"  - خودِ فایل: `{got['raw_path']}` — **بازش کن**")
+                if got["note"]:
+                    lines.append(f"  - {got['note']}")
+                if not f.get("durable", True):
+                    lines.append("  - ⚠️ روی درایو ذخیره نشده (با دیپلویِ بعدی پاک می‌شود) — "
+                                 "همین دور بخوانش و به مالک بگو درایو تنظیم نیست")
+            lines.append("")
         if r.get("dependencies"):
             lines.append("**وابستگی‌های بررسی‌شده:**")
             for d in r["dependencies"]:
@@ -178,8 +278,13 @@ def cmd_pull() -> int:
         lines.append("")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     BRIEF.write_text("\n".join(lines), encoding="utf-8")
+    # Re-ask after the reads: `files_to_read` from before the pull is the DEBT,
+    # and what matters afterwards is whether anything is still outstanding.
+    left = api(tok, "/api/inspection/queue").get("files_to_read", 0)
     print(json.dumps({"owed": q.get("owed", 0), "waiting_for_owner": q.get("waiting_for_owner", 0),
-                      "to_file": q.get("to_file", 0), "brief": str(BRIEF.relative_to(ROOT))},
+                      "to_file": q.get("to_file", 0),
+                      "files_read": q.get("files_to_read", 0), "files_still_unread": left,
+                      "brief": str(BRIEF.relative_to(ROOT))},
                      ensure_ascii=False))
     # A round that leaves the queue untouched must not look like a clean round.
     return 4 if q.get("owed", 0) else 0

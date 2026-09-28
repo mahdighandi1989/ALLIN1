@@ -53,6 +53,12 @@ from app.models.ai_config import (  # noqa: F401  (register tables for create_al
     AIProvider, AIModel, AITaskRoute,
 )
 from app.models.cleanup_run import CleanupRun  # noqa: F401  (register table for create_all)
+# v146 — inspection tables were only registered as a side effect of the router
+# import. Naming them here makes startup's create_all/ADD COLUMN self-heal
+# cover them too, so `inspection_files` appears without a manual migration.
+from app.models.inspection import (  # noqa: F401  (register tables for create_all)
+    InspectionBinder, InspectionFile, InspectionReport, InspectionShot,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -926,6 +926,24 @@ export type InspectionNote = {
   id: string; by: 'owner' | 'reviewer'; at: string; text: string; author?: string
   shot_id?: string | null; outcome?: string | null; after_shot_id?: string | null; commits?: string[]
 }
+// v146 — a sample attached to a sheet: any type, up to 100MB. `extract_status`
+// keeps the four different ways of having no text apart, and `read_*` is the
+// supervisor's reading debt out in the open.
+export type InspectionFile = {
+  id: string; report_id: string; note_id: string
+  filename: string; mime: string; byte_size: number; size_label: string
+  caption: string; uploaded_by: string; created_at: string | null
+  store: string; store_note: string; drive_link: string; durable: boolean
+  extract_status: 'ok' | 'empty' | 'unsupported' | 'failed' | 'image' | 'pending'
+  extract_label: string; extract_note: string
+  text_chars: number; page_count: number; text_truncated: boolean
+  read_chars: number; read_percent: number | null; fully_read: boolean
+  read_at: string | null; read_by: string; viewed_at: string | null
+}
+export type InspectionReadDebt = {
+  file_id: string; filename: string; reason: 'text' | 'unopened'
+  read_chars: number; text_chars: number; remaining: number
+}
 export type InspectionReport = {
   id: string; number: number; created_at: string; updated_at: string
   status: 'open' | 'answered' | 'approved' | 'filed'
@@ -936,6 +954,8 @@ export type InspectionReport = {
   notes: InspectionNote[]
   dependencies: { name: string; status: string; note?: string }[]
   glow: { key: string; label: string; tone: string; outcome?: string }
+  files: InspectionFile[]
+  read_debt: InspectionReadDebt[]
   binder: { id: string; number: number; page: number } | null
 }
 export const inspectionApi = {
@@ -961,6 +981,44 @@ export const inspectionApi = {
   },
   async remove(id: string): Promise<void> { await api.delete(`/api/inspection/${id}`) },
   shotUrl(shotId: string): string { return `/api/inspection/shots/${shotId}` },
+
+  // --- v146: samples -----------------------------------------------------
+  /** Upload one file of ANY type. A 100MB body needs a long timeout and must go
+   *  as multipart — the screenshot path is a data-URL and is capped far lower. */
+  async upload(
+    id: string,
+    file: File,
+    caption = '',
+    onProgress?: (percent: number) => void,
+  ): Promise<{ file: InspectionFile; report: InspectionReport }> {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('caption', caption)
+    const { data } = await api.post(`/api/inspection/${id}/files`, form, {
+      timeout: 15 * 60 * 1000,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((100 * e.loaded) / e.total))
+      },
+    })
+    return data
+  },
+  async removeFile(fileId: string): Promise<void> {
+    await api.delete(`/api/inspection/files/${fileId}`)
+  },
+  /** One slice of a sample's extracted text. Reading it is what records that the
+   *  reviewer read it, so this is also how the read debt is cleared. */
+  async fileText(fileId: string, offset = 0, limit?: number): Promise<{
+    text: string; offset: number; returned: number; text_chars: number
+    has_more: boolean; next_offset: number | null; read_chars: number
+    fully_read: boolean; filename: string; caption: string
+    extract_status: string; extract_note: string; page_count: number
+  }> {
+    const { data } = await api.get(`/api/inspection/files/${fileId}/text`, {
+      params: { offset, ...(limit ? { limit } : {}) },
+    })
+    return data
+  },
+  fileUrl(fileId: string): string { return `/api/inspection/files/${fileId}/raw` },
 }
 
 // v139 — is this account a person or a company? `account_type` used to default

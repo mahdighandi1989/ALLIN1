@@ -15,6 +15,12 @@ WHAT THIS ROUTER REFUSES, AND WHY (each one paid for in the sibling project):
   * a note with no text → 422. «پاسخ دادم» must mean something was said.
   * a remote URL as a shot → dropped. Only a data-URL is accepted, so this can
     never be turned into a server-side request forgery.
+  * (v146) a supervisor reply while an attached file is still UNREAD → 422,
+    naming the file and the characters left. The owner asked for uploads up to
+    100 MB and added the requirement that decides the design: «حجم هم باعث نشه
+    ناظر نتونه بگه من نمیخونمش». The text is extracted at upload, served in
+    slices, and the slices are counted — so reading is cheap and skipping it is
+    visible. The owner's own notes are never blocked by this; only the reviewer's.
 """
 from __future__ import annotations
 
@@ -24,7 +30,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
+                     Response, UploadFile)
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.inspection import (
     BINDER_CAPACITY,
+    EXTRACT_LABEL,
     OUTCOME_FIXED,
     OUTCOMES,
     STATUS_ANSWERED,
@@ -39,11 +47,14 @@ from app.models.inspection import (
     STATUS_FILED,
     STATUS_OPEN,
     InspectionBinder,
+    InspectionFile,
     InspectionReport,
     InspectionShot,
+    file_read_debt,
     sheet_glow,
 )
 from app.routers.auth import get_current_active_user
+from app.services import inspection_files as ifiles
 from app.services.audit import record_audit
 
 router = APIRouter(tags=["inspection"], dependencies=[Depends(get_current_active_user)])
@@ -145,7 +156,104 @@ async def _store_shot(db: AsyncSession, report_id: str, note_id: str, kind: str,
     return sid
 
 
-def _to_dict(r: InspectionReport, deps: bool = True) -> dict:
+def _file_dict(f: InspectionFile) -> dict:
+    """One attached file as the UI and the supervisor both need to see it.
+
+    `read` is included on purpose: the supervisor can see its own debt before it
+    tries to answer, instead of discovering it as a 422.
+    """
+    total = int(f.text_chars or 0)
+    got = int(f.read_chars or 0)
+    return {
+        "id": f.id,
+        "report_id": f.report_id,
+        "note_id": f.note_id or "",
+        "filename": f.filename or "",
+        "mime": f.mime or "",
+        "byte_size": int(f.byte_size or 0),
+        "size_label": ifiles.human_size(f.byte_size or 0),
+        "caption": f.caption or "",
+        "uploaded_by": f.uploaded_by or "",
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+        # where the bytes really are — «local» means they die with the next deploy
+        "store": f.store or "",
+        "store_note": f.store_note or "",
+        "drive_link": f.drive_link or "",
+        "durable": (f.store or "") == "drive",
+        # what there is to read, and what it cost to not be readable
+        "extract_status": f.extract_status or "pending",
+        "extract_label": EXTRACT_LABEL.get(f.extract_status or "pending", ""),
+        "extract_note": f.extract_note or "",
+        "text_chars": total,
+        "page_count": int(f.page_count or 0),
+        # true ⇒ the text is NOT the whole file; the file itself must be opened
+        "text_truncated": bool(f.text_truncated),
+        # the proof, in the open
+        "read_chars": got,
+        "read_percent": (round(100 * got / total) if total else None),
+        "fully_read": bool(total and got >= total),
+        "read_at": f.read_at.isoformat() if f.read_at else None,
+        "read_by": f.read_by or "",
+        "viewed_at": f.viewed_at.isoformat() if f.viewed_at else None,
+    }
+
+
+async def _files_of(db: AsyncSession, report_id: str) -> List[InspectionFile]:
+    return list((await db.execute(
+        select(InspectionFile).where(InspectionFile.report_id == report_id)
+        .order_by(InspectionFile.created_at))).scalars().all())
+
+
+async def _files_by_report(db: AsyncSession, report_ids: List[str]) -> dict:
+    """Files for MANY sheets in one query.
+
+    The queue is the supervisor's first screen of every round, so it has to show
+    which sheets carry samples — but one query per sheet would make the list cost
+    grow with the wall. The `text` column is excluded: a listing must never ship
+    megabytes of extracted text (the same reason shots live in their own table).
+    """
+    out: dict = {rid: [] for rid in report_ids}
+    if not report_ids:
+        return out
+    cols = (InspectionFile.id, InspectionFile.report_id, InspectionFile.note_id,
+            InspectionFile.filename, InspectionFile.mime, InspectionFile.byte_size,
+            InspectionFile.caption, InspectionFile.uploaded_by, InspectionFile.created_at,
+            InspectionFile.store, InspectionFile.store_note, InspectionFile.drive_link,
+            InspectionFile.extract_status, InspectionFile.extract_note,
+            InspectionFile.text_chars, InspectionFile.page_count,
+            # v146 — MUST be selected: `file_read_debt` reads it, and a column
+            # missing from a listing reads as False, so the queue would report
+            # «nothing to read» on a file the answer endpoint then refuses.
+            InspectionFile.text_truncated,
+            InspectionFile.read_chars, InspectionFile.read_at, InspectionFile.read_by,
+            InspectionFile.viewed_at)
+    rows = (await db.execute(
+        select(*cols).where(InspectionFile.report_id.in_(report_ids))
+        .order_by(InspectionFile.created_at))).all()
+    for row in rows:
+        # a light stand-in with the same attribute names `_file_dict` reads
+        out.setdefault(row.report_id, []).append(_FileRow(row))
+    return out
+
+
+class _FileRow:
+    """Attribute view over a partial row, so `_file_dict`/`file_read_debt` work
+    on a listing exactly as they do on a full ORM object."""
+
+    __slots__ = ("_m",)
+
+    def __init__(self, row) -> None:
+        self._m = row._mapping
+
+    def __getattr__(self, name: str):
+        try:
+            return self._m[name]
+        except KeyError:
+            # `text` is deliberately not loaded in listings
+            return "" if name == "text" else None
+
+
+def _to_dict(r: InspectionReport, deps: bool = True, files: Optional[list] = None) -> dict:
     notes = _notes(r)
     return {
         "id": r.id,
@@ -167,6 +275,9 @@ def _to_dict(r: InspectionReport, deps: bool = True) -> dict:
         "notes": notes,
         "dependencies": _deps(r) if deps else [],
         "glow": sheet_glow(r.status, notes),
+        # v146 — the attached samples, and what the supervisor still owes on them
+        "files": [_file_dict(f) for f in (files or [])],
+        "read_debt": file_read_debt(files or []),
         "binder": ({"id": r.binder_id, "number": r.binder_number, "page": r.binder_page}
                    if r.binder_id else None),
     }
@@ -199,8 +310,10 @@ async def list_reports(
         .group_by(InspectionReport.status)
     )).all():
         counts[s] = int(n or 0)
-    return {"ok": True, "reports": [_to_dict(r) for r in rows], "counts": counts,
-            "binder_capacity": BINDER_CAPACITY}
+    fmap = await _files_by_report(db, [r.id for r in rows])
+    return {"ok": True,
+            "reports": [_to_dict(r, files=fmap.get(r.id, [])) for r in rows],
+            "counts": counts, "binder_capacity": BINDER_CAPACITY}
 
 
 @router.get("/queue")
@@ -216,6 +329,8 @@ async def queue(db: AsyncSession = Depends(get_db), user=Depends(get_current_act
         .order_by(InspectionReport.number)
     )).scalars().all()
     unanswered = [r for r in rows if r.status == STATUS_OPEN]
+    fmap = await _files_by_report(db, [r.id for r in rows])
+    reports = [_to_dict(r, files=fmap.get(r.id, [])) for r in rows]
     return {
         "ok": True,
         "owed": len(unanswered),
@@ -223,8 +338,227 @@ async def queue(db: AsyncSession = Depends(get_db), user=Depends(get_current_act
         "to_file": (await db.execute(
             select(func.count(InspectionReport.id))
             .where(InspectionReport.status == STATUS_APPROVED))).scalar() or 0,
-        "reports": [_to_dict(r) for r in rows],
+        # v146 — the reading the supervisor owes, up front on its first screen,
+        # so an unread sample is visible before it drafts an answer.
+        "files_to_read": sum(len(r["read_debt"]) for r in reports),
+        "reports": reports,
     }
+
+
+# ---------------------------------------------------------------------------
+# v146 — FILES. Any type, up to 100 MB, and the reviewer has to read them.
+#
+# The upload is multipart and streamed: a 100 MB body must never be assembled in
+# a JSON string (the screenshot path is a data-URL and is capped at ~1.4 MB for
+# exactly that reason). Text is extracted ONCE, here, so the reviewer reads text
+# instead of bytes; the reading endpoint counts what it served.
+# ---------------------------------------------------------------------------
+#: Read in pieces so a 100 MB upload never sits in memory twice.
+_UPLOAD_CHUNK = 1024 * 1024
+
+
+@router.post("/{report_id}/files")
+async def upload_file(
+    report_id: str,
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    note_id: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Attach one file of ANY type to a sheet.
+
+    The owner's use cases, verbatim: a non-image sample for a page that does not
+    exist yet; an image downloaded from elsewhere (not a screenshot); a Word or
+    PDF sample of a document format to be built from. All three are «here is a
+    specimen, read it», so the caption travels with the bytes and the text is
+    pulled out for the reviewer.
+    """
+    r = (await db.execute(select(InspectionReport).where(
+        InspectionReport.id == report_id))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="گزارش پیدا نشد")
+
+    # Read with a running total so an oversized body is refused mid-stream
+    # instead of after the whole thing has been buffered.
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > ifiles.MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(f"حجمِ فایل از سقفِ {ifiles.MAX_MB} مگابایت بیشتر است. "
+                        "اگر لازم است بالاتر برود، INSPECTION_MAX_FILE_MB را زیاد کن"))
+        chunks.append(chunk)
+    data = b"".join(chunks)
+    chunks.clear()
+    if not data:
+        raise HTTPException(status_code=422, detail="فایل خالی است")
+
+    filename = ifiles.safe_filename(file.filename or "file")
+    mime = (file.content_type or "").strip() or "application/octet-stream"
+
+    # Extract BEFORE storing: if the bytes cannot be kept, the reviewer at least
+    # still gets the readable content instead of nothing.
+    ex = ifiles.extract(data, filename, mime)
+    try:
+        placed = ifiles.store(data=data, filename=filename, mime=mime,
+                              report_number=int(r.number or 0))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502,
+                            detail=f"ذخیرهٔ فایل ممکن نشد: {exc}"[:300]) from exc
+
+    fid = uuid.uuid4().hex[:24]
+    row = InspectionFile(
+        id=fid, report_id=r.id, note_id=_clean(note_id, 40),
+        uploaded_by=str(getattr(user, "username", "") or ""),
+        filename=placed["filename"], mime=mime, byte_size=placed["byte_size"],
+        sha256=placed["sha256"], caption=_clean(caption, MAX_TEXT),
+        store=placed["store"], drive_id=placed["drive_id"],
+        drive_link=placed["drive_link"], local_path=placed["local_path"],
+        store_note=placed["store_note"],
+        extract_status=ex["status"], extract_note=ex["note"],
+        text=ex["text"], text_chars=len(ex["text"] or ""),
+        page_count=int(ex.get("page_count") or 0),
+        text_truncated=bool(ex.get("truncated")),
+    )
+    db.add(row)
+    # An upload is a change to the sheet, so it re-opens an answered one: the
+    # owner has handed over new material and the previous answer did not see it.
+    if r.status == STATUS_ANSWERED and not await _is_supervisor(db, user):
+        r.status = STATUS_OPEN
+    await db.commit()
+    await db.refresh(row)
+    # `r` may have been modified above (a new sample re-opens an answered sheet),
+    # which expires it on commit — refresh before it is serialised, or building
+    # the response triggers lazy IO outside the async context.
+    await db.refresh(r)
+    await record_audit(
+        action="inspection_file_upload", entity_type="inspection", entity_id=r.id,
+        detail=(f"گزارشِ {r.number} — «{row.filename}» "
+                f"({ifiles.human_size(row.byte_size)}، {row.store or 'نامشخص'}، "
+                f"استخراج: {row.extract_status})"),
+        user=user, db=db)
+    return {"ok": True, "file": _file_dict(row),
+            "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+async def _file_or_404(db: AsyncSession, file_id: str) -> InspectionFile:
+    row = (await db.execute(select(InspectionFile).where(
+        InspectionFile.id == file_id))).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="فایل پیدا نشد")
+    return row
+
+
+@router.get("/files/{file_id}")
+async def file_meta(file_id: str, db: AsyncSession = Depends(get_db),
+                    user=Depends(get_current_active_user)):
+    return {"ok": True, "file": _file_dict(await _file_or_404(db, file_id))}
+
+
+@router.get("/files/{file_id}/text")
+async def file_text(
+    file_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Serve the extracted text in slices, and RECORD how far the reader got.
+
+    This is the mechanism behind «size must not be an excuse»: the reviewer never
+    needs the bytes, and cannot pretend to have read what it did not fetch.
+    `read_chars` only ever moves forward, and only to what was actually served —
+    a reader that jumps to the end has still not read the middle.
+    """
+    row = await _file_or_404(db, file_id)
+    text = row.text or ""
+    total = len(text)
+    # a caller may ask for a bigger bite — bounded, so one request can never be
+    # asked to serialise an arbitrary amount
+    n = min(limit or ifiles.SLICE_CHARS, ifiles.MAX_SLICE_CHARS)
+    part = text[offset:offset + n]
+    end = offset + len(part)
+
+    # Only a CONTIGUOUS read counts. Skipping ahead leaves the gap unread, which
+    # is the honest answer — otherwise one call to the last page would clear the
+    # whole debt.
+    if offset <= int(row.read_chars or 0) and end > int(row.read_chars or 0):
+        row.read_chars = end
+        row.read_at = datetime.now(timezone.utc)
+        row.read_by = str(getattr(user, "username", "") or "")
+        await db.commit()
+        await db.refresh(row)
+
+    return {
+        "ok": True,
+        "file_id": row.id,
+        "filename": row.filename or "",
+        "caption": row.caption or "",
+        "extract_status": row.extract_status or "",
+        "extract_note": row.extract_note or "",
+        "offset": offset,
+        "returned": len(part),
+        "text": part,
+        # the same coverage discipline as v144: never report a slice as the whole
+        "text_chars": total,
+        "has_more": end < total,
+        "next_offset": end if end < total else None,
+        "read_chars": int(row.read_chars or 0),
+        "fully_read": int(row.read_chars or 0) >= total and total > 0,
+        "page_count": int(row.page_count or 0),
+    }
+
+
+@router.get("/files/{file_id}/raw")
+async def file_raw(file_id: str, db: AsyncSession = Depends(get_db),
+                   user=Depends(get_current_active_user)):
+    """The bytes themselves — for images, and for anything with no extractor.
+
+    Fetching this is what «looked at it» means for a file that has no text, so it
+    is recorded: `file_read_debt` demands it rather than waving images through.
+    """
+    row = await _file_or_404(db, file_id)
+    try:
+        data = ifiles.load(row)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=410, detail=str(exc)[:300]) from exc
+    row.viewed_at = datetime.now(timezone.utc)
+    await db.commit()
+    # inline for an image so the browser shows it; everything else downloads
+    disp = "inline" if (row.mime or "").startswith("image/") else "attachment"
+    return Response(
+        content=data, media_type=row.mime or "application/octet-stream",
+        headers={"Content-Disposition": f'{disp}; filename="{row.filename}"',
+                 "Cache-Control": "private, max-age=300"})
+
+
+@router.delete("/files/{file_id}")
+async def delete_file(file_id: str, db: AsyncSession = Depends(get_db),
+                      user=Depends(get_current_active_user)):
+    """Only the OWNER removes a sample. The supervisor cannot delete its homework.
+
+    Same shape as the sheet-delete guard: a rule that is only written down is a
+    rule that gets broken. The Drive copy is deliberately LEFT in place — the
+    binding rule is quarantine, not deletion, and a sample the owner sent is
+    evidence.
+    """
+    if await _is_supervisor(db, user):
+        raise HTTPException(status_code=403,
+                            detail="ناظر فایلِ نمونه را حذف نمی‌کند — این کارِ مالک است")
+    row = await _file_or_404(db, file_id)
+    rid, name = row.report_id, row.filename
+    await db.delete(row)
+    await db.commit()
+    await record_audit(action="inspection_file_delete", entity_type="inspection",
+                       entity_id=rid, detail=f"«{name}» از برگه برداشته شد (نسخهٔ درایو دست‌نخورده ماند)",
+                       user=user, db=db)
+    return {"ok": True}
 
 
 @router.get("/shots/{shot_id}")
@@ -251,7 +585,7 @@ async def get_report(report_id: str, db: AsyncSession = Depends(get_db),
         InspectionReport.id == report_id))).scalar_one_or_none()
     if r is None:
         raise HTTPException(status_code=404, detail="گزارش پیدا نشد")
-    return {"ok": True, "report": _to_dict(r)}
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +649,7 @@ async def create_report(payload: CreateIn, db: AsyncSession = Depends(get_db),
     await record_audit(action="inspection_report_created", entity_type="inspection",
                        entity_id=r.id, detail=f"گزارشِ {r.number} — {r.title} ({r.reopen})",
                        user=user, db=db)
-    return {"ok": True, "report": _to_dict(r)}
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 
 class NoteIn(BaseModel):
@@ -352,6 +686,34 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
             raise HTTPException(
                 status_code=422,
                 detail="«درست شد» بدونِ تصویرِ بعدش پذیرفته نمی‌شود — یا تصویر بفرست یا نتیجه را «نیمه‌کاره»/«درست نشد» بگذار",
+            )
+
+    # v146 — THE RULE THAT MAKES «I WON'T READ IT» IMPOSSIBLE.
+    #
+    # The owner attached samples so the supervisor would read them: «هم به
+    # محتوای کامل فایل باید توجه بشه هم به توضیحات و اسکرین», and «حجم هم باعث
+    # نشه ناظر نتونه بگه من نمیخونمش». Reading is already cheap — the text was
+    # extracted at upload and is served in slices — so an unread sample is a
+    # choice, and this refuses it. The owner's own notes are never blocked.
+    if reviewer:
+        debt = file_read_debt(await _files_of(db, r.id))
+        if debt:
+            parts = []
+            for d in debt[:6]:
+                if d["reason"] == "text":
+                    parts.append(f"«{d['filename']}»: {d['remaining']} نویسه از "
+                                 f"{d['text_chars']} خوانده نشده")
+                elif d["reason"] == "truncated":
+                    parts.append(f"«{d['filename']}»: متنش بریده شده بود، پس باید "
+                                 "خودِ فایل را هم باز کنی")
+                else:
+                    parts.append(f"«{d['filename']}»: هنوز باز نشده")
+            raise HTTPException(
+                status_code=422,
+                detail=("پیش از پاسخ باید فایل‌های پیوستِ برگه را کامل بخوانی — "
+                        + "؛ ".join(parts)
+                        + ". متن را از /api/inspection/files/{id}/text تکه‌تکه بگیر "
+                          "(و برای تصویر/فایلِ بی‌متن، /raw را باز کن)"),
             )
 
     nid = uuid.uuid4().hex[:16]
@@ -395,7 +757,7 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
         entity_type="inspection", entity_id=r.id,
         detail=f"گزارشِ {r.number} — " + (f"نتیجه: {payload.outcome}" if reviewer else "یادداشتِ مالک"),
         user=user, db=db)
-    return {"ok": True, "report": _to_dict(r)}
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 
 class StatusIn(BaseModel):
@@ -427,7 +789,7 @@ async def set_status(report_id: str, payload: StatusIn, db: AsyncSession = Depen
     await record_audit(action="inspection_approved" if want == STATUS_APPROVED else "inspection_reopened",
                        entity_type="inspection", entity_id=r.id,
                        detail=f"گزارشِ {r.number} — {r.title}", user=user, db=db)
-    return {"ok": True, "report": _to_dict(r)}
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 
 @router.post("/file")

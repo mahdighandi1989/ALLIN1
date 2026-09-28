@@ -6,7 +6,7 @@
 
 ```bash
 python3 scripts/supervisor/inspection.py file    # تیک‌خورده‌های دورِ قبل → زونکن
-python3 scripts/supervisor/inspection.py pull    # QUEUE.md + shots/
+python3 scripts/supervisor/inspection.py pull    # QUEUE.md + shots/ + files/
 python3 scripts/supervisor/inspection.py answer 7 --text-file /tmp/a.md \
     --outcome partial --dep 'GET /api/customers=ok' --commit abc1234
 ```
@@ -15,8 +15,18 @@ python3 scripts/supervisor/inspection.py answer 7 --text-file /tmp/a.md \
   داخلِ کادر بود.
 - `shots/` — تصویرِ هر یادداشت، به‌صورت فایلِ واقعی. **بازشان کن و نگاه کن** —
   تمامِ نکتهٔ این سامانه این است که مالک چیزی را *دیده* که تست‌ها نمی‌بینند.
+- `files/` (v146) — فایل‌های **نمونه**‌ای که مالک پیوست کرده: نمونهٔ ورد/PDFِ
+  یک قالبِ سند، عکسی از بیرون، اکسل، هر نوعی تا ۱۰۰ مگابایت. `pull` متنِ
+  **کاملشان** را می‌کشد (تکه‌تکه، تا آخر) و اینجا می‌نویسد؛ فایلِ بی‌متن
+  (تصویر، PDFِ اسکن‌شده، `.doc`) را خودِ بایت‌هایش را می‌آورد.
 
-هر دو با هر `pull` از نو ساخته می‌شوند و در git نیستند. تنها همین `README.md`
+  > **«حجمش زیاد است» عذر نیست.** متن هنگامِ آپلود استخراج شده، پس خواندن ارزان
+  > است — و سرور می‌شمارد چقدر سرو شده. تا فایلی خوانده‌نشده بماند، API جوابِ آن
+  > برگه را **رد می‌کند** (۴۲۲، با نامِ فایل و تعدادِ نویسهٔ نخوانده).
+
+  سه‌تایی را با هم بخوان: متنِ برگه، *توضیحِ* فایل، و متنِ کاملِ فایل.
+
+هر سه با هر `pull` از نو ساخته می‌شوند و در git نیستند. تنها همین `README.md`
 کامیت می‌شود.
 
 پیکربندی: همان متغیرهای `SUPERVISOR_API_*` که `prod_audit.py` استفاده می‌کند.

@@ -29,7 +29,7 @@ and a report row stays small.
 """
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -152,6 +152,146 @@ class InspectionShot(Base):
     data = Column(Text, default="")
     byte_size = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class InspectionFile(Base):
+    """v146 — ANY file attached to a sheet, and the proof the supervisor read it.
+
+    WHY THIS IS NOT JUST «another shot» (owner, 2026-09-28)
+    ------------------------------------------------------
+    The owner asked to be able to hand the supervisor a *sample* rather than a
+    screenshot: «یه نمونه غیرِ عکس … یا یه فرمتِ سند … نسخهٔ ورد یا پی‌دی‌افِ
+    نمونه بهش بدم تا ایجاد کنه». So this accepts any type, up to 100 MB, and the
+    supervisor must attend to THREE things together: the file's full content, the
+    caption written about it, and the screenshot.
+
+    THE LOAD-BEARING DESIGN DECISION
+    --------------------------------
+    The owner's last sentence is the requirement: «حجم هم باعث نشه ناظر نتونه
+    بگه من نمیخونمش» — size must never become an excuse. A 100 MB PDF cannot be
+    read as bytes by a reviewer, so the TEXT IS EXTRACTED AT UPLOAD TIME and kept
+    here, and the reading endpoint serves it in slices while recording how far
+    the supervisor got (`read_chars`). `add_note` then REFUSES a supervisor reply
+    while any readable file is unread. «نمی‌خوانمش» stops being a choice.
+
+    `extract_status` never collapses «nothing to read» into «I read nothing»:
+    `unsupported`, `failed`, `empty` and `image` are distinct states, each with
+    its reason in `extract_note`. That is the binding lesson from
+    `experiences/a-monitor-must-distinguish-unmeasured-from-zero.md`.
+
+    THE BYTES LIVE IN DRIVE, not in this row and not on the container disk: the
+    container's filesystem is wiped on every deploy (OPEN_ITEMS #2), so a sample
+    the owner uploaded would silently vanish. `store` records where they really
+    are, so a reader is never guessing.
+    """
+
+    __tablename__ = "inspection_files"
+
+    id = Column(String(40), primary_key=True)
+    report_id = Column(String(40), index=True, nullable=False)
+    #: The note this file was attached to (a sheet's conversation can grow files).
+    note_id = Column(String(40), index=True, default="")
+    uploaded_by = Column(String(80), default="")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    filename = Column(String(260), default="")
+    mime = Column(String(120), default="application/octet-stream")
+    byte_size = Column(Integer, default=0)
+    sha256 = Column(String(64), default="")
+    #: The owner's words about THIS file — «توضیح بدم» is part of the request.
+    caption = Column(Text, default="")
+
+    # --- where the bytes actually are -------------------------------------
+    #: `drive` = durable · `local` = container disk, EPHEMERAL (lost on deploy)
+    store = Column(String(12), default="")
+    drive_id = Column(String(80), default="")
+    drive_link = Column(String(400), default="")
+    local_path = Column(String(400), default="")
+    #: Why the durable store was not used, when it was not. Never silent.
+    store_note = Column(Text, default="")
+
+    # --- what the supervisor must read ------------------------------------
+    #: ok · empty · unsupported · failed · image · pending — never merged
+    extract_status = Column(String(12), default="pending")
+    extract_note = Column(Text, default="")
+    #: The extracted text. Served in slices, never in one response.
+    text = Column(Text, default="")
+    text_chars = Column(Integer, default=0)
+    #: For a PDF: how many pages the text came from, so «all of it» is checkable.
+    page_count = Column(Integer, default=0)
+    #: True when the extraction stopped at a ceiling (character cap, or a PDF
+    #: whose later pages had no text layer). Then the TEXT IS NOT THE WHOLE
+    #: CONTENT, and reading all of it does not discharge the duty — the file
+    #: itself must be opened too. Without this flag a truncated sample would
+    #: report `fully_read` after the part we kept: a cap reported as a total.
+    text_truncated = Column(Boolean, default=False)
+
+    # --- the proof it was read --------------------------------------------
+    #: The furthest character the reader has actually been served.
+    read_chars = Column(Integer, default=0)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    read_by = Column(String(80), default="")
+    #: An image has no text; looking at it is fetching the bytes. Recorded so the
+    #: guard can demand it instead of waving images through.
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<InspectionFile({self.filename!r}, {self.byte_size}B, {self.extract_status})>"
+
+
+#: The states in which a file HAS text that a reviewer is obliged to finish.
+READABLE = ("ok",)
+#: Extraction outcomes, and what each one means to a reader.
+EXTRACT_LABEL = {
+    "ok": "متن استخراج شد — ناظر باید کاملش را بخواند",
+    "empty": "فایل باز شد ولی متنی نداشت",
+    "unsupported": "برای این نوع، استخراجِ متن نداریم — ناظر باید خودِ فایل را باز کند",
+    "failed": "استخراج شکست خورد — دلیلش ثبت شده",
+    "image": "تصویر است — ناظر باید نگاهش کند (متنی برای خواندن ندارد)",
+    "pending": "هنوز استخراج نشده",
+}
+
+
+def file_read_debt(files: list) -> list:
+    """Which attached files a supervisor still owes a read on, and how much.
+
+    Returns one entry per unfinished file. An empty list is the only thing that
+    lets a supervisor answer the sheet — see the guard in `routers/inspection`.
+
+    Deliberately NOT «is read_chars > 0»: a reviewer that fetched the first slice
+    of a 90-page sample and stopped has not read it. The debt is the remainder.
+    """
+    debt = []
+    for f in files or []:
+        status = str(getattr(f, "extract_status", "") or "")
+        name = str(getattr(f, "filename", "") or "?")
+        if status in READABLE:
+            total = int(getattr(f, "text_chars", 0) or 0)
+            got = int(getattr(f, "read_chars", 0) or 0)
+            if total and got < total:
+                debt.append({
+                    "file_id": getattr(f, "id", ""), "filename": name,
+                    "reason": "text", "read_chars": got, "text_chars": total,
+                    "remaining": total - got,
+                })
+            elif getattr(f, "text_truncated", False) and getattr(f, "viewed_at", None) is None:
+                # The text we kept is not the whole file, so finishing it is not
+                # finishing the sample — the file itself still has to be opened.
+                debt.append({
+                    "file_id": getattr(f, "id", ""), "filename": name,
+                    "reason": "truncated", "read_chars": got, "text_chars": total,
+                    "remaining": 1,
+                })
+        elif status in ("image", "unsupported"):
+            # No text to finish — but it must still have been OPENED, or the
+            # sample the owner sent was never actually looked at.
+            if getattr(f, "viewed_at", None) is None:
+                debt.append({
+                    "file_id": getattr(f, "id", ""), "filename": name,
+                    "reason": "unopened", "read_chars": 0, "text_chars": 0,
+                    "remaining": 1,
+                })
+    return debt
 
 
 class InspectionBinder(Base):

@@ -35,6 +35,11 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
   const [spot, setSpot] = useState<UiSpot | null>(null)
   const [shot, setShot] = useState<{ data: string; kind: 'pasted' | 'rendered' } | null>(null)
   const [text, setText] = useState('')
+  // v146 — samples the owner wants the supervisor to read: any type, any size up
+  // to the server's ceiling. They are uploaded AFTER the sheet exists, because a
+  // 100MB body cannot ride along inside the JSON that creates it.
+  const [picked, setPicked] = useState<File[]>([])
+  const [upPct, setUpPct] = useState<{ name: string; pct: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [reports, setReports] = useState<InspectionReport[]>([])
   const [loading, setLoading] = useState(false)
@@ -134,11 +139,27 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     if (!spot || !text.trim()) return
     setBusy(true)
     try {
-      await inspectionApi.create({ text: text.trim(), spot, shot: shot?.data })
-      toast.success('گزارش ثبت شد — ناظر در دورِ بعد جواب می‌دهد')
-      setSpot(null); setText(''); setShot(null)
+      const rep = await inspectionApi.create({ text: text.trim(), spot, shot: shot?.data })
+      // Each sample is its own request so one failure does not lose the sheet or
+      // the other files — and the owner is told exactly which one did not go up.
+      const failed: string[] = []
+      for (const f of picked) {
+        try {
+          setUpPct({ name: f.name, pct: 0 })
+          await inspectionApi.upload(rep.id, f, '', (pct) => setUpPct({ name: f.name, pct }))
+        } catch (e) { failed.push(`${f.name} (${parseApiError(e)})`) }
+      }
+      setUpPct(null)
+      if (failed.length) {
+        toast.error(`گزارش ثبت شد ولی این فایل‌ها بالا نرفتند: ${failed.join(' · ')}`)
+      } else {
+        toast.success(picked.length
+          ? `گزارش با ${picked.length} فایلِ نمونه ثبت شد — ناظر باید کاملشان را بخواند`
+          : 'گزارش ثبت شد — ناظر در دورِ بعد جواب می‌دهد')
+      }
+      setSpot(null); setText(''); setShot(null); setPicked([])
       await refresh()
-    } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false) }
+    } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false); setUpPct(null) }
   }
 
   const value = useMemo<Ctx>(() => ({ active, setActive, arm, reports, refresh, loading }),
@@ -173,7 +194,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       {spot && (
         <div dir="rtl" data-inspection-layer="1"
           className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setSpot(null) }}>
+          onClick={(e) => { if (e.target === e.currentTarget) { setSpot(null); setPicked([]) } }}>
           <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-2xl">
             <div className="mb-2 text-sm font-bold text-gray-900">گزارشِ نظارت و سرکشی</div>
             <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900">
@@ -189,6 +210,43 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
               placeholder="چه ایرادی دارد، یا چه می‌خواهی؟ (می‌توانی اسکرین‌شاتِ خودت را همین‌جا Ctrl+V کنی)"
               className="w-full rounded-lg border border-gray-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
+            {/* v146 — «باید بشه فایل هم اپلود کرد … هر نوع فایلی». No `accept`
+                filter on purpose: a Word sample of a document format, a PDF, a
+                picture pulled off the web, a spreadsheet — all are valid. */}
+            <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-600 hover:border-amber-400 hover:bg-amber-50/40">
+              <span>📎 فایلِ نمونه پیوست کن (هر نوعی — ورد، PDF، عکس، اکسل…)</span>
+              <input
+                type="file" multiple className="hidden"
+                onChange={(e) => {
+                  const list = Array.from(e.target.files || [])
+                  if (list.length) setPicked((prev) => [...prev, ...list])
+                  e.target.value = ''
+                }}
+              />
+            </label>
+            {!!picked.length && (
+              <div className="mt-1.5 space-y-1">
+                {picked.map((f, i) => (
+                  <div key={`${f.name}-${i}`} dir="rtl"
+                    className="flex items-center gap-2 rounded-md bg-gray-50 px-2 py-1 text-[11px] text-gray-700">
+                    <span className="truncate">{f.name}</span>
+                    <span className="text-gray-400">{(f.size / (1024 * 1024)).toFixed(1)} مگابایت</span>
+                    <span className="flex-1" />
+                    <button type="button" title="برداشتن"
+                      onClick={() => setPicked((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-red-600 hover:underline">×</button>
+                  </div>
+                ))}
+                <div className="text-[11px] text-emerald-700">
+                  ناظر موظف است متنِ کاملِ این فایل‌ها را بخواند — تا نخواند نمی‌تواند برگه را جواب بدهد.
+                </div>
+              </div>
+            )}
+            {upPct && (
+              <div dir="rtl" className="mt-1.5 text-[11px] text-amber-800">
+                در حالِ بالا رفتن: {upPct.name} — {upPct.pct}٪
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <button onClick={renderRegion} type="button"
                 className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">
@@ -202,7 +260,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
                 </span>
               )}
               <span className="flex-1" />
-              <button onClick={() => setSpot(null)} type="button"
+              <button onClick={() => { setSpot(null); setPicked([]) }} type="button"
                 className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">انصراف</button>
               <button onClick={submit} disabled={busy || !text.trim()}
                 className="rounded-lg bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">

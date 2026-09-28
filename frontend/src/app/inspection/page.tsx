@@ -7,8 +7,8 @@
 // whole reason this page is trustworthy.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
-import { RefreshCw, Check, Trash2, ExternalLink } from 'lucide-react'
-import { inspectionApi, parseApiError, type InspectionReport } from '@/lib/api'
+import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X } from 'lucide-react'
+import { inspectionApi, parseApiError, type InspectionFile, type InspectionReport } from '@/lib/api'
 import { TONE } from '@/lib/inspection'
 import toast from 'react-hot-toast'
 
@@ -30,6 +30,9 @@ export default function InspectionPage() {
   const [busy, setBusy] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
   const [reply, setReply] = useState('')
+  // v146 — attaching a sample to a sheet that already exists, and reading one back.
+  const [upPct, setUpPct] = useState<{ id: string; name: string; pct: number } | null>(null)
+  const [peek, setPeek] = useState<{ file: InspectionFile; text: string; loading: boolean } | null>(null)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -61,6 +64,48 @@ export default function InspectionPage() {
       await load()
     } catch (e) { toast.error(parseApiError(e)) }
   }
+
+  const attach = useCallback(async (r: InspectionReport, files: File[]) => {
+    for (const f of files) {
+      try {
+        setUpPct({ id: r.id, name: f.name, pct: 0 })
+        await inspectionApi.upload(r.id, f, '', (pct) => setUpPct({ id: r.id, name: f.name, pct }))
+        toast.success(`«${f.name}» پیوست شد — ناظر باید کاملش را بخواند`)
+      } catch (e) { toast.error(`${f.name}: ${parseApiError(e)}`) }
+    }
+    setUpPct(null)
+    await load()
+  }, [load])
+
+  const dropFile = useCallback(async (f: InspectionFile) => {
+    if (!window.confirm(`«${f.filename}» از این برگه برداشته شود؟ (نسخهٔ درایو دست‌نخورده می‌ماند)`)) return
+    try {
+      await inspectionApi.removeFile(f.id)
+      toast.success('برداشته شد')
+      await load()
+    } catch (e) { toast.error(parseApiError(e)) }
+  }, [load])
+
+  // The owner reading their own sample back — the whole text, not one slice: a
+  // human checking what the supervisor will see, and a partial view here would
+  // be the same half-truth the reports used to tell.
+  const openPeek = useCallback(async (f: InspectionFile) => {
+    setPeek({ file: f, text: '', loading: true })
+    try {
+      let out = ''
+      let offset = 0
+      for (let guard = 0; guard < 400; guard++) {
+        const got = await inspectionApi.fileText(f.id, offset)
+        out += got.text
+        if (!got.has_more || got.next_offset === null) break
+        offset = got.next_offset
+      }
+      setPeek({ file: f, text: out, loading: false })
+    } catch (e) {
+      toast.error(parseApiError(e))
+      setPeek(null)
+    }
+  }, [])
 
   const summary = useMemo(() => ({
     open: counts.open || 0, answered: counts.answered || 0,
@@ -208,6 +253,94 @@ export default function InspectionPage() {
                       </div>
                     ))}
 
+                    {/* v146 — the samples on this sheet, and whether the
+                        supervisor has actually read them. The read state is
+                        shown to the OWNER on purpose: «ناظر خواند یا نه» was
+                        the thing they could not see before. */}
+                    <div className="rounded-lg border border-sky-200 bg-sky-50/40 p-2.5">
+                      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-sky-900">
+                        <Paperclip className="h-3.5 w-3.5" />
+                        فایل‌های نمونه {r.files?.length ? `(${fa(r.files.length)})` : ''}
+                      </div>
+                      {!r.files?.length && (
+                        <div className="mb-1.5 text-[11px] text-gray-500">
+                          فایلی پیوست نشده. هر نوع فایلی می‌شود — ورد، PDF، عکس، اکسل…
+                        </div>
+                      )}
+                      <div className="space-y-1.5">
+                        {(r.files || []).map((f) => (
+                          <div key={f.id} dir="rtl"
+                            className="rounded-md border border-sky-100 bg-white px-2 py-1.5 text-[11px]">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-gray-800 truncate max-w-[16rem]">{f.filename}</span>
+                              <span className="text-gray-400">{f.size_label}</span>
+                              {f.extract_status === 'ok' ? (
+                                <span className={f.fully_read ? 'text-emerald-700' : 'text-amber-700'}>
+                                  {f.fully_read
+                                    ? '✓ ناظر کاملش را خواند'
+                                    : `ناظر ${fa(f.read_percent ?? 0)}٪ خوانده`}
+                                </span>
+                              ) : (
+                                <span className={f.viewed_at ? 'text-emerald-700' : 'text-amber-700'}>
+                                  {f.viewed_at ? '✓ ناظر بازش کرد' : 'ناظر هنوز بازش نکرده'}
+                                </span>
+                              )}
+                              {!f.durable && (
+                                <span className="text-red-700" title={f.store_note}>
+                                  ⚠ در درایو ذخیره نشد
+                                </span>
+                              )}
+                              <span className="flex-1" />
+                              {f.extract_status === 'ok' && (
+                                <button type="button" onClick={() => void openPeek(f)}
+                                  className="text-sky-700 hover:underline">متن</button>
+                              )}
+                              <a href={inspectionApi.fileUrl(f.id)} target="_blank" rel="noreferrer"
+                                className="text-sky-700 hover:underline">دانلود</a>
+                              {!!f.drive_link && (
+                                <a href={f.drive_link} target="_blank" rel="noreferrer"
+                                  className="text-sky-700 hover:underline">درایو</a>
+                              )}
+                              {r.status !== 'filed' && (
+                                <button type="button" onClick={() => void dropFile(f)}
+                                  title="برداشتن" className="text-red-600 hover:underline">×</button>
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-gray-500">{f.extract_label}</div>
+                            {!!f.extract_note && (
+                              <div className="mt-0.5 text-gray-500">{f.extract_note}</div>
+                            )}
+                            {!!f.caption && (
+                              <div className="mt-0.5 text-gray-700" dir="auto">توضیح: {f.caption}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {r.status !== 'filed' && (
+                        <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[11px] text-sky-800 hover:underline">
+                          <Paperclip className="h-3 w-3" />
+                          <span>پیوست کردنِ فایلِ نمونه (هر نوعی)</span>
+                          <input type="file" multiple className="hidden"
+                            onChange={(e) => {
+                              const list = Array.from(e.target.files || [])
+                              if (list.length) void attach(r, list)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                      )}
+                      {upPct?.id === r.id && (
+                        <div className="mt-1 text-[11px] text-amber-800">
+                          {upPct.name} — {fa(upPct.pct)}٪
+                        </div>
+                      )}
+                      {!!r.read_debt?.length && (
+                        <div className="mt-1.5 rounded-md bg-amber-100/70 px-2 py-1 text-[11px] text-amber-900">
+                          ناظر تا این فایل‌ها را کامل نخواند نمی‌تواند برگه را جواب بدهد:{' '}
+                          {r.read_debt.map((d) => d.filename).join(' · ')}
+                        </div>
+                      )}
+                    </div>
+
                     {!!r.dependencies?.length && (
                       <div className="rounded-lg border border-purple-200 bg-purple-50/40 p-2.5">
                         <div className="mb-1 text-[11px] font-semibold text-purple-900">
@@ -243,6 +376,40 @@ export default function InspectionPage() {
           })}
         </div>
       </div>
+
+      {/* v146 — reading a sample back. Whole text, in a scroll box: the owner
+          checks what they actually handed over. */}
+      {peek && (
+        <div dir="rtl" className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setPeek(null) }}>
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-gray-200 p-3">
+              <Paperclip className="h-4 w-4 text-sky-700" />
+              <span className="truncate text-sm font-bold text-gray-900">{peek.file.filename}</span>
+              <span className="text-[11px] text-gray-500">{peek.file.size_label}</span>
+              {peek.file.page_count > 0 && (
+                <span className="text-[11px] text-gray-500">{fa(peek.file.page_count)} صفحه</span>
+              )}
+              <span className="flex-1" />
+              <button onClick={() => setPeek(null)} className="rounded p-1 hover:bg-gray-100">
+                <X className="h-4 w-4 text-gray-600" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {peek.loading ? (
+                <div className="text-sm text-gray-500">در حالِ خواندن…</div>
+              ) : (
+                <pre dir="auto" className="whitespace-pre-wrap break-words text-[12.5px] leading-6 text-gray-800">
+                  {peek.text || '(متنی استخراج نشد)'}
+                </pre>
+              )}
+            </div>
+            <div className="border-t border-gray-200 p-2 text-[11px] text-gray-500">
+              این همان متنی است که ناظر می‌خواند — تکه‌تکه، تا آخر.
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }
