@@ -62,8 +62,16 @@ _CORP_RE = re.compile(r"\b(?:%s)\b" % "|".join(_CORP_TOKENS), re.IGNORECASE)
 
 # Personal titles. Weak on their own — a company record may carry its manager's
 # name — so they only speak when there is no corporate evidence at all.
+#
+# «SHEIKH» IS DELIBERATELY NOT HERE (v142). It looks like a personal title and it
+# is one, but in this region it is overwhelmingly part of a TRADE name — «Al
+# Sheikh Trading», «Al Sheikh Est». The first live run against the real book
+# proved it: account 110221 «AL SHEIKH A.E.G», correctly filed as a company,
+# was reported as a contradiction on the strength of that word alone, and the
+# owner was right to hesitate. A person named Sheikh with no other signal now
+# comes out `unknown` — which asks, instead of guessing wrong.
 _PERSON_RE = re.compile(
-    r"\b(?:mr|mrs|ms|miss|mister|sheikh|shaikh|dr|eng|engineer|"
+    r"\b(?:mr|mrs|ms|miss|mister|dr|eng|engineer|"
     r"آقای|خانم|جناب|سرکار)\b\.?", re.IGNORECASE)
 
 _CORP_BTYPE = re.compile(

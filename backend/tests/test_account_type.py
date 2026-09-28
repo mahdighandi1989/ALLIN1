@@ -125,3 +125,28 @@ class TestItNeverWrites:
         src = inspect.getsource(mod)
         for forbidden in ("session", "db.add", "commit", "update(", "delete("):
             assert forbidden not in src, forbidden
+
+
+class TestRegionalFalsePositives:
+    """v142 — words that look personal but are trade names here.
+
+    Found on the FIRST live run against the real book, not by review: the owner
+    hesitated over a genuine finding, and the hesitation was right.
+    """
+
+    @pytest.mark.parametrize("name", [
+        "AL SHEIKH A.E.G",          # the real account 110221
+        "AL SHEIKH TRADING",
+        "SHEIKH ZAYED EST",
+    ])
+    def test_sheikh_alone_no_longer_calls_a_company_an_individual(self, name):
+        v = classify(name=name)
+        assert v.guess != RETAIL, (name, v.reasons)
+
+    def test_a_real_person_is_still_recognised_by_a_title(self):
+        assert classify(name="Mr. Ali Hassan").guess == RETAIL
+
+    def test_a_person_with_no_signal_at_all_is_asked_about_not_guessed(self):
+        """Safer to ask than to be wrong: an unrecognised name produces no
+        finding, so it can never contradict a correct stored value."""
+        assert classify(name="Sheikh Ahmed").guess == UNKNOWN
