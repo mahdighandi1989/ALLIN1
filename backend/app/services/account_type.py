@@ -130,10 +130,24 @@ def classify(
     corp: list[str] = []
     retail: list[str] = []
 
-    # --- documents only one kind of customer has -------------------------
-    if str(trade_license_no or "").strip():
-        corp.append("جوازِ تجاری (Trade License) ثبت شده — فقط شخصیتِ حقوقی دارد")
+    # --- documents ---------------------------------------------------------
+    # A TRADE LICENCE IS NOT PROOF OF A COMPANY (v143, owner's correction).
+    #
+    # It was the strongest rule here, and it was wrong: when a RETAIL customer
+    # opens an account, the bank collects the trade licence of the place they
+    # WORK as evidence of employment and residence. So the licence on a personal
+    # file may belong to the employer, not the customer. The owner caught this on
+    # account 113393 — two personal names with a licence attached — and was right
+    # to refuse it: «شاید به خاطر اینه که در افتتاح حساب صرفاً مستنداتِ جایی که
+    # کار می‌کنه ازش گرفتن».
+    #
+    # It is therefore CORROBORATING, never decisive: on its own it cannot make a
+    # contradiction (see `disagrees`, which ignores `low`). It only reaches
+    # «high» when something else already says company.
+    has_licence = bool(str(trade_license_no or "").strip())
     if (partner_count or 0) > 0:
+        # Registered partners remain decisive: the bank records partners for an
+        # entity, and a natural person has none.
         corp.append(f"{partner_count} شریک ثبت شده — حسابِ شخصی شریک ندارد")
 
     # --- naming --------------------------------------------------------------
@@ -157,16 +171,29 @@ def classify(
         retail.append("پاسپورت/اماراتی‌آیدی دارد و هیچ نشانهٔ شرکتی ندارد")
 
     # --- verdict -------------------------------------------------------------
-    if corp and not retail:
-        strong = any("Trade License" in r or "شریک" in r for r in corp)
-        return Verdict(CORPORATE, "high" if strong else "medium", corp, retail)
-    if retail and not corp:
+    has_partners = any("شریک" in r for r in corp)
+    if corp:
+        # something already says company → the licence corroborates it
+        if has_licence:
+            corp.append("جوازِ تجاری هم روی پرونده هست (مؤیّد، نه دلیلِ مستقل)")
+        if not retail:
+            return Verdict(CORPORATE, "high" if (has_partners or has_licence) else "medium",
+                           corp, retail)
+        # Conflicting signals. Registered partners still decide; a name hint
+        # against a name hint does not.
+        return Verdict(CORPORATE, "medium" if has_partners else "low", corp, retail)
+
+    if has_licence:
+        # THE LICENCE ALONE. Deliberately «low», so it never contradicts a stored
+        # value: it may simply be the employer's, filed at account opening.
+        note = ("جوازِ تجاری روی پرونده هست، ولی به‌تنهایی دلیل نیست — "
+                "در افتتاحِ حسابِ حقیقی هم جوازِ محلِ کارِ مشتری گرفته می‌شود")
+        if retail:
+            return Verdict(RETAIL, "medium", retail, [note])
+        return Verdict(CORPORATE, "low", [note], [])
+
+    if retail:
         return Verdict(RETAIL, "medium", retail, corp)
-    if corp and retail:
-        # A trade license or a partner outranks a name/ID hint: a company may
-        # carry its manager's documents, a person never carries a trade licence.
-        strong = any("Trade License" in r or "شریک" in r for r in corp)
-        return Verdict(CORPORATE, "medium" if strong else "low", corp, retail)
     return Verdict(UNKNOWN, "none", [], [])
 
 

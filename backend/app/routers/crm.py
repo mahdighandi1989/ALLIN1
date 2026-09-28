@@ -903,6 +903,15 @@ async def account_type_apply(
         c.account_type = AccountType(want)
         changed.append({"account_no": c.account_no, "from": before, "to": want})
     await db.commit()
+    # v143 — every write to customer data leaves a trail. Recovering which
+    # accounts an earlier run had changed was only possible through
+    # `updated_at`; that was luck, not design.
+    if changed:
+        from app.services.audit import record_audit
+        await record_audit(
+            action="account_type_applied", entity_type="customer",
+            detail="; ".join(f"{c['account_no']}: {c['from']}→{c['to']}" for c in changed)[:2000],
+            user=user, db=db)
     return {"ok": True, "changed": changed, "count": len(changed)}
 
 

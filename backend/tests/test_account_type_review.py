@@ -19,7 +19,7 @@ async def _seed(db):
     # a company nobody ever classified, with a trade licence on file
     db.add(Customer(account_no="900002", name="Abu Amir Furnishing Branch",
                     account_type=AccountType.UNKNOWN, status=CustomerStatus.ACTIVE))
-    db.add(CustomerProfile(account_no="900002", trade_license_no="1040716"))
+    db.add(CustomerProfile(account_no="900002", business_type="Corporate"))
     # a genuine individual, correctly filed
     db.add(Customer(account_no="900003", name="Mr. Ali Hassan",
                     account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE))
@@ -55,10 +55,10 @@ class TestReview:
             self, client, auth_headers, db_session):
         await _seed(db_session)
         d = (await client.get("/api/crm/account-type-review", headers=auth_headers)).json()
-        # 900002 has a trade licence; 900004 has nothing
+        # 900002's business type says corporate; 900004 has nothing
         assert d["summary"]["undecided_with_evidence"] == 1
         settled = next(u for u in d["undecided"] if u["account_no"] == "900002")
-        assert settled["guess"] == "corporate" and settled["confidence"] == "high"
+        assert settled["guess"] == "corporate" and settled["confidence"] in ("high", "medium")
         blind = next(u for u in d["undecided"] if u["account_no"] == "900004")
         assert blind["guess"] == "unknown" and blind["confidence"] == "none"
 

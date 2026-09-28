@@ -13,21 +13,37 @@ from app.services.account_type import (
 
 
 class TestDocumentsOnlyOneKindHas:
-    def test_a_trade_licence_means_a_company(self):
+    def test_a_trade_licence_alone_is_not_proof_of_a_company(self):
+        """v143, the owner's correction. When a RETAIL customer opens an
+        account the bank collects the trade licence of the place they WORK, as
+        evidence of employment and residence — so a licence on a personal file
+        may be the employer's. It corroborates, it never decides."""
         v = classify(name="Abu Amir Furnishing Branch", trade_license_no="1040716")
+        assert v.confidence == "low", v
+        assert not disagrees("retail", v), "it must never contradict a stored value on its own"
+
+    def test_a_trade_licence_makes_a_company_certain_once_something_else_agrees(self):
+        v = classify(name="MATRIX GEN TRADING", trade_license_no="1040716")
         assert v.guess == CORPORATE and v.confidence == "high"
-        assert any("Trade License" in r for r in v.reasons)
 
     def test_partners_mean_a_company(self):
         v = classify(name="Something", partner_count=3)
         assert v.guess == CORPORATE and v.confidence == "high"
 
-    def test_a_person_never_carries_a_trade_licence_so_it_outranks_a_name_hint(self):
-        """A company record legitimately holds its MANAGER's passport — the
-        corporate form has a «Manager Emirates ID» field. The licence wins."""
+    def test_an_employee_with_the_employers_licence_on_file_stays_retail(self):
+        """The real shape of the owner's correction: a person, their own ID, and
+        a licence that belongs to where they work."""
         v = classify(name="Mr. Ali Hassan", trade_license_no="99", passport_no="A1")
-        assert v.guess == CORPORATE
-        assert v.counter_reasons, "the conflicting evidence must still be shown"
+        assert v.guess == RETAIL, v
+        assert v.counter_reasons, "the licence must still be shown, as context"
+
+    def test_two_personal_names_with_a_licence_are_not_called_a_company(self):
+        """Account 113393 — «HARBHAJAN SINGH SAHANI & HARWANT SINGH SAHANI» with
+        a licence attached. The owner refused it, and was right: it reads as a
+        joint personal account. It must not be reported as a contradiction."""
+        v = classify(name="HARBHAJAN SINGH SAHANI & HARWANT SINGH SAHANI",
+                     trade_license_no="1040716")
+        assert not disagrees("retail", v), v
 
 
 class TestNaming:
@@ -95,9 +111,15 @@ class TestStoredValues:
 
 
 class TestDisagreement:
-    def test_retail_stored_against_a_trade_licence_is_a_contradiction(self):
-        v = classify(name="X", trade_license_no="1")
+    def test_retail_stored_against_registered_partners_is_a_contradiction(self):
+        """Partners stay decisive — the bank records partners for an entity, and
+        a natural person has none."""
+        v = classify(name="X", partner_count=3)
         assert disagrees("retail", v)
+
+    def test_retail_stored_against_a_licence_alone_is_NOT_a_contradiction(self):
+        v = classify(name="X", trade_license_no="1")
+        assert not disagrees("retail", v)
 
     def test_sme_is_a_corporate_sub_type_not_a_contradiction(self):
         v = classify(name="Gulf Trading LLC")
@@ -107,7 +129,7 @@ class TestDisagreement:
     def test_an_undecided_value_is_missing_not_contradictory(self):
         """The two problems must never be mixed: «nobody decided» is not the
         same finding as «the decision is wrong», and they need different fixes."""
-        v = classify(name="X", trade_license_no="1")
+        v = classify(name="X", partner_count=2)
         assert not disagrees("", v)
         assert not disagrees("unknown", v)
 

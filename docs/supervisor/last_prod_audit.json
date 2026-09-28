@@ -1,25 +1,5 @@
 {
- "base": "https://banking-ops-api.onrender.com",
- "connected": true,
- "sections": {
-  "account_type": {
-   "total": 3000,
-   "conflicts": 14,
-   "undecided": 0,
-   "undecided_with_evidence": 0,
-   "agreed": 2527
-  },
-  "data_quality": {
-   "total_customers": 2000,
-   "average_percent": 5,
-   "weakest_section": "اعتباری و بازبینی",
-   "top_gaps": [
-    "اقامتِ طلایی (بله/خیر)",
-    "شمارهٔ ویزا",
-    "تاریخ صدور ویزا",
-    "نوع ویزا",
-    "تعهدنامه از"
-   ]
-  }
- }
+ "base": "(تنظیم نشده)",
+ "connected": false,
+ "error": "SUPERVISOR_API_BASE تنظیم نشده — بدونِ آن نمی‌دانم به کجا وصل شوم"
 }

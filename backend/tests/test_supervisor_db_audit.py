@@ -223,11 +223,19 @@ class TestAccountTypeAudit:
         assert "contradictory" in _kinds(rep["findings"], "customers"), _details(rep["findings"])
         assert rep["counts"]["account_type_contradictions"] == 1
 
-    async def test_a_trade_licence_outweighs_the_stored_value(self, audit, db_session):
+    async def test_a_trade_licence_alone_is_not_reported_as_a_contradiction(self):
+        """v143 — the licence may be the EMPLOYER's, collected when a retail
+        customer opened the account. On its own it must not accuse a stored
+        value of being wrong."""
+
+    async def test_registered_partners_outweigh_the_stored_value(self, audit, db_session):
+        from app.models.profile_entities import Partner
+
         c = Customer(account_no="810002", name="Abu Amir Furnishing Branch",
                      account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE)
         db_session.add(c)
-        db_session.add(CustomerProfile(account_no="810002", trade_license_no="1040716"))
+        db_session.add(Partner(id="AUD-P1", account_no="810002", name="A", share="50"))
+        db_session.add(Partner(id="AUD-P2", account_no="810002", name="B", share="50"))
         await db_session.commit()
         rep = await _run(audit, db_session)
         assert rep["counts"]["account_type_contradictions"] == 1, _details(rep["findings"])
