@@ -18,6 +18,7 @@ from app.models.exchange_rate import ExchangeRate, BASE_CURRENCY
 from app.models.ai_config import AIProvider, AIModel, AITaskRoute
 from app.models.customer_link_rel import CustomerLink
 from app.models.charge_tariff import ChargeRule
+from app.models.inspection import InspectionReport, InspectionShot, InspectionBinder
 
 __all__ = [
     "User",
@@ -28,6 +29,7 @@ __all__ = [
     "AuditLog",
     "Notification",
     "SystemSetting",
+    "InspectionReport", "InspectionShot", "InspectionBinder",
     "ExposureSnapshot",
     "ExchangeRate", "BASE_CURRENCY",
     "AIProvider", "AIModel", "AITaskRoute",

@@ -38,4 +38,12 @@ EDITABLE_SETTINGS = {
     "cleanup_schedule": {"default": "off", "label": "Auto database-cleanup schedule", "type": "text"},  # off|daily|weekly|monthly
     "cleanup_last_run": {"default": "", "label": "Last cleanup scan (auto)", "type": "text"},
     "cleanup_ai_review": {"default": "off", "label": "AI second-opinion on cleanup", "type": "text"},   # off|on
+    # v141 — WHICH ACCOUNT IS THE WEEKLY SUPERVISOR.
+    #
+    # It decides two things that must not be guessed: whose notes on an
+    # inspection sheet count as the supervisor's (and may therefore record an
+    # outcome), and who is REFUSED the owner's tick. Settable from the Settings
+    # page so the owner can change it without a redeploy; the env var
+    # SUPERVISOR_API_USER is the fallback for a fresh deployment.
+    "supervisor_username": {"default": "", "label": "Supervisor account (نظارت و سرکشی)", "type": "text"},
 }

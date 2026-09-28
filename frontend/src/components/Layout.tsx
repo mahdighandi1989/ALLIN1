@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { InspectionProvider, useInspection } from '@/lib/inspection'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
 import {
@@ -54,6 +55,7 @@ const NAV_GROUPS: NavGroup[] = [
     adminOnly: true,
     items: [
       { href: '/users', label: 'Users', icon: ShieldCheck },
+      { href: '/inspection', label: 'نظارت و سرکشی', icon: ClipboardList },
       { href: '/audit', label: 'Audit Log', icon: ScrollText },
       { href: '/cleanup', label: 'Database Cleanup', icon: Sparkles },
       { href: '/settings', label: 'Settings', icon: Settings },
@@ -114,7 +116,19 @@ function PendingApprovalScreen({ email, onLogout }: { email: string; onLogout: (
   )
 }
 
+/**
+ * v141 — the inspection round wraps the whole shell, so the capture overlay and
+ * the sheets are available on every page without any page opting in.
+ */
 export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <InspectionProvider>
+      <LayoutShell>{children}</LayoutShell>
+    </InspectionProvider>
+  )
+}
+
+function LayoutShell({ children }: { children: React.ReactNode }) {
   const { user, logout, authDisabled, loading } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
@@ -213,10 +227,51 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <LogOut size={20} />
             </button>
+            <InspectionToggle />
           </div>
         </header>
-        <main className="p-6 max-w-7xl mx-auto print:p-0 print:max-w-none">{children}</main>
+        {/* v141 — ONE attribute here makes EVERY page reportable. A page that
+            wants finer addressing adds `data-report-section` to its own blocks;
+            a page that adds nothing still files a usable sheet carrying its
+            route and the DOM path. */}
+        <main
+          className="p-6 max-w-7xl mx-auto print:p-0 print:max-w-none"
+          data-report-surface={pathname || '/'}
+          data-report-surface-label={pageLabel(pathname)}
+        >{children}</main>
       </div>
     </div>
+  )
+}
+
+/** The Persian name of a route, for the sheet's address line. */
+function pageLabel(pathname: string | null): string {
+  const p = (pathname || '/').replace(/\/$/, '') || '/'
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.href === p) return item.label
+    }
+  }
+  return p
+}
+
+/** The switch that turns the inspection round on, in the header beside logout. */
+function InspectionToggle() {
+  const ins = useInspection()
+  if (!ins) return null
+  return (
+    <button
+      type="button"
+      onClick={() => ins.setActive(!ins.active)}
+      title={ins.active
+        ? 'نظارت و سرکشی روشن است — کادر بکش تا گزارش ثبت شود (یا Alt را نگه دار)'
+        : 'نظارت و سرکشی: ایراد و پیشنهاد را همان‌جا که می‌بینی ثبت کن'}
+      className={`flex items-center gap-1 rounded-lg px-2 py-1 text-sm transition ${
+        ins.active ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-400' : 'text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      <span>📝</span>
+      <span className="hidden sm:inline text-xs">{ins.active ? 'نظارت روشن' : 'نظارت'}</span>
+    </button>
   )
 }

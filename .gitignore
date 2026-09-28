@@ -74,3 +74,8 @@ backend/_supervisor_*.db-wal
 backend/_supervisor_*.db-shm
 docs/supervisor/last_run.log
 docs/supervisor/last_server.log
+
+# Supervisor inspection working copy — rebuilt by `inspection.py pull` on every
+# round. Only the README is tracked (the sheets themselves live in the API).
+docs/supervisor/inspection/QUEUE.md
+docs/supervisor/inspection/shots/

@@ -918,6 +918,48 @@ export const vouchersApi = {
   },
 }
 
+// v141 — «نظارت و سرکشی»: the owner's inspection sheets over the app's screens.
+export type InspectionNote = {
+  id: string; by: 'owner' | 'reviewer'; at: string; text: string; author?: string
+  shot_id?: string | null; outcome?: string | null; after_shot_id?: string | null; commits?: string[]
+}
+export type InspectionReport = {
+  id: string; number: number; created_at: string; updated_at: string
+  status: 'open' | 'answered' | 'approved' | 'filed'
+  title: string; created_by: string
+  page: string; page_label: string; section_id: string; section_label: string
+  reopen: string; dom_path: string; covered_text: string
+  rect: any; viewport: any
+  notes: InspectionNote[]
+  dependencies: { name: string; status: string; note?: string }[]
+  glow: { key: string; label: string; tone: string; outcome?: string }
+  binder: { id: string; number: number; page: number } | null
+}
+export const inspectionApi = {
+  async list(params: { reopen?: string; include_filed?: boolean; status?: string } = {}): Promise<{ reports: InspectionReport[]; counts: Record<string, number> }> {
+    const { data } = await api.get('/api/inspection', { params })
+    return data
+  },
+  async one(id: string): Promise<InspectionReport> {
+    const { data } = await api.get(`/api/inspection/${id}`)
+    return data.report
+  },
+  async create(body: { text: string; spot: any; shot?: string }): Promise<InspectionReport> {
+    const { data } = await api.post('/api/inspection', body)
+    return data.report
+  },
+  async note(id: string, body: { text: string; shot?: string }): Promise<InspectionReport> {
+    const { data } = await api.post(`/api/inspection/${id}/notes`, body)
+    return data.report
+  },
+  async setStatus(id: string, status: 'open' | 'approved'): Promise<InspectionReport> {
+    const { data } = await api.post(`/api/inspection/${id}/status`, { status })
+    return data.report
+  },
+  async remove(id: string): Promise<void> { await api.delete(`/api/inspection/${id}`) },
+  shotUrl(shotId: string): string { return `/api/inspection/shots/${shotId}` },
+}
+
 // v139 — is this account a person or a company? `account_type` used to default
 // to «retail», so the chooser opened the individual's form for companies. These
 // report what is STORED and what the EVIDENCE says, and apply a decision only to

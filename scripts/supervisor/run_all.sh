@@ -44,6 +44,10 @@ step "db audit"     900  bash -c "$PF cd backend && python3 ../scripts/superviso
 # database URL cannot work from here: outbound 5432 is refused, only 443 passes
 # the egress proxy. Exits 3 when it cannot see production, so a run that audited
 # nothing never looks like a clean run.
+# v141 — the owner's own sheets come FIRST: they are a person waiting for an
+# answer, not a metric. Exits 4 while any sheet is unanswered, so a round that
+# skipped the queue cannot look like a clean round.
+step "inspection"   600  python3 scripts/supervisor/inspection.py pull
 step "prod audit"   600  python3 scripts/supervisor/prod_audit.py
 step "handbook"     300  python3 scripts/supervisor/update_handbook.py
 echo; echo "=== supervisor run finished: $(date -u +%FT%TZ) ==="

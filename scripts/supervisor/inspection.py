@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""v141 — the supervisor's half of «نظارت و سرکشی».
+
+The owner files a sheet from any screen in the app. The supervisor cannot walk
+over and look at it, so this tool is the bridge: it PULLS the queue, writes each
+owner screenshot to a real image file the supervisor can OPEN WITH ITS OWN EYES,
+renders the text + the exact address into one briefing, POSTS the answer back
+under the sheet, and on the next round FILES the sheets the owner has ticked.
+
+    python3 scripts/supervisor/inspection.py pull
+    python3 scripts/supervisor/inspection.py answer 7 --text-file /tmp/a.md \
+        --outcome fixed --after /tmp/after.png --commit abc1234 \
+        --dep "GET /api/customers=ok" --dep "صفحهٔ گزارش‌ها=missing:این فیلتر آنجا نیست"
+    python3 scripts/supervisor/inspection.py file
+
+THE FOUR RULES IT ENFORCES (all four were learned the hard way in the sibling
+project, where a weak supervisor made the whole board untrustworthy):
+
+  1. **No sheet is left unanswered** — «نشد» is an answer; silence is not. `pull`
+     prints what is OWED and exits non-zero while any sheet is still open, so a
+     round that ignored the queue cannot look like a clean round.
+  2. **`fixed` needs the after-picture.** The API refuses it without one; this
+     tool refuses it earlier, with a clearer message.
+  3. **The tick is the owner's.** There is deliberately no `approve` command.
+  4. **Every answer carries its dependency walk** (`--dep`). The owner asked for
+     this by name: «وقتی هر کاری بخواد بکنه وابستگی‌ها رو چک کنه». An answer with
+     no dependencies recorded is refused unless `--no-deps` says why.
+
+Authentication is the same as `prod_audit.py`: SUPERVISOR_API_BASE plus either
+SUPERVISOR_API_USER/PASSWORD or SUPERVISOR_API_TOKEN.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT_DIR = ROOT / "docs" / "supervisor" / "inspection"
+SHOTS = OUT_DIR / "shots"
+BRIEF = OUT_DIR / "QUEUE.md"
+
+BASE = (os.getenv("SUPERVISOR_API_BASE") or "").strip().rstrip("/")
+TOKEN = (os.getenv("SUPERVISOR_API_TOKEN") or "").strip()
+USER = (os.getenv("SUPERVISOR_API_USER") or "").strip()
+PASSWORD = os.getenv("SUPERVISOR_API_PASSWORD") or ""
+TIMEOUT = float(os.getenv("SUPERVISOR_API_TIMEOUT", "60"))
+
+OUTCOMES = ("fixed", "partial", "needs-owner", "not-done")
+
+
+class InspectionError(RuntimeError):
+    """Carries WHAT to fix, not just that something failed."""
+
+
+def _req(path: str, *, data: bytes | None = None, headers: dict | None = None,
+         method: str = "GET") -> tuple:
+    url = f"{BASE}{path}"
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        raise InspectionError(
+            f"به «{url}» نرسیدم ({e.reason}) — میزبان در Network access محیط مجاز است؟") from e
+
+
+def login() -> str:
+    if TOKEN:
+        return TOKEN
+    if not (USER and PASSWORD):
+        raise InspectionError(
+            "نه SUPERVISOR_API_TOKEN تنظیم شده نه SUPERVISOR_API_USER/PASSWORD")
+    body = urllib.parse.urlencode({"username": USER, "password": PASSWORD}).encode()
+    st, raw = _req("/api/auth/login", data=body,
+                   headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+    if st != 200:
+        raise InspectionError(f"ورود ناموفق بود (HTTP {st}) — SUPERVISOR_API_* درست است؟")
+    tok = (json.loads(raw) or {}).get("access_token") or ""
+    if not tok:
+        raise InspectionError("سرور توکنی برنگرداند")
+    return tok
+
+
+def api(tok: str, path: str, *, body: dict | None = None, method: str = "GET") -> dict:
+    data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+    headers = {"Authorization": f"Bearer {tok}"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    st, raw = _req(path, data=data, headers=headers, method=method)
+    if st == 404:
+        raise InspectionError(f"«{path}» پیدا نشد — هنوز دیپلوی نشده؟")
+    if st == 403:
+        raise InspectionError(f"«{path}» رد شد (۴۰۳): {_detail(raw)}")
+    if st not in (200, 201):
+        raise InspectionError(f"«{path}» پاسخِ HTTP {st} داد: {_detail(raw)}")
+    return json.loads(raw or b"{}")
+
+
+def _detail(raw: bytes) -> str:
+    try:
+        return str((json.loads(raw) or {}).get("detail") or raw[:200])
+    except Exception:  # noqa: BLE001
+        return str(raw[:200])
+
+
+def _save_shot(tok: str, shot_id: str, name: str) -> str | None:
+    """Write one image to disk so the supervisor can actually look at it."""
+    if not shot_id:
+        return None
+    st, raw = _req(f"/api/inspection/shots/{shot_id}", headers={"Authorization": f"Bearer {tok}"})
+    if st != 200 or not raw:
+        return None
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    path = SHOTS / name
+    path.write_bytes(raw)
+    return str(path.relative_to(ROOT))
+
+
+def cmd_pull() -> int:
+    tok = login()
+    q = api(tok, "/api/inspection/queue")
+    reports = q.get("reports") or []
+    if SHOTS.exists():
+        for f in SHOTS.glob("*"):
+            f.unlink()
+    lines = [
+        "# کارتابلِ «نظارت و سرکشی»",
+        "",
+        f"- بی‌پاسخ (**باید همین دور جواب بگیرند**): **{q.get('owed', 0)}**",
+        f"- پاسخ‌داده‌شده، منتظرِ تیکِ مالک: {q.get('waiting_for_owner', 0)}",
+        f"- تأییدشده و آمادهٔ بایگانی: {q.get('to_file', 0)}",
+        "",
+        "> تصویرها در `shots/` هستند. **بازشان کن و نگاه کن** — تمامِ نکتهٔ این",
+        "> سامانه این است که مالک چیزی را *دیده* که تست‌ها نمی‌بینند.",
+        "",
+    ]
+    for r in reports:
+        lines += [
+            f"## گزارشِ {r['number']} — {r['title']}",
+            "",
+            f"- وضعیت: `{r['status']}` · {r.get('glow', {}).get('label', '')}",
+            f"- کجا: **{r.get('page_label')}**"
+            + (f" ← {r['section_label']}" if r.get("section_label") else ""),
+            f"- نشانیِ بازگشت: `{r.get('reopen')}`",
+        ]
+        if r.get("dom_path"):
+            lines.append(f"- عنصر: `{r['dom_path']}`")
+        if r.get("covered_text"):
+            lines.append(f"- آنچه در کادر بود: {r['covered_text']}")
+        lines.append("")
+        for i, n in enumerate(r.get("notes") or []):
+            who = "🤖 ناظر" if n.get("by") == "reviewer" else "👤 مالک"
+            lines += [f"**{who}** — {n.get('at', '')}", "", n.get("text", ""), ""]
+            for key, tag in (("shot_id", "before"), ("after_shot_id", "after")):
+                sid = n.get(key)
+                if sid:
+                    p = _save_shot(tok, sid, f"r{r['number']}-n{i}-{tag}.img")
+                    if p:
+                        lines.append(f"تصویر: `{p}`")
+            if n.get("commits"):
+                lines.append("کامیت‌ها: " + " · ".join(n["commits"]))
+            lines.append("")
+        if r.get("dependencies"):
+            lines.append("**وابستگی‌های بررسی‌شده:**")
+            for d in r["dependencies"]:
+                lines.append(f"- {d.get('status')} — {d.get('name')} {d.get('note') or ''}")
+            lines.append("")
+        lines.append("---")
+        lines.append("")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    BRIEF.write_text("\n".join(lines), encoding="utf-8")
+    print(json.dumps({"owed": q.get("owed", 0), "waiting_for_owner": q.get("waiting_for_owner", 0),
+                      "to_file": q.get("to_file", 0), "brief": str(BRIEF.relative_to(ROOT))},
+                     ensure_ascii=False))
+    # A round that leaves the queue untouched must not look like a clean round.
+    return 4 if q.get("owed", 0) else 0
+
+
+def _parse_dep(raw: str) -> dict:
+    """`name=status` or `name=status:note`."""
+    name, _, rest = raw.partition("=")
+    status, _, note = rest.partition(":")
+    return {"name": name.strip(), "status": (status or "ok").strip(), "note": note.strip()}
+
+
+def _data_url(path: str) -> str:
+    raw = Path(path).read_bytes()
+    ext = Path(path).suffix.lower()
+    mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp"}.get(ext)
+    if not mime:
+        raise InspectionError(f"فرمتِ «{ext}» پشتیبانی نمی‌شود (png/jpg/webp)")
+    return f"data:{mime};base64," + base64.b64encode(raw).decode()
+
+
+def cmd_answer(args) -> int:
+    tok = login()
+    text = args.text or (Path(args.text_file).read_text(encoding="utf-8") if args.text_file else "")
+    if not text.strip():
+        raise InspectionError("متنِ جواب خالی است — «نشد» هم باید نوشته شود")
+    if args.outcome not in OUTCOMES:
+        raise InspectionError(f"نتیجه باید یکی از این‌ها باشد: {', '.join(OUTCOMES)}")
+    if args.outcome == "fixed" and not args.after:
+        raise InspectionError(
+            "«fixed» بدونِ تصویرِ بعدش پذیرفته نیست. یا `--after <عکس>` بده، "
+            "یا نتیجه را `partial`/`not-done` بگذار. ادعای بی‌مدرک، برگه را سبزِ دروغین می‌کند.")
+    deps = [_parse_dep(d) for d in (args.dep or [])]
+    if not deps and not args.no_deps:
+        raise InspectionError(
+            "هیچ وابستگی‌ای ثبت نشد. برای هر کاری باید زنجیرهٔ وابستگی‌اش بررسی شود "
+            "(`--dep 'نام=ok|missing|risk:توضیح'`). اگر واقعاً وابستگی ندارد، `--no-deps` بده.")
+
+    lst = api(tok, "/api/inspection?include_filed=true")
+    target = next((r for r in lst.get("reports", []) if r["number"] == args.number), None)
+    if target is None:
+        raise InspectionError(f"گزارشِ {args.number} پیدا نشد")
+
+    body = {"text": text.strip(), "outcome": args.outcome,
+            "commits": args.commit or [], "dependencies": deps}
+    if args.after:
+        body["after_shot"] = _data_url(args.after)
+    res = api(tok, f"/api/inspection/{target['id']}/notes", body=body, method="POST")
+    print(json.dumps({"ok": True, "number": args.number,
+                      "status": res["report"]["status"],
+                      "glow": res["report"]["glow"]["label"]}, ensure_ascii=False))
+    return 0
+
+
+def cmd_file() -> int:
+    tok = login()
+    res = api(tok, "/api/inspection/file", body={}, method="POST")
+    print(json.dumps({"filed": res.get("filed", 0)}, ensure_ascii=False))
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="«نظارت و سرکشی» — the supervisor's side")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("pull", help="کارتابل + تصویرها")
+    a = sub.add_parser("answer", help="جواب زیرِ یک برگه")
+    a.add_argument("number", type=int)
+    a.add_argument("--text")
+    a.add_argument("--text-file")
+    a.add_argument("--outcome", required=True, choices=OUTCOMES)
+    a.add_argument("--after", help="تصویرِ بعد از اصلاح — برای «fixed» اجباری")
+    a.add_argument("--commit", action="append")
+    a.add_argument("--dep", action="append",
+                   help="'نام=ok|missing|risk:توضیح' — تکرارشدنی")
+    a.add_argument("--no-deps", action="store_true",
+                   help="فقط وقتی واقعاً هیچ وابستگی‌ای ندارد")
+    sub.add_parser("file", help="تیک‌خورده‌ها → زونکن")
+    args = ap.parse_args()
+
+    if not BASE:
+        print(json.dumps({"error": "SUPERVISOR_API_BASE تنظیم نشده"}, ensure_ascii=False))
+        return 3
+    try:
+        if args.cmd == "pull":
+            return cmd_pull()
+        if args.cmd == "answer":
+            return cmd_answer(args)
+        return cmd_file()
+    except InspectionError as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)
+        return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
