@@ -16,6 +16,11 @@ class AccountType(str, enum.Enum):
     RETAIL = "retail"
     CORPORATE = "corporate"
     SME = "sme"
+    # v139 — «nobody has decided yet». It MUST exist as its own value: without
+    # it the column defaulted to RETAIL, so a company nobody had classified was
+    # indistinguishable from a person somebody had, and the Credit File chooser
+    # opened the individual's form for companies without ever asking.
+    UNKNOWN = "unknown"
 
 
 class CustomerStatus(str, enum.Enum):
@@ -46,7 +51,11 @@ class Customer(Base):
     account_no = Column(String(50), unique=True, index=True, nullable=False)
     name = Column(String(200), nullable=False)
     name_ar = Column(String(200))
-    account_type = _enum_col(AccountType, default=AccountType.RETAIL)
+    # v139 — no default of RETAIL. Inventing a decision nobody made is what put
+    # the wrong type on the records; an unclassified account now says so, and
+    # the chooser asks instead of guessing. Existing rows are NOT rewritten —
+    # they are reported for review (services/account_type.py).
+    account_type = _enum_col(AccountType, default=AccountType.UNKNOWN)
     status = _enum_col(CustomerStatus, default=CustomerStatus.ACTIVE)
     email = Column(String(100))
     phone = Column(String(50))
@@ -67,7 +76,7 @@ class Customer(Base):
         # built (un-flushed) instances already expose them. Column-level
         # ``default=`` only fires on INSERT, which is too late for callers/tests
         # that read these attributes before committing.
-        kwargs.setdefault("account_type", AccountType.RETAIL)
+        kwargs.setdefault("account_type", AccountType.UNKNOWN)
         kwargs.setdefault("status", CustomerStatus.ACTIVE)
         kwargs.setdefault("is_deleted", False)
         super().__init__(**kwargs)

@@ -10,7 +10,9 @@
   "fixed_deposits": 0,
   "partners": 0,
   "attachments": 0,
-  "attachments_unattributed": 0
+  "attachments_unattributed": 0,
+  "account_type_contradictions": 0,
+  "account_type_undecided": 0
  },
  "findings": [],
  "total_findings": 0,

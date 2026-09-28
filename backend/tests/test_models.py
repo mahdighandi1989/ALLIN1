@@ -94,7 +94,11 @@ class TestCustomerModel:
             name="Test Customer"
         )
         
-        assert customer.account_type == AccountType.RETAIL
+        # v139 — a customer nobody has classified must SAY so. This defaulted
+        # to RETAIL, which made «a company nobody typed» look exactly like «an
+        # individual somebody typed», so the Credit File chooser opened the
+        # wrong form without ever asking.
+        assert customer.account_type == AccountType.UNKNOWN
         assert customer.status == CustomerStatus.ACTIVE
         assert customer.is_deleted is False
         assert customer.name_ar is None

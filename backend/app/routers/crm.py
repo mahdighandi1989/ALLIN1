@@ -17,7 +17,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -26,7 +26,7 @@ from app.services import attachments as attachments_store
 from app.models.guarantor import Guarantor
 from app.models.credit_review import CreditReview
 from app.models.profile_entities import MortgagedProperty, FixedDeposit, Partner, PropertyEvent
-from app.models.customer import Customer
+from app.models.customer import AccountType, Customer
 from app.models.facility import Facility, FacilityType
 from app.services.checklist import seed_facility_checklist, HOURGLASS
 from app.services.completeness import recompute_completeness
@@ -752,6 +752,161 @@ async def data_quality(
 
 
 # ---------------------------------------------------------------------------
+# v139 — account-type review: is this account a PERSON or a COMPANY?
+#
+# `account_type` had no «unknown» state, so the column defaulted to retail and
+# the bulk listing import invented retail for every record without the column.
+# Companies were therefore filed as individuals at scale, and the Credit File
+# chooser opened the individual's form for them without ever asking.
+#
+# The fix cannot be "rewrite the column": the system has no way to know which
+# stored values were real decisions. So this reports what the EVIDENCE says and
+# lets a human apply it — review-first, exactly like the de-dup engine. Nothing
+# here changes a record unless the operator names that account.
+# ---------------------------------------------------------------------------
+@router.get("/account-type-review")
+async def account_type_review(
+    limit: int = Query(3000, ge=1, le=20000),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    from app.services import account_type as at_svc
+
+    rows = (await db.execute(
+        select(Customer.account_no, Customer.name, Customer.account_type, Customer.branch)
+        .where(Customer.is_deleted == False)  # noqa: E712
+        .order_by(Customer.account_no).limit(limit)
+    )).all()
+    accounts = [r[0] for r in rows if r[0]]
+
+    profiles: dict = {}
+    if accounts:
+        for p in (await db.execute(select(CustomerProfile).where(
+                CustomerProfile.account_no.in_(accounts)))).scalars().all():
+            profiles[p.account_no] = p
+
+    partner_counts: dict = {}
+    if accounts:
+        for acc, n in (await db.execute(
+            select(Partner.account_no, func.count(Partner.id))
+            .where(Partner.account_no.in_(accounts))
+            .group_by(Partner.account_no)
+        )).all():
+            partner_counts[acc] = int(n or 0)
+
+    conflicts: list = []
+    undecided: list = []
+    agreed = 0
+    for acc, name, stored, branch in rows:
+        prof = profiles.get(acc)
+        verdict = at_svc.classify(
+            name=name or "",
+            business_type=getattr(prof, "business_type", "") or "",
+            trade_license_no=getattr(prof, "trade_license_no", "") or "",
+            passport_no=getattr(prof, "passport_no", "") or "",
+            emirates_id_no=getattr(prof, "emirates_id_no", "") or "",
+            partner_count=partner_counts.get(acc, 0),
+        )
+        item = {"account_no": acc, "name": name, "branch": branch,
+                "stored": at_svc.normalize(stored), **verdict.as_dict()}
+        if at_svc.disagrees(stored, verdict):
+            conflicts.append(item)
+        elif at_svc.is_undecided(stored):
+            # «nobody decided» is a DIFFERENT problem from «the decision is
+            # wrong», and needs a different fix — never merge the two counts.
+            undecided.append(item)
+        elif verdict.decided:
+            agreed += 1
+
+    return {
+        "checked": len(rows),
+        "conflicts": conflicts[:1000],
+        "undecided": undecided[:1000],
+        "summary": {
+            "total": len(rows),
+            "conflicts": len(conflicts),
+            "undecided": len(undecided),
+            "undecided_with_evidence": sum(1 for u in undecided if u["guess"] != at_svc.UNKNOWN),
+            "agreed": agreed,
+        },
+    }
+
+
+@router.get("/account-type/{account_no}")
+async def account_type_of(
+    account_no: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """What is stored for ONE account, and what the evidence says.
+
+    The Credit File chooser calls this before deciding which form to open. Until
+    v139 it trusted the stored value alone, and the stored value was a default
+    nobody had chosen — so a company opened the individual's form silently.
+    """
+    from app.services import account_type as at_svc
+
+    acc = (account_no or "").strip()
+    cust = (await db.execute(select(Customer).where(
+        Customer.account_no == acc, Customer.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+    if cust is None:
+        raise HTTPException(status_code=404, detail="مشتری با این شمارهٔ حساب پیدا نشد")
+    prof = (await db.execute(select(CustomerProfile).where(
+        CustomerProfile.account_no == acc))).scalar_one_or_none()
+    partners = int((await db.execute(select(func.count(Partner.id)).where(
+        Partner.account_no == acc))).scalar() or 0)
+
+    verdict = at_svc.classify(
+        name=cust.name or "",
+        business_type=getattr(prof, "business_type", "") or "",
+        trade_license_no=getattr(prof, "trade_license_no", "") or "",
+        passport_no=getattr(prof, "passport_no", "") or "",
+        emirates_id_no=getattr(prof, "emirates_id_no", "") or "",
+        partner_count=partners,
+    )
+    return {
+        "account_no": cust.account_no, "name": cust.name, "id": cust.id,
+        "stored": at_svc.normalize(cust.account_type),
+        "undecided": at_svc.is_undecided(cust.account_type),
+        "conflict": at_svc.disagrees(cust.account_type, verdict),
+        **verdict.as_dict(),
+    }
+
+
+class AccountTypeApplyIn(BaseModel):
+    """Explicit list only — there is deliberately no «fix everything» switch."""
+    accounts: List[str] = Field(..., min_length=1, max_length=500)
+    account_type: str = Field(..., max_length=12)
+
+
+@router.post("/account-type-review/apply")
+async def account_type_apply(
+    payload: AccountTypeApplyIn,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_active_user),
+):
+    """Set the type on accounts the operator NAMED. No sweep, no heuristic write."""
+    from app.services import account_type as at_svc
+
+    want = (payload.account_type or "").strip().lower()
+    if want not in (at_svc.RETAIL, at_svc.CORPORATE, at_svc.SME):
+        raise HTTPException(status_code=422, detail="نوعِ حساب معتبر نیست")
+    rows = (await db.execute(select(Customer).where(
+        Customer.account_no.in_(payload.accounts),
+        Customer.is_deleted == False,  # noqa: E712
+    ))).scalars().all()
+    changed = []
+    for c in rows:
+        before = at_svc.normalize(c.account_type)
+        if before == want:
+            continue
+        c.account_type = AccountType(want)
+        changed.append({"account_no": c.account_no, "from": before, "to": want})
+    await db.commit()
+    return {"ok": True, "changed": changed, "count": len(changed)}
+
+
+# ---------------------------------------------------------------------------
 # Data-merge: manual trigger + status (admin) — so the legacy Excel data can be
 # (re)merged on demand and verified, without waiting for a restart.
 # ---------------------------------------------------------------------------
@@ -1077,7 +1232,16 @@ async def offer_letter_data(
     if loan_fac is not None and loan_fac.interest_rate is not None:
         loan_rate = f"{float(loan_fac.interest_rate):g}% p.a."
 
-    acct_type = str(getattr(cust.account_type, "value", cust.account_type) or "retail").lower()
+    # v139 — the stored type may be «unknown» (nobody classified this account).
+    # Falling through to «retail» would address a company as «Mr.», so when the
+    # column says nothing the letter asks the evidence instead of assuming.
+    from app.services import account_type as _at
+    acct_type = _at.normalize(cust.account_type)
+    if acct_type == _at.UNKNOWN:
+        guess = _at.classify(name=cust.name or "",
+                             business_type=str(pget("BusinessType") or ""))
+        if guess.decided:
+            acct_type = guess.guess
     is_corp = acct_type in ("corporate", "sme")
     # Salutation: an explicitly stored one wins; otherwise derive from the type.
     salutation = pget("Salutation", "Title", "Prefix") or ("M/S." if is_corp else "Mr.")
@@ -1363,7 +1527,11 @@ async def save_sanction(
     # Review row fields from the form snapshot.
     rf = {col: sn.get(k) for k, col in _SN2REVIEW.items()}
     bt = str(sn.get("BorrowerType", "")).lower()
-    rf["account_type"] = "corporate" if ("corp" in bt or "sme" in bt) else "retail"
+    # v139 — a blank BorrowerType means the form did not say, NOT «retail».
+    # Inventing a type here wrote a decision nobody made onto the review row.
+    rf["account_type"] = ("corporate" if ("corp" in bt or "sme" in bt)
+                          else "retail" if ("retail" in bt or "individual" in bt)
+                          else "unknown")
     rf.update(limits=payload.limits, recip=payload.recip, fin=payload.fin,
               guars=payload.guars, banks=payload.banks)
     review, created = await _upsert_credit_review(db, acc, rf, "sanction_form", username)

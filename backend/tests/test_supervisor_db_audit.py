@@ -205,3 +205,60 @@ class TestUnattributedAttachments:
         await db_session.commit()
         rep = await _run(audit, db_session)
         assert "orphan" in _kinds(rep["findings"], "attachments"), _details(rep["findings"])
+
+
+class TestAccountTypeAudit:
+    """v139 — the supervisor must see a company filed as an individual.
+
+    This was invisible for the whole life of the auditor: `account_type`
+    defaulted to «retail», so nothing ever looked wrong, while the Credit File
+    chooser quietly opened the individual's form for companies.
+    """
+
+    async def test_it_flags_a_company_filed_as_an_individual(self, audit, db_session):
+        db_session.add(Customer(account_no="810001", name="FUTURE DEAL GENERAL TRADING LLC",
+                                account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE))
+        await db_session.commit()
+        rep = await _run(audit, db_session)
+        assert "contradictory" in _kinds(rep["findings"], "customers"), _details(rep["findings"])
+        assert rep["counts"]["account_type_contradictions"] == 1
+
+    async def test_a_trade_licence_outweighs_the_stored_value(self, audit, db_session):
+        c = Customer(account_no="810002", name="Abu Amir Furnishing Branch",
+                     account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE)
+        db_session.add(c)
+        db_session.add(CustomerProfile(account_no="810002", trade_license_no="1040716"))
+        await db_session.commit()
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["account_type_contradictions"] == 1, _details(rep["findings"])
+
+    async def test_an_unclassified_account_is_counted_separately_from_a_wrong_one(
+            self, audit, db_session):
+        db_session.add(Customer(account_no="810003", name="Ahmad",
+                                account_type=AccountType.UNKNOWN, status=CustomerStatus.ACTIVE))
+        await db_session.commit()
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["account_type_undecided"] == 1
+        assert rep["counts"]["account_type_contradictions"] == 0
+
+    async def test_a_correctly_filed_customer_raises_nothing(self, audit, db_session):
+        db_session.add(Customer(account_no="810004", name="Mr. Ali Hassan",
+                                account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE))
+        db_session.add(CustomerProfile(account_no="810004", passport_no="A123"))
+        await db_session.commit()
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["account_type_contradictions"] == 0, _details(rep["findings"])
+        assert rep["counts"]["account_type_undecided"] == 0
+
+    async def test_a_large_pile_is_summarised_instead_of_flooding_the_report(
+            self, audit, db_session):
+        for i in range(40):
+            db_session.add(Customer(account_no=f"8200{i:02d}", name=f"Gulf Trading LLC {i}",
+                                    account_type=AccountType.RETAIL, status=CustomerStatus.ACTIVE))
+        await db_session.commit()
+        rep = await _run(audit, db_session)
+        cust = [f for f in rep["findings"] if f["table"] == "customers"]
+        assert rep["counts"]["account_type_contradictions"] == 40
+        # 25 individual findings + one summary line; a per-record flood would
+        # bury every other finding in the run
+        assert len(cust) == 26, len(cust)

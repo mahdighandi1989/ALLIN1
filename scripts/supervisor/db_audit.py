@@ -224,6 +224,54 @@ async def run(session_factory=None) -> dict:
                  "ایمپورتی که هیچ حسابی را تأیید نکرد. فایل‌ها سالم‌اند ولی به مشتری‌ای بند نیستند؛ "
                  "باید به حسابِ درست منتسب شوند", "high")
 
+        # v139 — is each account filed as the right KIND of customer?
+        # `account_type` had no «unknown» state: the column defaulted to retail
+        # and the bulk listing import invented retail for any record without the
+        # column, so companies were filed as individuals at scale and the Credit
+        # File chooser opened the wrong form. The auditor must see BOTH shapes of
+        # the problem, and must never merge them — «nobody decided» and «the
+        # decision contradicts the evidence» need different fixes.
+        try:
+            from app.services import account_type as at_svc
+        except Exception:  # noqa: BLE001 — an older checkout without the module
+            at_svc = None
+        if at_svc is not None:
+            prof_by_acc = {(p.account_no or "").strip(): p for p in profiles}
+            partners_by_acc: dict = defaultdict(int)
+            for p in partners:
+                if not getattr(p, "is_deleted", False):
+                    partners_by_acc[(getattr(p, "account_no", "") or "").strip()] += 1
+            wrong = undecided_n = 0
+            for c in customers:
+                acc = (c.account_no or "").strip()
+                pr = prof_by_acc.get(acc)
+                v = at_svc.classify(
+                    name=c.name or "",
+                    business_type=getattr(pr, "business_type", "") or "",
+                    trade_license_no=getattr(pr, "trade_license_no", "") or "",
+                    passport_no=getattr(pr, "passport_no", "") or "",
+                    emirates_id_no=getattr(pr, "emirates_id_no", "") or "",
+                    partner_count=partners_by_acc.get(acc, 0),
+                )
+                if at_svc.disagrees(c.account_type, v):
+                    wrong += 1
+                    if wrong <= 25:      # a per-record flood would bury everything else
+                        flag("contradictory", "customers", acc,
+                             f"نوعِ حساب «{at_svc.normalize(c.account_type)}» ثبت شده ولی شواهد می‌گوید "
+                             f"«{v.guess}» — {v.reasons[0] if v.reasons else ''}", "high")
+                elif at_svc.is_undecided(c.account_type):
+                    undecided_n += 1
+            counts["account_type_contradictions"] = wrong
+            counts["account_type_undecided"] = undecided_n
+            if wrong > 25:
+                flag("contradictory", "customers", "*",
+                     f"در مجموع {wrong} حساب نوعِ نادرست دارند (فقط ۲۵ موردِ اول فهرست شد) — "
+                     "صفحهٔ «کیفیت داده» همه را نشان می‌دهد", "high")
+            if undecided_n:
+                flag("empty", "customers", "*",
+                     f"{undecided_n} حساب نوعِ ثبت‌شده ندارند — فرمِ اعتباری برایشان باید پرسیده شود",
+                     "medium")
+
     by_kind: dict = defaultdict(int)
     by_sev: dict = defaultdict(int)
     for f in findings:

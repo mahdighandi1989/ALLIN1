@@ -918,6 +918,36 @@ export const vouchersApi = {
   },
 }
 
+// v139 — is this account a person or a company? `account_type` used to default
+// to «retail», so the chooser opened the individual's form for companies. These
+// report what is STORED and what the EVIDENCE says, and apply a decision only to
+// accounts the operator names.
+export type AccountTypeVerdict = {
+  account_no: string; name: string; id: string
+  stored: string; undecided: boolean; conflict: boolean
+  guess: string; confidence: string; reasons: string[]; counter_reasons: string[]
+}
+export type AccountTypeReview = {
+  checked: number
+  conflicts: AccountTypeVerdict[]
+  undecided: AccountTypeVerdict[]
+  summary: { total: number; conflicts: number; undecided: number; undecided_with_evidence: number; agreed: number }
+}
+export const accountTypeApi = {
+  async of(accountNo: string): Promise<AccountTypeVerdict> {
+    const { data } = await api.get(`/api/crm/account-type/${encodeURIComponent(accountNo)}`)
+    return data
+  },
+  async review(limit = 3000): Promise<AccountTypeReview> {
+    const { data } = await api.get('/api/crm/account-type-review', { params: { limit } })
+    return data
+  },
+  async apply(accounts: string[], account_type: string): Promise<{ ok: boolean; count: number; changed: any[] }> {
+    const { data } = await api.post('/api/crm/account-type-review/apply', { accounts, account_type })
+    return data
+  },
+}
+
 // v138 — Credit File Summary → Excel. The page posts the spec it read out of
 // its own printed sheet; the server renders the workbook with openpyxl (same
 // split as the voucher export: client describes, server renders).

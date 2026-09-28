@@ -62,10 +62,12 @@ async def _count(session, model):
 
 async def test_helpers_pure():
     assert data_merge._atype({"account_type": "corporate"}) == "corporate"
-    assert (
-        data_merge._atype({"account_type": "PARTNERSHIP-ish"}) == "retail"
-    )  # unknown -> retail
-    assert data_merge._atype({}) == "retail"
+    # v139 — an unrecognised or absent type is «unknown», NOT «retail». The bulk
+    # listing is the widest entry point in the system, so inventing a type here
+    # filed companies as individuals at scale.
+    assert data_merge._atype({"account_type": "PARTNERSHIP-ish"}) == "unknown"
+    assert data_merge._atype({}) == "unknown"
+    assert data_merge._atype({"account_type": ""}) == "unknown"
     assert (
         data_merge._customer_branch({"branch_label": "Sharjah (2776)"})
         == "Sharjah (2776)"

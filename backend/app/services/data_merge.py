@@ -341,8 +341,15 @@ def _iter_listing():
 
 
 def _atype(rec: dict) -> str:
-    a = str(rec.get("account_type") or "retail").lower()
-    return a if a in _VALID_ATYPE else "retail"
+    """The listing's account type, or «unknown» — never an invented «retail».
+
+    v139: this defaulted to ``retail``, so every customer in a listing without
+    that column was filed as an individual, companies included. The bulk import
+    is the widest entry point in the system, which made it the widest source of
+    the wrong type.
+    """
+    a = str(rec.get("account_type") or "").strip().lower()
+    return a if a in _VALID_ATYPE else "unknown"
 
 
 def _customer_branch(rec: dict):

@@ -14,7 +14,7 @@ import Layout from '@/components/Layout'
 import Link from 'next/link'
 import { RefreshCw, ShieldAlert, Search, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { crmApi, parseApiError, type DataQuality, type DataQualityRow } from '@/lib/api'
+import { crmApi, parseApiError, type DataQuality, type DataQualityRow, accountTypeApi, type AccountTypeReview } from '@/lib/api'
 
 const fa = (n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
 const SECTION_LABEL: Record<string, string> = {
@@ -39,6 +39,12 @@ export default function DataQualityPage() {
   const [q, setQ] = useState('')
   const [type, setType] = useState<'' | 'corporate' | 'retail'>('')
   const [gapField, setGapField] = useState('')   // filter: only rows missing THIS field
+  // v139 — accounts filed as the wrong KIND of customer. Reported, never fixed
+  // automatically: a wrong flip changes which form opens, which KYC fields are
+  // required and how completeness is scored.
+  const [at, setAt] = useState<AccountTypeReview | null>(null)
+  const [atBusy, setAtBusy] = useState(false)
+  const [atOpen, setAtOpen] = useState(false)
 
   const load = async () => {
     setBusy(true)
@@ -46,7 +52,21 @@ export default function DataQualityPage() {
     catch (e) { toast.error(parseApiError(e)) }
     finally { setBusy(false) }
   }
-  useEffect(() => { load() }, [])
+  const loadAt = async () => {
+    setAtBusy(true)
+    try { setAt(await accountTypeApi.review()) } catch { setAt(null) } finally { setAtBusy(false) }
+  }
+  const applyAt = async (accounts: string[], want: string) => {
+    if (!accounts.length) return
+    if (!confirm(`نوعِ ${accounts.length} حساب به «${want === 'retail' ? 'حقیقی' : 'حقوقی'}» تغییر کند؟`)) return
+    setAtBusy(true)
+    try {
+      const r = await accountTypeApi.apply(accounts, want)
+      toast.success(`${r.count} حساب اصلاح شد`)
+      await loadAt()
+    } catch (e: any) { toast.error(String(e?.message || e)) } finally { setAtBusy(false) }
+  }
+  useEffect(() => { load(); loadAt() }, [])
 
   const rows = useMemo(() => {
     let list: DataQualityRow[] = data?.customers || []
@@ -106,6 +126,105 @@ export default function DataQualityPage() {
                     : '—'}
                 </div>
               </div>
+            </div>
+
+            {/* v139 — wrong / missing account type -------------------------- */}
+            <div className="bg-white border border-gray-200 rounded-xl p-4 mt-4" dir="rtl">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-sm font-semibold text-gray-800">
+                  نوعِ حساب (حقیقی / حقوقی)
+                  <span className="font-normal text-gray-500 text-xs"> — تعیین می‌کند کدام فرمِ اعتباری باز شود</span>
+                </div>
+                <button onClick={loadAt} disabled={atBusy}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-60">
+                  {atBusy ? '...' : 'بازبینی دوباره'}
+                </button>
+              </div>
+              {!at ? (
+                <div className="text-xs text-gray-500 mt-2">در حال خواندن…</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mt-3 text-center">
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                      <div className="text-xl font-bold text-red-700">{fa(at.summary.conflicts)}</div>
+                      <div className="text-[11px] text-red-800">نوعِ نادرست — شواهدِ پرونده خلافش را می‌گوید</div>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <div className="text-xl font-bold text-amber-700">{fa(at.summary.undecided)}</div>
+                      <div className="text-[11px] text-amber-800">
+                        نوع ثبت نشده ({fa(at.summary.undecided_with_evidence)} موردش از روی شواهد قابلِ تعیین است)
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                      <div className="text-xl font-bold text-emerald-700">{fa(at.summary.agreed)}</div>
+                      <div className="text-[11px] text-emerald-800">درست، و شواهد تأییدش می‌کند</div>
+                    </div>
+                  </div>
+                  {(at.summary.conflicts > 0 || at.summary.undecided_with_evidence > 0) && (
+                    <button onClick={() => setAtOpen((v) => !v)}
+                      className="mt-3 text-xs text-blue-700 hover:underline">
+                      {atOpen ? 'بستنِ فهرست' : 'دیدنِ فهرست و اصلاح'}
+                    </button>
+                  )}
+                  {atOpen && (
+                    <div className="mt-3 border-t border-gray-100 pt-3">
+                      <p className="text-[11px] text-gray-500 mb-2">
+                        هیچ‌چیز خودکار عوض نمی‌شود. برای هر ردیف، شواهدش را ببین و اگر درست بود اصلاح کن.
+                      </p>
+                      <div className="max-h-96 overflow-auto">
+                        <table className="w-full text-[11.5px]">
+                          <thead className="sticky top-0 bg-gray-50">
+                            <tr className="text-gray-600">
+                              <th className="p-1.5 text-right">حساب</th>
+                              <th className="p-1.5 text-right">نام</th>
+                              <th className="p-1.5">ثبت‌شده</th>
+                              <th className="p-1.5">شواهد می‌گوید</th>
+                              <th className="p-1.5 text-right">چرا</th>
+                              <th className="p-1.5">اصلاح</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...at.conflicts, ...at.undecided.filter((u) => u.guess !== 'unknown')].map((r) => (
+                              <tr key={r.account_no} className="border-t border-gray-100 align-top">
+                                <td className="p-1.5 font-mono" dir="ltr">{r.account_no}</td>
+                                <td className="p-1.5">{r.name}</td>
+                                <td className="p-1.5 text-center">
+                                  <span className={r.stored === 'unknown' ? 'text-amber-700' : 'text-red-700'}>
+                                    {r.stored === 'retail' ? 'حقیقی' : r.stored === 'unknown' ? '—' : 'حقوقی'}
+                                  </span>
+                                </td>
+                                <td className="p-1.5 text-center font-semibold">
+                                  {r.guess === 'retail' ? 'حقیقی' : 'حقوقی'}
+                                  <span className="text-gray-400 text-[10px]">
+                                    {r.confidence === 'high' ? ' (قطعی)' : ' (محتمل)'}
+                                  </span>
+                                </td>
+                                <td className="p-1.5 text-gray-600">{r.reasons[0] || ''}</td>
+                                <td className="p-1.5 text-center">
+                                  <button disabled={atBusy} onClick={() => applyAt([r.account_no], r.guess)}
+                                    className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50">
+                                    اعمال
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="flex gap-2 mt-3 flex-wrap">
+                        <button disabled={atBusy}
+                          onClick={() => applyAt(at.conflicts.filter((c) => c.confidence === 'high' && c.guess === 'corporate').map((c) => c.account_no), 'corporate')}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-60">
+                          اعمالِ همهٔ مواردِ «قطعیِ حقوقی»
+                        </button>
+                        <span className="text-[11px] text-gray-500 self-center">
+                          فقط ردیف‌هایی که شواهدشان قطعی است (جوازِ تجاری یا شریکِ ثبت‌شده).
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* per-section averages */}
