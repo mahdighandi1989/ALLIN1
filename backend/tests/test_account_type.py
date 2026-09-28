@@ -12,7 +12,18 @@ from app.services.account_type import (
 )
 
 
-class TestDocumentsOnlyOneKindHas:
+class TestNoDocumentOnFileDecidesTheType:
+    """v148 — the class used to be «documents only one kind has». There are none.
+
+    Every document rule here was demoted in turn, each after meeting real data:
+    the trade licence (v143), the passport and Emirates ID (v145), and finally
+    registered partners (v148) — the rule that had been trusted most. All three
+    for one reason: the bank collects them from BOTH kinds of customer, so their
+    presence cannot tell the two apart. What decides is now only what states who
+    the customer IS — the account name, and a business type describing the
+    customer.
+    """
+
     def test_a_trade_licence_alone_is_not_proof_of_a_company(self):
         """v143, the owner's correction. When a RETAIL customer opens an
         account the bank collects the trade licence of the place they WORK, as
@@ -28,9 +39,44 @@ class TestDocumentsOnlyOneKindHas:
         v = classify(name="MATRIX GEN TRADING", trade_license_no="1040716")
         assert v.guess == CORPORATE and v.confidence == "high"
 
-    def test_partners_mean_a_company(self):
+    def test_partners_alone_are_not_proof_of_a_company(self):
+        """v148, the owner's correction, on the two accounts this rule was the
+        SOLE basis for: «از اون 4 تا حساب دوتای اول حساب شخصی هستن … حساب اولی
+        حساب مشترک».
+
+        A JOINT personal account records its co-holder in the same `Partner`
+        table a company records its shareholders in. «A natural person has no
+        partners» was simply false.
+        """
         v = classify(name="Something", partner_count=3)
+        assert v.confidence == "low", v
+        assert not disagrees("retail", v), v
+        assert not disagrees("corporate", v), v
+
+    def test_a_joint_personal_account_is_not_called_a_company(self):
+        v = classify(name="YADOLLAH KHALILI/ASHRAFOLSADAT SAFA", partner_count=1)
+        assert not disagrees("retail", v), v
+
+    def test_a_personal_account_with_partners_and_a_licence_is_still_not_decided(self):
+        """Two corroborating documents are still two weak signals, not one strong
+        one — account 182428, four partners and a licence, is a person."""
+        v = classify(name="AYOUB ABDULLAH AKHTARI AZAD",
+                     partner_count=4, trade_license_no="1")
+        assert not disagrees("retail", v), v
+
+    def test_partners_still_STRENGTHEN_a_company_the_name_already_shows(self):
+        """Demoted, not deleted: once something states this is a company, the
+        partner rows corroborate it and the verdict is high confidence."""
+        v = classify(name="Gulf Trading LLC", partner_count=3)
         assert v.guess == CORPORATE and v.confidence == "high"
+        assert any("شریک" in r for r in v.reasons)
+
+    def test_the_reason_no_longer_asserts_the_false_claim(self):
+        """It used to read «a personal account has no partners». It does."""
+        v = classify(name="X", partner_count=2)
+        text = " ".join(v.reasons + v.counter_reasons)
+        assert "حسابِ شخصی شریک ندارد" not in text
+        assert "مشترک" in text        # says what is actually known
 
     def test_an_employee_with_the_employers_licence_on_file_stays_retail(self):
         """The real shape of the owner's correction: a person, their own ID, and
@@ -156,11 +202,13 @@ class TestStoredValues:
 
 
 class TestDisagreement:
-    def test_retail_stored_against_registered_partners_is_a_contradiction(self):
-        """Partners stay decisive — the bank records partners for an entity, and
-        a natural person has none."""
+    def test_retail_stored_against_registered_partners_is_NOT_a_contradiction(self):
+        """v148 — inverted by the owner's correction. This assertion encoded the
+        claim «a natural person has no partners», which a joint account refutes.
+        Measured on the whole book: exactly 2 accounts rested on this rule alone,
+        and the owner confirmed both are personal. Neither had been written."""
         v = classify(name="X", partner_count=3)
-        assert disagrees("retail", v)
+        assert not disagrees("retail", v)
 
     def test_retail_stored_against_a_licence_alone_is_NOT_a_contradiction(self):
         v = classify(name="X", trade_license_no="1")

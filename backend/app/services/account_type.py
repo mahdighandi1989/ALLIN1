@@ -27,6 +27,28 @@ de-dup engine follows.
 
 Positive evidence only. No evidence ⇒ ``unknown`` ⇒ ask. Guessing is what
 created the problem.
+
+WHAT MAY DECIDE, AND WHAT MAY ONLY CORROBORATE (settled at v148)
+---------------------------------------------------------------
+Four rules here were wrong in the same way, one after another, each found by
+meeting the real book rather than by review:
+
+    v143  a trade licence          → the employer's, on a personal file
+    v145  a passport / Emirates ID → the manager's, on a corporate file
+    v147  «RETAIL SALE OF …»       → a line of business, not a customer type
+    v148  registered partners      → a JOINT account's co-holder sits in the
+                                     same table as a company's shareholder
+
+The pattern is one question: **is this recorded for the OTHER kind of customer
+too?** If yes, it cannot separate them, no matter how strong it feels. Three
+one-off corrections did not stop the fourth, so the test is written down as a
+checklist in ``experiences/a-default-that-looks-like-a-decision-corrupts-the-
+record.md`` and every new rule must pass it.
+
+What survives as decisive is only what states WHO THE CUSTOMER IS — the account
+name, and a ``business_type`` describing the customer. Everything that merely
+describes WHAT IS IN THE FILE corroborates: it can raise confidence, never
+create a contradiction on its own (``disagrees`` ignores ``low``).
 """
 from __future__ import annotations
 
@@ -200,10 +222,26 @@ def classify(
     # contradiction (see `disagrees`, which ignores `low`). It only reaches
     # «high» when something else already says company.
     has_licence = bool(str(trade_license_no or "").strip())
-    if (partner_count or 0) > 0:
-        # Registered partners remain decisive: the bank records partners for an
-        # entity, and a natural person has none.
-        corp.append(f"{partner_count} شریک ثبت شده — حسابِ شخصی شریک ندارد")
+
+    # REGISTERED PARTNERS ARE NOT PROOF OF A COMPANY EITHER (v148, owner's
+    # correction — the FOURTH time this same shape has been wrong).
+    #
+    # This was the last decisive document rule, and the one most trusted: «the
+    # bank records partners for an entity, and a natural person has none». The
+    # second half is false. A JOINT personal account records its co-holder in the
+    # same `Partner` table a company records its shareholders in. The owner
+    # settled it on the two accounts this rule was the sole basis for:
+    #   182255  YADOLLAH KHALILI/ASHRAFOLSADAT SAFA  1 partner  → personal, JOINT
+    #   182428  AYOUB ABDULLAH AKHTARI AZAD          4 partners → personal
+    #
+    # The checklist written after v147 answers it in one step: «is this value
+    # recorded for the OTHER kind of customer too?» — yes. So it corroborates.
+    # The reason text no longer ASSERTS the false half; it says what is actually
+    # known, which is that co-holders exist and could be either.
+    has_partners = (partner_count or 0) > 0
+    partner_note = (
+        f"{partner_count} شریک/دارندهٔ مشترک ثبت شده — به‌تنهایی دلیل نیست: "
+        "حسابِ مشترکِ شخصی هم دارندهٔ دومش در همین جدول ثبت می‌شود")
 
     # --- naming --------------------------------------------------------------
     m = _CORP_RE.search(name)
@@ -245,32 +283,59 @@ def classify(
                "در افتتاحِ حسابِ شرکتی هم مدارکِ هویتیِ مدیر/صاحبِ امضا گرفته می‌شود")
 
     # --- verdict -------------------------------------------------------------
-    has_partners = any("شریک" in r for r in corp)
+    #
+    # WHAT IS LEFT AS DECISIVE, AND WHY (audited in full at v148)
+    # ----------------------------------------------------------
+    # Every DOCUMENT rule has now been demoted in turn — licence (v143), passport
+    # and Emirates ID (v145), registered partners (v148) — each for the same
+    # reason: the bank collects it from both kinds of customer, so its presence
+    # cannot tell them apart. Applying that test to the rules that remain:
+    #
+    #   * the account NAME carrying a legal form or trade word — a statement of
+    #     identity, not a document on file. A sole establishment filed under a
+    #     trade name IS a business (owner, on «HAMID AKBAR LUBRICATION SHOP»).
+    #   * `business_type` describing the CUSTOMER (corporate / individual /
+    #     salaried) — also a statement about who this is. The line-of-business
+    #     phrasing that is NOT about the customer was carved out in v147.
+    #
+    # So the surviving decisive signals are the two that describe WHO THE
+    # CUSTOMER IS; everything that merely describes WHAT IS IN THE FILE now
+    # corroborates. Any new rule must pass the same test before it decides —
+    # see experiences/a-default-that-looks-like-a-decision-corrupts-the-record.md
+    corroborating: list[str] = []
+    if has_licence:
+        corroborating.append("جوازِ تجاری هم روی پرونده هست (مؤیّد، نه دلیلِ مستقل)")
+    if has_partners:
+        corroborating.append(partner_note)
+
     if corp:
-        # something already says company → the licence corroborates it
-        if has_licence:
-            corp.append("جوازِ تجاری هم روی پرونده هست (مؤیّد، نه دلیلِ مستقل)")
+        # something already says company → the documents back it up
+        corp.extend(corroborating)
         if not retail:
-            return Verdict(CORPORATE, "high" if (has_partners or has_licence) else "medium",
+            return Verdict(CORPORATE,
+                           "high" if (has_partners or has_licence) else "medium",
                            corp, retail)
-        # Conflicting signals. Registered partners still decide; a name hint
-        # against a name hint does not.
-        return Verdict(CORPORATE, "medium" if has_partners else "low", corp, retail)
+        # Conflicting signals, and no document can break the tie any more.
+        return Verdict(CORPORATE, "low", corp, retail)
 
     licence_note = ("جوازِ تجاری روی پرونده هست، ولی به‌تنهایی دلیل نیست — "
                     "در افتتاحِ حسابِ حقیقی هم جوازِ محلِ کارِ مشتری گرفته می‌شود")
 
     if retail:
         # Real retail evidence (a personal title, or a personal business type).
-        # A licence on the file does not overturn it — it is the employer's.
-        notes = ([licence_note] if has_licence else []) + corp
-        return Verdict(RETAIL, "medium", retail, notes)
+        # No document on file overturns it: the licence may be the employer's and
+        # the partner rows may be a joint account's co-holders.
+        notes = ([licence_note] if has_licence else [])
+        if has_partners:
+            notes.append(partner_note)
+        return Verdict(RETAIL, "medium", retail, notes + corp)
 
-    # No decisive evidence either way. Both remaining documents are CORROBORATING
-    # only, so whatever they suggest comes out «low» — visible to a human,
-    # incapable of contradicting what is stored (see `disagrees`).
-    if has_licence:
-        return Verdict(CORPORATE, "low", [licence_note], [id_note] if has_id else [])
+    # No statement of identity either way. Everything left is CORROBORATING only,
+    # so whatever it suggests comes out «low» — visible to a human, incapable of
+    # contradicting what is stored (see `disagrees`).
+    if has_licence or has_partners:
+        why = ([licence_note] if has_licence else []) + ([partner_note] if has_partners else [])
+        return Verdict(CORPORATE, "low", why, [id_note] if has_id else [])
     if has_id:
         return Verdict(RETAIL, "low", [id_note], [])
     return Verdict(UNKNOWN, "none", [], [])
