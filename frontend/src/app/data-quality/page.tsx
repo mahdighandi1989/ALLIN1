@@ -104,14 +104,35 @@ export default function DataQualityPage() {
 
         {data && (
           <>
+            {/* v144 — coverage FIRST. This sweep is capped, and until now the page
+                printed the cap as if it were the book: «۲۰۰۰ مشتری، ۵٪» while the
+                book holds ۴۴٬۶۰۸. A sample average must never look like a verdict
+                on everyone, so say the coverage before showing any number. */}
+            {data.partial && (data.book_total ?? 0) > 0 && (
+              <div dir="rtl" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+                این گزارش فقط {fa(data.examined ?? data.total_customers)} مشتریِ اول از
+                {' '}{fa(data.book_total ?? 0)} مشتریِ پرونده را دیده است
+                ({fa(Math.round((100 * (data.examined ?? data.total_customers)) / (data.book_total || 1)))}٪).
+                {' '}میانگین، بخش‌ها و «کمبودهای پرتکرار» فقط دربارهٔ همین نمونه‌اند — نه کلِ پرونده.
+                {' '}برای دیدنِ بیشتر، سقف را بالا ببرید.
+              </div>
+            )}
+
             {/* headline numbers */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <div className="text-[12px] text-gray-500">مشتری‌های بررسی‌شده</div>
-                <div className="text-2xl font-bold text-gray-900">{fa(data.total_customers)}</div>
+                <div dir="rtl" className="text-2xl font-bold text-gray-900">
+                  {fa(data.examined ?? data.total_customers)}
+                  {data.partial && (data.book_total ?? 0) > 0 && (
+                    <span className="text-[12px] font-normal text-gray-500"> از {fa(data.book_total ?? 0)}</span>
+                  )}
+                </div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="text-[12px] text-gray-500">میانگینِ کاملی</div>
+                <div className="text-[12px] text-gray-500">
+                  {data.partial ? 'میانگینِ کاملی (نمونه)' : 'میانگینِ کاملی'}
+                </div>
                 <div className={`text-2xl font-bold ${tone(data.average_percent).text}`}>{fa(data.average_percent)}٪</div>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">

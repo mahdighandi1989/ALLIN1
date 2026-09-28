@@ -139,10 +139,78 @@ class TestDataQualitySweep:
         for s in body["sections"]:
             assert s["total"] > 0 and 0 <= s["percent"] <= 100
 
+    async def test_a_capped_sweep_reports_the_book_size_not_the_cap(
+            self, client: AsyncClient, auth_headers, db_session):
+        """v144 — the regression that printed «2000 customers» for a 44,608 book.
+
+        `total_customers` has always meant «rows examined», so the page read the
+        cap as the whole book. The honest numbers must travel with it.
+        """
+        await self._seed(db_session)
+        body = (await client.get("/api/crm/data-quality?limit=1",
+                                 headers=auth_headers)).json()
+        assert body["examined"] == 1 == len(body["customers"])
+        assert body["limit"] == 1
+        # the book is bigger than what was examined, and the response SAYS so
+        assert body["book_total"] >= 2
+        assert body["book_total"] > body["examined"]
+        assert body["partial"] is True
+        # the old key keeps its old meaning — nothing silently changed under a caller
+        assert body["total_customers"] == body["examined"]
+
+    async def test_a_complete_sweep_is_not_flagged_partial(
+            self, client: AsyncClient, auth_headers, db_session):
+        await self._seed(db_session)
+        body = (await client.get("/api/crm/data-quality?limit=5000",
+                                 headers=auth_headers)).json()
+        assert body["examined"] == body["book_total"]
+        assert body["partial"] is False
+
+    async def test_offset_walks_the_book_without_repeating_or_skipping(
+            self, client: AsyncClient, auth_headers, db_session):
+        """v144 — paging is the REMEDY for the cap; without it «partial» is a
+        complaint with no cure."""
+        await self._seed(db_session)
+        whole = (await client.get("/api/crm/data-quality?limit=5000",
+                                  headers=auth_headers)).json()
+        n = whole["book_total"]
+        assert n >= 2
+
+        seen: list = []
+        offset, guard = 0, 0
+        while True:
+            page = (await client.get(f"/api/crm/data-quality?limit=1&offset={offset}",
+                                     headers=auth_headers)).json()
+            assert page["offset"] == offset
+            assert page["book_total"] == n
+            seen += [c["account_no"] for c in page["customers"]]
+            if not page["has_more"]:
+                break
+            offset += page["examined"]
+            guard += 1
+            assert guard < n + 5, "paging did not terminate"
+
+        # every account exactly once, and the same set the single sweep saw
+        assert len(seen) == n == len(set(seen))
+        assert set(seen) == {c["account_no"] for c in whole["customers"]}
+
+    async def test_an_offset_past_the_end_is_empty_not_an_error(
+            self, client: AsyncClient, auth_headers, db_session):
+        await self._seed(db_session)
+        r = await client.get("/api/crm/data-quality?limit=10&offset=99999",
+                             headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["customers"] == [] and body["examined"] == 0
+        assert body["has_more"] is False
+
     async def test_sweep_is_empty_safe(self, client: AsyncClient, auth_headers):
         body = (await client.get("/api/crm/data-quality", headers=auth_headers)).json()
         assert body["total_customers"] == len(body["customers"])
         assert isinstance(body["common_gaps"], list)
+        # v144 — an empty book is 0 of 0, which is NOT a partial view
+        assert body["book_total"] == 0 and body["examined"] == 0
+        assert body["partial"] is False
 
     async def test_sweep_requires_auth(self, client: AsyncClient):
         assert (await client.get("/api/crm/data-quality")).status_code == 401

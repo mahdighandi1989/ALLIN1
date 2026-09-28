@@ -299,6 +299,9 @@ export type DataQualityRow = {
 }
 export type DataQuality = {
   customers: DataQualityRow[]; total_customers: number; average_percent: number
+  // v144 — the sweep is capped at `limit`; these say how much of the book it saw.
+  // Optional because an older backend does not send them.
+  book_total?: number; examined?: number; limit?: number; partial?: boolean
   sections: { key: string; title: string; filled: number; total: number; percent: number }[]
   common_gaps: { field: string; label: string; section: string; section_title: string; count: number }[]
 }

@@ -738,6 +738,7 @@ async def get_completeness(
 @router.get("/data-quality")
 async def data_quality(
     limit: int = Query(2000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_active_user),
 ):
@@ -748,7 +749,9 @@ async def data_quality(
     exist (see :func:`completeness.sweep_all`), so it is safe to open on demand.
     """
     from app.services.completeness import sweep_all
-    return await sweep_all(db, limit=limit)
+    # v144 — `offset` walks the book in passes; `book_total`/`partial`/`has_more`
+    # in the response say how much of it this pass actually saw.
+    return await sweep_all(db, limit=limit, offset=offset)
 
 
 # ---------------------------------------------------------------------------
@@ -767,15 +770,22 @@ async def data_quality(
 @router.get("/account-type-review")
 async def account_type_review(
     limit: int = Query(3000, ge=1, le=20000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_active_user),
 ):
     from app.services import account_type as at_svc
 
+    # v144 — how big the book actually is, so `summary.total` can never be read
+    # as «this is everyone» when the sweep stopped at `limit`. Measured on the
+    # real book: 44,608 customers, while a limit=20000 run reported total=20000.
+    book_total = int((await db.execute(
+        select(func.count(Customer.id)).where(Customer.is_deleted == False)  # noqa: E712
+    )).scalar() or 0)
     rows = (await db.execute(
         select(Customer.account_no, Customer.name, Customer.account_type, Customer.branch)
         .where(Customer.is_deleted == False)  # noqa: E712
-        .order_by(Customer.account_no).limit(limit)
+        .order_by(Customer.account_no).offset(offset).limit(limit)
     )).all()
     accounts = [r[0] for r in rows if r[0]]
 
@@ -823,11 +833,22 @@ async def account_type_review(
         "conflicts": conflicts[:1000],
         "undecided": undecided[:1000],
         "summary": {
+            # «total» has always meant rows examined — kept so callers don't change
             "total": len(rows),
             "conflicts": len(conflicts),
             "undecided": len(undecided),
             "undecided_with_evidence": sum(1 for u in undecided if u["guess"] != at_svc.UNKNOWN),
             "agreed": agreed,
+            # v144 — the honest pair: `partial` true ⇒ these counts are a sample
+            # of the first `examined` accounts, NOT a verdict on the whole book.
+            "book_total": book_total,
+            "examined": len(rows),
+            "limit": limit,
+            # v144 — page with `offset` while `has_more`; a cap with no way past
+            # it would make «partial» a complaint with no remedy.
+            "offset": offset,
+            "has_more": offset + len(rows) < book_total,
+            "partial": len(rows) < book_total,
         },
     }
 

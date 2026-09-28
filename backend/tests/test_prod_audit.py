@@ -42,6 +42,18 @@ def _load(**env):
                 os.environ[k] = v
 
 
+def _serve(payloads):
+    """v144 — the audit appends `?limit=…&offset=…`, so match on the path only.
+
+    A mock that keyed on the exact string silently KeyError'd the moment paging
+    arrived; matching the path is what the real server does.
+    """
+    def fetch(tok, path):
+        base = path.split("?", 1)[0]
+        return payloads[base]
+    return fetch
+
+
 class TestItCanOnlyRead:
     def test_every_endpoint_it_knows_is_a_read(self):
         mod = _load(SUPERVISOR_API_BASE="https://x")
@@ -127,16 +139,166 @@ class TestReport:
                 "common_gaps": [{"label": "x"}, {"label": "y"}],
             },
         }
-        mod.fetch = lambda tok, path: payloads[path]
+        mod.fetch = _serve(payloads)
         rep = mod.audit()
         assert rep["connected"] is True
         assert rep["sections"]["account_type"]["conflicts"] == 7
         assert rep["sections"]["data_quality"]["weakest_section"] == "B"
         assert rep["sections"]["data_quality"]["top_gaps"] == ["x", "y"]
 
+    def test_a_capped_sweep_is_reported_as_a_sample(self):
+        """v144 — the supervisor called 3000 of 44,608 customers «the book»."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        payloads = {
+            "/api/crm/account-type-review": {"summary": {
+                "conflicts": 47, "undecided": 0, "total": 20000,
+                "examined": 20000, "book_total": 44608, "partial": True}},
+            "/api/crm/data-quality": {
+                "total_customers": 2000, "examined": 2000, "book_total": 44608,
+                "partial": True, "average_percent": 5,
+                "sections": [{"title": "A", "percent": 80}],
+                "common_gaps": [],
+            },
+        }
+        mod.fetch = _serve(payloads)
+        rep = mod.audit()
+        cov = rep["coverage"]
+        assert cov["any_partial"] is True
+        assert len(cov["warnings"]) == 2
+        # the real numbers, not the caps, are what a reader is handed
+        by = {s["section"]: s for s in cov["sections"]}
+        assert by["کیفیتِ داده"]["book_total"] == 44608
+        assert by["کیفیتِ داده"]["percent"] == 4
+        assert by["بازبینیِ نوعِ حساب"]["percent"] == 45
+        assert all("نمونه است" in w for w in cov["warnings"])
+
+    def test_a_full_sweep_raises_no_coverage_warning(self):
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        payloads = {
+            "/api/crm/account-type-review": {"summary": {
+                "examined": 12, "book_total": 12, "partial": False}},
+            "/api/crm/data-quality": {
+                "examined": 12, "book_total": 12, "partial": False,
+                "average_percent": 90, "sections": [], "common_gaps": []},
+        }
+        mod.fetch = _serve(payloads)
+        cov = mod.audit()["coverage"]
+        assert cov["any_partial"] is False and cov["warnings"] == []
+
+    def test_an_old_backend_without_the_coverage_keys_is_flagged_not_assumed_full(self):
+        """Missing coverage must read as «unknown», never as «saw everything»."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        mod.fetch = lambda tok, path: {"summary": {"total": 3000},
+                                       "total_customers": 2000, "customers": [],
+                                       "sections": [], "common_gaps": []}
+        cov = mod.audit()["coverage"]
+        assert cov["any_partial"] is False           # cannot claim partial either
+        assert len(cov["warnings"]) == 2
+        assert all("نمی‌داند" in w for w in cov["warnings"])
+
+    def test_it_walks_every_page_of_the_book(self):
+        """v144 — one call saw a slice; the walk must see all of it.
+
+        Three pages of conflicts must arrive as ONE list, and the counts must be
+        the book's, not the last page's.
+        """
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        BOOK = 5
+
+        def fetch(tok, path):
+            base, _, qs = path.partition("?")
+            params = dict(kv.split("=") for kv in qs.split("&") if "=" in kv)
+            off = int(params.get("offset", 0))
+            n = min(2, max(0, BOOK - off))
+            more = off + n < BOOK
+            if base.endswith("account-type-review"):
+                return {
+                    "summary": {"examined": n, "book_total": BOOK, "has_more": more,
+                                "conflicts": n, "undecided": 0, "agreed": 0},
+                    "conflicts": [{"account_no": f"a{off+i}"} for i in range(n)],
+                    "undecided": [],
+                }
+            return {
+                "customers": [{"percent": 50} for _ in range(n)],
+                "examined": n, "book_total": BOOK, "has_more": more,
+                "sections": [{"title": "A", "filled": n, "total": n * 2, "percent": 50}],
+                "common_gaps": [{"label": "x", "count": n}],
+            }
+
+        mod.fetch = fetch
+        rep = mod.audit()
+
+        at = rep["sections"]["account_type"]
+        assert at["examined"] == BOOK, at        # 2 + 2 + 1, not 2
+        assert at["conflicts"] == BOOK           # summed across pages
+        assert at["partial"] is False            # the whole book WAS seen
+        assert at["passes"] == 3
+
+        dq = rep["sections"]["data_quality"]
+        assert dq["examined"] == BOOK and dq["partial"] is False
+        assert dq["average_percent"] == 50       # rebuilt from per-customer rows
+        assert rep["coverage"]["any_partial"] is False
+        assert rep["coverage"]["warnings"] == []
+
+    def test_a_walk_that_stops_early_says_so(self):
+        """A truncated walk must never look like a complete one."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t",
+                    SUPERVISOR_MAX_PASSES="2")
+
+        def fetch(tok, path):
+            # always claims there is more — the guard must stop it and admit it
+            if "account-type-review" in path:
+                return {"summary": {"examined": 1, "book_total": 999, "has_more": True,
+                                    "conflicts": 0, "undecided": 0, "agreed": 1},
+                        "conflicts": [], "undecided": []}
+            return {"customers": [{"percent": 10}], "examined": 1, "book_total": 999,
+                    "has_more": True, "sections": [], "common_gaps": []}
+
+        mod.fetch = fetch
+        rep = mod.audit()
+        assert rep["sections"]["account_type"]["walk_truncated"] is True
+        assert rep["sections"]["account_type"]["passes"] == 2
+        assert rep["sections"]["data_quality"]["walk_truncated"] is True
+        # and the coverage warning still fires, because it IS partial
+        assert rep["coverage"]["any_partial"] is True
+
+    def test_a_section_with_no_denominator_is_not_scored_as_perfect(self):
+        """0/0 is «unknown», not 100% — keep what the page reported."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        payloads = {
+            "/api/crm/account-type-review": {"summary": {"examined": 1, "book_total": 1}},
+            "/api/crm/data-quality": {
+                "customers": [{"percent": 30}], "examined": 1, "book_total": 1,
+                "sections": [{"title": "A", "percent": 80}, {"title": "B", "percent": 12}],
+                "common_gaps": [],
+            },
+        }
+        mod.fetch = _serve(payloads)
+        rep = mod.audit()
+        assert rep["sections"]["data_quality"]["weakest_section"] == "B"
+
+    def test_an_older_backend_without_has_more_makes_exactly_one_pass(self):
+        """No paging support must not turn into an endless loop."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        calls = []
+
+        def fetch(tok, path):
+            calls.append(path)
+            if "account-type-review" in path:
+                return {"summary": {"total": 3000}, "conflicts": [], "undecided": []}
+            return {"customers": [], "total_customers": 2000,
+                    "sections": [], "common_gaps": []}
+
+        mod.fetch = fetch
+        rep = mod.audit()
+        assert len(calls) == 2, calls                     # one pass each
+        assert rep["sections"]["account_type"]["passes"] == 1
+        assert "walk_truncated" not in rep["sections"]["account_type"]
+
     def test_a_password_never_reaches_the_report(self):
         mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_USER="u",
                     SUPERVISOR_API_PASSWORD="sup3rsecret")
-        mod.fetch = lambda tok, path: {"summary": {}, "sections": [], "common_gaps": []}
+        mod.fetch = lambda tok, path: {"summary": {}, "customers": [],
+                                       "sections": [], "common_gaps": []}
         mod.login = lambda: "tok"
         assert "sup3rsecret" not in json.dumps(mod.audit(), ensure_ascii=False)

@@ -76,6 +76,27 @@ class TestReview:
             select(Customer.account_type).where(Customer.account_no == "900001"))).scalar_one()
         assert str(getattr(t, "value", t)) == "retail", "the review must be read-only"
 
+    async def test_review_reports_coverage_and_pages(
+            self, client, auth_headers, db_session):
+        """v144 — `summary.total` was the row cap, read as the whole book."""
+        await _seed(db_session)
+        whole = (await client.get("/api/crm/account-type-review?limit=20000",
+                                  headers=auth_headers)).json()["summary"]
+        assert whole["examined"] == whole["book_total"] >= 2
+        assert whole["partial"] is False and whole["has_more"] is False
+        assert whole["total"] == whole["examined"]   # old key, old meaning
+
+        first = (await client.get("/api/crm/account-type-review?limit=1",
+                                  headers=auth_headers)).json()["summary"]
+        assert first["examined"] == 1 and first["limit"] == 1
+        assert first["book_total"] == whole["book_total"]
+        assert first["partial"] is True and first["has_more"] is True
+        assert first["offset"] == 0
+
+        second = (await client.get("/api/crm/account-type-review?limit=1&offset=1",
+                                   headers=auth_headers)).json()["summary"]
+        assert second["offset"] == 1 and second["examined"] == 1
+
 
 class TestApply:
     async def test_it_changes_only_the_accounts_named(self, client, auth_headers, db_session):

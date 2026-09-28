@@ -216,7 +216,7 @@ async def recompute_completeness(db, account_no: str) -> dict:
     return report
 
 
-async def sweep_all(db, *, limit: int = 2000) -> dict:
+async def sweep_all(db, *, limit: int = 2000, offset: int = 0) -> dict:
     """v130 — score EVERY customer in a handful of queries, not one per customer.
 
     The owner's problem was that gaps only surfaced one record at a time, while
@@ -224,15 +224,35 @@ async def sweep_all(db, *, limit: int = 2000) -> dict:
     worst, and which field is missing most often across the book?" — cheaply
     enough to run on demand: 6 queries total regardless of how many customers
     exist, with the per-record scoring done in Python by :func:`build_report`.
+
+    v144 — the sweep is CAPPED at ``limit`` rows, and for two versions it
+    reported that cap as ``total_customers``. On the real book (44,608 customers)
+    the page therefore read «2000 customers, 5% complete»: a 4.5% sample printed
+    as the state of the whole book, with nothing on screen to say so. A cap is
+    not a total — the same mistake as reporting an unmeasured value as zero
+    (``experiences/a-monitor-must-distinguish-unmeasured-from-zero.md``).
+
+    ``total_customers`` keeps its old meaning (rows examined) so no existing
+    caller changes behaviour; the honest numbers arrive as NEW keys:
+    ``book_total`` (one COUNT over the book), ``examined``, ``limit``,
+    ``offset``, ``has_more`` and ``partial``. Read ``book_total``/``partial``
+    when reporting to a human, and page with ``offset`` while ``has_more`` —
+    a cap with no way past it would leave «partial» with no remedy.
     """
+    book_total = int((await db.execute(
+        select(func.count(Customer.id)).where(Customer.is_deleted == False)  # noqa: E712
+    )).scalar() or 0)
     rows = (await db.execute(
         select(Customer.account_no, Customer.name, Customer.account_type, Customer.branch)
         .where(Customer.is_deleted == False)  # noqa: E712
-        .order_by(Customer.account_no).limit(limit))).all()
+        .order_by(Customer.account_no).offset(offset).limit(limit))).all()
     accounts = [r[0] for r in rows if r[0]]
     if not accounts:
         return {"customers": [], "total_customers": 0, "average_percent": 0,
-                "sections": [], "common_gaps": []}
+                "sections": [], "common_gaps": [],
+                "book_total": book_total, "examined": 0, "limit": limit,
+                "offset": offset, "has_more": False,
+                "partial": book_total > offset}
 
     profiles = {
         p.account_no: p for p in (await db.execute(
@@ -307,7 +327,19 @@ async def sweep_all(db, *, limit: int = 2000) -> dict:
     avg = round(sum(x["percent"] for x in out) / len(out)) if out else 0
     return {
         "customers": out,
+        # kept for compatibility: this has always meant «rows examined»
         "total_customers": len(out),
+        # v144 — the honest pair. `examined` < `book_total` ⇒ `average_percent`,
+        # `sections` and `common_gaps` describe a SAMPLE, not the book.
+        "book_total": book_total,
+        "examined": len(out),
+        "limit": limit,
+        # v144 — `offset` lets a caller WALK the whole book in fixed-size passes
+        # instead of asking for one enormous query. Without it the cap was a
+        # ceiling nobody could get past, so «partial» had no remedy.
+        "offset": offset,
+        "has_more": offset + len(out) < book_total,
+        "partial": len(out) < book_total,
         "average_percent": avg,
         "sections": [
             {"key": k, "title": SECTION_TITLES[k], "filled": sec_totals[k][0],
