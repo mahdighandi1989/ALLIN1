@@ -172,6 +172,35 @@ class TestReport:
         assert by["بازبینیِ نوعِ حساب"]["percent"] == 45
         assert all("نمونه است" in w for w in cov["warnings"])
 
+    def test_an_aggregate_does_not_inherit_the_first_page_paging_keys(self):
+        """Measured against production: after walking all 44,608 rows the report
+        still read «total: 20000, has_more: true», copied from page one. A
+        per-page field has no meaning in a total."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        BOOK = 3
+
+        def fetch(tok, path):
+            off = 0
+            if "offset=" in path:
+                off = int(path.split("offset=")[1].split("&")[0])
+            n = min(2, max(0, BOOK - off))
+            more = off + n < BOOK
+            if "account-type-review" in path:
+                return {"summary": {"total": 2, "limit": 2, "offset": off,
+                                    "examined": n, "book_total": BOOK, "has_more": more,
+                                    "conflicts": 0, "undecided": 0, "agreed": n},
+                        "conflicts": [], "undecided": []}
+            return {"customers": [{"percent": 1}] * n, "examined": n,
+                    "book_total": BOOK, "has_more": more,
+                    "sections": [], "common_gaps": []}
+
+        mod.fetch = fetch
+        at = mod.audit()["sections"]["account_type"]
+        assert at["examined"] == BOOK
+        assert at["total"] == BOOK          # restated, not page one's 2
+        assert at["has_more"] is False      # the walk finished
+        assert "limit" not in at and "offset" not in at
+
     def test_a_full_sweep_raises_no_coverage_warning(self):
         mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
         payloads = {

@@ -200,6 +200,73 @@ class TestDisagreement:
         assert v.reasons and v.counter_reasons
 
 
+class TestATitleOnlyCountsWhereATitleGoes:
+    """v147 — found on the FIRST full-book run (44,608 accounts), not by review.
+
+    Four of the six «this company looks like a person» findings were wrong, and
+    all four for the same reason as the SHEIKH false positive in v142: a word
+    that is a personal title elsewhere is part of a TRADE NAME here.
+    """
+
+    @pytest.mark.parametrize("name", [
+        "NEW MISS PARIS",              # a boutique, «MISS» mid-name
+        "MISS GALLERY FASHION",
+        "VIGIL ENG",                   # Engineering, not Engineer
+        "AL YAQEEN ENG CONSUL TATIONS OFFICE",
+    ])
+    def test_a_trade_name_is_not_a_person(self, name):
+        v = classify(name=name)
+        assert not disagrees("corporate", v), (name, v)
+        assert not disagrees("sme", v), (name, v)
+
+    def test_a_real_title_leading_the_name_still_counts(self):
+        assert disagrees("corporate", classify(name="MR:A.K.UMMER"))
+        assert classify(name="Mr. Ahmad Karimi").guess == RETAIL
+        assert classify(name="خانم زهرا محمدی").guess == RETAIL
+
+    def test_a_title_in_the_middle_of_a_name_is_not_a_title(self):
+        """«NEW MISS PARIS» — anchoring is the whole fix."""
+        assert classify(name="NEW MISS PARIS").guess == UNKNOWN
+
+    def test_engineering_is_corporate_evidence_now_not_a_personal_title(self):
+        v = classify(name="VIGIL ENG")
+        assert v.guess == CORPORATE
+        assert any("ENG" in r.upper() for r in v.reasons)
+
+
+class TestALineOfBusinessIsNotACustomerType:
+    """v147 — the trade-licence mistake for the THIRD time.
+
+    v143: a licence is collected from retail customers too.
+    v145: a passport is collected from corporate customers too.
+    Here: `business_type` «RETAIL SALE OF WARE AND TOOLS» describes what the
+    shop SELLS, not who owns the account — and a shop is a company.
+    """
+
+    def test_retail_sale_activity_is_corporate_not_retail(self):
+        v = classify(name="Naser House Hold",
+                     business_type="RETAIL SALE OF WARE AND TOOLS")
+        assert not disagrees("corporate", v), v
+        assert v.guess == CORPORATE
+
+    @pytest.mark.parametrize("btype", [
+        "RETAIL SALE OF WARE AND TOOLS", "Retail Trading",
+        "retail shop", "RETAIL STORE", "retail business",
+    ])
+    def test_every_line_of_business_phrasing_reads_as_activity(self, btype):
+        v = classify(name="Something", business_type=btype)
+        assert not disagrees("corporate", v), (btype, v)
+
+    def test_a_plain_retail_business_type_still_means_a_person(self):
+        """The narrow fix must not swallow the real signal."""
+        assert classify(business_type="Retail").guess == RETAIL
+        assert classify(business_type="Individual / Salaried").guess == RETAIL
+
+    def test_the_reason_says_it_is_an_activity_not_a_customer_type(self):
+        v = classify(name="X", business_type="RETAIL SALE OF TOOLS")
+        assert any("نوعِ فعالیت" in r for r in v.reasons), v
+
+
 class TestItNeverWrites:
     def test_classify_is_pure(self):
         """It returns an opinion. Nothing in this system may silently

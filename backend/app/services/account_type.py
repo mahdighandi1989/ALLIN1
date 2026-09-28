@@ -86,6 +86,11 @@ _CORP_TOKENS = [
     r"travel", r"tourism", r"exhibition", r"catering", r"beverages?",
     r"centre", r"center", r"systems", r"exchange\s*house", r"shop",
     r"فروشگاه", r"صرافی", r"آژانس", r"خیریه",
+    # --- v147: read off the whole-book run ----------------------------------
+    # «ENG» moved here from the personal titles — in this book it is Engineering.
+    r"eng", r"engineering", r"consultations?", r"office", r"gallery",
+    r"fashions?", r"press", r"agency", r"lubrication", r"house\s*hold",
+    r"household", r"tailoring", r"embroidery", r"perfume", r"mobile",
 ]
 _CORP_RE = re.compile(r"\b(?:%s)\b" % "|".join(_CORP_TOKENS), re.IGNORECASE)
 
@@ -99,13 +104,34 @@ _CORP_RE = re.compile(r"\b(?:%s)\b" % "|".join(_CORP_TOKENS), re.IGNORECASE)
 # was reported as a contradiction on the strength of that word alone, and the
 # owner was right to hesitate. A person named Sheikh with no other signal now
 # comes out `unknown` — which asks, instead of guessing wrong.
+# v147 — A TITLE ONLY COUNTS WHERE A TITLE GOES: at the FRONT of the name.
+#
+# Measured on the whole book (44,608 accounts): «NEW MISS PARIS» and «MISS
+# GALLERY FASHION» were reported as personal accounts because the word «MISS»
+# appeared somewhere in a boutique's trade name. A real title leads the name —
+# «MR:A.K.UMMER» — so anchoring the match removes the mid-name trade use without
+# losing the genuine case.
+#
+# «ENG» IS GONE (v147), for the same reason «SHEIKH» went in v142: here it is
+# overwhelmingly «Engineering», not «Engineer» — «VIGIL ENG», «AL YAQEEN ENG
+# CONSULTATIONS OFFICE». It is now CORPORATE evidence instead (see _CORP_TOKENS).
+# A person written «Eng. Ahmad» with nothing else now comes out `unknown`, which
+# asks, instead of guessing wrong.
 _PERSON_RE = re.compile(
-    r"\b(?:mr|mrs|ms|miss|mister|dr|eng|engineer|"
-    r"آقای|خانم|جناب|سرکار)\b\.?", re.IGNORECASE)
+    r"^\s*(?:mr|mrs|ms|miss|mister|dr|"
+    r"آقای|خانم|جناب|سرکار)\b[.:\s]", re.IGNORECASE)
 
 _CORP_BTYPE = re.compile(
     r"corporate|company|sme|commercial|trading|industrial|institution|"
     r"partnership|شرکت|حقوقی", re.IGNORECASE)
+# v147 — «RETAIL SALE OF WARE AND TOOLS» is a LINE OF BUSINESS, not a kind of
+# customer. A shop whose activity is retail selling is a company; the word says
+# what it trades in, not who owns the account. This is the trade-licence mistake
+# a third time (v143 licence → v145 passport → here), so the same test applies:
+# does this value occur for BOTH kinds of customer? «retail sale/trade/shop» does.
+_RETAIL_ACTIVITY = re.compile(
+    r"\bretail\s+(?:sale|sales|selling|trade|trading|shop|store|outlet|business)",
+    re.IGNORECASE)
 _RETAIL_BTYPE = re.compile(
     r"\bretail\b|individual|personal|salaried|employee|حقیقی|شخصی", re.IGNORECASE)
 
@@ -186,8 +212,11 @@ def classify(
     if _CORP_BTYPE.search(btype):
         corp.append(f"نوعِ کسب‌وکار شرکتی است: «{btype[:60]}»")
 
-    if _RETAIL_BTYPE.search(btype):
+    # a line-of-business phrase is not a customer type — check it FIRST
+    if _RETAIL_BTYPE.search(btype) and not _RETAIL_ACTIVITY.search(btype):
         retail.append(f"نوعِ کسب‌وکار شخصی است: «{btype[:60]}»")
+    elif _RETAIL_ACTIVITY.search(btype):
+        corp.append(f"نوعِ فعالیت، کسب‌وکار است (نه نوعِ مشتری): «{btype[:60]}»")
     p = _PERSON_RE.search(name)
     if p:
         retail.append(f"عنوانِ شخصی در نام: «{p.group(0)}»")

@@ -159,6 +159,14 @@ def _walk_account_type(token) -> dict:
     summary["examined"] = examined
     summary["partial"] = examined < int(summary.get("book_total") or 0)
     summary["passes"] = passes
+    # The first page's own paging keys describe THAT PAGE, and copying them into
+    # an aggregate makes it lie: after a full walk it read «total: 20000,
+    # has_more: true» over a 44,608-row book that had been read completely. A
+    # per-page field has no meaning in a total, so it is restated or dropped.
+    summary["total"] = examined
+    summary["has_more"] = False
+    for per_page_only in ("limit", "offset"):
+        summary.pop(per_page_only, None)
     if truncated:
         summary["walk_truncated"] = True
     return {"summary": summary, "conflicts": conflicts, "undecided": undecided}
