@@ -18,7 +18,9 @@ class TestDocumentsOnlyOneKindHas:
         account the bank collects the trade licence of the place they WORK, as
         evidence of employment and residence — so a licence on a personal file
         may be the employer's. It corroborates, it never decides."""
-        v = classify(name="Abu Amir Furnishing Branch", trade_license_no="1040716")
+        # the name must carry NO corporate token, or this stops testing «alone»
+        # (v145 taught the pattern «Branch», which the old fixture used)
+        v = classify(name="Abu Amir Rahimi", trade_license_no="1040716")
         assert v.confidence == "low", v
         assert not disagrees("retail", v), "it must never contradict a stored value on its own"
 
@@ -69,14 +71,57 @@ class TestNaming:
 
 
 class TestIdentityDocumentsAreWeak:
-    def test_id_documents_alone_read_as_retail(self):
+    def test_id_documents_alone_lean_retail_but_cannot_contradict(self):
+        """v145 — the mirror of the v143 licence correction.
+
+        «Has an ID and no corporate signal ⇒ retail» leaned entirely on the
+        corporate pattern being complete, and it was not. Against the real book
+        that produced 64 contradictions — «ATLAS MEDICAL FZCO», «AL AZHAR MONEY
+        EXCHANGE» — companies filed correctly as corporate, accused on the
+        strength of their manager's passport. Every account opening collects a
+        natural person's documents, so they corroborate; they never decide.
+        """
         v = classify(name="Ahmad Karimi", emirates_id_no="784-1969-0685380-7")
         assert v.guess == RETAIL
+        assert v.confidence == "low", v
+        assert not disagrees("corporate", v), v   # the whole point
+        assert not disagrees("retail", v), v
 
     def test_id_documents_say_nothing_once_there_is_corporate_evidence(self):
         v = classify(name="Gulf Trading LLC", emirates_id_no="784-1", passport_no="A1")
         assert v.guess == CORPORATE
         assert not any("پاسپورت" in r for r in v.reasons)
+
+    @pytest.mark.parametrize("name", [
+        # every one of these is a REAL account from the live book, filed
+        # correctly as corporate, that a manager's passport used to contradict
+        "ATLAS MEDICAL FZCO",
+        "AL AZHAR MONEY EXCHANGE",
+        "GOLD STANDARD DMCC",
+        "APOLLO GOESSNIT GmbH (BRANCH)",
+        "NBM GLOBAL IMPEX FZCO",
+        "AL ADAB IRANIAN PRIVATE SCHOOL FOR GIRLS",
+        "VALFAJR GEN TRDG",
+        "FAYZA ALKHALEEJ BEAUTY SALON",
+        "ECONOSTO MID EAST B.V.(DUBAI BRANCH",
+        "FORUM CAFE. ( Sole Estableshment.)",
+        "AL NUKHAILAT SUPER MARKET",
+        "EFCO Food & Beverages",
+        "Digi Training Inistitute",
+        "PROGRESS AUTO REPAIRING",
+        "AL KHALILI USED CARS AND SPARE PARTS TR",
+        "SAMA EMIRATES REALESTATE (L L C)",
+    ])
+    def test_a_real_company_is_not_called_retail_because_its_manager_has_a_passport(self, name):
+        v = classify(name=name, passport_no="A1", emirates_id_no="784-1")
+        assert not disagrees("corporate", v), (name, v)
+
+    def test_an_unrecognised_company_name_stays_quiet_rather_than_guessing_wrong(self):
+        """v145 — the pattern will never cover every trade name. What it cannot
+        recognise must come out «low», not «retail, medium»."""
+        v = classify(name="MOKHTARAN G T", passport_no="A1")
+        assert v.confidence == "low"
+        assert not disagrees("corporate", v) and not disagrees("retail", v)
 
 
 class TestNoEvidenceMeansAsk:
@@ -136,6 +181,23 @@ class TestDisagreement:
     def test_weak_evidence_never_calls_a_stored_value_wrong(self):
         assert not disagrees("retail", Verdict(CORPORATE, "low", ["hunch"]))
         assert not disagrees("retail", Verdict(UNKNOWN, "none"))
+
+    def test_corporate_stored_against_an_id_document_alone_is_NOT_a_contradiction(self):
+        """v145 — the symmetric twin of the licence rule above. Measured on the
+        live book: this one rule produced 64 false contradictions."""
+        v = classify(name="X", passport_no="A1")
+        assert not disagrees("corporate", v)
+        v = classify(name="X", emirates_id_no="784-1")
+        assert not disagrees("corporate", v)
+
+    def test_both_corroborating_documents_together_still_decide_nothing(self):
+        """A licence AND a passport are still two weak signals, not one strong
+        one — they point opposite ways and neither is proof."""
+        v = classify(name="X", trade_license_no="1", passport_no="A1")
+        assert v.confidence == "low", v
+        assert not disagrees("retail", v) and not disagrees("corporate", v)
+        # both are still REPORTED — demoted, not deleted
+        assert v.reasons and v.counter_reasons
 
 
 class TestItNeverWrites:

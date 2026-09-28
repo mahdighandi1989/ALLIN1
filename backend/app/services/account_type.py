@@ -57,6 +57,35 @@ _CORP_TOKENS = [
     r"transport", r"logistics", r"cargo", r"shipping", r"marine", r"engineering",
     r"consultan\w*", r"pharmac\w*", r"garments?", r"textiles?", r"electronics",
     r"شرکت", r"موسسه", r"مؤسسه", r"بازرگانی", r"تجارت", r"صنایع", r"گروه",
+
+    # --- v145: added from the REAL book -----------------------------------
+    # Every token below was read off an account this pattern had failed to
+    # recognise, which is why a manager's passport could out-vote an obvious
+    # company. Additive only — nothing above was changed or removed.
+    # UAE / international legal forms the list simply did not have. Note
+    # `f\.?z\.?c` above cannot match «FZCO»: the \b needs a non-word char
+    # after the «c», and «O» is one — hence the explicit form here.
+    r"f\.?z\.?c\.?o", r"d\.?m\.?c\.?c", r"d\.?w\.?c", r"j\.?a\.?f\.?z\.?a",
+    r"d\.?a\.?f\.?z\.?a", r"r\.?a\.?k\.?e\.?z", r"gmbh", r"b\.?v",
+    r"s\.?a\.?r\.?l", r"pvt", r"pty", r"offshore", r"branch",
+    r"sole\s*(?:propriet\w*|establish\w*|estableshment)",
+    # trade abbreviations this book uses constantly («GEN TRDG», «DIAMOND STONE
+    # GEN TRD»). Bare «TR» is DELIBERATELY absent — it collides with personal
+    # initials, and a wrong corporate call is the expensive direction.
+    r"trdg?", r"trdng", r"impex", r"imports?", r"exports?",
+    # lines of business — a natural person does not have one
+    r"exchange", r"supermarket", r"super\s*market", r"salon", r"boutique",
+    r"cafe", r"caf[eé]teria", r"restaurant", r"bakery", r"laundry", r"hotel",
+    r"school", r"institute?", r"inistitute", r"academy", r"training",
+    r"hospital", r"clinic", r"pharmacy", r"pharma", r"medical", r"laborator\w*",
+    r"properties", r"realestate", r"equipment", r"spare\s*parts", r"accessories",
+    r"ty[rp]es?", r"tires?", r"furniture", r"curtains", r"garage", r"workshop",
+    r"repairing", r"maintenance", r"decor\w*", r"advertis\w*", r"printing",
+    r"insulation", r"cables?", r"steel", r"aluminium", r"aluminum", r"glass",
+    r"mirrors", r"paints?", r"plastics?", r"machinery", r"motors?", r"auto",
+    r"travel", r"tourism", r"exhibition", r"catering", r"beverages?",
+    r"centre", r"center", r"systems", r"exchange\s*house", r"shop",
+    r"فروشگاه", r"صرافی", r"آژانس", r"خیریه",
 ]
 _CORP_RE = re.compile(r"\b(?:%s)\b" % "|".join(_CORP_TOKENS), re.IGNORECASE)
 
@@ -163,12 +192,28 @@ def classify(
     if p:
         retail.append(f"عنوانِ شخصی در نام: «{p.group(0)}»")
 
-    # Identity documents are RETAIL evidence only when nothing corporate is
-    # present: the corporate form itself has «Passport» and «Manager Emirates
-    # ID» fields, so on a company record these belong to its manager.
+    # A PASSPORT / EMIRATES ID IS NOT PROOF OF A PERSONAL ACCOUNT (v145).
+    #
+    # This was the mirror image of the trade-licence mistake the owner caught in
+    # v143, and it was doing MORE damage — 64 contradictions against the real
+    # book versus 5. The rule read «has an ID and no corporate signal ⇒ retail»,
+    # which leans entirely on `_CORP_RE` being complete. It is not: the live book
+    # is full of `FZCO`, `GEN TRDG`, `TR.`, `EXCHANGE`, `B.V.`, `SOLE
+    # PROPRIETORSHIP` — none of which the pattern knew. So plainly corporate
+    # records («ATLAS MEDICAL FZCO», «AL AZHAR MONEY EXCHANGE», «GOLD STANDARD
+    # DMCC»), correctly filed as corporate, were reported as contradictions on
+    # the strength of a passport number.
+    #
+    # The deeper point is the owner's own, generalised: EVERY account opening
+    # collects a natural person's identity documents. The corporate form itself
+    # has «Passport» and «Manager Emirates ID» fields. A document proves that a
+    # person was identified — never whose account it is.
+    #
+    # So it is CORROBORATING, never decisive: `low` confidence, which `disagrees`
+    # ignores. Nothing is lost — the signal is still reported, as a note.
     has_id = bool(str(passport_no or "").strip() or str(emirates_id_no or "").strip())
-    if has_id and not corp:
-        retail.append("پاسپورت/اماراتی‌آیدی دارد و هیچ نشانهٔ شرکتی ندارد")
+    id_note = ("پاسپورت/اماراتی‌آیدی روی پرونده هست، ولی به‌تنهایی دلیل نیست — "
+               "در افتتاحِ حسابِ شرکتی هم مدارکِ هویتیِ مدیر/صاحبِ امضا گرفته می‌شود")
 
     # --- verdict -------------------------------------------------------------
     has_partners = any("شریک" in r for r in corp)
@@ -183,17 +228,22 @@ def classify(
         # against a name hint does not.
         return Verdict(CORPORATE, "medium" if has_partners else "low", corp, retail)
 
-    if has_licence:
-        # THE LICENCE ALONE. Deliberately «low», so it never contradicts a stored
-        # value: it may simply be the employer's, filed at account opening.
-        note = ("جوازِ تجاری روی پرونده هست، ولی به‌تنهایی دلیل نیست — "
-                "در افتتاحِ حسابِ حقیقی هم جوازِ محلِ کارِ مشتری گرفته می‌شود")
-        if retail:
-            return Verdict(RETAIL, "medium", retail, [note])
-        return Verdict(CORPORATE, "low", [note], [])
+    licence_note = ("جوازِ تجاری روی پرونده هست، ولی به‌تنهایی دلیل نیست — "
+                    "در افتتاحِ حسابِ حقیقی هم جوازِ محلِ کارِ مشتری گرفته می‌شود")
 
     if retail:
-        return Verdict(RETAIL, "medium", retail, corp)
+        # Real retail evidence (a personal title, or a personal business type).
+        # A licence on the file does not overturn it — it is the employer's.
+        notes = ([licence_note] if has_licence else []) + corp
+        return Verdict(RETAIL, "medium", retail, notes)
+
+    # No decisive evidence either way. Both remaining documents are CORROBORATING
+    # only, so whatever they suggest comes out «low» — visible to a human,
+    # incapable of contradicting what is stored (see `disagrees`).
+    if has_licence:
+        return Verdict(CORPORATE, "low", [licence_note], [id_note] if has_id else [])
+    if has_id:
+        return Verdict(RETAIL, "low", [id_note], [])
     return Verdict(UNKNOWN, "none", [], [])
 
 
