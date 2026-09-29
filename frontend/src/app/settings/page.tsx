@@ -1,14 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import AISettings from '@/components/AISettings'
 import TelegramSettings from '@/components/TelegramSettings'
 import { settingsApi, fxApi, crmApi, parseApiError, downloadFile } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import {
+  HL_DEFAULT_OPACITY, readHighlightOpacity, readHighlightsEnabled,
+  writeHighlightOpacity, writeHighlightsEnabled,
+} from '@/lib/inspectionHighlights'
 import { SettingsResponse, FxRates } from '@/types'
-import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot, Cloud, CloudOff, CheckCircle2, XCircle, Send } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Lock, Coins, Database, RefreshCw, Bot, Cloud, CloudOff, CheckCircle2, XCircle, Send, Highlighter } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
@@ -243,6 +247,11 @@ export default function SettingsPage() {
       )}
 
       <div className={`max-w-2xl space-y-6 ${tab === 'general' ? '' : 'hidden'}`}>
+        {/* v150 — «نظارت و سرکشی» highlights. A DISPLAY preference, not a
+            permission, so it is per-browser and needs no server round-trip:
+            one officer dimming the highlights must not dim them for everyone. */}
+        <InspectionHighlightSettings />
+
         {/* Editable settings */}
         <form onSubmit={save} className="bg-white rounded-lg shadow-sm p-6 space-y-4" data-testid="settings-form">
           <h3 className="font-medium">Application settings</h3>
@@ -446,3 +455,75 @@ export default function SettingsPage() {
     </Layout>
   )
 }
+
+
+/**
+ * v150 — show/hide the inspection highlights, and how strong they are.
+ *
+ * Stored in the browser (see `inspectionHighlights`): this is what THIS viewer
+ * wants to see, not a rule about the system, and the server has no opinion worth
+ * asking for. Default ON, as the owner asked. Every read and write is wrapped —
+ * blocked storage must leave the feature working, not crash the page.
+ */
+function InspectionHighlightSettings() {
+  const [on, setOn] = React.useState(true)
+  const [op, setOp] = React.useState(HL_DEFAULT_OPACITY)
+  const [ready, setReady] = React.useState(false)
+
+  React.useEffect(() => {
+    setOn(readHighlightsEnabled())
+    setOp(readHighlightOpacity())
+    setReady(true)
+  }, [])
+
+  const toggle = (v: boolean) => { setOn(v); writeHighlightsEnabled(v) }
+  const slide = (v: number) => { setOp(v); writeHighlightOpacity(v) }
+
+  return (
+    <div dir="rtl" className="bg-white rounded-lg shadow-sm p-6 space-y-4"
+      data-testid="inspection-highlight-settings">
+      <h3 className="font-medium flex items-center gap-2">
+        <Highlighter size={16} /> هایلایتِ «نظارت و سرکشی»
+      </h3>
+      <p className="text-[12.5px] text-gray-600 leading-6">
+        هر جا گزارشی ثبت کرده‌ای، یک هایلایتِ شفاف دقیقاً روی همان کادر و به همان
+        اندازه نشان داده می‌شود. رنگش رنگِ <b>وضعیتِ</b> همان گزارش است، با موس که
+        رویش بروی متنِ گزارش را می‌بینی، و <b>کلیک‌ها از آن رد می‌شوند</b> — چیزی که
+        زیرش هست دقیقاً مثل قبل کار می‌کند. هایلایت تا وقتی هست که برگه
+        <b> بایگانی</b> نشده باشد؛ تیک که بزنی، ناظر در دورِ بعد بایگانی‌اش می‌کند و
+        از صفحه برداشته می‌شود (در بایگانی می‌ماند).
+      </p>
+
+      <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" checked={on} disabled={!ready}
+          onChange={(e) => toggle(e.target.checked)} className="h-4 w-4" />
+        <span>نمایشِ هایلایت‌ها روی صفحه‌ها {on ? '' : '(خاموش)'}</span>
+      </label>
+
+      <div className={on ? '' : 'opacity-40 pointer-events-none'}>
+        <label className="block text-sm mb-1">
+          پررنگیِ هایلایت — {Math.round(op * 100)}٪
+        </label>
+        <input
+          type="range" min={4} max={90} step={1} value={Math.round(op * 100)}
+          disabled={!ready || !on}
+          onChange={(e) => slide(Number(e.target.value) / 100)}
+          className="w-full"
+          aria-label="پررنگیِ هایلایت"
+        />
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+          <span>کم‌رنگ</span>
+          {/* a live sample, so the number is not the only feedback */}
+          <span className="inline-block h-5 w-24 rounded border border-amber-400"
+            style={{ background: `rgba(245, 158, 11, ${op})` }} />
+          <span>پررنگ</span>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500">
+        این تنظیم روی همین مرورگر ذخیره می‌شود و بلافاصله اعمال می‌گردد — برای
+        کاربرانِ دیگر تغییری نمی‌کند.
+      </p>
+    </div>
+  )
+}
+

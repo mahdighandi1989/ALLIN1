@@ -951,6 +951,9 @@ export type InspectionReport = {
   page: string; page_label: string; section_id: string; section_label: string
   reopen: string; dom_path: string; covered_text: string
   rect: any; viewport: any
+  // v150 — where the box precisely was. `null` for sheets filed before this
+  // existed; the overlay draws nothing for those rather than guessing.
+  geometry: import('./inspectionSpot').SpotGeometry | null
   notes: InspectionNote[]
   dependencies: { name: string; status: string; note?: string }[]
   glow: { key: string; label: string; tone: string; outcome?: string }

@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
 import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X } from 'lucide-react'
 import { inspectionApi, parseApiError, type InspectionFile, type InspectionReport } from '@/lib/api'
+import { geometryLabel } from '@/lib/inspectionSpot'
 import { TONE } from '@/lib/inspection'
 import toast from 'react-hot-toast'
 
@@ -212,6 +213,19 @@ export default function InspectionPage() {
                   <div className="mt-3 space-y-3 border-t border-gray-100 pt-3">
                     <div className="rounded-lg bg-gray-50 p-2 text-[11px] text-gray-600">
                       <div><b>نشانیِ دقیق:</b> <span dir="ltr">{r.reopen}</span></div>
+                      {/* v150 — the precise measurement, so the supervisor knows
+                          WHICH control the owner meant, not just which page. */}
+                      {!!r.geometry && (
+                        <>
+                          <div><b>مختصات و ابعاد:</b> {geometryLabel(r.geometry)}</div>
+                          <div>
+                            <b>گره:</b>{' '}
+                            {r.geometry.anchor.path
+                              ? (<span dir="ltr" className="text-[11px]">{r.geometry.anchor.path}</span>)
+                              : 'به عنصری گره نخورد — فقط مختصاتِ سند'}
+                          </div>
+                        </>
+                      )}
                       {!!r.dom_path && <div dir="ltr" className="mt-0.5 text-gray-500">{r.dom_path}</div>}
                       {!!r.covered_text && <div className="mt-1">آنچه در کادر بود: {r.covered_text}</div>}
                     </div>

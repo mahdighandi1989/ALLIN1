@@ -114,6 +114,16 @@ class InspectionReport(Base):
     #: The rectangle and the viewport it was measured in, as JSON.
     rect_json = Column(Text, default="")
     viewport_json = Column(Text, default="")
+    #: v150 — THE PRECISE RECORD, by the owner's instruction: «مختصاتِ فوق‌العاده
+    #: دقیقِ جایی که کادر کشیده شده و ابعاد». Document coordinates, the viewport
+    #: and scroll they were taken under, the device pixel ratio, and — the part
+    #: that actually survives — the anchor element's verified selector with the
+    #: box stored as FRACTIONS of it, so the highlight follows the content when
+    #: the layout moves instead of pointing at empty space.
+    #:
+    #: `rect_json`/`viewport_json` above are deliberately untouched: they are what
+    #: v141 callers read, and this is an addition, not a replacement.
+    geometry_json = Column(Text, default="")
 
     #: The conversation: a JSON list of notes (see `schemas/inspection.py`).
     notes_json = Column(Text, default="[]")

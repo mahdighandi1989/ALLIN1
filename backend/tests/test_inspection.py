@@ -100,6 +100,65 @@ class TestTheColourCannotLie:
         assert glow["key"] == STATUS_APPROVED
 
 
+class TestPreciseGeometry:
+    """v150 — «مختصاتِ فوق‌العاده دقیقِ جایی که کادر کشیده شده و ابعاد».
+
+    The sheet used to carry only the way back. It now also carries where the box
+    was, measured so that a highlight can be drawn on the same spot later — and
+    so that the supervisor knows which control the owner actually meant.
+    """
+
+    GEOM = {
+        "doc": {"x": 100.5, "y": 450.25, "w": 200, "h": 80},
+        "view": {"x": 100.5, "y": 50.25, "w": 200, "h": 80},
+        "scroll": {"x": 0, "y": 400}, "viewport": {"w": 1200, "h": 800},
+        "doc_size": {"w": 1200, "h": 5000}, "dpr": 2,
+        "anchor": {"path": "body > div:nth-of-type(2) > section",
+                   "rect": {"x": 50, "y": 400, "w": 400, "h": 160},
+                   "rel": {"x": 0.1263, "y": 0.3141, "w": 0.5, "h": 0.5}},
+    }
+
+    async def test_the_geometry_comes_back_exactly_as_sent(self, client, auth_headers):
+        r = await client.post("/api/inspection", headers=auth_headers,
+                              json={"text": "اینجا", "spot": {**SPOT, "geometry": self.GEOM}})
+        assert r.status_code == 200, r.text
+        got = r.json()["report"]["geometry"]
+        assert got == self.GEOM, "a coordinate that changes in transit is not precise"
+        # floats survive — rounding 450.25 to 450 would move the highlight
+        assert got["doc"]["y"] == 450.25
+        assert got["anchor"]["rel"]["x"] == 0.1263
+
+    async def test_the_old_address_fields_are_untouched(self, client, auth_headers):
+        """The geometry is an ADDITION. The way back is still what a supervisor
+        navigates by, and nothing about it changed."""
+        r = await client.post("/api/inspection", headers=auth_headers,
+                              json={"text": "x", "spot": {**SPOT, "geometry": self.GEOM}})
+        rep = r.json()["report"]
+        assert rep["reopen"] == "/customers#filters"
+        assert rep["rect"] == SPOT["rect"] and rep["viewport"] == SPOT["viewport"]
+
+    async def test_a_sheet_without_geometry_is_still_a_valid_sheet(
+            self, client, auth_headers):
+        """An older client, or a browser where no selector round-tripped."""
+        rep = await _file(client, auth_headers)
+        assert rep["geometry"] is None
+        assert rep["reopen"] == "/customers#filters"
+
+    async def test_the_geometry_survives_a_reply(self, client, auth_headers):
+        rep = (await client.post("/api/inspection", headers=auth_headers,
+                                 json={"text": "x", "spot": {**SPOT, "geometry": self.GEOM}})).json()["report"]
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "دیدم"})
+        assert r.json()["report"]["geometry"] == self.GEOM
+
+    async def test_it_is_listed_so_the_overlay_can_draw_without_extra_calls(
+            self, client, auth_headers):
+        await client.post("/api/inspection", headers=auth_headers,
+                          json={"text": "x", "spot": {**SPOT, "geometry": self.GEOM}})
+        body = (await client.get("/api/inspection", headers=auth_headers)).json()
+        assert body["reports"][0]["geometry"] == self.GEOM
+
+
 class TestTheSupervisorSide:
     @pytest.fixture(autouse=True)
     def _as_supervisor(self, monkeypatch, test_user):

@@ -12,7 +12,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { inspectionApi, parseApiError, type InspectionReport } from './api'
-import { CROP_MIN_PX, resolveSpot, spotAddress, type Rect, type UiSpot } from './inspectionSpot'
+import { notifySheetsChanged } from './inspectionHighlights'
+import {
+  CROP_MIN_PX, geometryLabel, measureSpot, resolveSpot, spotAddress, verifiedSelector,
+  type Rect, type UiSpot,
+} from './inspectionSpot'
 
 type Ctx = {
   active: boolean
@@ -55,7 +59,12 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    try { setReports((await inspectionApi.list()).reports) } catch { /* not signed in yet */ }
+    try {
+      setReports((await inspectionApi.list()).reports)
+      // v150 — tell the highlight overlay too, so a sheet just filed appears on
+      // the spot immediately instead of at the next navigation.
+      notifySheetsChanged()
+    } catch { /* not signed in yet */ }
     finally { setLoading(false) }
   }, [])
   useEffect(() => { if (active) void refresh() }, [active, refresh])
@@ -103,7 +112,32 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     const cx = r.x + r.w / 2
     const cy = r.y + r.h / 2
     const stack = document.elementsFromPoint(cx, cy).filter((el) => !el.hasAttribute('data-inspection-layer'))
-    setSpot(resolveSpot({ rect: r, viewport: { w: window.innerWidth, h: window.innerHeight }, stack }))
+    // v150 — measure the box precisely, by the owner's instruction. The anchor is
+    // the innermost element under the box's centre; its selector is round-trip
+    // verified inside `verifiedSelector`, so an unusable one is stored as empty
+    // rather than as a wrong answer.
+    const anchor = stack[0] ?? null
+    const anchorPath = verifiedSelector(anchor)
+    const ab = anchor?.getBoundingClientRect()
+    const sx = window.scrollX || window.pageXOffset || 0
+    const sy = window.scrollY || window.pageYOffset || 0
+    const geometry = measureSpot({
+      rect: r,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      scroll: { x: sx, y: sy },
+      doc_size: {
+        w: Math.max(document.documentElement.scrollWidth, window.innerWidth),
+        h: Math.max(document.documentElement.scrollHeight, window.innerHeight),
+      },
+      dpr: window.devicePixelRatio || 1,
+      anchor,
+      // the anchor's rect in DOCUMENT space, to match the box we store
+      anchorRect: ab ? { x: ab.left + sx, y: ab.top + sy, w: ab.width, h: ab.height } : null,
+      anchorPath,
+    })
+    setSpot(resolveSpot({
+      rect: r, viewport: { w: window.innerWidth, h: window.innerHeight }, stack, geometry,
+    }))
     setText('')
     setShot(null)
   }
@@ -202,6 +236,14 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
               <div className="mt-1 text-amber-800" dir="ltr">{spot.reopen}</div>
               {!!spot.covered_text && (
                 <div className="mt-1 line-clamp-3 text-amber-700">آنچه در کادر بود: {spot.covered_text}</div>
+              )}
+              {!!spot.geometry && (
+                <div dir="rtl" className="mt-1 text-amber-800">
+                  مختصات: {geometryLabel(spot.geometry)}
+                  {spot.geometry.anchor.path
+                    ? ' · به عنصرِ زیرش گره خورد (با تغییرِ چیدمان هم سرِ جایش می‌ماند)'
+                    : ' · گره به عنصر ممکن نشد — فقط مختصاتِ سند ذخیره می‌شود'}
+                </div>
               )}
             </div>
             <textarea

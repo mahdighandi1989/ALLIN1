@@ -272,6 +272,9 @@ def _to_dict(r: InspectionReport, deps: bool = True, files: Optional[list] = Non
         "covered_text": r.covered_text or "",
         "rect": json.loads(r.rect_json or "null") if r.rect_json else None,
         "viewport": json.loads(r.viewport_json or "null") if r.viewport_json else None,
+        # v150 — where the box really was. `None` for sheets filed before this
+        # existed; the overlay simply does not draw those, rather than guessing.
+        "geometry": json.loads(r.geometry_json) if (r.geometry_json or "").strip() else None,
         "notes": notes,
         "dependencies": _deps(r) if deps else [],
         "glow": sheet_glow(r.status, notes),
@@ -601,6 +604,10 @@ class SpotIn(BaseModel):
     covered_text: str = Field("", max_length=MAX_TEXT)
     rect: Optional[dict] = None
     viewport: Optional[dict] = None
+    #: v150 — the precise measurement (document coords, scroll, dpr, and the
+    #: anchor element's verified selector with the box as fractions of it).
+    #: Optional: an older client still files a perfectly good sheet without it.
+    geometry: Optional[dict] = None
 
 
 class CreateIn(BaseModel):
@@ -638,6 +645,7 @@ async def create_report(payload: CreateIn, db: AsyncSession = Depends(get_db),
         covered_text=_clean(s.covered_text),
         rect_json=json.dumps(s.rect or {}, ensure_ascii=False),
         viewport_json=json.dumps(s.viewport or {}, ensure_ascii=False),
+        geometry_json=json.dumps(s.geometry, ensure_ascii=False) if s.geometry else "",
         notes_json=json.dumps([note], ensure_ascii=False),
         deps_json="[]",
     )

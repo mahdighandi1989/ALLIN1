@@ -234,6 +234,23 @@ def cmd_pull() -> int:
             lines.append(f"- عنصر: `{r['dom_path']}`")
         if r.get("covered_text"):
             lines.append(f"- آنچه در کادر بود: {r['covered_text']}")
+        # v150 — WHERE exactly, and how big. The owner's reason for asking:
+        # «شاید چیزی که دارم بهش اشاره می‌کنم مربوط به همون قسمتِ خاص باشه».
+        g = r.get("geometry") or {}
+        if g:
+            d = g.get("doc") or {}
+            vp = g.get("viewport") or {}
+            anch = (g.get("anchor") or {}).get("path") or ""
+            lines.append(
+                f"- **مختصات:** {round(d.get('w', 0))}×{round(d.get('h', 0))} پیکسل در "
+                f"x={round(d.get('x', 0))} y={round(d.get('y', 0))} (مختصاتِ سند) · "
+                f"پنجره {vp.get('w')}×{vp.get('h')}"
+                + (f" · dpr {g.get('dpr')}" if g.get("dpr") not in (None, 1) else ""))
+            lines.append(
+                f"- **گره:** `{anch}` — با تغییرِ چیدمان هم همان‌جا می‌ماند"
+                if anch else
+                "- **گره:** به عنصری گره نخورد؛ فقط مختصاتِ سند معتبر است "
+                "(اگر چیدمان عوض شده باشد، جای کادر تقریبی است)")
         lines.append("")
         for i, n in enumerate(r.get("notes") or []):
             who = "🤖 ناظر" if n.get("by") == "reviewer" else "👤 مالک"

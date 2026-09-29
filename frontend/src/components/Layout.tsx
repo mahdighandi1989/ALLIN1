@@ -4,6 +4,7 @@ import React, { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { InspectionProvider, useInspection } from '@/lib/inspection'
+import { InspectionHighlights } from '@/lib/inspectionHighlights'
 import { useAuth } from '@/lib/auth'
 import NotificationBell from '@/components/NotificationBell'
 import {
@@ -239,6 +240,10 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
           data-report-surface={pathname || '/'}
           data-report-surface-label={pageLabel(pathname)}
         >{children}</main>
+        {/* v150 — the filed reports, drawn back onto the very spot they were
+            drawn on. The layer never takes a pointer event (see the module), so
+            everything above stays fully clickable. */}
+        <InspectionHighlights pathname={pathname || '/'} />
       </div>
     </div>
   )
