@@ -38,6 +38,11 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
   const [rect, setRect] = useState<Rect | null>(null)
   const [spot, setSpot] = useState<UiSpot | null>(null)
   const [shot, setShot] = useState<{ data: string; kind: 'pasted' | 'rendered' } | null>(null)
+  // v154 — the capture takes seconds on a big page and used to give no sign at
+  // all. The owner pressed the button, saw nothing, filed the report, and it
+  // arrived with no picture (measured on production: shot_id = None). Silence
+  // during a slow operation is indistinguishable from «it did nothing».
+  const [shooting, setShooting] = useState(false)
   const [text, setText] = useState('')
   // v146 — samples the owner wants the supervisor to read: any type, any size up
   // to the server's ceiling. They are uploaded AFTER the sheet exists, because a
@@ -135,20 +140,35 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       anchorRect: ab ? { x: ab.left + sx, y: ab.top + sy, w: ab.width, h: ab.height } : null,
       anchorPath,
     })
-    setSpot(resolveSpot({
+    const resolved = resolveSpot({
       rect: r, viewport: { w: window.innerWidth, h: window.innerHeight }, stack, geometry,
-    }))
+    })
+    setSpot(resolved)
     setText('')
     setShot(null)
+    // v154 — CAPTURE AT ONCE, without being asked.
+    //
+    // Requiring a second button press cost the owner a report: they drew the box,
+    // wrote the text, filed it, and it arrived with no picture at all. A picture
+    // that depends on remembering an extra step is a picture that will be missing
+    // exactly when it matters. It runs while they type, so it is free, and a
+    // pasted screenshot always wins over it (see the guard in `renderRegion`).
+    //
+    // The spot is passed in rather than read from state: `setSpot` has not
+    // committed yet at this point, and reading it here would capture the PREVIOUS
+    // box — a picture of the wrong place, which is worse than none.
+    void renderRegion(resolved)
   }
 
   /** Render the covered region — clearly labelled as a render, never as a photo. */
-  const renderRegion = useCallback(async () => {
-    if (!spot) return
+  const renderRegion = useCallback(async (spotArg?: UiSpot) => {
+    const sp = spotArg ?? spot
+    if (!sp) return
+    setShooting(true)
     try {
       const { toJpeg } = await import('html-to-image')
       const el = document.elementsFromPoint(
-        spot.rect.x + spot.rect.w / 2, spot.rect.y + spot.rect.h / 2,
+        sp.rect.x + sp.rect.w / 2, sp.rect.y + sp.rect.h / 2,
       ).find((n) => !n.hasAttribute('data-inspection-layer')) as HTMLElement | undefined
       // v153 — ALWAYS the whole surface, never the nearest little section.
       //
@@ -161,7 +181,14 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
         || document.querySelector('[data-report-surface]')
         || el) as HTMLElement | undefined
       if (!target) return
-      const data = await toJpeg(target, { quality: 0.82, pixelRatio: 1, cacheBust: true })
+      // v154 — `backgroundColor` is not optional for JPEG. Without it the element's
+      // transparent background becomes BLACK, and the capture came out as a dark
+      // negative of a white page — technically a screenshot, practically unreadable.
+      // Seen only by looking at the produced file; no assertion would have caught it.
+      const data = await toJpeg(target, {
+        quality: 0.82, pixelRatio: 1, cacheBust: true,
+        backgroundColor: '#ffffff',
+      })
       // v153 — MARK THE BOX ON THE PICTURE. The capture is of the whole surface,
       // which is what makes it worth looking at, but unmarked it only says
       // «somewhere on this page». The owner asked for both to corroborate each
@@ -176,14 +203,16 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
         await new Promise<void>((res, rej) => {
           probe.onload = () => res(); probe.onerror = () => rej(new Error('x')); probe.src = data
         })
-        const box = boxInImage(spot.rect, tr,
+        const box = boxInImage(sp.rect, tr,
           { width: probe.naturalWidth, height: probe.naturalHeight })
         if (box) out = await annotate(data, box)
       } catch {
         // marking failed — keep the plain capture rather than losing the evidence
       }
-      setShot({ data: out, kind: 'rendered' })
-    } catch (e) { toast.error('تصویربرداری از این بخش ممکن نشد — می‌توانی اسکرین‌شاتِ خودت را بچسبانی') }
+      setShot((prev) => (prev?.kind === 'pasted' ? prev : { data: out, kind: 'rendered' }))
+    } catch (e) {
+      toast.error('تصویربرداری از این بخش ممکن نشد — می‌توانی اسکرین‌شاتِ خودت را بچسبانی')
+    } finally { setShooting(false) }
   }, [spot])
 
   /** A real screenshot from the owner's own OS, pasted in. The best evidence. */
@@ -319,10 +348,20 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
               </div>
             )}
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <button onClick={renderRegion} type="button"
-                className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">
-                📷 تصویر از همین بخش
+              <button onClick={() => void renderRegion()} type="button" disabled={shooting}
+                className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50 disabled:opacity-50">
+                {shooting ? '… در حالِ گرفتنِ تصویر' : '📷 گرفتنِ دوبارهٔ تصویر'}
               </button>
+              {shooting && !shot && (
+                <span className="text-[11px] text-gray-600">
+                  تصویرِ صفحه در حالِ گرفته‌شدن است… (می‌توانی هم‌زمان بنویسی)
+                </span>
+              )}
+              {shot && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={shot.data} alt="پیش‌نمایشِ تصویر"
+                  className="h-12 w-auto rounded border border-gray-300" />
+              )}
               {shot && (
                 <span className={`text-[11px] ${shot.kind === 'pasted' ? 'text-emerald-700' : 'text-amber-700'}`}>
                   {shot.kind === 'pasted'
@@ -333,9 +372,13 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
               <span className="flex-1" />
               <button onClick={() => { setSpot(null); setPicked([]) }} type="button"
                 className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">انصراف</button>
-              <button onClick={submit} disabled={busy || !text.trim()}
+              {/* v154 — filing while the capture is still running is how the
+                  owner's report ended up with no picture. Wait for it: the sheet
+                  is worth the two seconds, and the button says why it waits. */}
+              <button onClick={submit} disabled={busy || shooting || !text.trim()}
+                title={shooting ? 'تا آماده‌شدنِ تصویر صبر کن' : ''}
                 className="rounded-lg bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50">
-                {busy ? '...' : 'ثبت گزارش'}
+                {busy ? '...' : shooting ? 'تصویر…' : 'ثبت گزارش'}
               </button>
             </div>
           </div>
