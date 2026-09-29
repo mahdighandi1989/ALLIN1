@@ -150,10 +150,39 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       const el = document.elementsFromPoint(
         spot.rect.x + spot.rect.w / 2, spot.rect.y + spot.rect.h / 2,
       ).find((n) => !n.hasAttribute('data-inspection-layer')) as HTMLElement | undefined
-      const target = (el?.closest('[data-report-section]') || el?.closest('[data-report-surface]') || el) as HTMLElement | undefined
+      // v153 — ALWAYS the whole surface, never the nearest little section.
+      //
+      // Preferring the section produced a 458×53 strip on one page and the whole
+      // page on another: the same button gave a picture with context or without,
+      // depending on where the owner happened to draw. Context is the entire
+      // value of a screenshot — «حداقل خوب کل صفحه هم تو عکس باشه» — and the mark
+      // drawn below is what says WHERE, so the section no longer has to.
+      const target = (el?.closest('[data-report-surface]')
+        || document.querySelector('[data-report-surface]')
+        || el) as HTMLElement | undefined
       if (!target) return
       const data = await toJpeg(target, { quality: 0.82, pixelRatio: 1, cacheBust: true })
-      setShot({ data, kind: 'rendered' })
+      // v153 — MARK THE BOX ON THE PICTURE. The capture is of the whole surface,
+      // which is what makes it worth looking at, but unmarked it only says
+      // «somewhere on this page». The owner asked for both to corroborate each
+      // other: «اگر با مختصات پیدا نکرد با عکس بتونه تطبیق بده». If the anchor
+      // element is gone later and the coordinates fall back to «approximate»,
+      // the marked picture is what still pins the spot down.
+      const tr = target.getBoundingClientRect()
+      let out = data
+      try {
+        const { annotate, boxInImage } = await import('./annotateShot')
+        const probe = new Image()
+        await new Promise<void>((res, rej) => {
+          probe.onload = () => res(); probe.onerror = () => rej(new Error('x')); probe.src = data
+        })
+        const box = boxInImage(spot.rect, tr,
+          { width: probe.naturalWidth, height: probe.naturalHeight })
+        if (box) out = await annotate(data, box)
+      } catch {
+        // marking failed — keep the plain capture rather than losing the evidence
+      }
+      setShot({ data: out, kind: 'rendered' })
     } catch (e) { toast.error('تصویربرداری از این بخش ممکن نشد — می‌توانی اسکرین‌شاتِ خودت را بچسبانی') }
   }, [spot])
 
@@ -297,8 +326,8 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
               {shot && (
                 <span className={`text-[11px] ${shot.kind === 'pasted' ? 'text-emerald-700' : 'text-amber-700'}`}>
                   {shot.kind === 'pasted'
-                    ? '✓ اسکرین‌شاتِ واقعیِ خودت پیوست شد'
-                    : '⚠ تصویرِ بازسازی‌شده از همین بخش (عکسِ واقعی نیست) — اگر دقیق نبود، اسکرین‌شاتِ خودت را Ctrl+V کن'}
+                    ? '✓ اسکرین‌شاتِ واقعیِ خودت پیوست شد — کادرِ انتخابی رویش علامت نخورده'
+                    : '⚠ تصویرِ بازسازی‌شده از کلِ همین صفحه، با کادرِ انتخابیِ تو علامت‌خورده (عکسِ واقعی نیست) — اگر دقیق نبود، اسکرین‌شاتِ خودت را Ctrl+V کن'}
                 </span>
               )}
               <span className="flex-1" />

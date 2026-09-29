@@ -276,18 +276,39 @@ export default function InspectionPage() {
                               value={editing.text} rows={4} autoFocus
                               onChange={(e) => setEditing({ noteId: n.id, text: e.target.value })}
                               className="w-full rounded-lg border border-gray-300 p-2 text-[12.5px]" />
-                            <div className="mt-1 flex items-center gap-2">
+                            <div className="mt-1 flex items-center gap-2 flex-wrap">
                               <button type="button" disabled={!editing.text.trim()}
                                 onClick={() => void saveEdit(r, n.id)}
                                 className="rounded-lg bg-gray-900 px-3 py-1 text-xs text-white disabled:opacity-50">
                                 ذخیرهٔ ویرایش
                               </button>
+                              {/* v153 — attaching belongs to EDITING the report, not to
+                                  writing a follow-up. The owner went looking for it here
+                                  and found only a text box: «ویرایش می‌زنم نمی‌شه که فایل
+                                  پیوست کرد … فقط می‌شه در ادامه گزارشِ قبلی گزارش جدید ثبت
+                                  کرد». The files always belonged to the SHEET; only the
+                                  control was in the wrong place. */}
+                              <label className="cursor-pointer rounded-lg border border-dashed border-sky-300 px-2.5 py-1 text-xs text-sky-800 hover:bg-sky-50">
+                                <Paperclip className="inline h-3 w-3 ml-1" />
+                                پیوستِ فایل به همین گزارش
+                                <input type="file" multiple className="hidden"
+                                  onChange={(e) => {
+                                    const list = Array.from(e.target.files || [])
+                                    if (list.length) void attach(r, list)
+                                    e.target.value = ''
+                                  }} />
+                              </label>
                               <button type="button" onClick={() => setEditing(null)}
                                 className="px-2 py-1 text-xs text-gray-600 hover:underline">انصراف</button>
                               <span className="text-[10px] text-gray-400">
                                 متنِ اولیه نگه داشته می‌شود
                               </span>
                             </div>
+                            {upPct?.id === r.id && (
+                              <div dir="rtl" className="mt-1 text-[11px] text-amber-800">
+                                {upPct.name} — {fa(upPct.pct)}٪
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="whitespace-pre-wrap text-[12.5px] text-gray-800">{n.text}</div>
@@ -382,7 +403,7 @@ export default function InspectionPage() {
                       {r.status !== 'filed' && (
                         <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[11px] text-sky-800 hover:underline">
                           <Paperclip className="h-3 w-3" />
-                          <span>پیوست کردنِ فایلِ نمونه (هر نوعی)</span>
+                          <span>پیوست کردنِ فایلِ نمونه به همین گزارش (هر نوعی)</span>
                           <input type="file" multiple className="hidden"
                             onChange={(e) => {
                               const list = Array.from(e.target.files || [])
@@ -424,7 +445,7 @@ export default function InspectionPage() {
                     {r.status !== 'filed' && (
                       <div>
                         <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2}
-                          placeholder="یادداشتِ تازه روی همین برگه (برای اصلاحِ متنِ بالا، دکمهٔ ✏ کنارش را بزن) — برگه دوباره در صفِ ناظر می‌رود"
+                          placeholder="یادداشتِ تازه — این متنِ گزارش را عوض نمی‌کند. برای اصلاحِ خودِ گزارش و پیوستِ فایل به آن، دکمهٔ ✏ کنارِ متنِ بالا را بزن."
                           className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
                         <button onClick={() => addNote(r)} disabled={!reply.trim()}
                           className="mt-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs text-white disabled:opacity-50">
