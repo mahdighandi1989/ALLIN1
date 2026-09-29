@@ -17,6 +17,8 @@ import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
+import { CASE_FOOTER, CASE_LOGO, CASE_NAME } from './caseLetterhead'
+import { CASE_RECIPIENT_DEPT, CASE_RECIPIENT_TITLE, CASE_SUBJECT, caseReportBody } from './caseTemplate'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
 import { repairHtml } from '@/lib/mojibake'
 
@@ -349,6 +351,10 @@ export default function LetterPage() {
     date: todayYMD(), attachment: 'دارد',
     recipientName: '', recipientTitle: 'رئیس محترم', recipientDept: '', subject: '', body: '',
     sender: SENDERS[0], copyTo: '', actionName: '', actionExt: '',
+    // '' = the ordinary regional-office letter; 'case' = «گزارش خلاصهٔ پروندهٔ
+    // حقوقی», which is the same letter on the Ajman branch's paper. Stored in
+    // `f`, so it travels inside `values` and needs no API change.
+    tpl: '',
   })
   const set = (k: keyof typeof f) => (e: any) => setF((s) => ({ ...s, [k]: e.target.value }))
   const [L, setL] = useState<Record<string, Boxn>>(DEFAULT_LAYOUT)
@@ -1178,6 +1184,14 @@ export default function LetterPage() {
       setAcct(o.account_no || ''); setTitle(o.title || ''); setGeneral(o.category === 'general'); setLetterId(o.id)
     } catch { toast.error('بارگذاریِ نامه ناموفق بود') }
   }
+  // Which paper this letter is printed on. The case report is the SAME letter
+  // with the Ajman branch's letterhead instead of the regional office's — so only
+  // the three images change; every layout box, every control, stays as it is.
+  const isCase = (f as any).tpl === 'case'
+  const LOGO_SRC = isCase ? CASE_LOGO : LH_LOGO
+  const NAME_SRC = isCase ? CASE_NAME : LH_NAME
+  const FOOTER_SRC = isCase ? CASE_FOOTER : LH_FOOTER
+
   // deep-link ?account=… / ?id=… and load the right letter list
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
@@ -1185,6 +1199,18 @@ export default function LetterPage() {
     if (a) setAcct(a)
     if (q.get('general') === '1') setGeneral(true)
     if (id) loadLetter(id)
+    // ?tpl=case — the case-report FORM of this same letter. Seeds the paper and
+    // the eleven sections; everything after that is the ordinary letter editor.
+    else if (q.get('tpl') === 'case') {
+      setF((s0) => ({
+        ...s0, tpl: 'case', body: caseReportBody(), subject: CASE_SUBJECT,
+        recipientTitle: CASE_RECIPIENT_TITLE, recipientDept: CASE_RECIPIENT_DEPT,
+        // NOT `attachment` — the «پیوست» select FOLLOWS the attachments and is
+        // never set by the page. attachButton.test.ts pins that contract, and it
+        // caught this line: seeding «ندارد» is how the attachments button
+        // disappeared on the owner between v65 and v137.
+      }))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
@@ -2025,6 +2051,8 @@ export default function LetterPage() {
         pageW: PAGE_W, pageH: PAGE_H, bodyFontPt: L.body.size || 13,
         bodyLh: L.body.lh || 1.7,   // v111 — Word reproduces the page's exact line box
         renderFloatPng: renderFloatPngForWord,
+        // the paper this letter is actually on — Ajman branch for a case report
+        logo: LOGO_SRC, name: NAME_SRC, footer: FOOTER_SRC,
         buildTag: 'v137',   // kept in lock-step with the visible marker by the release sed
       })
       saveBlob(blob, `${exportName()}.docx`)
@@ -2685,8 +2713,8 @@ export default function LetterPage() {
       const off = ci === 0 ? (t.offY || 0) : 0
       return (
       <div className="lsheet attsheet" key={`att-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
-        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
           <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
           {ci === 0
@@ -2698,7 +2726,7 @@ export default function LetterPage() {
         {ci === 0 && meta?.oversize && <div className="att-warn no-print" dir="rtl">یک ردیف از یک صفحهٔ کامل بلندتر است — متنِ آن ردیف را کوتاه‌تر کن</div>}
         <BodyCell html={chunk} editable={!design} onChangeHtml={(h) => onAttChunk(t, ci, h)} transformPaste={cleanPaste}
           style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
-        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
       )
@@ -2720,14 +2748,14 @@ export default function LetterPage() {
       const off = ci === 0 ? (t.offY || 0) : 0
       return (
       <div className={`psheet${land ? ' land' : ''}`} key={`patt-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
-        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
           <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
           <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: `${t.title || ''}${ci ? `${t.title ? ' ' : ''}(ادامه)` : ''}` }} />
         </div>
         <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: chunk }} />
-        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
         {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
       )
@@ -2742,8 +2770,8 @@ export default function LetterPage() {
         {/* behind-text floats — painted first = under everything */}
         {floatLayer(pi, true)}
         {/* header + footer + page number repeat on every page (editable on page 1, mirrored after) */}
-        {pi === 0 ? <>{Box({ k: 'logo', children: <img src={LH_LOGO} alt="" style={{ width: '100%', height: '100%' }} /> })}{Box({ k: 'name', children: <img src={LH_NAME} alt="" style={{ width: '100%', height: '100%' }} /> })}</>
-          : <>{repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}</>}
+        {pi === 0 ? <>{Box({ k: 'logo', children: <img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /> })}{Box({ k: 'name', children: <img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /> })}</>
+          : <>{repImg('logo', LOGO_SRC)}{repImg('name', NAME_SRC)}</>}
 
         {pi === 0 && <>
           {Box({ k: 'besmele', children: Lbl({ k: 'besmele' }) })}
@@ -2772,7 +2800,7 @@ export default function LetterPage() {
           {Box({ k: 'action', style: cs('action') ? { top: L.action.y + cs('action') } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </> })()}
 
-        {pi === 0 ? Box({ k: 'footer', children: <img src={LH_FOOTER} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', LH_FOOTER)}
+        {pi === 0 ? Box({ k: 'footer', children: <img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', FOOTER_SRC)}
         {pi === 0
           ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(totalPageCount)}` })
           : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>)}
@@ -2788,7 +2816,7 @@ export default function LetterPage() {
     return (
       <div className="psheet" key={pi}>
         {floatLayer(pi, false)}
-        {repImg('logo', LH_LOGO)}{repImg('name', LH_NAME)}
+        {repImg('logo', LOGO_SRC)}{repImg('name', NAME_SRC)}
         {pi === 0 && <>
           {P('besmele', H(labels.besmele))}
           {P('shomareh', <>{H(labels.shomareh)}<span dir="ltr">{`182 / 4 / ${f.serial} / ${f.year}`}</span></>)}
@@ -2806,7 +2834,7 @@ export default function LetterPage() {
           {P('copyto', <span className="hangfld"><span className="hlbl">{H(labels.copyto)}</span><span className="hval">{H(f.copyTo)}</span></span>, closingShift.copyto ? { top: L.copyto.y + closingShift.copyto } : undefined)}
           {P('action', <>{H(labels.action)}{H(f.actionName)}{H(labels.actionExt)}<span dir="ltr">{f.actionExt}</span></>, closingShift.action ? { top: L.action.y + closingShift.action } : undefined)}
         </>}
-        {repImg('footer', LH_FOOTER)}
+        {repImg('footer', FOOTER_SRC)}
         {!isHidden('pagenum') && <div style={boxStyle('pagenum')}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
     )

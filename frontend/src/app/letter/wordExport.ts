@@ -35,6 +35,12 @@ export type WordExportArgs = {
   bodyFontPt: number
   // renders a float's html at width w → PNG data-url (uses the page's live CSS)
   renderFloatPng: (html: string, w: number) => Promise<{ png: string; h: number }>
+  // The letterhead images. Passed in rather than imported, because the case
+  // report is the same letter on the AJMAN BRANCH's paper — the .docx must carry
+  // the letterhead the page is showing, not whichever one this module imported.
+  logo?: string
+  name?: string
+  footer?: string
 }
 
 const hasPersian = (t: string) => /[\u0600-\u06FF]/.test(t)
@@ -282,7 +288,11 @@ function tableToDocx(tbl: HTMLTableElement, font: string, half: number, imgs: Im
 }
 
 // ---------- header/footer with the letterhead at its designed positions ----------
-function letterheadHeader(L: WordExportArgs['L']) {
+/** `marks` carries the three letterhead images, because which paper a letter is
+ *  on is a property of the letter, not of this module. */
+type Marks = { logo?: string; name?: string; footer?: string }
+
+function letterheadHeader(L: WordExportArgs['L'], marks: Marks = {}) {
   const img = (data: string, box: { x: number; y: number; w: number; h?: number }) => new ImageRun({
     data: b64bytes(data),
     transformation: { width: Math.round(box.w), height: Math.round(box.h || 60) },
@@ -294,14 +304,14 @@ function letterheadHeader(L: WordExportArgs['L']) {
     },
   })
   const kids: ImageRun[] = []
-  if (L.logo) kids.push(img(LH_LOGO, L.logo as any))
-  if (L.name) kids.push(img(LH_NAME, L.name as any))
+  if (L.logo) kids.push(img(marks.logo || LH_LOGO, L.logo as any))
+  if (L.name) kids.push(img(marks.name || LH_NAME, L.name as any))
   return new Header({ children: [new Paragraph({ children: kids })] })
 }
-function letterheadFooter(L: WordExportArgs['L'], font: string) {
+function letterheadFooter(L: WordExportArgs['L'], font: string, marks: Marks = {}) {
   const kids: (ImageRun | TextRun)[] = []
   if (L.footer) kids.push(new ImageRun({
-    data: b64bytes(LH_FOOTER),
+    data: b64bytes(marks.footer || LH_FOOTER),
     transformation: { width: Math.round(L.footer.w), height: Math.round(L.footer.h || 60) },
     floating: {
       horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: Math.round(L.footer.x * PX2EMU) },
@@ -512,8 +522,8 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
         margin: { top: mTop, bottom: Math.round((a.pageH - (a.L.pagenum?.y ?? a.pageH - 100)) * PX2TW), left: mLeft, right: mRight, header: 200, footer: 300 },
       },
     },
-    headers: { default: letterheadHeader(a.L) },
-    footers: { default: letterheadFooter(a.L, FONT) },
+    headers: { default: letterheadHeader(a.L, a) },
+    footers: { default: letterheadFooter(a.L, FONT, a) },
     children: [
       new Paragraph({ alignment: AlignmentType.CENTER, bidirectional: true, children: [...floatRuns, mkRun(plainText(a.labels.besmele || '') || 'بسمه تعالی', FONT, 26)] }),
       ...metaCol,
@@ -542,8 +552,8 @@ export async function buildLetterDocx(a: WordExportArgs): Promise<Blob> {
           margin: { top: 1100, bottom: 900, left: 850, right: 850, header: 200, footer: 300 },
         },
       },
-      headers: { default: letterheadHeader(a.L) },
-      footers: { default: letterheadFooter(a.L, FONT) },
+      headers: { default: letterheadHeader(a.L, a) },
+      footers: { default: letterheadFooter(a.L, FONT, a) },
       children: [
         new Paragraph({
           alignment: AlignmentType.CENTER, bidirectional: true,

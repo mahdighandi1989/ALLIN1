@@ -72,7 +72,7 @@ const FORMS: FormDef[] = [
     links: [
       { href: '/letter', label: 'نامۀ حساب/مشتری' },
       { href: '/letter?general=1', label: 'نامۀ عمومی (بدونِ حساب)' },
-      { href: '/case-report', label: 'گزارشِ خلاصهٔ پروندهٔ حقوقی' },
+      { href: '/letter?tpl=case', label: 'گزارشِ خلاصهٔ پروندهٔ حقوقی' },
     ],
   },
 ]
