@@ -79,6 +79,12 @@ OUTCOME_HINT = {
 #: How many sheets one binder holds before a new one is started.
 BINDER_CAPACITY = 40
 
+#: How long a claim on an urgent sheet is honoured before another run may take
+#: it. Long enough for a real answer (the supervisor reads files, walks
+#: dependencies, edits code), short enough that a crashed run does not park a
+#: sheet for a day. A claim is a courtesy between runs, not a lock on the truth.
+URGENT_CLAIM_TTL_S = 45 * 60
+
 
 class InspectionReport(Base):
     """One sheet: where the owner was, what they saw, and the conversation on it."""
@@ -131,6 +137,31 @@ class InspectionReport(Base):
     #: The owner asked for this explicitly: «وقتی هر کاری بخواد بکنه وابستگی‌ها
     #: رو چک کنه». An answer with no dependency walk is an unreviewed answer.
     deps_json = Column(Text, default="[]")
+
+    # --- v155: «همین الان برو سراغش» ------------------------------------
+    #
+    # The supervisor runs twice a week. A sheet the owner needs answered now
+    # would otherwise wait up to four days, so they can put one at the front of
+    # a separate, frequently-checked queue.
+    #
+    # THE FOUR FIELDS ARE FOUR DIFFERENT QUESTIONS, and merging any two of them
+    # would break the queue:
+    #   * `urgent_at`      — WHEN it was asked for. This is the sort key, so
+    #                        «whichever I pressed first» is answered by the data
+    #                        and not by whatever order a query happens to return.
+    #   * `urgent_claimed_at` + `_by` — a run has TAKEN this one. A second run
+    #                        skips it instead of doing the same work twice and
+    #                        writing two contradictory answers to one sheet.
+    #                        Time-stamped so a run that died mid-way releases it
+    #                        (see `URGENT_CLAIM_TTL_S`) rather than wedging the
+    #                        queue forever.
+    #   * `urgent_done_at` — it has been dealt with. Kept rather than clearing
+    #                        `urgent_at`, so the page can say «this one is done»
+    #                        and the owner sees the result of what they asked for.
+    urgent_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    urgent_claimed_at = Column(DateTime(timezone=True), nullable=True)
+    urgent_claimed_by = Column(String(80), default="")
+    urgent_done_at = Column(DateTime(timezone=True), nullable=True)
 
     #: Set when filed.
     binder_id = Column(String(40), default="")

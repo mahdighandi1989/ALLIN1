@@ -5,7 +5,7 @@
 // behind that answer, and the tick. The colour of a sheet is DERIVED from the
 // outcome, never from the fact that somebody replied — that distinction is the
 // whole reason this page is trustworthy.
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
 import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X, Pencil } from 'lucide-react'
 import { inspectionApi, parseApiError, type InspectionFile, type InspectionReport } from '@/lib/api'
@@ -80,6 +80,21 @@ export default function InspectionPage() {
     await load()
   }, [load])
 
+  const rush = useCallback(async (r: InspectionReport) => {
+    try {
+      if (r.urgent) {
+        await inspectionApi.unrush(r.id)
+        toast.success('از صفِ فوری بیرون آمد')
+      } else {
+        const { position } = await inspectionApi.rush(r.id)
+        toast.success(position === 1
+          ? 'در صفِ فوری، نفرِ اول — ناظر در بازبینیِ بعدی همین را برمی‌دارد'
+          : `در صفِ فوری، نفرِ ${fa(position)} — به ترتیبی که زدی انجام می‌شود`)
+      }
+      await load()
+    } catch (e) { toast.error(parseApiError(e)) }
+  }, [load])
+
   const saveEdit = useCallback(async (r: InspectionReport, noteId: string) => {
     const text = (editing?.text || '').trim()
     if (!text) return
@@ -121,6 +136,56 @@ export default function InspectionPage() {
     }
   }, [])
 
+  // v155 — WATCH THE FAST QUEUE, and say what happened.
+  //
+  // «بعدشم رفرش کنه و پیام بیاد تو صفحه فلان چیز انجام شده تا بعد از رفرش خودکار
+  // بتونم ببینمش». Polling only while something is actually pending: an idle
+  // page must not poll forever, and a page with nothing rushed has nothing to
+  // wait for. The banner names the sheet, because «something was done» is not an
+  // answer to «what happened».
+  const watching = useMemo(
+    () => reports.filter((r) => r.urgent).map((r) => r.id).join(','), [reports])
+  const seen = useRef<Record<string, string>>({})
+  const [done, setDone] = useState<{ number: number; title: string; label: string }[]>([])
+
+  useEffect(() => {
+    // remember the state of each rushed sheet, so a CHANGE can be recognised
+    for (const r of reports) {
+      if (r.urgent || r.urgent_done_at) seen.current[r.id] = `${r.status}|${r.notes?.length || 0}`
+    }
+  }, [reports])
+
+  useEffect(() => {
+    if (!watching) return
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await inspectionApi.list({ include_filed: true, status: filter || undefined })
+        if (!alive) return
+        const changed: { number: number; title: string; label: string }[] = []
+        for (const r of d.reports) {
+          const before = seen.current[r.id]
+          const now = `${r.status}|${r.notes?.length || 0}`
+          if (before && before !== now && (r.urgent_done_at || r.status === 'answered')) {
+            changed.push({ number: r.number, title: r.title || '', label: r.glow?.label || r.status })
+          }
+          seen.current[r.id] = now
+        }
+        setReports(d.reports)
+        setCounts(d.counts || {})
+        if (changed.length) setDone((prev) => [...changed, ...prev].slice(0, 5))
+      } catch { /* signed out or offline — the next tick tries again */ }
+    }
+    const t = window.setInterval(tick, 20_000)
+    const onFocus = () => void tick()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      alive = false
+      window.clearInterval(t)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [watching, filter])
+
   const summary = useMemo(() => ({
     open: counts.open || 0, answered: counts.answered || 0,
     approved: counts.approved || 0, filed: counts.filed || 0,
@@ -129,6 +194,33 @@ export default function InspectionPage() {
   return (
     <Layout>
       <div dir="rtl" className="space-y-4">
+        {/* v155 — what happened while you were looking at this page. */}
+        {!!done.length && (
+          <div dir="rtl" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <span className="text-lg leading-none">⚡</span>
+              <div className="flex-1 text-[13px] text-emerald-900">
+                <div className="font-semibold">ناظر روی موردهای فوری کار کرد:</div>
+                <ul className="mt-1 space-y-0.5">
+                  {done.map((d) => (
+                    <li key={d.number}>
+                      گزارشِ {fa(d.number)}{d.title ? ` — ${d.title}` : ''}
+                      <span className="text-emerald-700"> · {d.label}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-1 text-[11px] text-emerald-700">
+                  صفحه خودش به‌روز شد — بازش کن و ببین.
+                </div>
+              </div>
+              <button onClick={() => setDone([])} title="بستن"
+                className="rounded p-1 text-emerald-700 hover:bg-emerald-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">نظارت و سرکشی</h1>
@@ -198,6 +290,28 @@ export default function InspectionPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {/* v155 — «همین الان». The supervisor's round is twice a
+                        week; this puts one sheet in a queue that is checked
+                        hourly, in the order the owner pressed them. */}
+                    {r.status !== 'filed' && r.status !== 'approved' && (
+                      <button onClick={() => void rush(r)}
+                        title={r.urgent
+                          ? 'در صفِ فوری است — برای بیرون‌آوردن بزن'
+                          : 'ناظر خارج از نوبت سراغش برود'}
+                        className={`rounded-lg px-2.5 py-1 text-xs ${r.urgent
+                          ? 'bg-orange-600 text-white hover:bg-orange-700'
+                          : 'border border-orange-300 text-orange-700 hover:bg-orange-50'}`}>
+                        {r.urgent
+                          ? (r.urgent_in_progress ? '⚡ در دستِ ناظر' : '⚡ در صفِ فوری')
+                          : '⚡ فوری'}
+                      </button>
+                    )}
+                    {!!r.urgent_done_at && !r.urgent && (
+                      <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700"
+                        title="چیزی که فوری خواسته بودی، جواب گرفت">
+                        ⚡ جواب گرفت
+                      </span>
+                    )}
                     <button onClick={() => setOpenId(expanded ? null : r.id)}
                       className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs hover:bg-gray-50">
                       {expanded ? 'بستن' : 'جزئیات'}

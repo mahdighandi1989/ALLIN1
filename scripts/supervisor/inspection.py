@@ -49,6 +49,8 @@ SHOTS = OUT_DIR / "shots"
 #: becomes a reason not to read one. The bytes themselves stay in Drive; what
 #: lands here is what the supervisor has to actually read.
 FILES = OUT_DIR / "files"
+#: v155 — the one urgent sheet this run has claimed.
+URGENT = OUT_DIR / "URGENT.md"
 BRIEF = OUT_DIR / "QUEUE.md"
 
 BASE = (os.getenv("SUPERVISOR_API_BASE") or "").strip().rstrip("/")
@@ -307,6 +309,76 @@ def cmd_pull() -> int:
     return 4 if q.get("owed", 0) else 0
 
 
+def cmd_urgent() -> int:
+    """v155 — the fast queue: what the owner asked for OUT of turn.
+
+    Prints one sheet at a time, oldest request first, and CLAIMS it so a second
+    run does not answer the same sheet — the owner's «بدون اینکه به تناقض بخوره».
+    Exits 0 with nothing to say when the queue is empty, which is the normal case
+    and must stay cheap: this runs often.
+
+    EXIT CODES — and the distinction that matters:
+        0  the queue is EMPTY. Nothing to do, say nothing.
+        5  a sheet is claimed and waiting for an answer.
+        3  the queue could NOT BE READ (server down, mid-deploy, bad credentials).
+
+    3 is deliberately not 0. «I could not look» and «there was nothing there»
+    produce the same silence if they share an exit code, and an hourly routine
+    that cannot reach the queue would then look exactly like an hourly routine
+    finding it empty — for as long as it stayed broken. Same lesson as
+    `experiences/a-monitor-must-distinguish-unmeasured-from-zero.md`.
+    """
+    tok = login()
+    got = api(tok, "/api/inspection/urgent/claim", body={"by": "routine"}, method="POST")
+    r = got.get("report")
+    if not r:
+        busy = got.get("busy", 0)
+        print(json.dumps({"claimed": None, "waiting": got.get("waiting", 0),
+                          "in_progress_elsewhere": busy}, ensure_ascii=False))
+        return 0
+    FILES.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f"# فوری — گزارشِ {r['number']}: {r['title']}",
+        "",
+        "> مالک این را **خارج از نوبت** خواسته است. همین حالا انجامش بده، بعد",
+        "> جوابش را با `inspection.py answer` بنویس. تا جواب ندهی از صفِ فوری",
+        "> بیرون نمی‌رود، و بقیهٔ صف پشتِ آن منتظرند.",
+        "",
+        f"- وضعیت: `{r['status']}` · {r.get('glow', {}).get('label', '')}",
+        f"- کجا: **{r.get('page_label')}**"
+        + (f" ← {r['section_label']}" if r.get("section_label") else ""),
+        f"- نشانیِ بازگشت: `{r.get('reopen')}`",
+        f"- در صف: {got.get('waiting', 1)} برگه",
+        "",
+    ]
+    g = r.get("geometry") or {}
+    if g:
+        d = g.get("doc") or {}
+        lines.append(f"- مختصات: {round(d.get('w', 0))}×{round(d.get('h', 0))} در "
+                     f"x={round(d.get('x', 0))} y={round(d.get('y', 0))}")
+    for i, n in enumerate(r.get("notes") or []):
+        who = "🤖 ناظر" if n.get("by") == "reviewer" else "👤 مالک"
+        lines += [f"**{who}** — {n.get('at', '')}", "", n.get("text", ""), ""]
+        for key, tag in (("shot_id", "before"), ("after_shot_id", "after")):
+            sid = n.get(key)
+            if sid:
+                pth = _save_shot(tok, sid, f"urgent-r{r['number']}-n{i}-{tag}.img")
+                if pth:
+                    lines.append(f"تصویر: `{pth}` — **بازش کن و نگاه کن**")
+        lines.append("")
+    for f in r.get("files") or []:
+        got_f = _read_file_fully(tok, f, r["number"])
+        mark = "✅" if got_f["complete"] else "⚠️"
+        lines.append(f"- {mark} `{got_f['filename']}` — محتوا: `{got_f['path']}`")
+        if f.get("caption"):
+            lines.append(f"  - توضیحِ مالک: {f['caption']}")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    URGENT.write_text("\n".join(lines), encoding="utf-8")
+    print(json.dumps({"claimed": r["number"], "waiting": got.get("waiting", 1),
+                      "brief": str(URGENT.relative_to(ROOT))}, ensure_ascii=False))
+    return 5
+
+
 def _parse_dep(raw: str) -> dict:
     """`name=status` or `name=status:note`."""
     name, _, rest = raw.partition("=")
@@ -380,6 +452,7 @@ def main() -> int:
     a.add_argument("--no-deps", action="store_true",
                    help="فقط وقتی واقعاً هیچ وابستگی‌ای ندارد")
     sub.add_parser("file", help="تیک‌خورده‌ها → زونکن")
+    sub.add_parser("urgent", help="یک برگهٔ فوری را بردار (صفِ خارج از نوبت)")
     args = ap.parse_args()
 
     if not BASE:
@@ -390,6 +463,8 @@ def main() -> int:
             return cmd_pull()
         if args.cmd == "answer":
             return cmd_answer(args)
+        if args.cmd == "urgent":
+            return cmd_urgent()
         return cmd_file()
     except InspectionError as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False), file=sys.stderr)

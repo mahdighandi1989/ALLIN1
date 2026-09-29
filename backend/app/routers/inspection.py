@@ -46,6 +46,7 @@ from app.models.inspection import (
     STATUS_APPROVED,
     STATUS_FILED,
     STATUS_OPEN,
+    URGENT_CLAIM_TTL_S,
     InspectionBinder,
     InspectionFile,
     InspectionReport,
@@ -278,6 +279,8 @@ def _to_dict(r: InspectionReport, deps: bool = True, files: Optional[list] = Non
         "notes": notes,
         "dependencies": _deps(r) if deps else [],
         "glow": sheet_glow(r.status, notes),
+        # v155 — where this sheet stands in the fast queue
+        **_urgent_state(r),
         # v146 — the attached samples, and what the supervisor still owes on them
         "files": [_file_dict(f) for f in (files or [])],
         "read_debt": file_read_debt(files or []),
@@ -586,6 +589,31 @@ async def get_shot(shot_id: str, db: AsyncSession = Depends(get_db),
                     headers={"Cache-Control": "private, max-age=86400"})
 
 
+# NOTE — this must stay ABOVE `/{report_id}`. A literal path declared after a
+# path parameter is never reached: FastAPI matched «/urgent» as a report id and
+# answered with a 404-shaped report lookup instead of the queue. Caught by the
+# tests, not by reading.
+@router.get("/urgent")
+async def urgent_queue(db: AsyncSession = Depends(get_db),
+                       user=Depends(get_current_active_user)):
+    """The fast queue, oldest request first — the order the owner pressed them."""
+    rows = (await db.execute(
+        select(InspectionReport)
+        .where(InspectionReport.urgent_at.isnot(None),
+               InspectionReport.urgent_done_at.is_(None),
+               InspectionReport.status != STATUS_FILED)
+        .order_by(InspectionReport.urgent_at)
+    )).scalars().all()
+    fmap = await _files_by_report(db, [r.id for r in rows])
+    out = []
+    for i, r in enumerate(rows):
+        d = _to_dict(r, files=fmap.get(r.id, []))
+        d["position"] = i + 1
+        d["claimable"] = _claim_expired(r)
+        out.append(d)
+    return {"ok": True, "waiting": len(out), "reports": out}
+
+
 @router.get("/{report_id}")
 async def get_report(report_id: str, db: AsyncSession = Depends(get_db),
                      user=Depends(get_current_active_user)):
@@ -761,6 +789,19 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
     if reviewer:
         if r.status in (STATUS_OPEN, STATUS_ANSWERED):
             r.status = STATUS_ANSWERED
+        # v155 — the urgent request is DISCHARGED by the answer, which is what
+        # was asked for. `urgent_at` is kept (not cleared) so the page can say
+        # «the thing you rushed has been answered» instead of the row silently
+        # dropping out of the queue as though it had never been asked.
+        if r.urgent_at is not None and r.urgent_done_at is None:
+            r.urgent_done_at = datetime.now(timezone.utc)
+            r.urgent_claimed_at = None
+            r.urgent_claimed_by = ""
+    elif r.urgent_done_at is not None:
+        # the owner writes again on a sheet they had rushed: they are asking
+        # again, so it goes back into the fast queue at its ORIGINAL position —
+        # they should not lose their place for adding a clarification
+        r.urgent_done_at = None
     elif r.status == STATUS_ANSWERED:
         r.status = STATUS_OPEN
     await db.commit()
@@ -771,6 +812,136 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
         detail=f"گزارشِ {r.number} — " + (f"نتیجه: {payload.outcome}" if reviewer else "یادداشتِ مالک"),
         user=user, db=db)
     return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+# ---------------------------------------------------------------------------
+# v155 — «فوری»: jump the queue, without two runs colliding.
+# ---------------------------------------------------------------------------
+def _urgent_state(r: InspectionReport) -> dict:
+    """Everything the UI needs to say where this sheet stands, and nothing more."""
+    claimed = r.urgent_claimed_at is not None and not _claim_expired(r)
+    return {
+        "urgent": r.urgent_at is not None and r.urgent_done_at is None,
+        "urgent_at": r.urgent_at.isoformat() if r.urgent_at else None,
+        "urgent_done_at": r.urgent_done_at.isoformat() if r.urgent_done_at else None,
+        # «in hand right now» — so the owner sees movement instead of silence
+        "urgent_in_progress": claimed and r.urgent_done_at is None,
+        "urgent_claimed_by": (r.urgent_claimed_by or "") if claimed else "",
+    }
+
+
+def _claim_expired(r: InspectionReport) -> bool:
+    """A claim outlives its run only up to the TTL — otherwise one crash parks a
+    sheet until somebody notices, which is the failure this queue exists to end."""
+    if r.urgent_claimed_at is None:
+        return True
+    started = r.urgent_claimed_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - started).total_seconds() > URGENT_CLAIM_TTL_S
+
+
+@router.post("/{report_id}/urgent")
+async def mark_urgent(report_id: str, db: AsyncSession = Depends(get_db),
+                      user=Depends(get_current_active_user)):
+    """The owner asks for this one NOW, ahead of the twice-weekly round.
+
+    Pressing it again does NOT move the sheet to the back or the front: the
+    original request time stands, because «whichever I pressed first» is the
+    promise, and re-pressing must not quietly reorder the queue.
+    """
+    if await _is_supervisor(db, user):
+        raise HTTPException(status_code=403, detail="درخواستِ فوری کارِ مالک است، نه ناظر")
+    r = (await db.execute(select(InspectionReport).where(
+        InspectionReport.id == report_id))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="گزارش پیدا نشد")
+    if r.status == STATUS_FILED:
+        raise HTTPException(status_code=422, detail="برگهٔ بایگانی‌شده نوبتِ فوری نمی‌گیرد")
+    if r.urgent_at is None or r.urgent_done_at is not None:
+        r.urgent_at = datetime.now(timezone.utc)
+        r.urgent_done_at = None
+        r.urgent_claimed_at = None
+        r.urgent_claimed_by = ""
+        await db.commit()
+        await db.refresh(r)
+        await record_audit(action="inspection_urgent", entity_type="inspection",
+                           entity_id=r.id, detail=f"برگهٔ {r.number} فوری شد",
+                           user=user, db=db)
+    ahead = await _urgent_ahead(db, r)
+    return {"ok": True, "position": ahead + 1,
+            "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+@router.delete("/{report_id}/urgent")
+async def unmark_urgent(report_id: str, db: AsyncSession = Depends(get_db),
+                        user=Depends(get_current_active_user)):
+    """Take it out of the fast queue. The sheet itself is untouched."""
+    if await _is_supervisor(db, user):
+        raise HTTPException(status_code=403, detail="لغوِ فوری کارِ مالک است")
+    r = (await db.execute(select(InspectionReport).where(
+        InspectionReport.id == report_id))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="گزارش پیدا نشد")
+    r.urgent_at = None
+    r.urgent_claimed_at = None
+    r.urgent_claimed_by = ""
+    r.urgent_done_at = None
+    await db.commit()
+    await db.refresh(r)
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+async def _urgent_ahead(db: AsyncSession, r: InspectionReport) -> int:
+    """How many still-waiting sheets were asked for BEFORE this one."""
+    if r.urgent_at is None:
+        return 0
+    return int((await db.execute(
+        select(func.count(InspectionReport.id)).where(
+            InspectionReport.urgent_at.isnot(None),
+            InspectionReport.urgent_done_at.is_(None),
+            InspectionReport.status != STATUS_FILED,
+            InspectionReport.urgent_at < r.urgent_at,
+        ))).scalar() or 0)
+
+
+class ClaimIn(BaseModel):
+    by: str = Field("", max_length=80)
+
+
+@router.post("/urgent/claim")
+async def claim_next_urgent(payload: ClaimIn, db: AsyncSession = Depends(get_db),
+                            user=Depends(get_current_active_user)):
+    """Take the NEXT urgent sheet, one at a time.
+
+    The whole point is that two runs never work the same sheet: a second run
+    would write a second answer to a sheet the first is already changing, which
+    is the «تناقض» this has to avoid. So the claim is written and committed
+    BEFORE the caller is told which sheet it got, and a sheet already claimed
+    within the TTL is skipped rather than handed out again.
+
+    Returns `{report: null}` when there is nothing to do — which is the normal
+    case on most runs, and must be cheap and quiet, not an error.
+    """
+    if not await _is_supervisor(db, user):
+        raise HTTPException(status_code=403, detail="صفِ فوری را فقط ناظر برمی‌دارد")
+    rows = (await db.execute(
+        select(InspectionReport)
+        .where(InspectionReport.urgent_at.isnot(None),
+               InspectionReport.urgent_done_at.is_(None),
+               InspectionReport.status != STATUS_FILED)
+        .order_by(InspectionReport.urgent_at)
+    )).scalars().all()
+    nxt = next((r for r in rows if _claim_expired(r)), None)
+    if nxt is None:
+        return {"ok": True, "report": None,
+                "waiting": len(rows), "busy": len(rows)}
+    nxt.urgent_claimed_at = datetime.now(timezone.utc)
+    nxt.urgent_claimed_by = _clean(payload.by, 80) or str(getattr(user, "username", "") or "")
+    await db.commit()
+    await db.refresh(nxt)
+    return {"ok": True, "waiting": len(rows),
+            "report": _to_dict(nxt, files=await _files_of(db, nxt.id))}
 
 
 class EditNoteIn(BaseModel):

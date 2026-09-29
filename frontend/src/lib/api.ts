@@ -959,6 +959,12 @@ export type InspectionReport = {
   notes: InspectionNote[]
   dependencies: { name: string; status: string; note?: string }[]
   glow: { key: string; label: string; tone: string; outcome?: string }
+  // v155 — the fast queue, for sheets the owner needs answered out of turn
+  urgent: boolean
+  urgent_at: string | null
+  urgent_done_at: string | null
+  urgent_in_progress: boolean
+  urgent_claimed_by: string
   files: InspectionFile[]
   read_debt: InspectionReadDebt[]
   binder: { id: string; number: number; page: number } | null
@@ -989,6 +995,19 @@ export const inspectionApi = {
   async setStatus(id: string, status: 'open' | 'approved'): Promise<InspectionReport> {
     const { data } = await api.post(`/api/inspection/${id}/status`, { status })
     return data.report
+  },
+  /** v155 — ask for this one NOW, ahead of the twice-weekly round. */
+  async rush(id: string): Promise<{ position: number; report: InspectionReport }> {
+    const { data } = await api.post(`/api/inspection/${id}/urgent`)
+    return data
+  },
+  async unrush(id: string): Promise<InspectionReport> {
+    const { data } = await api.delete(`/api/inspection/${id}/urgent`)
+    return data.report
+  },
+  async urgentQueue(): Promise<{ waiting: number; reports: (InspectionReport & { position: number })[] }> {
+    const { data } = await api.get('/api/inspection/urgent')
+    return data
   },
   async remove(id: string): Promise<void> { await api.delete(`/api/inspection/${id}`) },
   shotUrl(shotId: string): string { return `/api/inspection/shots/${shotId}` },
