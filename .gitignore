@@ -69,6 +69,11 @@ scripts/supervisor/__pycache__/
 # must never be committed (they would also leak whatever was seeded into them).
 # v156 — any scratch SQLite a local run leaves behind. One was staged by
 # `git add -A` after checking the page in a browser; it is a database, not source.
+# v158 — the disk FALLBACK store for inspection attachments. These are uploaded
+# files (the owner's samples, and whatever a test run puts there); they belong in
+# Drive or on the instance's disk, never in the repository. Seven test artefacts
+# were committed by `git add -A` before this line existed.
+backend/storage/
 backend/_*.db
 backend/_*.db-wal
 backend/_*.db-shm
