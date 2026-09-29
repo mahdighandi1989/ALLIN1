@@ -73,7 +73,7 @@ export default function AuditPage() {
         </select>
         <select value={entityType} onChange={(e) => setEntityType(e.target.value)} className="px-3 py-2 border rounded-lg">
           <option value="">All entities</option>
-          {['customer', 'profile', 'facility', 'guarantor', 'offer_letter', 'sanction', 'note', 'attachment', 'task', 'checklist', 'document', 'voucher', 'letter', 'user', 'auth'].map((e) => <option key={e} value={e}>{e}</option>)}
+          {['customer', 'profile', 'facility', 'guarantor', 'offer_letter', 'sanction', 'note', 'attachment', 'task', 'checklist', 'document', 'voucher', 'letter', 'case_report', 'user', 'auth'].map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search user / account / detail…"
           className="flex-1 min-w-[200px] px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />

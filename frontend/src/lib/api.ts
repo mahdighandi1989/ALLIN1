@@ -1334,6 +1334,59 @@ export const lettersApi = {
 }
 
 // ---------------------------------------------------------------------------
+// گزارش خلاصهٔ پروندهٔ حقوقی — the legal case-file summary report.
+// Same two buckets as letters (under an account, or general) and the same
+// attachment/audit/soft-delete story; `fields` are the scalars, `tables` the
+// repeating sections, and `prefill` offers what the database already knows.
+// ---------------------------------------------------------------------------
+export type CaseReportSummary = {
+  id: string; account_no?: string | null; category: string; title?: string | null
+  subject?: string | null; subject_entity?: string | null; subject_account?: string | null
+  subject_branch?: string | null; letter_no?: string | null; letter_date?: string | null
+  books_total?: string | null; court_total?: string | null; collections_total?: string | null
+  updated_at?: string | null; created_at?: string | null
+}
+export type CaseReportFull = CaseReportSummary & {
+  fields: Record<string, string | null>
+  tables: Record<string, any[] | null>
+  values?: any; layout?: any; labels?: any
+}
+export type CaseReportPrefill = {
+  account_no: string; found: boolean
+  fields: Record<string, string>
+  tables: Record<string, any[]>
+  sources: Record<string, number>
+}
+export const caseReportsApi = {
+  async list(params: { account_no?: string; general?: boolean } = {}): Promise<CaseReportSummary[]> {
+    const { data } = await api.get('/api/case-reports/', { params })
+    return data
+  },
+  async get(id: string): Promise<CaseReportFull> {
+    const { data } = await api.get(`/api/case-reports/${encodeURIComponent(id)}`)
+    return data
+  },
+  async prefill(accountNo: string): Promise<CaseReportPrefill> {
+    const { data } = await api.get('/api/case-reports/prefill', { params: { account_no: accountNo } })
+    return data
+  },
+  async attachments(id: string): Promise<LetterAttachment[]> {
+    const { data } = await api.get(`/api/case-reports/${encodeURIComponent(id)}/attachments`)
+    return data
+  },
+  async save(payload: {
+    id?: string; account_no?: string; general?: boolean
+    fields?: Record<string, any>; tables?: Record<string, any[]>
+    values?: any; layout?: any; labels?: any
+  }): Promise<CaseReportFull> {
+    if (payload.id) { const { data } = await api.patch(`/api/case-reports/${payload.id}`, payload); return data }
+    const { data } = await api.post('/api/case-reports/', payload)
+    return data
+  },
+  async remove(id: string): Promise<void> { await api.delete(`/api/case-reports/${id}`) },
+}
+
+// ---------------------------------------------------------------------------
 // Recycle bin
 // ---------------------------------------------------------------------------
 export const trashApi = {

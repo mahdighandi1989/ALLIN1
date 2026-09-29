@@ -78,6 +78,10 @@ docs/supervisor/last_server.log
 # Supervisor inspection working copy — rebuilt by `inspection.py pull` on every
 # round. Only the README is tracked (the sheets themselves live in the API).
 docs/supervisor/inspection/QUEUE.md
+# v156 — the urgent brief was MISSED when v155 added it. It carries whatever the
+# owner put on the sheet: customer names, account numbers, national IDs. One
+# `git add -A` would have committed that into the repository's history.
+docs/supervisor/inspection/URGENT.md
 docs/supervisor/inspection/shots/
 # v146 — the owner's attached samples, pulled as text on every run. Working
 # copies of material that lives in Drive; never the record itself.

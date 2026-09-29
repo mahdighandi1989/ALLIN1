@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import Breadcrumb from '@/components/Breadcrumb'
-import { customersApi, crmApi, facilitiesApi, auditApi, lettersApi, parseApiError, downloadFile } from '@/lib/api'
+import { customersApi, crmApi, facilitiesApi, auditApi, lettersApi, caseReportsApi, parseApiError, downloadFile } from '@/lib/api'
 import { auditWhat, auditLink, auditActionLabel, ACTION_COLORS } from '@/lib/audit'
 import { AuditList, LetterSummary } from '@/types'
 import toast from 'react-hot-toast'
@@ -93,8 +93,12 @@ function CustomerDetailInner() {
   useEffect(() => { if (tab === 'logs') loadLogs() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [tab, logPage, logAcc])
   // --- Letters tab: this customer's saved letters ---
   const [letters, setLetters] = useState<LetterSummary[]>([])
+  const [caseReports, setCaseReports] = useState<any[]>([])
   useEffect(() => {
     if (tab === 'letters' && logAcc) lettersApi.list({ account_no: logAcc }).then(setLetters).catch(() => setLetters([]))
+    // Case reports live under the same account and open in their own form; they
+    // share the «نامه‌ها» tab so the profile keeps ONE place for outgoing paper.
+    if (tab === 'letters' && logAcc) caseReportsApi.list({ account_no: logAcc }).then(setCaseReports).catch(() => setCaseReports([]))
   }, [tab, logAcc])
   const exportLogs = async () => {
     if (!logAcc) return
@@ -1057,7 +1061,7 @@ function CustomerDetailInner() {
       )}
 
       {tab === 'letters' && (
-        <Section title={`نامه‌ها (${letters.length})`}>
+        <Section title={`نامه‌ها (${letters.length}) و گزارش‌های پرونده (${caseReports.length})`}>
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs text-gray-500">نامه‌هایی که ذیلِ این حساب ذخیره شده‌اند. روی هر کدام بزنید تا در فرمِ نامه باز شود.</p>
             <button onClick={() => router.push(`/letter?account=${encodeURIComponent(acc)}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm whitespace-nowrap"><Mail size={14} /> نامۀ جدید برای این حساب</button>
@@ -1078,6 +1082,29 @@ function CustomerDetailInner() {
                 </tbody>
               </table>
             ) : <div className="py-10 text-center text-gray-500 text-sm">هنوز نامه‌ای برای این حساب ذخیره نشده</div>}
+          </div>
+
+          <div className="flex items-center justify-between mb-3 mt-6">
+            <p className="text-xs text-gray-500">گزارش‌های خلاصهٔ پروندهٔ حقوقی که ذیلِ این حساب ذخیره شده‌اند.</p>
+            <button onClick={() => router.push(`/case-report?account=${encodeURIComponent(acc)}`)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-sm whitespace-nowrap"><Mail size={14} /> گزارشِ پروندهٔ جدید</button>
+          </div>
+          <div className="bg-white border rounded-lg overflow-hidden">
+            {caseReports.length ? (
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500"><tr><th className="px-3 py-2 text-right">عنوان</th><th className="px-3 py-2 text-right">شماره</th><th className="px-3 py-2 text-right">تاریخ</th><th className="px-3 py-2 text-right">جمع کل (دفاتر)</th><th className="px-3 py-2 text-right">به‌روزرسانی</th></tr></thead>
+                <tbody className="divide-y">
+                  {caseReports.map((c) => (
+                    <tr key={c.id} className="hover:bg-blue-50/40 cursor-pointer" onClick={() => router.push(`/case-report?id=${c.id}`)}>
+                      <td className="px-3 py-2 font-medium">{c.title || c.subject_entity || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700" dir="ltr">{c.letter_no || '—'}</td>
+                      <td className="px-3 py-2 text-gray-600" dir="ltr">{c.letter_date || '—'}</td>
+                      <td className="px-3 py-2 text-gray-700">{c.books_total || '—'}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-500">{c.updated_at ? new Date(c.updated_at).toLocaleString('en-GB') : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <div className="py-10 text-center text-gray-500 text-sm">هنوز گزارشِ پرونده‌ای برای این حساب ذخیره نشده</div>}
           </div>
         </Section>
       )}

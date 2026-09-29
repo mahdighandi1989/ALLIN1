@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
@@ -827,7 +827,29 @@ def _urgent_state(r: InspectionReport) -> dict:
         # «in hand right now» — so the owner sees movement instead of silence
         "urgent_in_progress": claimed and r.urgent_done_at is None,
         "urgent_claimed_by": (r.urgent_claimed_by or "") if claimed else "",
+        # v156 — WHEN it was taken and when the claim lapses. Without these, a
+        # sheet that is merely «not claimable» looks identical to one stuck
+        # forever, and the only way to tell them apart is to wait and see.
+        "urgent_claimed_at": _utc(r.urgent_claimed_at) if claimed else None,
+        "urgent_claim_expires_at": (
+            _utc(r.urgent_claimed_at, plus=URGENT_CLAIM_TTL_S) if claimed else None),
     }
+
+
+def _utc(dt, plus: int = 0):
+    """An ISO timestamp that always carries a zone.
+
+    SQLite hands back naive datetimes while PostgreSQL hands back aware ones, so
+    emitting `dt.isoformat()` directly makes the SAME field zoned on one
+    deployment and zone-less on another — and a client that subtracts two of them
+    gets a TypeError rather than a wrong answer, which is at least loud. Both
+    timestamps in this payload go through here so they are always comparable.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (dt + timedelta(seconds=plus)).isoformat()
 
 
 def _claim_expired(r: InspectionReport) -> bool:

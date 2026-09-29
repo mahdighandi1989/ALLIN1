@@ -199,3 +199,57 @@ class TestOneAtATimeAndNoCollision:
         r = await client.post("/api/inspection/urgent/claim", headers=auth_headers,
                               json={"by": "someone"})
         assert r.status_code == 403
+
+
+class TestYouCanSeeWhenAClaimLapses:
+    """v156 — «not claimable» and «stuck forever» must not look the same.
+
+    A sheet in hand and a sheet parked by a dead run both report
+    `urgent_in_progress`. Without the claim's timestamp there is no way to tell
+    them apart except by waiting, which is precisely the thing the TTL exists to
+    avoid having to do.
+    """
+
+    async def test_an_unclaimed_sheet_reports_no_claim_times(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        await _rush(client, auth_headers, rep["id"])
+        q = (await client.get("/api/inspection/urgent", headers=auth_headers)).json()
+        row = next(r for r in q["reports"] if r["id"] == rep["id"])
+        assert row["urgent_claimed_at"] is None
+        assert row["urgent_claim_expires_at"] is None
+
+    async def test_a_claimed_sheet_says_when_it_was_taken_and_when_it_lapses(
+            self, client, auth_headers, db_session, monkeypatch, test_user):
+        rep = await _sheet(client, auth_headers)
+        await _rush(client, auth_headers, rep["id"])
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        resp = await client.post("/api/inspection/urgent/claim", headers=auth_headers,
+                                 json={"by": "routine"})
+        assert resp.status_code == 200, resp.text
+        got = resp.json()
+        assert got["report"]["id"] == rep["id"], resp.text
+        one = (await client.get(f"/api/inspection/{rep['id']}", headers=auth_headers)).json()
+        row = one.get("report", one)
+        assert row["urgent_claimed_at"] is not None
+        assert row["urgent_claim_expires_at"] is not None
+        taken = datetime.fromisoformat(row["urgent_claimed_at"])
+        lapses = datetime.fromisoformat(row["urgent_claim_expires_at"])
+        assert (lapses - taken).total_seconds() == URGENT_CLAIM_TTL_S
+
+    async def test_an_expired_claim_stops_reporting_a_holder(
+            self, client, auth_headers, db_session, monkeypatch, test_user):
+        rep = await _sheet(client, auth_headers)
+        await _rush(client, auth_headers, rep["id"])
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        claimed = await client.post("/api/inspection/urgent/claim", headers=auth_headers,
+                                    json={"by": "routine"})
+        assert claimed.status_code == 200 and claimed.json()["report"], claimed.text
+        row = (await db_session.execute(select(InspectionReport).where(
+            InspectionReport.id == rep["id"]))).scalar_one()
+        row.urgent_claimed_at = datetime.now(timezone.utc) - timedelta(seconds=URGENT_CLAIM_TTL_S + 60)
+        await db_session.commit()
+        q = (await client.get("/api/inspection/urgent", headers=auth_headers)).json()
+        got = next(r for r in q["reports"] if r["id"] == rep["id"])
+        assert got["claimable"] is True
+        assert got["urgent_claimed_by"] == ""
+        assert got["urgent_claimed_at"] is None       # a lapsed claim is not a claim

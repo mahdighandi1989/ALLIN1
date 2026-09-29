@@ -39,6 +39,7 @@ from app.models.import_job import ImportJob  # noqa: F401  (register table for c
 from app.models.staff import StaffMember  # noqa: F401  (register table for create_all)
 from app.models.department import Department  # noqa: F401  (register table for create_all)
 from app.models.letter import Letter  # noqa: F401  (register table for create_all)
+from app.models.case_report import CaseReport  # noqa: F401  (register table for create_all)
 from app.models.crm import (  # noqa: F401
     CustomerProfile, ChecklistProgress, FacilityChecklist, CustomTask, Attachment, JournalEntry, CustomerNote,
 )

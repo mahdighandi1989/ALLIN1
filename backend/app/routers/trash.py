@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.customer import Customer, CustomerStatus
 from app.models.facility import Facility, FacilityStatus
 from app.models.offer_letter import OfferLetter
+from app.models.case_report import CaseReport
 from app.utils.security import get_current_user
 from app.routers.auth import require_editor
 from app.services.checklist import cascade_restore_facility
@@ -25,7 +26,7 @@ _NOT_FOUND = "Deleted item not found"
 
 @router.get("/")
 async def list_trash(db: AsyncSession = Depends(get_db)):
-    """Return all soft-deleted customers, facilities and offer letters."""
+    """Return all soft-deleted customers, facilities, offer letters and case reports."""
     customers = (
         await db.execute(select(Customer).where(Customer.is_deleted == True))
     ).scalars().all()
@@ -34,6 +35,9 @@ async def list_trash(db: AsyncSession = Depends(get_db)):
     ).scalars().all()
     offers = (
         await db.execute(select(OfferLetter).where(OfferLetter.is_deleted == True))
+    ).scalars().all()
+    cases = (
+        await db.execute(select(CaseReport).where(CaseReport.is_deleted == True))
     ).scalars().all()
 
     def cust(c):
@@ -51,10 +55,17 @@ async def list_trash(db: AsyncSession = Depends(get_db)):
                 "sublabel": f"{o.currency or 'AED'} {float(o.principal_amount or 0):,.0f}",
                 "type": "offer_letter"}
 
+    def case(c):
+        return {"id": str(c.id),
+                "label": c.title or c.subject_entity or c.subject or c.id,
+                "sublabel": c.account_no or "عمومی",
+                "type": "case_report"}
+
     items = (
         [cust(c) for c in customers]
         + [fac(f) for f in facilities]
         + [off(o) for o in offers]
+        + [case(c) for c in cases]
     )
     return {
         "items": items,
@@ -63,6 +74,7 @@ async def list_trash(db: AsyncSession = Depends(get_db)):
             "customers": len(customers),
             "facilities": len(facilities),
             "offer_letters": len(offers),
+            "case_reports": len(cases),
         },
     }
 
@@ -101,6 +113,16 @@ async def restore_item(
             await db.execute(
                 select(OfferLetter).where(
                     OfferLetter.id == item_id, OfferLetter.is_deleted == True
+                )
+            )
+        ).scalar_one_or_none()
+        if obj:
+            obj.is_deleted = False
+    elif entity in ("case_report", "case_reports", "case-reports"):
+        obj = (
+            await db.execute(
+                select(CaseReport).where(
+                    CaseReport.id == item_id, CaseReport.is_deleted == True
                 )
             )
         ).scalar_one_or_none()
