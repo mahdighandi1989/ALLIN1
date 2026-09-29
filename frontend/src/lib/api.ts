@@ -988,7 +988,12 @@ export const inspectionApi = {
     const { data } = await api.patch(`/api/inspection/${id}/notes/${noteId}`, { text })
     return data.report
   },
-  async note(id: string, body: { text: string; shot?: string }): Promise<InspectionReport> {
+  /** A note under an existing sheet. `spot` lets a follow-up carry its OWN box
+   *  and screenshot; `file_ids` keeps its samples with it instead of in the
+   *  sheet's undifferentiated pile. */
+  async note(id: string, body: {
+    text: string; shot?: string; spot?: any; file_ids?: string[]
+  }): Promise<InspectionReport> {
     const { data } = await api.post(`/api/inspection/${id}/notes`, body)
     return data.report
   },

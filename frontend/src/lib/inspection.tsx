@@ -48,6 +48,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
   // to the server's ceiling. They are uploaded AFTER the sheet exists, because a
   // 100MB body cannot ride along inside the JSON that creates it.
   const [picked, setPicked] = useState<File[]>([])
+  const [target, setTarget] = useState('')   // '' = a new sheet; otherwise the sheet this goes under
   const [upPct, setUpPct] = useState<{ name: string; pct: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [reports, setReports] = useState<InspectionReport[]>([])
@@ -227,29 +228,53 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     fr.readAsDataURL(file)
   }, [])
 
+  // v158 — «به عنوان گزارش جدید باشه یا بره ذیل گزارشی که هنوز تایید مالک روش
+  // انجام نشده و بایگانی نشده». Only sheets still in play are offered: once the
+  // owner has ticked a sheet or it has been archived, that conversation is over
+  // and a new observation deserves its own sheet.
+  const openSheets = useMemo(
+    () => reports.filter((r) => r.status === 'open' || r.status === 'answered'),
+    [reports])
+
   const submit = async () => {
     if (!spot || !text.trim()) return
     setBusy(true)
     try {
-      const rep = await inspectionApi.create({ text: text.trim(), spot, shot: shot?.data })
+      const under = target && openSheets.some((r) => r.id === target) ? target : ''
+      // A follow-up needs a sheet to hang its files on BEFORE the note exists, so
+      // the sheet is chosen first and the files are claimed by the note at the end.
+      const rep = under
+        ? { id: under, number: openSheets.find((r) => r.id === under)?.number }
+        : await inspectionApi.create({ text: text.trim(), spot, shot: shot?.data })
       // Each sample is its own request so one failure does not lose the sheet or
       // the other files — and the owner is told exactly which one did not go up.
       const failed: string[] = []
+      const uploaded: string[] = []
       for (const f of picked) {
         try {
           setUpPct({ name: f.name, pct: 0 })
-          await inspectionApi.upload(rep.id, f, '', (pct) => setUpPct({ name: f.name, pct }))
+          const up = await inspectionApi.upload(rep.id, f, '', (pct) => setUpPct({ name: f.name, pct }))
+          if (up?.file?.id) uploaded.push(up.file.id)
         } catch (e) { failed.push(`${f.name} (${parseApiError(e)})`) }
       }
       setUpPct(null)
+      if (under) {
+        // The follow-up carries its OWN box and screenshot, and claims only the
+        // files uploaded with it — the parent sheet's samples stay the parent's.
+        await inspectionApi.note(under, {
+          text: text.trim(), shot: shot?.data, spot, file_ids: uploaded,
+        })
+      }
       if (failed.length) {
-        toast.error(`گزارش ثبت شد ولی این فایل‌ها بالا نرفتند: ${failed.join(' · ')}`)
+        toast.error(`${under ? 'یادداشت' : 'گزارش'} ثبت شد ولی این فایل‌ها بالا نرفتند: ${failed.join(' · ')}`)
+      } else if (under) {
+        toast.success(`ذیلِ گزارشِ ${rep.number ?? ''} ثبت شد — آن برگه دوباره بازِ رسیدگی شد`)
       } else {
         toast.success(picked.length
           ? `گزارش با ${picked.length} فایلِ نمونه ثبت شد — ناظر باید کاملشان را بخواند`
           : 'گزارش ثبت شد — ناظر در دورِ بعد جواب می‌دهد')
       }
-      setSpot(null); setText(''); setShot(null); setPicked([])
+      setSpot(null); setText(''); setShot(null); setPicked([]); setTarget('')
       await refresh()
     } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false); setUpPct(null) }
   }
@@ -304,6 +329,36 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
                 </div>
               )}
             </div>
+            {/* v158 — «بتونم انتخاب کنم که به عنوان گزارش جدید باشه یا بره ذیل
+                گزارشی که هنوز تایید مالک روش انجام نشده و بایگانی نشده».
+                The box just drawn and the screenshot travel EITHER way, so a
+                follow-up still records where it was pointing. */}
+            {openSheets.length > 0 && (
+              <div className="mb-2">
+                <label className="mb-1 block text-[11px] font-semibold text-gray-700">
+                  این را کجا ثبت کنم؟
+                </label>
+                <select
+                  value={target} onChange={(e) => setTarget(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 p-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">گزارشِ جدید</option>
+                  {openSheets.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      ذیلِ گزارشِ {r.number} — {(r.title || '').slice(0, 48)}
+                      {r.status === 'answered' ? ' (پاسخ گرفته)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {!!target && (
+                  <div className="mt-1 text-[11px] text-amber-800">
+                    ذیلِ آن برگه ثبت می‌شود، با کادر و تصویرِ خودش؛ فایل‌هایی که اینجا
+                    پیوست کنی فقط مالِ همین یادداشت‌اند و با پیوست‌های قبلی قاتی نمی‌شوند.
+                    آن برگه دوباره «بازِ رسیدگی» می‌شود.
+                  </div>
+                )}
+              </div>
+            )}
             <textarea
               value={text} onChange={(e) => setText(e.target.value)} onPaste={onPaste}
               rows={4} autoFocus

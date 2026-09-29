@@ -703,6 +703,16 @@ class NoteIn(BaseModel):
     commits: List[str] = Field(default_factory=list, max_length=20)
     #: Supervisor only — the dependency walk behind the answer.
     dependencies: List[dict] = Field(default_factory=list, max_length=60)
+    #: v158 — a follow-up written from inside «نظارت» carries its OWN box: the
+    #: owner draws a new rectangle on a new place and files it UNDER an existing
+    #: sheet. Notes are stored as JSON, so this needs no migration, and the parent
+    #: sheet's own spot is never overwritten.
+    spot: Optional[SpotIn] = None
+    #: v158 — files uploaded FOR THIS NOTE. They are attached first (the note has
+    #: no id until it exists), then claimed here, so a follow-up's samples do not
+    #: land in the same undifferentiated pile as the original report's. The owner:
+    #: «فایل هایی که پیوستش میخوام بکنم نباید قاتی فایل های پیوست قبلی باشه».
+    file_ids: List[str] = Field(default_factory=list, max_length=40)
 
 
 @router.post("/{report_id}/notes")
@@ -766,6 +776,18 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
         "text": text, "author": str(getattr(user, "username", "") or ""),
         "shot_id": shot_id,
     }
+    if payload.spot is not None:
+        sp = payload.spot
+        note["spot"] = {
+            "page": _clean(sp.page, 200), "page_label": _clean(sp.page_label, 200),
+            "section_id": _clean(sp.section_id, 120),
+            "section_label": _clean(sp.section_label, 200),
+            "reopen": _clean(sp.reopen, 240), "dom_path": _clean(sp.dom_path, 400),
+            "covered_text": _clean(sp.covered_text, MAX_TEXT),
+            "rect": sp.rect if isinstance(sp.rect, dict) else None,
+            "viewport": sp.viewport if isinstance(sp.viewport, dict) else None,
+            "geometry": sp.geometry if isinstance(sp.geometry, dict) else None,
+        }
     if reviewer:
         note["outcome"] = payload.outcome
         note["after_shot_id"] = after_id
@@ -774,6 +796,20 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
     notes = _notes(r)
     notes.append(note)
     r.notes_json = json.dumps(notes, ensure_ascii=False)
+
+    # Claim the files this note was written with. Only UNCLAIMED files of THIS
+    # sheet can be claimed: a file already belonging to an earlier note can never
+    # be pulled out from under it by a later one.
+    if payload.file_ids:
+        wanted = [_clean(x, 40) for x in payload.file_ids if _clean(x, 40)][:40]
+        if wanted:
+            rows = (await db.execute(select(InspectionFile).where(
+                InspectionFile.id.in_(wanted),
+                InspectionFile.report_id == r.id,
+            ))).scalars().all()
+            for fr in rows:
+                if not (fr.note_id or ""):
+                    fr.note_id = nid
 
     if reviewer and payload.dependencies:
         deps = _deps(r)
@@ -797,13 +833,22 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
             r.urgent_done_at = datetime.now(timezone.utc)
             r.urgent_claimed_at = None
             r.urgent_claimed_by = ""
-    elif r.urgent_done_at is not None:
-        # the owner writes again on a sheet they had rushed: they are asking
-        # again, so it goes back into the fast queue at its ORIGINAL position —
-        # they should not lose their place for adding a clarification
-        r.urgent_done_at = None
-    elif r.status == STATUS_ANSWERED:
-        r.status = STATUS_OPEN
+    else:
+        # v158 — these two were an `elif` chain, and that was a bug the owner hit:
+        # a sheet that had been rushed AND answered took the first branch and
+        # NEVER reached the status reset, so the owner wrote a follow-up and the
+        # sheet stayed «answered» — still green, still saying «درست شد», while
+        # they were asking for more. Two independent facts need two independent
+        # statements.
+        if r.urgent_done_at is not None:
+            # they are asking again, so it goes back into the fast queue at its
+            # ORIGINAL position — nobody loses their place for adding a note
+            r.urgent_done_at = None
+        if r.status in (STATUS_ANSWERED, STATUS_APPROVED):
+            # The owner writing again means it is not settled. APPROVED is
+            # included deliberately: the tick was theirs, and so is taking it
+            # back. FILED is not — an archived sheet is closed for good.
+            r.status = STATUS_OPEN
     await db.commit()
     await db.refresh(r)
     await record_audit(

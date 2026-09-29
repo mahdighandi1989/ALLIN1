@@ -25,6 +25,41 @@ const FILTERS: { key: string; label: string }[] = [
   { key: '', label: 'همه' },
 ]
 
+// Files, in the order they should be read: the sheet's own samples first, then
+// each follow-up note's own. A file carries `note_id` only when it was attached
+// WITH a note; everything older has none and belongs to the report itself, which
+// is exactly where it should keep showing.
+type FileRow =
+  | { kind: 'head'; key: string; label: string }
+  | { kind: 'file'; f: any }
+
+function groupFiles(r: any): FileRow[] {
+  const files: any[] = r.files || []
+  if (files.length < 2) return files.map((f) => ({ kind: 'file', f } as FileRow))
+  const notes: any[] = r.notes || []
+  const own = files.filter((f) => !f.note_id)
+  const rows: FileRow[] = []
+  const byNote = new Map<string, any[]>()
+  for (const f of files) {
+    if (!f.note_id) continue
+    byNote.set(f.note_id, [...(byNote.get(f.note_id) || []), f])
+  }
+  // Only label the groups when there is more than one — a single pile needs no
+  // heading, and adding one would just be noise on every old sheet.
+  const labelled = byNote.size > 0
+  if (own.length) {
+    if (labelled) rows.push({ kind: 'head', key: 'own', label: 'همراهِ خودِ گزارش' })
+    for (const f of own) rows.push({ kind: 'file', f })
+  }
+  for (const [nid, items] of Array.from(byNote.entries())) {
+    const i = notes.findIndex((n: any) => n.id === nid)
+    rows.push({ kind: 'head', key: nid,
+                label: i >= 0 ? `همراهِ یادداشتِ ${fa(i + 1)}` : 'همراهِ یک یادداشت' })
+    for (const f of items) rows.push({ kind: 'file', f })
+  }
+  return rows
+}
+
 export default function InspectionPage() {
   const [reports, setReports] = useState<InspectionReport[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
@@ -465,8 +500,20 @@ export default function InspectionPage() {
                           فایلی پیوست نشده. هر نوع فایلی می‌شود — ورد، PDF، عکس، اکسل…
                         </div>
                       )}
+                      {/* v158 — files are grouped by the note they were attached to.
+                          The owner: «فایل هایی که پیوستش میخوام بکنم نباید قاتی
+                          فایل های پیوست قبلی باشه اینجوری ممکن قاتی بشه».
+                          Untagged files — everything filed before this existed, and
+                          the sheet's own first upload — stay under the report. */}
                       <div className="space-y-1.5">
-                        {(r.files || []).map((f) => (
+                        {groupFiles(r).map((row) => {
+                          if (row.kind === 'head') return (
+                            <div key={`h-${row.key}`} className="pt-1 text-[10px] font-semibold text-sky-800">
+                              {row.label}
+                            </div>
+                          )
+                          const f = row.f
+                          return (
                           <div key={f.id} dir="rtl"
                             className="rounded-md border border-sky-100 bg-white px-2 py-1.5 text-[11px]">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -512,7 +559,8 @@ export default function InspectionPage() {
                               <div className="mt-0.5 text-gray-700" dir="auto">توضیح: {f.caption}</div>
                             )}
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                       {r.status !== 'filed' && (
                         <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[11px] text-sky-800 hover:underline">

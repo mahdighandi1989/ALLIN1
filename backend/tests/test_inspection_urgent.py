@@ -253,3 +253,125 @@ class TestYouCanSeeWhenAClaimLapses:
         assert got["claimable"] is True
         assert got["urgent_claimed_by"] == ""
         assert got["urgent_claimed_at"] is None       # a lapsed claim is not a claim
+
+
+class TestAFollowUpReopensTheSheet:
+    """v158 — the owner wrote under an answered sheet and it stayed green.
+
+    Their words: «ثبت گزارش مجدد ذیل اون گزارش قبلی باعث نشد که رنگ سبز هایلایت
+    دوباره تغییر کنه و همچنان داره سبز نشون میده». The cause was an `elif`: a
+    sheet that had been rushed AND answered took the «put it back in the queue»
+    branch and never reached the «it is not answered any more» one. The colour
+    said «درست شد» while they were asking for more.
+    """
+
+    async def _answered(self, client, headers, monkeypatch, test_user, rush: bool):
+        rep = await _sheet(client, headers)
+        if rush:
+            await _rush(client, headers, rep["id"])
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=headers,
+                              json={"text": "انجام شد", "outcome": "partial"})
+        assert r.status_code == 200, r.text
+        assert r.json()["report"]["status"] == "answered"
+        return rep
+
+    async def test_an_owner_note_reopens_an_answered_sheet(
+            self, client, auth_headers, monkeypatch, test_user):
+        rep = await self._answered(client, auth_headers, monkeypatch, test_user, rush=False)
+        monkeypatch.delenv("SUPERVISOR_API_USER", raising=False)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "هنوز درست نشده"})
+        assert r.json()["report"]["status"] == "open"
+
+    async def test_it_reopens_even_when_the_sheet_had_been_rushed(
+            self, client, auth_headers, monkeypatch, test_user):
+        """THE REGRESSION. With the old `elif` this case stayed «answered»."""
+        rep = await self._answered(client, auth_headers, monkeypatch, test_user, rush=True)
+        monkeypatch.delenv("SUPERVISOR_API_USER", raising=False)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "باز هم ایراد دارد"})
+        body = r.json()["report"]
+        assert body["status"] == "open", "a rushed+answered sheet stayed answered"
+        assert body["glow"]["tone"] == "open", "and so it was still showing green"
+        assert body["urgent"] is True, "and it should be back in the fast queue"
+
+    async def test_the_owner_can_take_their_own_tick_back(
+            self, client, auth_headers, monkeypatch, test_user):
+        rep = await self._answered(client, auth_headers, monkeypatch, test_user, rush=False)
+        monkeypatch.delenv("SUPERVISOR_API_USER", raising=False)
+        ok = await client.post(f"/api/inspection/{rep['id']}/status", headers=auth_headers,
+                               json={"status": "approved"})
+        assert ok.status_code == 200, ok.text
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "ببخشید، یک چیز دیگر هم هست"})
+        assert r.json()["report"]["status"] == "open"
+
+    async def test_an_archived_sheet_stays_archived(
+            self, client, auth_headers, monkeypatch, test_user):
+        """FILED is terminal — the highlight is gone and the sheet is closed."""
+        rep = await self._answered(client, auth_headers, monkeypatch, test_user, rush=False)
+        monkeypatch.delenv("SUPERVISOR_API_USER", raising=False)
+        await client.post(f"/api/inspection/{rep['id']}/status", headers=auth_headers,
+                          json={"status": "approved"})
+        # Filing is the supervisor's round, not a status the owner can set.
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        filed = await client.post("/api/inspection/file", headers=auth_headers)
+        assert filed.status_code == 200, filed.text
+        assert filed.json()["filed"] >= 1
+        monkeypatch.delenv("SUPERVISOR_API_USER", raising=False)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "یادداشت روی بایگانی"})
+        assert r.json()["report"]["status"] == "filed"
+
+
+class TestAFollowUpKeepsItsOwnAttachments:
+    """«فایل هایی که پیوستش میخوام بکنم نباید قاتی فایل های پیوست قبلی باشه»."""
+
+    async def _upload(self, client, headers, rid, name):
+        return await client.post(
+            f"/api/inspection/{rid}/files", headers=headers,
+            files={"file": (name, b"nemoone", "text/plain")}, data={"caption": name})
+
+    async def test_files_sent_with_a_note_belong_to_that_note(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        a = (await self._upload(client, auth_headers, rep["id"], "aval.txt")).json()
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "یادداشت دوم", "file_ids": [a["file"]["id"]]})
+        assert r.status_code == 200, r.text
+        notes = r.json()["report"]["notes"]
+        files = r.json()["report"]["files"]
+        mine = next(f for f in files if f["id"] == a["file"]["id"])
+        assert mine["note_id"] == notes[-1]["id"], "the file did not join its note"
+
+    async def test_the_original_files_stay_with_the_original_report(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        first = (await self._upload(client, auth_headers, rep["id"], "asli.txt")).json()
+        second = (await self._upload(client, auth_headers, rep["id"], "peygiri.txt")).json()
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "پیگیری", "file_ids": [second["file"]["id"]]})
+        files = {f["id"]: f for f in r.json()["report"]["files"]}
+        assert files[second["file"]["id"]]["note_id"], "the follow-up's file was not tagged"
+        assert not files[first["file"]["id"]]["note_id"], (
+            "the ORIGINAL report's file was swept into the follow-up")
+
+    async def test_a_later_note_cannot_steal_an_earlier_note_s_file(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        up = (await self._upload(client, auth_headers, rep["id"], "male-man.txt")).json()
+        fid = up["file"]["id"]
+        first = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                                  json={"text": "یکم", "file_ids": [fid]})
+        owner_note = first.json()["report"]["notes"][-1]["id"]
+        second = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                                   json={"text": "دوم", "file_ids": [fid]})
+        got = next(f for f in second.json()["report"]["files"] if f["id"] == fid)
+        assert got["note_id"] == owner_note, "a later note pulled a file off an earlier one"
+
+    async def test_a_file_from_another_sheet_cannot_be_claimed(self, client, auth_headers):
+        mine = await _sheet(client, auth_headers)
+        theirs = await _sheet(client, auth_headers, "برگهٔ دیگر")
+        up = (await self._upload(client, auth_headers, theirs["id"], "beganeh.txt")).json()
+        r = await client.post(f"/api/inspection/{mine['id']}/notes", headers=auth_headers,
+                              json={"text": "تلاش", "file_ids": [up["file"]["id"]]})
+        assert r.status_code == 200
+        assert not any(f["id"] == up["file"]["id"] for f in r.json()["report"]["files"])
