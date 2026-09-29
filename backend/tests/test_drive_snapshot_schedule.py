@@ -97,3 +97,86 @@ class TestSettleDelay:
         text = open(src, encoding="utf-8").read()
         assert "DRIVE_SYNC_SETTLE_SECONDS" in text
         assert "_seconds_until_due" in text and "_mark_snapshot_done" in text
+
+
+class TestFreshnessIsVisibleFromOutside:
+    """v149 — the marker was persisted in v136 but nothing exposed it.
+
+    «Are the backups fresh?» is a standing supervisor duty, and for three runs it
+    could only be answered by listing the Drive folder by hand. «configured and
+    connected» says the pipe is open, not that anything went through it — the v136
+    hole lasted three days while both were true.
+    """
+
+    async def test_the_marker_is_readable(self, db_session, monkeypatch):
+        stamp = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        await _set_marker(db_session, stamp)
+
+        class _Session:
+            async def __aenter__(self): return db_session
+            async def __aexit__(self, *a): return False
+        monkeypatch.setattr("app.database.AsyncSessionLocal", lambda: _Session())
+        assert await drive_sync.last_snapshot_at() == stamp
+
+    async def test_an_absent_marker_reads_as_never_not_as_fine(self, db_session, monkeypatch):
+        class _Session:
+            async def __aenter__(self): return db_session
+            async def __aexit__(self, *a): return False
+        monkeypatch.setattr("app.database.AsyncSessionLocal", lambda: _Session())
+        assert await drive_sync.last_snapshot_at() is None
+
+    async def test_an_unreadable_marker_never_breaks_the_status_call(self, monkeypatch):
+        """A status endpoint that 500s because of bookkeeping is worse than one
+        that says «unknown»."""
+        def boom():
+            raise RuntimeError("db gone")
+        monkeypatch.setattr("app.database.AsyncSessionLocal", boom)
+        assert await drive_sync.last_snapshot_at() is None
+
+    async def test_status_marks_a_never_backed_up_system_as_overdue(self, monkeypatch):
+        """Absent marker ⇒ overdue. The honest reading of «no record» for a backup
+        is «one is owed», exactly as the scheduler itself assumes."""
+        async def _none():
+            return None
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: False)
+        monkeypatch.setattr(drive_sync, "last_snapshot_at", _none)
+        st = await drive_sync.status()
+        assert st["last_snapshot_at"] is None
+        assert st["snapshot_overdue"] is True
+        assert st["snapshot_age_hours"] is None
+
+    async def test_status_reports_the_age_of_a_real_snapshot(self, monkeypatch):
+        stamp = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+
+        async def _at():
+            return stamp
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: False)
+        monkeypatch.setattr(drive_sync, "last_snapshot_at", _at)
+        st = await drive_sync.status()
+        assert 4.5 <= st["snapshot_age_hours"] <= 5.5
+        assert st["snapshot_overdue"] is False
+
+    async def test_a_stalled_loop_is_overdue_but_one_late_run_is_not(self, monkeypatch):
+        """Overdue means more than TWICE the interval, so a single late run does
+        not cry wolf while a stalled loop still gets caught."""
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: False)
+        interval = drive_sync.settings.DRIVE_SYNC_INTERVAL_HOURS
+
+        for hours, expected in ((interval * 1.5, False), (interval * 2.5, True)):
+            stamp = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+            async def _at(s=stamp):
+                return s
+            monkeypatch.setattr(drive_sync, "last_snapshot_at", _at)
+            st = await drive_sync.status()
+            assert st["snapshot_overdue"] is expected, (hours, st)
+
+    async def test_a_malformed_marker_is_unknown_not_fine(self, monkeypatch):
+        async def _at():
+            return "not-a-date"
+        monkeypatch.setattr(drive_sync, "is_enabled", lambda: False)
+        monkeypatch.setattr(drive_sync, "last_snapshot_at", _at)
+        st = await drive_sync.status()
+        assert st["snapshot_age_hours"] is None
+        assert st["snapshot_overdue"] is None      # unknown, NOT False
+

@@ -224,6 +224,40 @@ async def run(session_factory=None) -> dict:
                  "ایمپورتی که هیچ حسابی را تأیید نکرد. فایل‌ها سالم‌اند ولی به مشتری‌ای بند نیستند؛ "
                  "باید به حسابِ درست منتسب شوند", "high")
 
+        # v149 — INSPECTION SAMPLES whose sheet no longer exists.
+        #
+        # Added because the product had exactly this leak and nothing would have
+        # noticed: `InspectionFile` arrived in v146 and the sheet-delete handler
+        # was never updated, so deleting a sheet left its file rows behind. Every
+        # listing filters by `report_id`, so an orphan row is invisible in the UI
+        # while still holding up to 20M characters of extracted text.
+        #
+        # Same shape as the orphaned import attachment above: not lost, but not
+        # findable — which for whoever is looking is the same thing. One finding
+        # for the whole pile, with the wasted text measured, because that is the
+        # number that says how much it matters.
+        try:
+            from app.models.inspection import InspectionFile, InspectionReport
+        except Exception:  # noqa: BLE001 — an older checkout without the feature
+            InspectionFile = None
+        if InspectionFile is not None:
+            live = {r for r in (await db.execute(
+                select(InspectionReport.id))).scalars().all()}
+            rows = (await db.execute(select(
+                InspectionFile.id, InspectionFile.report_id,
+                InspectionFile.filename, InspectionFile.text_chars))).all()
+            counts["inspection_files"] = len(rows)
+            orphans = [r for r in rows if (r.report_id or "") not in live]
+            counts["inspection_files_orphaned"] = len(orphans)
+            if orphans:
+                wasted = sum(int(r.text_chars or 0) for r in orphans)
+                names = "، ".join((r.filename or "?") for r in orphans[:4])
+                flag("orphan", "inspection_files", "orphaned",
+                     f"{len(orphans)} فایلِ نمونه به برگه‌ای اشاره می‌کنند که وجود ندارد "
+                     f"({names}{' …' if len(orphans) > 4 else ''}) — از هیچ صفحه‌ای "
+                     f"دیده نمی‌شوند ولی {wasted:,} نویسه متنِ استخراج‌شده را نگه داشته‌اند. "
+                     "نسخهٔ درایوشان دست‌نخورده است؛ ردیف‌ها باید پاک شوند", "medium")
+
         # v139 — is each account filed as the right KIND of customer?
         # `account_type` had no «unknown» state: the column defaulted to retail
         # and the bulk listing import invented retail for any record without the

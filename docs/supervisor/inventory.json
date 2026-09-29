@@ -47,18 +47,18 @@
   {
    "route": "/credit-file",
    "file": "frontend/src/app/credit-file/page.tsx",
-   "lines": 122,
+   "lines": 172,
    "buttons": 3,
    "onclick": 3,
    "inputs": 1,
    "forms": 0,
    "links": 0,
-   "api_calls": 2
+   "api_calls": 3
   },
   {
    "route": "/credit-file-corporate",
    "file": "frontend/src/app/credit-file-corporate/page.tsx",
-   "lines": 666,
+   "lines": 673,
    "buttons": 15,
    "onclick": 15,
    "inputs": 41,
@@ -69,7 +69,7 @@
   {
    "route": "/credit-file-retail",
    "file": "frontend/src/app/credit-file-retail/page.tsx",
-   "lines": 613,
+   "lines": 620,
    "buttons": 13,
    "onclick": 13,
    "inputs": 40,
@@ -124,13 +124,13 @@
   {
    "route": "/data-quality",
    "file": "frontend/src/app/data-quality/page.tsx",
-   "lines": 201,
-   "buttons": 3,
-   "onclick": 3,
+   "lines": 341,
+   "buttons": 7,
+   "onclick": 7,
    "inputs": 2,
    "forms": 0,
    "links": 1,
-   "api_calls": 1
+   "api_calls": 3
   },
   {
    "route": "/facilities",
@@ -186,6 +186,17 @@
    "forms": 0,
    "links": 0,
    "api_calls": 2
+  },
+  {
+   "route": "/inspection",
+   "file": "frontend/src/app/inspection/page.tsx",
+   "lines": 416,
+   "buttons": 9,
+   "onclick": 10,
+   "inputs": 2,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 10
   },
   {
    "route": "/knowledge",
@@ -413,6 +424,10 @@
   {
    "href": "/users",
    "label": "Users"
+  },
+  {
+   "href": "/inspection",
+   "label": "نظارت و سرکشی"
   },
   {
    "href": "/audit",
@@ -957,6 +972,58 @@
    "method": "exportExcel"
   },
   {
+   "group": "inspectionApi",
+   "method": "list"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "one"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "create"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "note"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "setStatus"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "remove"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "upload"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "removeFile"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "fileText"
+  },
+  {
+   "group": "accountTypeApi",
+   "method": "of"
+  },
+  {
+   "group": "accountTypeApi",
+   "method": "review"
+  },
+  {
+   "group": "accountTypeApi",
+   "method": "apply"
+  },
+  {
+   "group": "creditFileApi",
+   "method": "exportExcel"
+  },
+  {
    "group": "importsApi",
    "method": "customers"
   },
@@ -1321,6 +1388,27 @@
     "GET"
    ],
    "name": "data_quality"
+  },
+  {
+   "path": "/api/crm/account-type-review",
+   "methods": [
+    "GET"
+   ],
+   "name": "account_type_review"
+  },
+  {
+   "path": "/api/crm/account-type/{account_no}",
+   "methods": [
+    "GET"
+   ],
+   "name": "account_type_of"
+  },
+  {
+   "path": "/api/crm/account-type-review/apply",
+   "methods": [
+    "POST"
+   ],
+   "name": "account_type_apply"
   },
   {
    "path": "/api/crm/run-merge",
@@ -2599,6 +2687,125 @@
    "name": "export_voucher_excel"
   },
   {
+   "path": "/api/credit-file/export-excel",
+   "methods": [
+    "POST"
+   ],
+   "name": "export_sheet_excel"
+  },
+  {
+   "path": "/api/inspection/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_reports"
+  },
+  {
+   "path": "/api/inspection",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_reports"
+  },
+  {
+   "path": "/api/inspection/queue",
+   "methods": [
+    "GET"
+   ],
+   "name": "queue"
+  },
+  {
+   "path": "/api/inspection/{report_id}/files",
+   "methods": [
+    "POST"
+   ],
+   "name": "upload_file"
+  },
+  {
+   "path": "/api/inspection/files/{file_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "file_meta"
+  },
+  {
+   "path": "/api/inspection/files/{file_id}/text",
+   "methods": [
+    "GET"
+   ],
+   "name": "file_text"
+  },
+  {
+   "path": "/api/inspection/files/{file_id}/raw",
+   "methods": [
+    "GET"
+   ],
+   "name": "file_raw"
+  },
+  {
+   "path": "/api/inspection/files/{file_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_file"
+  },
+  {
+   "path": "/api/inspection/shots/{shot_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_shot"
+  },
+  {
+   "path": "/api/inspection/{report_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_report"
+  },
+  {
+   "path": "/api/inspection/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_report"
+  },
+  {
+   "path": "/api/inspection",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_report"
+  },
+  {
+   "path": "/api/inspection/{report_id}/notes",
+   "methods": [
+    "POST"
+   ],
+   "name": "add_note"
+  },
+  {
+   "path": "/api/inspection/{report_id}/status",
+   "methods": [
+    "POST"
+   ],
+   "name": "set_status"
+  },
+  {
+   "path": "/api/inspection/file",
+   "methods": [
+    "POST"
+   ],
+   "name": "file_approved"
+  },
+  {
+   "path": "/api/inspection/{report_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_report"
+  },
+  {
    "path": "/health",
    "methods": [
     "GET"
@@ -2612,6 +2819,7 @@
   }
  ],
  "services": [
+  "account_type",
   "amortization",
   "attachments",
   "audit",
@@ -2637,6 +2845,7 @@
   "fx",
   "google_drive",
   "google_oauth",
+  "inspection_files",
   "kb_store",
   "letter_assistant",
   "letter_attachment_extract",
@@ -2669,6 +2878,7 @@
   "general",
   "guarantor",
   "import_job",
+  "inspection",
   "kb",
   "letter",
   "notification",
@@ -2681,13 +2891,13 @@
   "user"
  ],
  "totals": {
-  "pages": 32,
-  "menu_items": 19,
-  "buttons": 334,
-  "inputs": 342,
-  "routes": 213,
-  "api_methods": 170,
-  "services": 39,
-  "models": 26
+  "pages": 33,
+  "menu_items": 20,
+  "buttons": 347,
+  "inputs": 344,
+  "routes": 233,
+  "api_methods": 183,
+  "services": 41,
+  "models": 27
  }
 }

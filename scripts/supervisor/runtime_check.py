@@ -189,18 +189,49 @@ def check_pages(base: str, page_routes: list[str]) -> list[dict]:
                 entry["buttons"] = page.locator("button:visible").count()
                 entry["inputs"] = page.locator("input:visible, select:visible, textarea:visible").count()
                 # --- CLICK every safe visible button, then re-check ---
-                clicked = skipped = 0
-                n = min(entry["buttons"], MAX_CLICKS)
+                #
+                # v149 — THIS LOOP USED TO LIE BY OMISSION, and the report built
+                # on it read as full coverage. Measured on this run before the
+                # fix: every page stopped at exactly 6 clicks though the cap is
+                # 18, and `/properties` — 905 visible buttons — was reported with
+                # «6 clicked, 0 destructive skipped», which a reader takes as «we
+                # clicked everything and nothing dangerous was there».
+                #
+                # Two causes, both silent:
+                #   * `nth(i)` is re-resolved on a DOM that the previous click
+                #     changed (a modal opened, a list re-rendered), so
+                #     `inner_text` throws on a detached handle;
+                #   * that throw hit a bare `except: continue`, which counted as
+                #     neither clicked nor skipped. «Could not examine» and
+                #     «nothing to examine» became the same number.
+                #
+                # So the buttons are snapshotted once, every outcome is counted,
+                # and the page records what fraction was actually examined.
+                # `buttons_skipped_destructive: 0` must never again be readable as
+                # «no destructive buttons» when it means «never got that far».
+                clicked = skipped = unreachable = 0
+                try:
+                    handles = page.locator("button:visible").all()
+                except Exception:
+                    handles = []
+                total_visible = entry["buttons"]
+                budget_of = min(len(handles), MAX_CLICKS)
                 deadline = time.time() + PAGE_CLICK_BUDGET_S
-                for i in range(n):
+                examined = 0
+                for b in handles[:budget_of]:
                     if time.time() > deadline:
                         entry["click_budget_hit"] = True
                         break
-                    b = page.locator("button:visible").nth(i)
                     try:
-                        label = ((b.inner_text(timeout=800) or "") + " " + (b.get_attribute("title") or "")).strip()
+                        label = ((b.inner_text(timeout=800) or "") + " "
+                                 + (b.get_attribute("title") or "")).strip()
                     except Exception:
+                        # the element went away as the page re-rendered — counted,
+                        # not swallowed
+                        unreachable += 1
+                        examined += 1
                         continue
+                    examined += 1
                     if DESTRUCTIVE.search(label):
                         skipped += 1
                         continue
@@ -211,9 +242,16 @@ def check_pages(base: str, page_routes: list[str]) -> list[dict]:
                         # a click may open a modal that covers the rest; close it
                         page.keyboard.press("Escape")
                     except Exception:
-                        pass
+                        unreachable += 1
                 entry["clicked"] = clicked
                 entry["skipped_destructive"] = skipped
+                #: examined but could not be read or clicked — NOT «fine»
+                entry["buttons_unreachable"] = unreachable
+                entry["buttons_examined"] = examined
+                #: never looked at, because of the cap or the time budget
+                entry["buttons_not_examined"] = max(0, total_visible - examined)
+                entry["button_coverage_percent"] = (
+                    round(100 * examined / total_visible) if total_visible else 100)
                 page.wait_for_timeout(400)
             except Exception as e:
                 entry["rendered"] = False
@@ -300,6 +338,18 @@ def main() -> int:
         "pages_after_which_server_was_slow": sum(1 for p in pgs if p.get("severity") == "warning"),
         "buttons_clicked": sum(p.get("clicked", 0) for p in pgs),
         "buttons_skipped_destructive": sum(p.get("skipped_destructive", 0) for p in pgs),
+        # v149 — coverage travels WITH the click counts, so «0 destructive
+        # skipped» can never be read as «none exist» when the sweep stopped early.
+        "buttons_visible_total": sum(p.get("buttons", 0) or 0 for p in pgs),
+        "buttons_examined": sum(p.get("buttons_examined", 0) or 0 for p in pgs),
+        "buttons_not_examined": sum(p.get("buttons_not_examined", 0) or 0 for p in pgs),
+        "buttons_unreachable": sum(p.get("buttons_unreachable", 0) or 0 for p in pgs),
+        "button_coverage_percent": (
+            round(100 * sum(p.get("buttons_examined", 0) or 0 for p in pgs)
+                  / max(1, sum(p.get("buttons", 0) or 0 for p in pgs)))),
+        "pages_with_partial_button_coverage": sum(
+            1 for p in pgs if (p.get("buttons_not_examined", 0) or 0) > 0),
+        "max_clicks_per_page": MAX_CLICKS,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")

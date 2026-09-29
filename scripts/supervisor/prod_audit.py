@@ -50,6 +50,9 @@ TIMEOUT = float(os.getenv("SUPERVISOR_API_TIMEOUT", "60"))
 READ_ENDPOINTS = {
     "account_type": "/api/crm/account-type-review",
     "data_quality": "/api/crm/data-quality",
+    # v149 — «are the backups fresh?» is a standing duty (PROMPT §4) that until
+    # now could not be answered from outside the container. Read-only.
+    "drive": "/api/crm/backup/drive/status",
 }
 
 
@@ -264,6 +267,30 @@ def audit() -> dict:
     # numbers as an explicit warning, so no later reader can mistake one for the
     # other. See experiences/a-cap-is-not-a-total.md.
     out["coverage"] = _coverage(at.get("summary") or {}, dq)
+    # Drive freshness — «configured and connected» says the pipe is open, not that
+    # anything went through it. The v136 hole happened while both were true.
+    try:
+        dr = fetch(token, READ_ENDPOINTS["drive"])
+        out["sections"]["drive"] = {
+            "configured": dr.get("configured"), "connected": dr.get("connected"),
+            "mode": dr.get("mode"), "interval_hours": dr.get("interval_hours"),
+            "last_snapshot_at": dr.get("last_snapshot_at"),
+            "snapshot_age_hours": dr.get("snapshot_age_hours"),
+            "snapshot_overdue": dr.get("snapshot_overdue"),
+        }
+        if dr.get("snapshot_overdue"):
+            age = dr.get("snapshot_age_hours")
+            out.setdefault("warnings", []).append(
+                "بکاپِ درایو عقب افتاده است — "
+                + (f"آخرین snapshot {age} ساعت پیش بود" if age is not None
+                   else "هیچ snapshotی ثبت نشده"))
+    except Exception as exc:  # noqa: BLE001
+        # An ADDED check must never take down the audit it was added to: the
+        # account-type and data-quality findings are already gathered by here, and
+        # losing them because an optional endpoint is missing or unauthorised
+        # would make the run worse than before this check existed. Recorded as
+        # «unknown», never as «fine».
+        out["sections"]["drive"] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
     return out
 
 

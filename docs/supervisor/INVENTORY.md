@@ -5,14 +5,14 @@
 
 | سنجه | تعداد |
 |---|---|
-| صفحه‌ها | 32 |
-| آیتم‌های منو | 19 |
-| دکمه‌ها | 334 |
-| ورودی‌ها (input/select/textarea) | 342 |
-| مسیرهای API | 213 |
-| متدهای کلاینتِ API | 170 |
-| سرویس‌ها | 39 |
-| مدل‌ها | 26 |
+| صفحه‌ها | 33 |
+| آیتم‌های منو | 20 |
+| دکمه‌ها | 347 |
+| ورودی‌ها (input/select/textarea) | 344 |
+| مسیرهای API | 233 |
+| متدهای کلاینتِ API | 183 |
+| سرویس‌ها | 41 |
+| مدل‌ها | 27 |
 
 ## منوی کناری
 
@@ -33,6 +33,7 @@
 | `/data-quality` | Data Quality |
 | `/import` | Import |
 | `/users` | Users |
+| `/inspection` | نظارت و سرکشی |
 | `/audit` | Audit Log |
 | `/cleanup` | Database Cleanup |
 | `/settings` | Settings |
@@ -46,19 +47,20 @@
 | `/auth/callback` | 53 | 0 | 0 | 0 | 0 |
 | `/charge-tariff` | 215 | 5 | 12 | 0 | 3 |
 | `/cleanup` | 344 | 3 | 3 | 0 | 6 |
-| `/credit-file` | 122 | 3 | 1 | 0 | 2 |
-| `/credit-file-corporate` | 666 | 15 | 41 | 0 | 7 |
-| `/credit-file-retail` | 613 | 13 | 40 | 0 | 4 |
+| `/credit-file` | 172 | 3 | 1 | 0 | 3 |
+| `/credit-file-corporate` | 673 | 15 | 41 | 0 | 7 |
+| `/credit-file-retail` | 620 | 13 | 40 | 0 | 4 |
 | `/customer-detail` | 1423 | 42 | 32 | 0 | 27 |
 | `/customers` | 564 | 12 | 12 | 0 | 5 |
 | `/daily-log` | 71 | 1 | 2 | 0 | 1 |
 | `/dashboard` | 427 | 0 | 0 | 0 | 2 |
-| `/data-quality` | 201 | 3 | 2 | 1 | 1 |
+| `/data-quality` | 341 | 7 | 2 | 1 | 3 |
 | `/facilities` | 579 | 13 | 18 | 0 | 5 |
 | `/facility-detail` | 250 | 5 | 2 | 0 | 2 |
 | `/forms` | 154 | 0 | 0 | 2 | 0 |
 | `/general` | 168 | 6 | 4 | 0 | 9 |
 | `/import` | 296 | 3 | 3 | 0 | 2 |
+| `/inspection` | 416 | 9 | 2 | 0 | 10 |
 | `/knowledge` | 247 | 1 | 1 | 0 | 2 |
 | `/letter` | 3692 | 102 | 37 | 0 | 26 |
 | `/login` | 219 | 2 | 2 | 1 | 0 |
@@ -115,6 +117,10 @@
 | PUT | `/api/cleanup/config` |
 | GET | `/api/cleanup/history` |
 | POST | `/api/cleanup/scan` |
+| POST | `/api/credit-file/export-excel` |
+| GET | `/api/crm/account-type-review` |
+| POST | `/api/crm/account-type-review/apply` |
+| GET | `/api/crm/account-type/{account_no}` |
 | POST | `/api/crm/attachments/{account_no}` |
 | DELETE | `/api/crm/attachments/{attachment_id}` |
 | GET | `/api/crm/attachments/{attachment_id}/download` |
@@ -206,6 +212,22 @@
 | POST | `/api/imports/facilities` |
 | GET | `/api/imports/facilities/template` |
 | GET | `/api/imports/jobs/{job_id}` |
+| GET | `/api/inspection` |
+| POST | `/api/inspection` |
+| GET | `/api/inspection/` |
+| POST | `/api/inspection/` |
+| POST | `/api/inspection/file` |
+| GET | `/api/inspection/files/{file_id}` |
+| DELETE | `/api/inspection/files/{file_id}` |
+| GET | `/api/inspection/files/{file_id}/raw` |
+| GET | `/api/inspection/files/{file_id}/text` |
+| GET | `/api/inspection/queue` |
+| GET | `/api/inspection/shots/{shot_id}` |
+| GET | `/api/inspection/{report_id}` |
+| DELETE | `/api/inspection/{report_id}` |
+| POST | `/api/inspection/{report_id}/files` |
+| POST | `/api/inspection/{report_id}/notes` |
+| POST | `/api/inspection/{report_id}/status` |
 | GET | `/api/knowledge/` |
 | POST | `/api/knowledge/entries` |
 | DELETE | `/api/knowledge/entries/{entry_id}` |

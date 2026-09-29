@@ -845,6 +845,31 @@ async def delete_report(report_id: str, db: AsyncSession = Depends(get_db),
     for s in (await db.execute(select(InspectionShot).where(
             InspectionShot.report_id == report_id))).scalars().all():
         await db.delete(s)
+    # v149 — the attached samples go with the sheet. Until this run they did NOT:
+    # `InspectionFile` arrived in v146 and this handler was never updated, so
+    # deleting a sheet left its file rows behind pointing at a report that no
+    # longer existed. Every listing filters by `report_id`, so those rows were
+    # unreachable from anywhere in the product while still holding up to 20M
+    # characters of extracted text each.
+    #
+    # This is the orphaned-import-attachment finding again (run 2, OPEN_ITEMS #5):
+    # «the file is not lost — but it cannot be found either», which for whoever is
+    # looking for it is the same thing. The neighbour gave it away: shots were
+    # cleaned up two lines above, and a difference with no reason is a finding.
+    #
+    # The DRIVE copy is deliberately left in place, exactly as `delete_file` does:
+    # rule 2 is quarantine, not deletion, and a sample the owner sent is evidence.
+    removed = 0
+    for f in (await db.execute(select(InspectionFile).where(
+            InspectionFile.report_id == report_id))).scalars().all():
+        await db.delete(f)
+        removed += 1
     await db.delete(r)
     await db.commit()
-    return {"ok": True}
+    await record_audit(
+        action="inspection_delete", entity_type="inspection", entity_id=report_id,
+        detail=(f"برگهٔ {r.number} حذف شد"
+                + (f" — {removed} فایلِ پیوست هم از پرونده برداشته شد "
+                   "(نسخهٔ درایو دست‌نخورده ماند)" if removed else "")),
+        user=user, db=db)
+    return {"ok": True, "files_removed": removed}

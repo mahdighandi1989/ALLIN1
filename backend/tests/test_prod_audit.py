@@ -42,6 +42,13 @@ def _load(**env):
                 os.environ[k] = v
 
 
+#: v149 — a fresh-enough Drive, so a test about coverage is not also a test
+#: about backups. Individual tests override it.
+DRIVE_OK = {"configured": True, "connected": True, "mode": "oauth",
+            "interval_hours": 24, "last_snapshot_at": "2026-09-29T02:00:00+00:00",
+            "snapshot_age_hours": 1.2, "snapshot_overdue": False}
+
+
 def _serve(payloads):
     """v144 — the audit appends `?limit=…&offset=…`, so match on the path only.
 
@@ -50,6 +57,8 @@ def _serve(payloads):
     """
     def fetch(tok, path):
         base = path.split("?", 1)[0]
+        if base.endswith("/backup/drive/status") and base not in payloads:
+            return dict(DRIVE_OK)
         return payloads[base]
     return fetch
 
@@ -180,6 +189,8 @@ class TestReport:
         BOOK = 3
 
         def fetch(tok, path):
+            if "/backup/drive/status" in path:
+                return dict(DRIVE_OK)
             off = 0
             if "offset=" in path:
                 off = int(path.split("offset=")[1].split("&")[0])
@@ -217,9 +228,10 @@ class TestReport:
     def test_an_old_backend_without_the_coverage_keys_is_flagged_not_assumed_full(self):
         """Missing coverage must read as «unknown», never as «saw everything»."""
         mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
-        mod.fetch = lambda tok, path: {"summary": {"total": 3000},
-                                       "total_customers": 2000, "customers": [],
-                                       "sections": [], "common_gaps": []}
+        mod.fetch = lambda tok, path: (
+            dict(DRIVE_OK) if "/backup/drive/status" in path else
+            {"summary": {"total": 3000}, "total_customers": 2000, "customers": [],
+             "sections": [], "common_gaps": []})
         cov = mod.audit()["coverage"]
         assert cov["any_partial"] is False           # cannot claim partial either
         assert len(cov["warnings"]) == 2
@@ -236,6 +248,8 @@ class TestReport:
 
         def fetch(tok, path):
             base, _, qs = path.partition("?")
+            if base.endswith("/backup/drive/status"):
+                return dict(DRIVE_OK)
             params = dict(kv.split("=") for kv in qs.split("&") if "=" in kv)
             off = int(params.get("offset", 0))
             n = min(2, max(0, BOOK - off))
@@ -275,6 +289,8 @@ class TestReport:
                     SUPERVISOR_MAX_PASSES="2")
 
         def fetch(tok, path):
+            if "/backup/drive/status" in path:
+                return dict(DRIVE_OK)
             # always claims there is more — the guard must stop it and admit it
             if "account-type-review" in path:
                 return {"summary": {"examined": 1, "book_total": 999, "has_more": True,
@@ -312,6 +328,8 @@ class TestReport:
         calls = []
 
         def fetch(tok, path):
+            if "/backup/drive/status" in path:
+                return dict(DRIVE_OK)
             calls.append(path)
             if "account-type-review" in path:
                 return {"summary": {"total": 3000}, "conflicts": [], "undecided": []}
@@ -324,10 +342,66 @@ class TestReport:
         assert rep["sections"]["account_type"]["passes"] == 1
         assert "walk_truncated" not in rep["sections"]["account_type"]
 
+    def test_it_reports_an_overdue_backup(self):
+        """v149 — «configured and connected» says the pipe is open, not that
+        anything went through it. The v136 hole lasted three days while both were
+        true, and nothing outside the container could see it."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        payloads = {
+            "/api/crm/account-type-review": {"summary": {"examined": 1, "book_total": 1}},
+            "/api/crm/data-quality": {"customers": [{"percent": 50}], "examined": 1,
+                                      "book_total": 1, "sections": [], "common_gaps": []},
+            "/api/crm/backup/drive/status": {
+                "configured": True, "connected": True, "mode": "oauth",
+                "interval_hours": 24, "last_snapshot_at": "2026-09-25T00:00:00+00:00",
+                "snapshot_age_hours": 96.0, "snapshot_overdue": True},
+        }
+        mod.fetch = _serve(payloads)
+        rep = mod.audit()
+        assert rep["sections"]["drive"]["snapshot_overdue"] is True
+        assert any("عقب افتاده" in w for w in rep.get("warnings") or [])
+        assert any("96" in w for w in rep.get("warnings") or [])
+
+    def test_a_fresh_backup_raises_no_warning(self):
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+        payloads = {
+            "/api/crm/account-type-review": {"summary": {"examined": 1, "book_total": 1}},
+            "/api/crm/data-quality": {"customers": [], "examined": 0, "book_total": 0,
+                                      "sections": [], "common_gaps": []},
+        }
+        mod.fetch = _serve(payloads)          # serves a fresh DRIVE_OK
+        rep = mod.audit()
+        assert rep["sections"]["drive"]["snapshot_overdue"] is False
+        assert not [w for w in (rep.get("warnings") or []) if "بکاپ" in w]
+
+    def test_a_drive_check_that_fails_does_not_lose_the_rest_of_the_audit(self):
+        """An ADDED check must never take down the audit it was added to: the
+        other findings are already gathered by then, and losing them would make
+        the run worse than before the check existed."""
+        mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_TOKEN="t")
+
+        def fetch(tok, path):
+            if "/backup/drive/status" in path:
+                raise RuntimeError("403 forbidden")
+            if "account-type-review" in path:
+                return {"summary": {"examined": 2, "book_total": 2, "conflicts": 5},
+                        "conflicts": [], "undecided": []}
+            return {"customers": [{"percent": 10}] * 2, "examined": 2, "book_total": 2,
+                    "sections": [], "common_gaps": []}
+
+        mod.fetch = fetch
+        rep = mod.audit()
+        assert rep["connected"] is True
+        assert rep["sections"]["account_type"]["conflicts"] == 5   # not lost
+        assert "403 forbidden" in rep["sections"]["drive"]["error"]
+        # recorded as unknown, never as fine
+        assert "snapshot_overdue" not in rep["sections"]["drive"]
+
     def test_a_password_never_reaches_the_report(self):
         mod = _load(SUPERVISOR_API_BASE="https://x", SUPERVISOR_API_USER="u",
                     SUPERVISOR_API_PASSWORD="sup3rsecret")
-        mod.fetch = lambda tok, path: {"summary": {}, "customers": [],
-                                       "sections": [], "common_gaps": []}
+        mod.fetch = lambda tok, path: (
+            dict(DRIVE_OK) if "/backup/drive/status" in path else
+            {"summary": {}, "customers": [], "sections": [], "common_gaps": []})
         mod.login = lambda: "tok"
         assert "sup3rsecret" not in json.dumps(mod.audit(), ensure_ascii=False)

@@ -1,11 +1,22 @@
 {
- "database": "postgresql://***@dpg-fake-a.frankfurt-postgres.render.com/allin1",
- "is_local_placeholder": false,
- "connected": false,
- "error": "TimeoutError: (بدون پیام) — میزبان جواب نداد — آدرسِ External را گذاشته‌ای (نه Internal)؟ و دسترسیِ شبکه به آن میزبان باز است؟",
- "total_findings": -1,
- "counts": {},
+ "database": "sqlite+aiosqlite:///./_supervisor_audit.db",
+ "is_local_placeholder": true,
+ "connected": true,
+ "counts": {
+  "customers": 0,
+  "profiles": 0,
+  "facilities": 0,
+  "guarantors": 0,
+  "properties": 0,
+  "fixed_deposits": 0,
+  "partners": 0,
+  "attachments": 0,
+  "attachments_unattributed": 0,
+  "account_type_contradictions": 0,
+  "account_type_undecided": 0
+ },
  "findings": [],
+ "total_findings": 0,
  "by_kind": {},
  "by_severity": {}
 }

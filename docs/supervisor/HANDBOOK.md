@@ -1,20 +1,20 @@
 # جزوهٔ ناظرِ خودکار — نقشهٔ سامانه و روندِ پیشرفت
 
-> ساخته‌شده به‌صورت **خودکار** در 2026-09-26 03:44 UTC — دستی ویرایش نکن.
-> منبع: `inventory.json` + `runs.jsonl` · تعدادِ اجراهای ثبت‌شده: **3**
+> ساخته‌شده به‌صورت **خودکار** در 2026-09-29 03:44 UTC — دستی ویرایش نکن.
+> منبع: `inventory.json` + `runs.jsonl` · تعدادِ اجراهای ثبت‌شده: **4**
 
 ## ۱) سامانه در یک نگاه
 
 | سنجه | مقدار |
 |---|---|
-| صفحه‌ها | 32 |
-| آیتم‌های منو | 19 |
-| دکمه‌ها | 334 |
-| ورودی‌ها | 342 |
-| مسیرهای API | 213 |
-| متدهای کلاینتِ API | 170 |
-| سرویس‌های بک‌اند | 39 |
-| مدل‌های داده | 26 |
+| صفحه‌ها | 33 |
+| آیتم‌های منو | 20 |
+| دکمه‌ها | 347 |
+| ورودی‌ها | 344 |
+| مسیرهای API | 233 |
+| متدهای کلاینتِ API | 183 |
+| سرویس‌های بک‌اند | 41 |
+| مدل‌های داده | 27 |
 
 ## ۲) معماری
 
@@ -51,10 +51,11 @@ flowchart TD
     ROOT --> M12["Data Quality<br/><code>/data-quality</code>"]
     ROOT --> M13["Import<br/><code>/import</code>"]
     ROOT --> M14["Users<br/><code>/users</code>"]
-    ROOT --> M15["Audit Log<br/><code>/audit</code>"]
-    ROOT --> M16["Database Cleanup<br/><code>/cleanup</code>"]
-    ROOT --> M17["Settings<br/><code>/settings</code>"]
-    ROOT --> M18["Recycle Bin<br/><code>/trash</code>"]
+    ROOT --> M15["نظارت و سرکشی<br/><code>/inspection</code>"]
+    ROOT --> M16["Audit Log<br/><code>/audit</code>"]
+    ROOT --> M17["Database Cleanup<br/><code>/cleanup</code>"]
+    ROOT --> M18["Settings<br/><code>/settings</code>"]
+    ROOT --> M19["Recycle Bin<br/><code>/trash</code>"]
 ```
 
 ## ۴) چرخهٔ خودِ ناظر
@@ -77,9 +78,9 @@ flowchart LR
 ```mermaid
 xychart-beta
     title "مشکلاتِ باز در هر اجرا"
-    x-axis ["09-23", "09-23", "09-26"]
-    y-axis "مورد" 0 --> 7
-    line [4, 5, 5]
+    x-axis ["09-23", "09-23", "09-26", "09-29"]
+    y-axis "مورد" 0 --> 9
+    line [4, 5, 5, 7]
 ```
 
 ### پوششِ تست
@@ -87,9 +88,9 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "تعدادِ تست‌های سبز"
-    x-axis ["09-23", "09-23", "09-26"]
-    y-axis "تست" 0 --> 1253
-    line [863, 1009, 1044]
+    x-axis ["09-23", "09-23", "09-26", "09-29"]
+    y-axis "تست" 0 --> 1396
+    line [863, 1009, 1044, 1163]
 ```
 
 ### کیفیتِ داده
@@ -101,9 +102,9 @@ xychart-beta
 ```mermaid
 xychart-beta
     title "تعدادِ مسیرهای API"
-    x-axis ["09-23", "09-23", "09-26"]
-    y-axis "مسیر" 0 --> 256
-    line [213, 213, 213]
+    x-axis ["09-23", "09-23", "09-26", "09-29"]
+    y-axis "مسیر" 0 --> 280
+    line [213, 213, 213, 233]
 ```
 
 
@@ -111,14 +112,14 @@ xychart-beta
 
 | سنجه | مقدار |
 |---|---|
-| تاریخ | 2026-09-26 |
-| وضعیت | two-fixed |
-| تست‌های سبز | 1044 (▲35) |
-| صفحه‌های بررسی‌شده | 31 |
-| دکمه‌های کلیک‌شده | 124 |
-| endpointهای بررسی‌شده | 60 |
-| مشکلاتِ باز | 5 |
-| دیتابیسِ بازرسی‌شده | local sqlite (production unreachable) |
+| تاریخ | 2026-09-29 |
+| وضعیت | green-two-medium-fixed |
+| تست‌های سبز | 1163 (▲119) |
+| صفحه‌های بررسی‌شده | 32 |
+| دکمه‌های کلیک‌شده | 164 |
+| endpointهای بررسی‌شده | 64 |
+| مشکلاتِ باز | 7 (▲2) |
+| دیتابیسِ بازرسی‌شده | production over HTTPS (100% of the book) + local sqlite for db_audit |
 
 ## ۷) کجا چه چیزی است
 

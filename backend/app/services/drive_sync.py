@@ -280,6 +280,29 @@ async def delete_attachment(file_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Status + background scheduler
 # ---------------------------------------------------------------------------
+async def last_snapshot_at() -> str | None:
+    """When the last DB snapshot actually reached Drive, or None if never.
+
+    v149 — the marker has been persisted since v136 but nothing exposed it, so
+    «are the backups fresh?» was not answerable from outside the container. The
+    supervisor's §4 duty is exactly that question, and for three runs it could
+    only be answered by listing the Drive folder by hand. Read-only.
+    """
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.system_setting import SystemSetting
+
+    try:
+        async with AsyncSessionLocal() as db:
+            row = (await db.execute(select(SystemSetting).where(
+                SystemSetting.key == SNAPSHOT_MARKER_KEY))).scalar_one_or_none()
+        value = (row.value or "").strip() if row else ""
+        return value or None
+    except Exception as exc:  # noqa: BLE001 — a status call must never fail on this
+        logger.warning("could not read the Drive snapshot marker: %s", exc)
+        return None
+
+
 async def status() -> dict:
     """Report current sync configuration and verify the credentials authenticate."""
     mode = settings.drive_auth_mode()
@@ -291,6 +314,29 @@ async def status() -> dict:
         "folder_name": settings.DRIVE_BACKUP_FOLDER if mode == "oauth" else None,
         "interval_hours": settings.DRIVE_SYNC_INTERVAL_HOURS,
     }
+    # v149 — freshness travels with the configuration. «configured and connected»
+    # says the pipe is open, not that anything went through it: the three-day
+    # backup hole of v136 happened while both were true.
+    marker = await last_snapshot_at()
+    base["last_snapshot_at"] = marker
+    if marker:
+        try:
+            last = datetime.fromisoformat(marker.replace("Z", "+00:00"))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - last).total_seconds()
+            base["snapshot_age_hours"] = round(age / 3600, 1)
+            # overdue = more than twice the interval, so a single late run is not
+            # an alarm but a stalled loop is
+            base["snapshot_overdue"] = age > 2 * settings.DRIVE_SYNC_INTERVAL_HOURS * 3600
+        except Exception:  # noqa: BLE001 — a malformed marker is «unknown», not «fine»
+            base["snapshot_age_hours"] = None
+            base["snapshot_overdue"] = None
+    else:
+        # never ⇒ NOT «fine». `None` age with overdue True says «nothing has ever
+        # been recorded», which is the honest reading of an absent marker.
+        base["snapshot_age_hours"] = None
+        base["snapshot_overdue"] = True
     if not is_enabled():
         base["connected"] = False
         return base

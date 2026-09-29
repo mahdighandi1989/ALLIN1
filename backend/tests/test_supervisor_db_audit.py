@@ -207,6 +207,61 @@ class TestUnattributedAttachments:
         assert "orphan" in _kinds(rep["findings"], "attachments"), _details(rep["findings"])
 
 
+class TestOrphanedInspectionSamples:
+    """v149 — a sample whose sheet is gone.
+
+    The product had this leak and nothing would have noticed: `InspectionFile`
+    arrived in v146 and the sheet-delete handler was never updated. Every listing
+    filters by `report_id`, so an orphan row is invisible in the UI while holding
+    up to 20M characters of extracted text. The rule and this test exist together
+    — an audit rule with no test goes quiet and useless.
+    """
+
+    async def _sheet(self, db, rid="AUD-R1", number=1):
+        from app.models.inspection import InspectionReport
+        db.add(InspectionReport(id=rid, number=number, title="t", status="open"))
+        await db.commit()
+
+    async def _file(self, db, fid, report_id, chars=1000, name="s.txt"):
+        from app.models.inspection import InspectionFile
+        db.add(InspectionFile(id=fid, report_id=report_id, filename=name,
+                              extract_status="ok", text_chars=chars,
+                              text="x" * min(chars, 10)))
+        await db.commit()
+
+    async def test_a_sample_whose_sheet_is_gone_is_flagged(self, audit, db_session):
+        await self._file(db_session, "AUD-F1", "NO-SUCH-SHEET", chars=20_000_000,
+                         name="نمونه.docx")
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["inspection_files_orphaned"] == 1, _details(rep["findings"])
+        detail = " ".join(f["detail"] for f in rep["findings"]
+                          if f["table"] == "inspection_files")
+        assert "نمونه.docx" in detail
+        # the wasted text is MEASURED — that is the number that says how much it matters
+        assert "20,000,000" in detail
+
+    async def test_a_sample_on_a_live_sheet_is_not_flagged(self, audit, db_session):
+        await self._sheet(db_session)
+        await self._file(db_session, "AUD-F2", "AUD-R1")
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["inspection_files_orphaned"] == 0, _details(rep["findings"])
+        assert rep["counts"]["inspection_files"] == 1
+
+    async def test_no_samples_at_all_raises_nothing(self, audit, db_session):
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["inspection_files_orphaned"] == 0
+        assert "inspection_files" not in _kinds(rep["findings"], "inspection_files")
+
+    async def test_a_pile_is_one_finding_not_one_each(self, audit, db_session):
+        """A per-file flood would drown every other finding — the same rule the
+        unattributed-attachment pile already follows."""
+        for i in range(9):
+            await self._file(db_session, f"AUD-FP{i}", "GONE", name=f"f{i}.txt")
+        rep = await _run(audit, db_session)
+        assert rep["counts"]["inspection_files_orphaned"] == 9
+        assert len([f for f in rep["findings"] if f["table"] == "inspection_files"]) == 1
+
+
 class TestAccountTypeAudit:
     """v139 — the supervisor must see a company filed as an individual.
 
@@ -228,7 +283,10 @@ class TestAccountTypeAudit:
         customer opened the account. On its own it must not accuse a stored
         value of being wrong."""
 
-    async def test_registered_partners_outweigh_the_stored_value(self, audit, db_session):
+    async def test_a_company_name_with_partners_outweighs_the_stored_value(self, audit, db_session):
+        """v148 — renamed. Partners ALONE no longer decide (a joint personal
+        account has them too); the contradiction here comes from «Branch» in the
+        name, with the partner rows corroborating it."""
         from app.models.profile_entities import Partner
 
         c = Customer(account_no="810002", name="Abu Amir Furnishing Branch",

@@ -486,6 +486,62 @@ class TestWhereTheBytesLive:
         assert ifiles.safe_filename("../../etc/نمونه.docx") == "نمونه.docx"
 
 
+class TestDeletingASheetTakesItsSamples:
+    """v149 — the missing link the dependency walk found.
+
+    `InspectionFile` arrived in v146 and `delete_report` was never updated, so a
+    deleted sheet left its file rows behind. Every listing filters by
+    `report_id`, so they were reachable from nowhere in the product while still
+    holding up to 20M characters each — the orphaned-import-attachment finding
+    again: not lost, but not findable, which for whoever is looking is the same.
+    The neighbour gave it away: shots were already cleaned up two lines above.
+    """
+
+    async def test_the_file_rows_go_with_the_sheet(self, client, auth_headers, db_session):
+        from app.models.inspection import InspectionFile
+        from sqlalchemy import select
+
+        rep = await _sheet(client, auth_headers)
+        fid = (await _upload(client, auth_headers, rep["id"], "spec.txt",
+                             b"content")).json()["file"]["id"]
+        assert (await client.delete(f"/api/inspection/{rep['id']}",
+                                    headers=auth_headers)).status_code == 200
+
+        left = (await db_session.execute(select(InspectionFile).where(
+            InspectionFile.report_id == rep["id"]))).scalars().all()
+        assert left == [], "a deleted sheet must not leave its samples behind"
+        assert (await client.get(f"/api/inspection/files/{fid}",
+                                 headers=auth_headers)).status_code == 404
+
+    async def test_it_reports_how_many_it_removed(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        await _upload(client, auth_headers, rep["id"], "a.txt", b"a")
+        await _upload(client, auth_headers, rep["id"], "b.txt", b"b")
+        r = await client.delete(f"/api/inspection/{rep['id']}", headers=auth_headers)
+        assert r.json()["files_removed"] == 2
+
+    async def test_a_sheet_with_no_samples_still_deletes_cleanly(
+            self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        r = await client.delete(f"/api/inspection/{rep['id']}", headers=auth_headers)
+        assert r.status_code == 200 and r.json()["files_removed"] == 0
+
+    async def test_the_drive_copy_is_left_alone(self, client, auth_headers, monkeypatch):
+        """Rule 2 is quarantine, not deletion — and a sample the owner sent is
+        evidence. Deleting the row must never reach for the bytes."""
+        deleted: list = []
+        monkeypatch.setattr("app.services.google_drive.is_configured", lambda: True)
+        monkeypatch.setattr("app.services.google_drive.upload_file",
+                            lambda **kw: {"id": "d1", "link": "http://x/d1",
+                                          "folder_id": "f", "action": "created"})
+        monkeypatch.setattr("app.services.google_drive.delete_file",
+                            lambda fid: deleted.append(fid))
+        rep = await _sheet(client, auth_headers)
+        await _upload(client, auth_headers, rep["id"], "a.txt", b"a")
+        await client.delete(f"/api/inspection/{rep['id']}", headers=auth_headers)
+        assert deleted == [], "the Drive copy must survive the sheet"
+
+
 class TestReadDebtIsHonest:
     def test_a_partially_read_file_is_still_a_debt(self):
         class F:
