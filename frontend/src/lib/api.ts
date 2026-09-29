@@ -998,6 +998,14 @@ export const inspectionApi = {
     form.append('file', file)
     form.append('caption', caption)
     const { data } = await api.post(`/api/inspection/${id}/files`, form, {
+      // v151 — THIS HEADER IS NOT OPTIONAL. The shared client defaults to
+      // `application/json`, and axios only fills in the multipart boundary when
+      // the caller has not set a type. Without this line the body went up as
+      // JSON with no boundary, the server's parser found no parts, and every
+      // upload failed with «file: Field required» — reported by the owner on the
+      // first real use. Every other upload in this file already does this; the
+      // one that did not was the one that broke.
+      headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 15 * 60 * 1000,
       onUploadProgress: (e) => {
         if (onProgress && e.total) onProgress(Math.round((100 * e.loaded) / e.total))
