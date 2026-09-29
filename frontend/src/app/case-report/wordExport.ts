@@ -14,9 +14,8 @@ import {
   AlignmentType, BorderStyle, Document, Footer, Header, ImageRun, PageNumber, Packer,
   Paragraph, ShadingType, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx'
-import { LH_LOGO, LH_NAME } from '../letter/letterhead'
-import { BRANCH } from './branding'
-import type { Section } from './sections'
+import { BRANCH, EMBLEM, WORDMARK } from './branding'
+import { hasGroups, headerGroups, type Section } from './sections'
 
 const FONT = 'B Nazanin'
 const TITR = 'B Titr'
@@ -98,22 +97,66 @@ export async function buildCaseDocx(a: CaseDocxArgs): Promise<Blob> {
       for (const line of (txt ? txt.split('\n') : [''])) {
         body.push(P(line, { align: AlignmentType.JUSTIFIED, indent: true, pt: 11 }))
       }
-    } else if (s.kind === 'fields') {
-      body.push(table(s.rows.map((r) => new TableRow({
-        children: [cell(r.label, { head: true, w: 42 }), cell(f(r.key), { ltr: r.ltr })],
-      }))))
+    } else if (s.kind === 'grid') {
+      const label = (t: string) => t.replace(/\{([a-z_]+)\}/g, (_, k) => f(k) || '—').replace(/\n/g, ' ')
+      const rows: TableRow[] = []
+      if (s.banner) {
+        rows.push(new TableRow({ children: [new TableCell({
+          borders: BORDERS, columnSpan: s.cols.length,
+          shading: { type: ShadingType.CLEAR, fill: 'FFFFFF' },
+          children: [new Paragraph({ bidirectional: true, alignment: AlignmentType.CENTER,
+            children: [run(s.banner.text.replace('{}', f(s.banner.field || '') || '—'),
+                           { bold: true, pt: 10 })] })],
+        })] }))
+      }
+      rows.push(new TableRow({
+        tableHeader: true,
+        children: s.cols.map((c) => cell(label(c.label), { head: true })),
+      }))
+      for (const r of s.rows) {
+        rows.push(new TableRow({
+          children: [
+            ...(r.label !== undefined ? [cell(r.label, { head: true })] : []),
+            ...r.fields.map((fld, j) => {
+              const col = s.cols[(r.label !== undefined ? 1 : 0) + j]
+              return cell(f(fld), { ltr: col?.ltr })
+            }),
+          ],
+        }))
+      }
+      body.push(table(rows))
     } else {
-      const head = new TableRow({
-        tableHeader: true,     // repeats on every page the table spills onto
-        children: s.cols.map((c) => cell(c.label, { head: true })),
-      })
+      const heads: TableRow[] = []
+      if (hasGroups(s.cols)) {
+        // §6's «نحوه کارسازی (درهم)» spans three sub-columns on the paper.
+        heads.push(new TableRow({ tableHeader: true, children: headerGroups(s.cols).map((g, i) =>
+          new TableCell({
+            borders: BORDERS, columnSpan: g.span, rowSpan: g.label ? 1 : 2,
+            shading: { type: ShadingType.CLEAR, fill: 'FFFFFF' },
+            children: [new Paragraph({ bidirectional: true, alignment: AlignmentType.CENTER,
+              children: [run(g.label || s.cols[i]?.label || ' ', { bold: true, pt: 10 })] })],
+          })) }))
+        heads.push(new TableRow({ tableHeader: true,
+          children: s.cols.filter((c) => c.group).map((c) => cell(c.label, { head: true })) }))
+      } else {
+        heads.push(new TableRow({ tableHeader: true,   // repeats on every page it spills onto
+          children: s.cols.map((c) => cell(c.label, { head: true })) }))
+      }
       const rows = a.tables[s.key] || []
+      const blank = Math.max(1, s.minRows || 1)
       const dataRows = rows.length
         ? rows.map((r) => new TableRow({
             children: s.cols.map((c) => cell((r[c.key] || '').toString(), { ltr: c.ltr })),
           }))
-        : [new TableRow({ children: s.cols.map(() => cell(' ')) })]
-      body.push(table([head, ...dataRows]))
+        : Array.from({ length: blank }, () =>
+            new TableRow({ children: s.cols.map(() => cell(' ')) }))
+      body.push(table([...heads, ...dataRows]))
+      if (s.key === 'collections') {
+        body.push(table([new TableRow({ children: [
+          cell('جمع وصولی ها از تاریخ رکود به درهم:', { head: true, w: 60 }),
+          cell(f('collections_total')),
+        ] })]))
+      }
     }
     if (s.note) body.push(P(s.note, { pt: 9.5 }))
     body.push(P(''))
@@ -133,25 +176,25 @@ export async function buildCaseDocx(a: CaseDocxArgs): Promise<Blob> {
   })
   const header = new Header({
     children: [
-      banner(BRANCH.fa, true),
-      banner(BRANCH.en, false),
-      banner(BRANCH.swift, false),
       new Paragraph({
         alignment: AlignmentType.LEFT,
         children: [
-          new ImageRun({ data: b64(LH_LOGO), transformation: { width: 66, height: 66 } }),
-          new ImageRun({ data: b64(LH_NAME), transformation: { width: 140, height: 24 } }),
+          new ImageRun({ data: b64(EMBLEM), transformation: { width: 52, height: 44 } }),
+          new ImageRun({ data: b64(WORDMARK), transformation: { width: 194, height: 45 } }),
         ],
       }),
-      banner(`${BRANCH.nameFa} — ${BRANCH.nameEn} ${BRANCH.licence}`, true),
+      banner(`${BRANCH.nameFa} — ${BRANCH.nameEn}  ${BRANCH.licence}`, true),
     ],
   })
   const footer = new Footer({
     children: [
       new Paragraph({
-        alignment: AlignmentType.CENTER,
+        alignment: AlignmentType.LEFT,
         children: [new TextRun({ children: ['Page | ', PageNumber.CURRENT], font: FONT, size: 18 })],
       }),
+      banner(BRANCH.addrFa, true),
+      banner(BRANCH.addrEn, false),
+      banner(BRANCH.swift, false),
     ],
   })
 

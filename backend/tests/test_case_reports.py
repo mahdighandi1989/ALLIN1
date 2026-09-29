@@ -248,12 +248,23 @@ class TestTheFormAndTheApiAgreeOnEveryFieldName:
     def test_every_scalar_the_form_spec_names_is_stored(self):
         import re
         src = self._read("frontend/src/app/case-report/sections.ts")
-        # `field: 'x'` (free-text sections) and the row keys of `kind: 'fields'`
-        # blocks are scalars; a table's `cols` keys are NOT (they live inside a row).
-        names = set(re.findall(r"field:\s*'([a-z_]+)'", src))
-        for block in re.findall(r"kind:\s*'fields'.*?rows:\s*\[(.*?)\]", src, re.S):
-            names |= set(re.findall(r"key:\s*'([a-z_]+)'", block))
-        assert names, "could not read any field names out of sections.ts"
+        names = set()
+        # free-text sections: `field: 'company_summary'`
+        names |= set(re.findall(r"field:\s*'([a-z_]+)'", src))
+        # fixed grids: `fields: ['stagnation_date', 'stagnation_balance']`
+        for arr in re.findall(r"fields:\s*\[([^\]]*)\]", src, re.S):
+            names |= set(re.findall(r"'([a-z_]+)'", arr))
+        # values printed inside a column heading: `label: 'سود با نرخ {court_interest_rate}'`
+        names |= set(re.findall(r"\{([a-z_]+)\}", src))
+        names.discard("")
+        # A count guard, because the shape of this file changed once already and a
+        # regex that silently stops matching turns this whole test green and
+        # meaningless. If the spec is restructured again, this fails loudly and
+        # asks to be re-read rather than quietly checking nothing.
+        assert len(names) >= 18, (
+            f"only {len(names)} field names parsed out of sections.ts "
+            f"({sorted(names)}) — the spec's shape probably changed and this "
+            f"check has stopped looking at anything")
         missing = sorted(names - set(SCALAR_FIELDS))
         assert not missing, f"the form writes fields the API drops: {missing}"
 

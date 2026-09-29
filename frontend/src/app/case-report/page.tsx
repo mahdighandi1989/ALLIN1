@@ -24,22 +24,28 @@ import {
 import toast from 'react-hot-toast'
 import { caseReportsApi, crmApi, downloadFile, parseApiError } from '@/lib/api'
 import type { CaseReportSummary } from '@/lib/api'
-import { LH_LOGO, LH_NAME } from '../letter/letterhead'
-import { BRANCH } from './branding'
-import { SECTIONS, blankRow, type Section } from './sections'
+import { BLUE, BRANCH, EMBLEM, WORDMARK } from './branding'
+import { SECTIONS, blankRow, hasGroups, headerGroups, type Col, type Section } from './sections'
 import { paginate, startsTable, type Block } from './paginate'
 
 const NAZ = "'B Nazanin','BNazanin','Nazanin',serif"
 const TITR = "'B Titr','BTitr','Titr','B Nazanin',serif"
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
 const PAGE_W = 794, PAGE_H = 1123      // A4 @96dpi
-const HEAD_H = 168                     // letterhead band
-const FOOT_H = 86                      // address/contact banner + page number
-const PAD_X = 46
+const HEAD_H = 118                     // letterhead band (emblem + wordmark)
+const FOOT_H = 92                      // page number + the blue address banner
+const PAD_X = 58
 const AVAIL = PAGE_H - HEAD_H - FOOT_H
 const CONTENT_W = PAGE_W - PAD_X * 2
 
 const fa = (n: number | string) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d])
+
+// Human labels for fields that are printed inside a column heading rather than
+// in a cell of their own, so the editor can still name them.
+const LABELS: Record<string, string> = {
+  court_interest_rate: 'نرخ سود حکم (مثلاً ۱۰ %)',
+  court_interest_from: 'سود از تاریخ',
+}
 
 type Fields = Record<string, string>
 type Tables = Record<string, Record<string, string>[]>
@@ -205,6 +211,16 @@ export default function CaseReportPage() {
   const blocks: PageBlock[] = useMemo(() => {
     const out: PageBlock[] = []
     out.push({ t: 'node', id: 'basmala', el: <div className="cr-basmala">با سمه تعالی</div> })
+    // Date / number / classification sit in the FLOW under «باسمه تعالی», not in
+    // the letterhead band — absolutely positioning them made them land on top of
+    // the recipient block.
+    out.push({ t: 'node', id: 'meta', el: (
+      <div className="cr-meta">
+        <div>تاریخ: <b dir="ltr">{f.letter_date || ''}</b></div>
+        <div>شماره: <b dir="ltr">{f.letter_no || ''}</b></div>
+        <div>طبقه بندی : <b>{f.classification || ''}</b></div>
+      </div>
+    ) })
     out.push({ t: 'node', id: 'recipient', el: (
       <div className="cr-recipient">
         <div className="cr-bold">جناب آقای {f.recipient_name || '----'}</div>
@@ -233,24 +249,43 @@ export default function CaseReportPage() {
         out.push({ t: 'node', id: `t-${s.key}`, el: (
           <p className="cr-p cr-free">{f[s.field] || ''}</p>
         ) })
-      } else if (s.kind === 'fields') {
+      } else if (s.kind === 'grid') {
         out.push({ t: 'node', id: `g-${s.key}`, el: (
-          <table className="cr-tbl"><tbody>
-            {s.rows.map((r) => (
-              <tr key={r.key}>
-                <th style={{ width: '42%' }}>{r.label}</th>
-                <td dir={r.ltr ? 'ltr' : undefined}>{f[r.key] || ''}</td>
-              </tr>
-            ))}
-          </tbody></table>
+          <table className="cr-tbl">
+            <thead>
+              {s.banner && (
+                <tr><th colSpan={s.cols.length} className="cr-banner">
+                  {s.banner.text.replace('{}', f[s.banner.field || ''] || '—')}
+                </th></tr>
+              )}
+              <tr>{s.cols.map((c) => (
+                <th key={c.key} style={c.w ? { width: c.w } : undefined}>{fillLabel(c.label, f)}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {s.rows.map((r, i) => (
+                <tr key={i}>
+                  {r.label !== undefined && <td className="cr-rowlabel">{r.label}</td>}
+                  {r.fields.map((fld, j) => {
+                    const col = s.cols[(r.label !== undefined ? 1 : 0) + j]
+                    return <td key={fld} dir={col?.ltr ? 'ltr' : undefined}>{f[fld] || ''}</td>
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) })
       } else {
         const rows = tb[s.key] || []
         if (!rows.length) {
+          // The paper shows empty ruled rows, not a collapsed table — a reader has
+          // to be able to see that a section was left blank on purpose.
           out.push({ t: 'node', id: `e-${s.key}`, el: (
             <table className="cr-tbl">
-              <thead><tr>{s.cols.map((c) => <th key={c.key} style={c.w ? { width: c.w } : undefined}>{c.label}</th>)}</tr></thead>
-              <tbody><tr>{s.cols.map((c) => <td key={c.key}>&nbsp;</td>)}</tr></tbody>
+              <TableHead cols={s.cols} />
+              <tbody>{Array.from({ length: s.minRows || 1 }).map((_, i) => (
+                <tr key={i}>{s.cols.map((c) => <td key={c.key}>&nbsp;</td>)}</tr>
+              ))}</tbody>
             </table>
           ) })
         } else {
@@ -258,6 +293,14 @@ export default function CaseReportPage() {
         }
       }
       if (s.note) out.push({ t: 'node', id: `n-${s.key}`, el: <div className="cr-note">{s.note}</div> })
+      if (s.key === 'collections') {
+        out.push({ t: 'node', id: 'coll-total', el: (
+          <table className="cr-tbl"><tbody><tr>
+            <td className="cr-total-lbl">جمع وصولی ها از تاریخ رکود به درهم:</td>
+            <td className="cr-total-val">{f.collections_total || ''}</td>
+          </tr></tbody></table>
+        ) })
+      }
     }
 
     out.push({ t: 'node', id: 'sign', el: (
@@ -276,9 +319,7 @@ export default function CaseReportPage() {
     const row = (tb[b.sec] || [])[b.idx] || {}
     return (
       <table className="cr-tbl cr-tbl-part" key={b.id}>
-        {withHead && <thead><tr>{s.cols.map((c) => (
-          <th key={c.key} style={c.w ? { width: c.w } : undefined}>{c.label}</th>
-        ))}</tr></thead>}
+        {withHead && <TableHead cols={s.cols} />}
         <tbody><tr>{s.cols.map((c) => (
           <td key={c.key} dir={c.ltr ? 'ltr' : undefined}>{row[c.key] || ''}</td>
         ))}</tr></tbody>
@@ -308,33 +349,22 @@ export default function CaseReportPage() {
 
   const Sheet = ({ page, n, total }: { page: PageBlock[]; n: number; total: number }) => (
     <div className="csheet">
+      {/* Letterhead, as on the template: the emblem and «فرع عجمان / AJMAN BRANCH»
+          on the LEFT, the «بنك صادرات ایران / BANK SADERAT IRAN» wordmark on the
+          RIGHT. Both images are the template's own — see ./branding.ts. */}
       <div className="cr-head">
-        {/* The branch banner repeats on every page, as it does on the paper. The
-            Persian line mixes digits and Latin punctuation, so it sits inside an
-            explicit dir="rtl" — otherwise the browser reorders the phone and fax
-            numbers and a green build says nothing about it. */}
-        <div className="cr-bank" dir="rtl">{BRANCH.fa}</div>
-        <div className="cr-bank" dir="ltr">{BRANCH.en}</div>
-        <div className="cr-bank" dir="ltr">{BRANCH.swift}</div>
-        <div className="cr-head-row">
-          <div className="cr-head-l">
-            <img src={LH_LOGO} alt="" className="cr-logo" />
-            <img src={LH_NAME} alt="" className="cr-name" />
-          </div>
-          <div className="cr-head-r" dir="rtl">
+        <div className="cr-head-l">
+          <img src={EMBLEM} alt="" className="cr-emblem" />
+          <div className="cr-branch" dir="rtl">
             <div>{BRANCH.nameFa}</div>
             <div dir="ltr">{BRANCH.nameEn}</div>
-            <div dir="ltr">{BRANCH.licence}</div>
           </div>
         </div>
-      </div>
-      {n === 1 && (
-        <div className="cr-meta" dir="rtl">
-          <div>تاریخ: <b dir="ltr">{f.letter_date || ''}</b></div>
-          <div>شماره: <b dir="ltr">{f.letter_no || ''}</b></div>
-          <div>طبقه بندی: <b>{f.classification || ''}</b></div>
+        <div className="cr-head-r">
+          <img src={WORDMARK} alt="" className="cr-mark" />
+          <div className="cr-licence" dir="ltr">{BRANCH.licence}</div>
         </div>
-      )}
+      </div>
       <div className="cr-body">
         {page.map((b, i) => b.t === 'node'
           ? <div key={b.id}>{b.el}</div>
@@ -342,6 +372,13 @@ export default function CaseReportPage() {
       </div>
       <div className="cr-foot">
         <div className="cr-pageno" dir="ltr">Page | {n}</div>
+        <div className="cr-rule-foot" />
+        {/* The Persian line mixes digits, «+» and «/»; without an explicit rtl
+            ancestor the browser reorders the phone and fax groups, and a green
+            build says nothing about it. */}
+        <div className="cr-addr" dir="rtl">{BRANCH.addrFa}</div>
+        <div className="cr-addr" dir="ltr">{BRANCH.addrEn}</div>
+        <div className="cr-addr" dir="ltr">{BRANCH.swift}</div>
       </div>
     </div>
   )
@@ -371,37 +408,49 @@ export default function CaseReportPage() {
 
           /* ── the printed sheet ─────────────────────────────────────────── */
           .csheet{position:relative;width:${PAGE_W}px;height:${PAGE_H}px;margin:0 auto 18px;background:#fff;
-                  box-shadow:0 0 8px rgba(0,0,0,.18);color:#000;font-family:${NAZ};line-height:1.35;overflow:hidden}
-          .cr-head{position:absolute;top:0;right:0;left:0;height:${HEAD_H}px;padding:8px ${PAD_X}px 0}
-          .cr-bank{font-size:9.5px;line-height:1.45;text-align:center;color:#111}
-          .cr-head-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:6px}
-          .cr-head-l{display:flex;align-items:center;gap:8px}
-          .cr-logo{height:54px}.cr-name{height:26px}
-          .cr-head-r{text-align:left;font-size:12px;line-height:1.5;font-family:${TITR}}
-          .cr-meta{position:absolute;top:${HEAD_H - 52}px;right:${PAD_X}px;font-size:12.5px;line-height:1.6}
+                  box-shadow:0 0 8px rgba(0,0,0,.18);color:#000;font-family:${NAZ};line-height:1.5;overflow:hidden}
+          .cr-head{position:absolute;top:0;right:0;left:0;height:${HEAD_H}px;padding:14px ${PAD_X}px 0;
+                   display:flex;justify-content:space-between;align-items:flex-start;direction:ltr}
+          .cr-head-l{display:flex;align-items:center;gap:10px}
+          .cr-emblem{height:56px}
+          .cr-branch{color:${BLUE};font-family:${TITR};font-size:12.5px;line-height:1.5;text-align:center}
+          .cr-head-r{text-align:left}
+          .cr-mark{height:52px}
+          .cr-licence{color:${BLUE};font-size:11px;font-style:italic;font-weight:700;text-align:center;margin-top:2px}
+          .cr-meta{font-size:12.5px;line-height:1.9;margin:0 0 14px}
+          .cr-meta b{font-weight:400}
           .cr-body{position:absolute;top:${HEAD_H}px;right:${PAD_X}px;left:${PAD_X}px;height:${AVAIL}px;
                    font-size:12.5px;text-align:justify;overflow:hidden}
-          .cr-foot{position:absolute;bottom:0;right:0;left:0;height:${FOOT_H}px;padding:0 ${PAD_X}px 8px;
-                   display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px}
-          .cr-pageno{font-size:11px;color:#333}
-          .cr-basmala{text-align:center;font-family:${TITR};font-size:13px;margin-bottom:10px}
-          .cr-recipient{margin-bottom:8px;font-family:${TITR};font-size:13px;line-height:1.7}
+          .cr-foot{position:absolute;bottom:0;right:0;left:0;height:${FOOT_H}px;padding:0 ${PAD_X}px 6px;
+                   display:flex;flex-direction:column;justify-content:flex-end}
+          .cr-pageno{font-size:12px;color:#000;text-align:left;padding-right:6px}
+          .cr-rule-foot{border-top:1px solid ${BLUE};margin:2px 0 3px}
+          .cr-addr{color:${BLUE};font-size:10px;line-height:1.35;text-align:center;font-weight:700}
+          .cr-basmala{text-align:center;font-family:${TITR};font-size:13px;margin:0 0 14px}
+          .cr-recipient{margin-bottom:10px;font-family:${TITR};font-size:13px;line-height:1.9}
           .cr-bold{font-weight:700}
-          .cr-subject{margin:8px 0}
-          .cr-rule{border-top:2px double #000;margin-top:4px}
-          .cr-p{margin:0 0 8px;text-indent:1.2em;white-space:pre-wrap}
+          .cr-subject{margin:10px 0}
+          .cr-rule{border-top:1.5px double #000;margin-top:3px}
+          .cr-p{margin:0 0 10px;text-indent:1.2em;white-space:pre-wrap;line-height:1.9}
           .cr-free{text-indent:0}
-          .cr-h{font-weight:700;font-family:${TITR};font-size:12.5px;margin:10px 0 5px}
-          .cr-note{font-size:11px;margin:4px 0 8px}
-          .cr-tbl{width:100%;border-collapse:collapse;margin:0 0 8px;font-size:11.5px;table-layout:fixed}
+          .cr-h{font-weight:700;font-family:${TITR};font-size:12.5px;margin:14px 0 7px}
+          .cr-note{font-size:10.5px;margin:4px 0 10px}
+          /* The paper's tables are ruled black on WHITE — no shaded header band —
+             and they do not run the full width of the text block. */
+          .cr-tbl{width:94%;margin:0 auto 10px;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
           .cr-tbl-part{margin-bottom:0}
-          .cr-tbl th,.cr-tbl td{border:.6px solid #222;padding:3px 5px;vertical-align:top;
-                                word-break:normal;overflow-wrap:break-word;line-height:1.35}
-          .cr-tbl th{background:#f1f5f9;font-weight:700;text-align:center}
-          .cr-sign{margin-top:16px;font-size:12.5px}
-          .cr-doer{margin-top:22px}
+          .cr-tbl th,.cr-tbl td{border:1px solid #000;padding:5px 6px;vertical-align:middle;
+                                text-align:center;word-break:normal;overflow-wrap:break-word;line-height:1.5}
+          .cr-tbl th{font-weight:400;background:#fff}
+          .cr-tbl td{height:22px}
+          .cr-banner{font-weight:700;font-size:11px}
+          .cr-rowlabel{text-align:center}
+          .cr-total-lbl{text-align:center;font-weight:700;width:62%}
+          .cr-total-val{text-align:center}
+          .cr-sign{margin-top:26px;font-size:12.5px}
+          .cr-doer{margin-top:34px}
           .cr-measure{position:absolute;visibility:hidden;pointer-events:none;top:-99999px;right:0;
-                      width:${CONTENT_W}px;font-size:12.5px;line-height:1.35;font-family:${NAZ}}
+                      width:${CONTENT_W}px;font-size:12.5px;line-height:1.5;font-family:${NAZ}}
 
           @media print {
             @page { size:A4; margin:0 }
@@ -484,9 +533,36 @@ export default function CaseReportPage() {
                 <textarea className="cr-in" style={{ width: '100%', minHeight: 90 }}
                           value={f[s.field] || ''} onChange={(e) => set(s.field, e.target.value)} />
               )}
-              {s.kind === 'fields' && (
-                <div className="cr-grid">
-                  {s.rows.map((r) => <Fld key={r.key} l={r.label} k={r.key} f={f} set={set} ltr={r.ltr} />)}
+              {s.kind === 'grid' && (
+                <>
+                  {s.banner?.field && (
+                    <div className="cr-grid" style={{ marginBottom: 8 }}>
+                      <Fld l="تاریخ انتقال به زیر خط ترازنامه" k={s.banner.field} f={f} set={set} ltr />
+                    </div>
+                  )}
+                  {s.rows.map((r, ri) => (
+                    <div key={ri} className="cr-grid">
+                      {r.fields.map((fld, j) => {
+                        const col = s.cols[(r.label !== undefined ? 1 : 0) + j]
+                        const lbl = (r.label ? `${r.label} — ` : '') +
+                          (col?.label || fld).replace(/\{[a-z_]+\}/g, '…').replace(/\n/g, ' ')
+                        return <Fld key={fld} l={lbl} k={fld} f={f} set={set} ltr={col?.ltr} />
+                      })}
+                    </div>
+                  ))}
+                  {/* values printed INSIDE a column heading on the paper */}
+                  {s.cols.some((c) => /\{[a-z_]+\}/.test(c.label)) && (
+                    <div className="cr-grid" style={{ marginTop: 8 }}>
+                      {s.cols.flatMap((c) => (c.label.match(/\{([a-z_]+)\}/g) || [])
+                        .map((m) => m.slice(1, -1)))
+                        .map((k) => <Fld key={k} l={LABELS[k] || k} k={k} f={f} set={set} ltr />)}
+                    </div>
+                  )}
+                </>
+              )}
+              {s.key === 'collections' && (
+                <div className="cr-grid" style={{ marginBottom: 8 }}>
+                  <Fld l="جمع وصولی ها از تاریخ رکود (درهم)" k="collections_total" f={f} set={set} />
                 </div>
               )}
               {s.kind === 'table' && (
@@ -577,5 +653,34 @@ function Fld({ l, k, f, set, ltr }: {
       <input className="cr-in" style={{ width: '100%' }} dir={ltr ? 'ltr' : undefined}
              value={f[k] || ''} onChange={(e) => set(k, e.target.value)} />
     </div>
+  )
+}
+
+// A column header may carry a value from the form inside it, the way the paper
+// prints «سود با نرخ ۱۰٪ از تاریخ ۲۰۱۹/۱۰/۲۰» as part of the heading rather than
+// as a separate cell.
+function fillLabel(label: string, f: Fields): React.ReactNode {
+  const text = label.replace(/\{([a-z_]+)\}/g, (_, k) => f[k] || '—')
+  // a literal \n in a header means a second line, as the template has
+  return text.split('\n').map((line, i) => <div key={i}>{line}</div>)
+}
+
+// The column titles, with a spanning group row above them when the section has
+// grouped columns (§6's «نحوه کارسازی (درهم)» sits over three sub-columns).
+function TableHead({ cols }: { cols: Col[] }) {
+  const groups = headerGroups(cols)
+  return (
+    <thead>
+      {hasGroups(cols) && (
+        <tr>{groups.map((g, i) => (
+          <th key={i} colSpan={g.span} rowSpan={g.label ? 1 : 2}>{g.label || cols[i]?.label}</th>
+        ))}</tr>
+      )}
+      <tr>{cols.map((c, i) => (
+        c.group
+          ? <th key={c.key} style={c.w ? { width: c.w } : undefined}>{c.label}</th>
+          : (hasGroups(cols) ? null : <th key={c.key} style={c.w ? { width: c.w } : undefined}>{c.label}</th>)
+      ))}</tr>
+    </thead>
   )
 }

@@ -58,6 +58,26 @@ def _targets() -> dict:
         GeneralChecklist,
         GeneralChecklistItem,
     )
+    # v157 — owner DATA that the snapshot silently omitted. A restore from a
+    # backup without these came back with no letters, no offer letters, no credit
+    # reviews, no tariff, no FX history and an empty knowledge base. See
+    # docs/DATA_SURFACE_CHECKLIST.md; the table below is now enforced by a test.
+    from app.models.case_report import CaseReport
+    from app.models.charge_tariff import ChargeRule
+    from app.models.credit_review import CreditReview
+    from app.models.customer_link_rel import CustomerLink
+    from app.models.department import Department
+    from app.models.exchange_rate import ExchangeRate
+    from app.models.inspection import (
+        InspectionBinder, InspectionFile, InspectionReport, InspectionShot,
+    )
+    from app.models.kb import KnowledgeEntry, KnowledgeTopic
+    from app.models.letter import Letter
+    from app.models.offer_letter import OfferAttachment, OfferCalculation, OfferLetter
+    from app.models.personal import PersonalNote
+    from app.models.profile_entities import PropertyEvent
+    from app.models.staff import StaffMember
+    from app.models.system_setting import SystemSetting
 
     return {
         "customers": Customer,
@@ -77,7 +97,53 @@ def _targets() -> dict:
         "general_profiles": GeneralProfile,
         "general_checklists": GeneralChecklist,
         "general_checklist_items": GeneralChecklistItem,
+        "property_events": PropertyEvent,
+        "customer_links": CustomerLink,
+        # documents the branch produces — losing these loses work nobody can redo
+        "letters": Letter,
+        "case_reports": CaseReport,
+        "credit_reviews": CreditReview,
+        "offer_letters": OfferLetter,
+        "offer_attachments": OfferAttachment,
+        "offer_calculations": OfferCalculation,
+        # reference data the system is configured with
+        "charge_rules": ChargeRule,
+        "exchange_rates": ExchangeRate,
+        "departments": Department,
+        "staff_members": StaffMember,
+        "system_settings": SystemSetting,
+        "kb_topics": KnowledgeTopic,
+        "kb_entries": KnowledgeEntry,
+        "personal_notes": PersonalNote,
+        # the owner's own supervision record
+        "inspection_binders": InspectionBinder,
+        "inspection_reports": InspectionReport,
+        "inspection_files": InspectionFile,
+        "inspection_shots": InspectionShot,
     }
+
+
+# Tables deliberately LEFT OUT of the snapshot, each with the reason. This is not
+# a list of things nobody got round to: it is a decision, and the test in
+# tests/test_backup_covers_every_table.py makes every NEW table land in one of
+# these two places before it can be merged. Changing an entry here is a decision
+# about the owner's data, so it belongs in docs/AUDIT_LOG.md too.
+BACKUP_EXCLUDED = {
+    "users": "credentials (password hashes, roles) — putting them in a Drive file "
+             "is the owner's call, not a default",
+    "ai_providers": "holds provider API keys; a Drive snapshot of live credentials "
+                    "is a separate decision from backing up customer data",
+    "ai_models": "model config tied to the provider keys above; re-entered in "
+                 "Settings in a minute and not worth snapshotting credentials for",
+    "ai_task_routes": "routing config for the two above; meaningless without them",
+    "audit_logs": "append-only and unbounded; it would dominate every snapshot "
+                  "and needs its own retention decision",
+    "notifications": "transient UI state, rebuilt by the expiry scan",
+    "notification_reads": "which user dismissed which bell notification; rebuilt as people read them and worthless after a restore",
+    "cleanup_runs": "run history of a maintenance tool, not customer data",
+    "exposure_snapshots": "derived from facilities + exchange_rates",
+    "import_jobs": "operational history of past uploads",
+}
 
 
 async def build_backup_payload(db: AsyncSession) -> dict:
