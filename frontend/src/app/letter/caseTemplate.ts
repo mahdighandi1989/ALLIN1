@@ -16,8 +16,17 @@
 
 const EMPTY = '<br>'
 
+/** A named blank in the narrative.
+ *
+ * The dots are what the paper shows, and the `data-cr` name is what «پر کردن از
+ * پروفایلِ حساب» looks for. The filler replaces a blank ONLY while it still holds
+ * its dots, so anything already typed over it is never overwritten. */
+function blank(key: string, dots = 9, text = ''): string {
+  return `<span data-cr="${key}">${text || '.'.repeat(dots)}</span>`
+}
+
 /** One bordered table: a header row (or two) and `rows` empty body rows. */
-function table(cols: string[], rows: number, opts: { widths?: string[]; group?: [string, number, number] } = {}): string {
+function table(key: string, cols: string[], rows: number, opts: { widths?: string[]; group?: [string, number, number] } = {}): string {
   const w = opts.widths || []
   const head = opts.group
     ? (() => {
@@ -34,7 +43,7 @@ function table(cols: string[], rows: number, opts: { widths?: string[]; group?: 
     : `<tr>${cols.map((c, i) => `<th${w[i] ? ` style="width:${w[i]}"` : ''}>${c}</th>`).join('')}</tr>`
   const body = Array.from({ length: rows }, () =>
     `<tr>${cols.map(() => `<td>${EMPTY}</td>`).join('')}</tr>`).join('')
-  return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`
+  return `<table data-cr="${key}"><thead>${head}</thead><tbody>${body}</tbody></table>`
 }
 
 const h = (n: string, t: string) => `<div><b>${n ? `${n}- ` : ''}${t}</b></div>`
@@ -50,18 +59,18 @@ const p = (t = EMPTY) => `<div>${t}</div>`
 export function caseReportBody(): string {
   return [
     h('۱', 'خلاصه وضعیت شرکت:'),
-    p('موسسه ......... بر اساس مستندات ثبتی در سال ..... به شماره رخصه ..... در منطقه آزاد ......... تاسیس گردیده و در زمینه ......... فعالیت داشته است. مدیر شرکت آقای ......... در تاریخ ..../..../.... برای موسسه نزد این شعبه گشایش حساب نموده و از سال ..... به تدریج از تسهیلات بانک استفاده نموده است.'),
+    p(`موسسه ${blank('company_name')} بر اساس مستندات ثبتی در سال ${blank('established_year', 5)} به شماره رخصه ${blank('licence_no', 5)} در منطقه آزاد ${blank('free_zone')} تاسیس گردیده و در زمینه ${blank('activity')} فعالیت داشته است. مدیر شرکت آقای ${blank('manager_name')} در تاریخ ${blank('account_open_date', 4, '..../..../....')} برای موسسه نزد این شعبه گشایش حساب نموده و از سال ${blank('first_facility_year', 5)} به تدریج از تسهیلات بانک استفاده نموده است.`),
     p(),
     p('<b>اسامی شرکا و مدیران شرکت طبق رخصه تجاری موجود در پرونده:</b>'),
-    table(['نام شرکا', 'شماره ملی ایران', 'درصد سهام و ملیت', 'سمت/توضیحات'], 2,
+    table('partners', ['نام شرکا', 'شماره ملی ایران', 'درصد سهام و ملیت', 'سمت/توضیحات'], 2,
           { widths: ['32%', '20%', '22%', '26%'] }),
     p(),
     h('۲', 'مشخصات آخرین تسهیلات اعطایی به مشتری:'),
-    table(['نوع تسهیلات', 'مبلغ تسهیلات', 'تاریخ اعطاء تسهیلات', 'نرخ تسهیلات'], 2,
+    table('facilities_granted', ['نوع تسهیلات', 'مبلغ تسهیلات', 'تاریخ اعطاء تسهیلات', 'نرخ تسهیلات'], 2,
           { widths: ['34%', '22%', '26%', '18%'] }),
     p(),
     h('۳', 'مشخصات تسهیلات اعطائی تسویه نشده (مطالباتی):'),
-    table(['نوع تسهیلات', 'مانده اصل در زمان طبقه بندی', 'تاریخ اعطاء تسهیلات', 'نرخ سود'], 2,
+    table('facilities_unsettled', ['نوع تسهیلات', 'مانده اصل در زمان طبقه بندی', 'تاریخ اعطاء تسهیلات', 'نرخ سود'], 2,
           { widths: ['32%', '26%', '24%', '18%'] }),
     p(),
     h('۴', 'وضعیت رکود و طبقه بندی حساب:'),
@@ -87,31 +96,31 @@ export function caseReportBody(): string {
       `<tbody><tr>${'<td>' + EMPTY + '</td>'.repeat(5)}</tr></tbody></table>`,
     p(),
     h('۶', 'مبالغ دریافتی از مدیونین/ضامنین (از تاریخ رکود):'),
-    table(['تاریخ وصولی', 'مبالغ وصولی', 'نوع ارز', 'منشأ وصولی', 'اصل', 'سود', 'هزینه قانونی'], 2,
+    table('collections', ['تاریخ وصولی', 'مبالغ وصولی', 'نوع ارز', 'منشأ وصولی', 'اصل', 'سود', 'هزینه قانونی'], 2,
           { group: ['نحوه کارسازی (درهم)', 4, 3] }),
     `<table><tbody><tr><td style="width:62%"><b>جمع وصولی ها از تاریخ رکود به درهم:</b></td><td>${EMPTY}</td></tr></tbody></table>`,
     p(),
     h('۷', 'وثایق و پشتوانه های مأخوذه به تفکیک نوع و مبلغ در هر بخش:'),
-    table(['نوع وثیقه', 'شماره رفرنس', 'مبلغ وثیقه (درهم)'], 6, { widths: ['46%', '28%', '26%'] }),
+    table('collaterals', ['نوع وثیقه', 'شماره رفرنس', 'مبلغ وثیقه (درهم)'], 6, { widths: ['46%', '28%', '26%'] }),
     p(),
     h('۸', 'مشخصات مصوبات اخذ شده تاکنون جهت تعیین تکلیف مطالبات:'),
-    table(['مرجع مصوبه', 'تاریخ مصوبه', 'موضوع مصوبه', 'نتیجه'], 4,
+    table('approvals', ['مرجع مصوبه', 'تاریخ مصوبه', 'موضوع مصوبه', 'نتیجه'], 4,
           { widths: ['20%', '13%', '37%', '30%'] }),
     p(),
     p('<b>اقدامات صورت گرفته بر روی وثایق و نتایج حاصله:</b>'),
-    table(['نوع وثیقه', 'مبلغ وثیقه (درهم)', 'اقدامات صورت گرفته بر روی وثایق و نتایج حاصله'], 3,
+    table('collateral_actions', ['نوع وثیقه', 'مبلغ وثیقه (درهم)', 'اقدامات صورت گرفته بر روی وثایق و نتایج حاصله'], 3,
           { widths: ['24%', '16%', '60%'] }),
     p(),
     p('<b>❖ چکهای تنزیل شده:</b>'),
-    table(['ردیف', 'شماره چک', 'ذینفع', 'صادر کننده چک', 'نام بانک و شعبه', 'مبلغ به درهم'], 1,
+    table('discounted_cheques', ['ردیف', 'شماره چک', 'ذینفع', 'صادر کننده چک', 'نام بانک و شعبه', 'مبلغ به درهم'], 1,
           { widths: ['8%', '15%', '20%', '20%', '22%', '15%'] }),
     p(),
     h('۹', 'تعهدات مستقیم و غیر مستقیم — ج) سایر تعهدات:'),
-    table(['موضوع تعهد', 'توضیحات', 'مبلغ تعهد'], 1, { widths: ['30%', '50%', '20%'] }),
+    table('commitments', ['موضوع تعهد', 'توضیحات', 'مبلغ تعهد'], 1, { widths: ['30%', '50%', '20%'] }),
     p('<span style="font-size:10px">**اطلاعات مندرج درخصوص تعهدات مستقیم و غیر مستقیم حسب بررسی در سوابق این شعبه می باشد</span>'),
     p(),
     h('۱۰', 'مشخصات حکم:'),
-    table(['تاریخ اقدام', 'تاریخ صدور حکم نهایی', 'تاریخ ارسال حکم به ایران'], 1,
+    table('judgment', ['تاریخ اقدام', 'تاریخ صدور حکم نهایی', 'تاریخ ارسال حکم به ایران'], 1,
           { widths: ['33%', '33%', '34%'] }),
     p(),
     h('۱۱', 'سایر توضیحات'),

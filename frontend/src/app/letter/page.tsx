@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon, Download } from 'lucide-react'
-import { auditApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
+import { auditApi, caseReportsApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
 import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
@@ -19,6 +19,7 @@ import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
 import { CASE_FOOTER, CASE_LOGO, CASE_NAME } from './caseLetterhead'
 import { CASE_RECIPIENT_DEPT, CASE_RECIPIENT_TITLE, CASE_SUBJECT, caseReportBody } from './caseTemplate'
+import { fillCaseBody, fillCaseSubject } from './caseFill'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
 import { repairHtml } from '@/lib/mojibake'
 
@@ -1191,6 +1192,34 @@ export default function LetterPage() {
   const LOGO_SRC = isCase ? CASE_LOGO : LH_LOGO
   const NAME_SRC = isCase ? CASE_NAME : LH_NAME
   const FOOTER_SRC = isCase ? CASE_FOOTER : LH_FOOTER
+
+  // «پر کردن از پروفایلِ حساب» — offer the facts the profile already holds.
+  // It OFFERS: a blank the writer has filled, and a table they have typed into,
+  // are left exactly as they are, so this is safe to press twice or press late.
+  const [caseFilling, setCaseFilling] = useState(false)
+  const fillFromProfile = async () => {
+    const acc = acct.trim()
+    if (!acc) { toast.error('اول شمارۀ حساب را وارد کن'); return }
+    setCaseFilling(true)
+    try {
+      const pre = await caseReportsApi.prefill(acc)
+      const res = fillCaseBody(f.body || '', pre)
+      const subj = fillCaseSubject(f.subject || '', pre.fields || {})
+      setF((s0) => ({ ...s0, body: res.html, subject: subj }))
+      const parts: string[] = []
+      if (res.fields) parts.push(`${fa(res.fields)} جای خالی`)
+      if (res.rows) parts.push(`${fa(res.rows)} سطرِ جدول`)
+      if (!parts.length && !res.skipped.length) {
+        toast('برای این حساب چیزی در پرونده نبود که پر شود')
+      } else {
+        toast.success(
+          (parts.length ? `پر شد: ${parts.join(' و ')}` : 'چیزی برای پرکردن نبود') +
+          (res.skipped.length
+            ? ` · ${fa(res.skipped.length)} جدول دست‌نخورده ماند چون خودت پرشان کرده‌ای`
+            : ''))
+      }
+    } catch (e) { toast.error(parseApiError(e)) } finally { setCaseFilling(false) }
+  }
 
   // deep-link ?account=… / ?id=… and load the right letter list
   useEffect(() => {
@@ -3118,6 +3147,12 @@ export default function LetterPage() {
           <input ref={imgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
             onChange={(e) => { onImageFile(e.target.files?.[0]); e.currentTarget.value = '' }} />
           <button onClick={openAi} className="ltr-btn" style={{ background: 'linear-gradient(90deg,#7c3aed,#4f46e5)' }} title="بازبینی و اصلاحِ هوشمندِ نامه با هوش مصنوعی — پیش از اعمال، فهرست را می‌بینی و تیک می‌زنی"><Sparkles size={15} /> دستیارِ هوشمند</button>
+          {isCase && (
+            <button onClick={fillFromProfile} disabled={caseFilling} className="ltr-btn amber"
+              title="شرکا، تسهیلات و وثایقِ همین حساب را از پرونده می‌آورد — چیزی را که خودت نوشته‌ای دست نمی‌زند">
+              <FilePlus size={15} /> {caseFilling ? 'در حالِ پر کردن…' : 'پر کردن از پروفایلِ حساب'}
+            </button>
+          )}
           {/* v137 — ALWAYS visible. It used to be hidden whenever the letter's
               «پیوست» select read «ندارد», so opening a letter saved that way made
               the button disappear with no clue why (owner: «پس این پیوست کجا رفت

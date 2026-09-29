@@ -319,3 +319,78 @@ class TestItIsRecoverableLikeTheUiPromises:
         r = (await client.post(API + "/", headers=auth_headers, json={"general": True})).json()
         bin_ = (await client.get("/api/trash/", headers=auth_headers)).json()
         assert r["id"] not in [x["id"] for x in bin_["items"]]
+
+
+class TestPrefillOffersTheProfileFacts:
+    """v160 — «اون پر کردن خودکار از پروفایل حساب رو هم اضافه کن».
+
+    §1's narrative names the licence, the activity, the year of establishment,
+    the manager and the account-opening date. All of those already live on the
+    customer profile, and typing them again is how the report and the profile
+    drift apart.
+    """
+
+    async def _profile(self, db_session, **kw):
+        from app.models.crm import CustomerProfile
+        row = CustomerProfile(account_no="777001", customer_name="موسسه نمونه",
+                              branch="عجمان", **kw)
+        db_session.add(row)
+        await db_session.commit()
+        return row
+
+    async def test_it_offers_licence_activity_and_the_two_dates(self, client, auth_headers, db_session):
+        await self._profile(db_session, trade_license_no="79",
+                            business_type="تجارت عمومی (جنرال تریدینگ)",
+                            established_since="1997", relationship_date="18/01/1998")
+        r = (await client.get(f"{API}/prefill?account_no=777001", headers=auth_headers)).json()
+        f = r["fields"]
+        assert r["found"] is True
+        assert f["company_name"] == "موسسه نمونه"
+        assert f["subject_branch"] == "عجمان"
+        assert f["licence_no"] == "79"
+        assert f["activity"] == "تجارت عمومی (جنرال تریدینگ)"
+        assert f["established_year"] == "1997"
+        assert f["account_open_date"] == "18/01/1998"
+
+    async def test_a_profile_alone_is_enough(self, client, auth_headers, db_session):
+        """There may be a profile without a `customers` row — the report should
+        still be offered what is known rather than reporting nothing found."""
+        await self._profile(db_session, trade_license_no="1234")
+        r = (await client.get(f"{API}/prefill?account_no=777001", headers=auth_headers)).json()
+        assert r["found"] is True
+        assert r["fields"]["licence_no"] == "1234"
+
+    async def test_the_manager_comes_from_the_partner_who_holds_that_role(
+            self, client, auth_headers, db_session):
+        from app.models.profile_entities import Partner
+        await self._profile(db_session)
+        db_session.add_all([
+            Partner(id="pf-1", account_no="777001", name="شریکِ ساده", role="Partner"),
+            Partner(id="pf-2", account_no="777001", name="مسعود آقا", role="مدیر صاحب امضا"),
+        ])
+        await db_session.commit()
+        r = (await client.get(f"{API}/prefill?account_no=777001", headers=auth_headers)).json()
+        assert r["fields"]["manager_name"] == "مسعود آقا"
+
+    async def test_no_managing_partner_means_no_name_invented(
+            self, client, auth_headers, db_session):
+        """Naming the first partner and hoping is worse than a blank the writer fills."""
+        from app.models.profile_entities import Partner
+        await self._profile(db_session)
+        db_session.add(Partner(id="pf-3", account_no="777001", name="شریکِ ساده", role="Partner"))
+        await db_session.commit()
+        r = (await client.get(f"{API}/prefill?account_no=777001", headers=auth_headers)).json()
+        assert not r["fields"].get("manager_name")
+
+    async def test_nothing_is_derived_from_a_licence_date(self, client, auth_headers, db_session):
+        """A licence ISSUE date is not a year of establishment. If the profile
+        does not say when the company was founded, the report must not guess."""
+        await self._profile(db_session, trade_license_no="79", trade_license_issue="01/03/2011")
+        r = (await client.get(f"{API}/prefill?account_no=777001", headers=auth_headers)).json()
+        assert r["fields"]["established_year"] == ""
+        assert r["fields"]["account_open_date"] == ""
+
+    async def test_an_account_with_no_profile_still_answers_honestly(self, client, auth_headers):
+        r = (await client.get(f"{API}/prefill?account_no=nosuch", headers=auth_headers)).json()
+        assert r["found"] is False
+        assert r["fields"] == {} or not any(r["fields"].values())

@@ -236,6 +236,7 @@ async def prefill(account_no: str = Query(..., min_length=1), db: AsyncSession =
     «prefill» as a report id and answer with a 404-shaped lookup
     (experiences/a-literal-route-must-precede-its-wildcard.md).
     """
+    from app.models.crm import CustomerProfile
     from app.models.customer import Customer
     from app.models.facility import Facility
     from app.models.guarantor import Guarantor
@@ -248,20 +249,48 @@ async def prefill(account_no: str = Query(..., min_length=1), db: AsyncSession =
     cust = (await db.execute(
         select(Customer).where(Customer.account_no == acc, Customer.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
-    if cust is not None:
+    prof = (await db.execute(
+        select(CustomerProfile).where(CustomerProfile.account_no == acc)
+    )).scalar_one_or_none()
+
+    if cust is not None or prof is not None:
         out["found"] = True
+        name = (cust.name if cust is not None else None) or getattr(prof, "customer_name", "") or ""
+        branch = (cust.branch if cust is not None else None) or getattr(prof, "branch", "") or ""
         out["fields"] = {
-            "company_name": cust.name or "",
-            "subject_entity": cust.name or "",
+            "company_name": name,
+            "subject_entity": name,
             "subject_account": acc,
-            "subject_branch": cust.branch or "",
-            "branch_name": cust.branch or "",
+            "subject_branch": branch,
+            "branch_name": branch,
         }
-        out["sources"]["customer"] = 1
+        if prof is not None:
+            # Only facts the profile actually holds. Nothing here is DERIVED:
+            # an establishment year is not guessed from a licence date, and an
+            # account-opening date is not guessed from anything — a report that
+            # invents either is worse than one with a blank the writer fills in.
+            out["fields"].update({
+                "licence_no": prof.trade_license_no or "",
+                "activity": prof.business_type or "",
+                "established_year": prof.established_since or "",
+                "account_open_date": prof.relationship_date or "",
+            })
+            out["sources"]["profile"] = 1
+        if cust is not None:
+            out["sources"]["customer"] = 1
 
     partners = (await db.execute(
         select(Partner).where(Partner.account_no == acc, Partner.is_deleted == False)  # noqa: E712
     )).scalars().all()
+    # The manager named in §1's narrative is whichever partner holds a managing
+    # role. If none of them does, the blank stays blank rather than naming the
+    # first partner and hoping.
+    mgr = next((x for x in partners
+                if any(w in (x.role or "").lower()
+                       for w in ("مدیر", "manager", "director", "signator"))), None)
+    if mgr is not None:
+        out["fields"]["manager_name"] = mgr.name or ""
+
     out["tables"]["partners"] = [{
         "name": p.name or "",
         "national_id": p.national_id or "",
