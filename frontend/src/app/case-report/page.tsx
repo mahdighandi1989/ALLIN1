@@ -16,7 +16,7 @@
 // again, because typing them twice is how the report and the profile drift apart.
 //
 // 794×1123 px = 210×297 mm @96dpi → prints 1:1.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
 import {
   Download, FilePlus, Loader2, Paperclip, Plus, Printer, RotateCcw, Save, Trash2, Wand2, X,
@@ -24,7 +24,8 @@ import {
 import toast from 'react-hot-toast'
 import { caseReportsApi, crmApi, downloadFile, parseApiError } from '@/lib/api'
 import type { CaseReportSummary } from '@/lib/api'
-import { LH_FOOTER, LH_LOGO, LH_NAME } from '../letter/letterhead'
+import { LH_LOGO, LH_NAME } from '../letter/letterhead'
+import { BRANCH } from './branding'
 import { SECTIONS, blankRow, type Section } from './sections'
 import { paginate, startsTable, type Block } from './paginate'
 
@@ -63,7 +64,12 @@ export default function CaseReportPage() {
   const [list, setList] = useState<CaseReportSummary[]>([])
   const [atts, setAtts] = useState<any[]>([])
   const [pages, setPages] = useState<PageBlock[][]>([])
-  const measurer = useRef<HTMLDivElement>(null)
+  // A CALLBACK ref, not useRef: the pagination effect below must re-run WHEN the
+  // measuring node appears, not merely when the content changes. With a plain ref
+  // the effect read `null` on its single run and, because its only other
+  // dependency is stable, never ran again — the form rendered and the document
+  // did not. State makes the node's arrival a dependency.
+  const [host, setHost] = useState<HTMLDivElement | null>(null)
 
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }))
   const setRow = (sec: string, i: number, k: string, v: string) =>
@@ -286,7 +292,6 @@ export default function CaseReportPage() {
   //    it can be tested at every boundary instead of only when a report happens
   //    to be long enough to print wrong.
   useEffect(() => {
-    const host = measurer.current
     if (!host) return
     const h: Record<string, number> = {}
     const head: Record<string, number> = {}
@@ -299,19 +304,28 @@ export default function CaseReportPage() {
     const byId = new Map(blocks.map((b) => [b.id, b]))
     setPages(paginate(blocks, { h, head }, AVAIL)
       .map((pg) => pg.map((b) => byId.get(b.id) as PageBlock)))
-  }, [blocks])
+  }, [blocks, host])
 
   const Sheet = ({ page, n, total }: { page: PageBlock[]; n: number; total: number }) => (
     <div className="csheet">
       <div className="cr-head">
-        <div className="cr-head-l">
-          <img src={LH_LOGO} alt="" className="cr-logo" />
-          <img src={LH_NAME} alt="" className="cr-name" />
-        </div>
-        <div className="cr-head-r" dir="rtl">
-          <div>فرع عجمان</div>
-          <div dir="ltr">AJMAN BRANCH</div>
-          <div dir="ltr">“Licensed by CBUAE”</div>
+        {/* The branch banner repeats on every page, as it does on the paper. The
+            Persian line mixes digits and Latin punctuation, so it sits inside an
+            explicit dir="rtl" — otherwise the browser reorders the phone and fax
+            numbers and a green build says nothing about it. */}
+        <div className="cr-bank" dir="rtl">{BRANCH.fa}</div>
+        <div className="cr-bank" dir="ltr">{BRANCH.en}</div>
+        <div className="cr-bank" dir="ltr">{BRANCH.swift}</div>
+        <div className="cr-head-row">
+          <div className="cr-head-l">
+            <img src={LH_LOGO} alt="" className="cr-logo" />
+            <img src={LH_NAME} alt="" className="cr-name" />
+          </div>
+          <div className="cr-head-r" dir="rtl">
+            <div>{BRANCH.nameFa}</div>
+            <div dir="ltr">{BRANCH.nameEn}</div>
+            <div dir="ltr">{BRANCH.licence}</div>
+          </div>
         </div>
       </div>
       {n === 1 && (
@@ -327,7 +341,6 @@ export default function CaseReportPage() {
           : renderTRow(b, startsTable(page, i)))}
       </div>
       <div className="cr-foot">
-        <img src={LH_FOOTER} alt="" className="cr-foot-img" />
         <div className="cr-pageno" dir="ltr">Page | {n}</div>
       </div>
     </div>
@@ -359,8 +372,9 @@ export default function CaseReportPage() {
           /* ── the printed sheet ─────────────────────────────────────────── */
           .csheet{position:relative;width:${PAGE_W}px;height:${PAGE_H}px;margin:0 auto 18px;background:#fff;
                   box-shadow:0 0 8px rgba(0,0,0,.18);color:#000;font-family:${NAZ};line-height:1.35;overflow:hidden}
-          .cr-head{position:absolute;top:0;right:0;left:0;height:${HEAD_H}px;padding:10px ${PAD_X}px 0;
-                   display:flex;justify-content:space-between;align-items:flex-start}
+          .cr-head{position:absolute;top:0;right:0;left:0;height:${HEAD_H}px;padding:8px ${PAD_X}px 0}
+          .cr-bank{font-size:9.5px;line-height:1.45;text-align:center;color:#111}
+          .cr-head-row{display:flex;justify-content:space-between;align-items:flex-start;margin-top:6px}
           .cr-head-l{display:flex;align-items:center;gap:8px}
           .cr-logo{height:54px}.cr-name{height:26px}
           .cr-head-r{text-align:left;font-size:12px;line-height:1.5;font-family:${TITR}}
@@ -369,7 +383,6 @@ export default function CaseReportPage() {
                    font-size:12.5px;text-align:justify;overflow:hidden}
           .cr-foot{position:absolute;bottom:0;right:0;left:0;height:${FOOT_H}px;padding:0 ${PAD_X}px 8px;
                    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px}
-          .cr-foot-img{max-width:100%;max-height:${FOOT_H - 26}px}
           .cr-pageno{font-size:11px;color:#333}
           .cr-basmala{text-align:center;font-family:${TITR};font-size:13px;margin-bottom:10px}
           .cr-recipient{margin-bottom:8px;font-family:${TITR};font-size:13px;line-height:1.7}
@@ -534,7 +547,7 @@ export default function CaseReportPage() {
         </div>
 
         {/* hidden measurer — every block rendered once at the real content width */}
-        <div ref={measurer} className="cr-measure" aria-hidden>
+        <div ref={setHost} className="cr-measure" aria-hidden>
           {blocks.map((b) => b.t === 'node'
             ? <div key={b.id} data-mid={b.id}>{b.el}</div>
             : <div key={b.id} data-mid={b.id}>{renderTRow(b, false)}</div>)}

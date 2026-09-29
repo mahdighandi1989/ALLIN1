@@ -67,6 +67,11 @@ scripts/supervisor/__pycache__/
 # Supervisor scratch databases — the auditor and the runtime sweep each open a
 # throwaway SQLite file next to the backend; they are rebuilt on every run and
 # must never be committed (they would also leak whatever was seeded into them).
+# v156 — any scratch SQLite a local run leaves behind. One was staged by
+# `git add -A` after checking the page in a browser; it is a database, not source.
+backend/_*.db
+backend/_*.db-wal
+backend/_*.db-shm
 backend/_supervisor_audit.db
 backend/_supervisor_run.db
 backend/_sup_inv.db

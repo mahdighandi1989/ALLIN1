@@ -14,7 +14,8 @@ import {
   AlignmentType, BorderStyle, Document, Footer, Header, ImageRun, PageNumber, Packer,
   Paragraph, ShadingType, Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx'
-import { LH_FOOTER, LH_LOGO, LH_NAME } from '../letter/letterhead'
+import { LH_LOGO, LH_NAME } from '../letter/letterhead'
+import { BRANCH } from './branding'
 import type { Section } from './sections'
 
 const FONT = 'B Nazanin'
@@ -123,21 +124,30 @@ export async function buildCaseDocx(a: CaseDocxArgs): Promise<Blob> {
   body.push(P(''))
   body.push(P(`اقدام کننده : ${f('prepared_by')}`, { pt: 11 }))
 
+  // The AJMAN BRANCH banner, not the letter's Dubai regional-office one — see
+  // ./branding.ts. Printing the wrong address on this report would be wrong in a
+  // way no build check can see.
+  const banner = (text: string, rtl: boolean) => new Paragraph({
+    alignment: AlignmentType.CENTER, bidirectional: rtl, spacing: { after: 0 },
+    children: [new TextRun({ text, font: FONT, size: 15, rightToLeft: rtl })],
+  })
   const header = new Header({
-    children: [new Paragraph({
-      alignment: AlignmentType.LEFT,
-      children: [
-        new ImageRun({ data: b64(LH_LOGO), transformation: { width: 72, height: 72 } }),
-        new ImageRun({ data: b64(LH_NAME), transformation: { width: 150, height: 26 } }),
-      ],
-    })],
+    children: [
+      banner(BRANCH.fa, true),
+      banner(BRANCH.en, false),
+      banner(BRANCH.swift, false),
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [
+          new ImageRun({ data: b64(LH_LOGO), transformation: { width: 66, height: 66 } }),
+          new ImageRun({ data: b64(LH_NAME), transformation: { width: 140, height: 24 } }),
+        ],
+      }),
+      banner(`${BRANCH.nameFa} — ${BRANCH.nameEn} ${BRANCH.licence}`, true),
+    ],
   })
   const footer = new Footer({
     children: [
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new ImageRun({ data: b64(LH_FOOTER), transformation: { width: 560, height: 46 } })],
-      }),
       new Paragraph({
         alignment: AlignmentType.CENTER,
         children: [new TextRun({ children: ['Page | ', PageNumber.CURRENT], font: FONT, size: 18 })],
