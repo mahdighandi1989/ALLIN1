@@ -38,19 +38,13 @@ router = APIRouter(tags=["crm"])
 def _content_disposition(kind: str, filename: str) -> str:
     """RFC 6266 header with the user-supplied name made header-safe.
 
-    The stored original_name is uploader-controlled: a double quote breaks out
-    of the quoted parameter and a CR/LF aborts the whole response at the ASGI
-    layer. ASCII-quote-escape for the legacy parameter + RFC 5987 UTF-8
-    filename* so non-Latin (Persian/Arabic) names survive.
+    v152 — the body moved to `app.utils.http_headers` so other downloads stop
+    reinventing it (the inspection one did, and returned 500 for every Persian
+    filename). The name is kept as the call sites know it.
     """
-    from urllib.parse import quote
+    from app.utils.http_headers import content_disposition
 
-    safe = (filename or "document").replace("\r", " ").replace("\n", " ")
-    ascii_fallback = safe.encode("ascii", "replace").decode("ascii").replace('"', "'")
-    return (
-        f'{kind}; filename="{ascii_fallback}"; '
-        f"filename*=UTF-8''{quote(safe, safe='')}"
-    )
+    return content_disposition(kind, filename)
 
 
 

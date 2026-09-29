@@ -271,13 +271,27 @@ def local_dir() -> Path:
     return p
 
 
-def store(*, data: bytes, filename: str, mime: str, report_number: int) -> dict:
+async def store(*, data: bytes, filename: str, mime: str, report_number: int) -> dict:
     """Put the bytes where they will still be there next month.
 
     Drive first, because the container disk does not survive a deploy. A local
     copy is the fallback so the feature never simply fails — but it is recorded
     AS a fallback, with the reason, so nobody mistakes it for durable storage.
+
+    v152 — TWO THINGS THIS HAS TO DO THAT THE FIRST VERSION DID NOT:
+      * ``drive_sync.prepare()`` first. In OAuth mode the blocking Drive client
+        has no credentials until the refresh token is resolved and handed to it;
+        `drive_sync` does that before every operation and even exposes a public
+        `prepare()` «for other Drive-facing features». Calling `upload_file`
+        without it fails with «Google Drive is not connected — no OAuth refresh
+        token» while the status endpoint cheerfully reports `connected: true`,
+        because status resolves the token itself. Measured on production: both
+        of the owner's samples fell back to the container disk.
+      * run the upload in a THREAD. `upload_file` is blocking, and a 100 MB
+        sample would hold the event loop — freezing every other request — for as
+        long as it took. Every other Drive caller in this app already does this.
     """
+    import asyncio
     name = safe_filename(filename)
     sha = hashlib.sha256(data).hexdigest()
     # a distinct name per upload, so two samples with the same filename coexist
@@ -287,11 +301,15 @@ def store(*, data: bytes, filename: str, mime: str, report_number: int) -> dict:
            "store_note": ""}
 
     try:
-        from app.services import google_drive as gd
+        from app.services import drive_sync, google_drive as gd
         if gd.is_configured():
-            res = gd.upload_file(
+            # authenticate the blocking client for the active mode FIRST
+            await drive_sync.prepare()
+            res = await asyncio.to_thread(
+                gd.upload_file,
                 path_parts=[DRIVE_ROOT, f"report-{int(report_number)}"],
-                filename=stored_name, data=data, mimetype=mime or "application/octet-stream")
+                filename=stored_name, data=data,
+                mimetype=mime or "application/octet-stream")
             out.update(store="drive", drive_id=res.get("id") or "",
                        drive_link=res.get("link") or "")
             return out
@@ -308,11 +326,14 @@ def store(*, data: bytes, filename: str, mime: str, report_number: int) -> dict:
     return out
 
 
-def load(row) -> bytes:
+async def load(row) -> bytes:
     """Fetch one stored file's bytes back, from wherever it really is."""
+    import asyncio
+
     if getattr(row, "store", "") == "drive" and getattr(row, "drive_id", ""):
-        from app.services import google_drive as gd
-        return gd.download_file(row.drive_id)
+        from app.services import drive_sync, google_drive as gd
+        await drive_sync.prepare()          # same credential step as the upload
+        return await asyncio.to_thread(gd.download_file, row.drive_id)
     p = getattr(row, "local_path", "") or ""
     if p and Path(p).exists():
         return Path(p).read_bytes()

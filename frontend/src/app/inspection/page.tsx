@@ -7,9 +7,10 @@
 // whole reason this page is trustworthy.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
-import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X } from 'lucide-react'
+import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X, Pencil } from 'lucide-react'
 import { inspectionApi, parseApiError, type InspectionFile, type InspectionReport } from '@/lib/api'
 import { geometryLabel } from '@/lib/inspectionSpot'
+import { AuthedDownload, AuthedImage } from '@/lib/AuthedMedia'
 import { TONE } from '@/lib/inspection'
 import toast from 'react-hot-toast'
 
@@ -34,6 +35,7 @@ export default function InspectionPage() {
   // v146 — attaching a sample to a sheet that already exists, and reading one back.
   const [upPct, setUpPct] = useState<{ id: string; name: string; pct: number } | null>(null)
   const [peek, setPeek] = useState<{ file: InspectionFile; text: string; loading: boolean } | null>(null)
+  const [editing, setEditing] = useState<{ noteId: string; text: string } | null>(null)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -77,6 +79,17 @@ export default function InspectionPage() {
     setUpPct(null)
     await load()
   }, [load])
+
+  const saveEdit = useCallback(async (r: InspectionReport, noteId: string) => {
+    const text = (editing?.text || '').trim()
+    if (!text) return
+    try {
+      await inspectionApi.editNote(r.id, noteId, text)
+      toast.success('ویرایش ذخیره شد — متنِ اولیه هم نگه داشته شد')
+      setEditing(null)
+      await load()
+    } catch (e) { toast.error(parseApiError(e)) }
+  }, [editing, load])
 
   const dropFile = useCallback(async (f: InspectionFile) => {
     if (!window.confirm(`«${f.filename}» از این برگه برداشته شود؟ (نسخهٔ درایو دست‌نخورده می‌ماند)`)) return
@@ -241,8 +254,44 @@ export default function InspectionPage() {
                               {n.outcome}
                             </span>
                           )}
+                          {/* v152 — edit in place. Only your own side, and never
+                              on a filed sheet; the original is kept either way. */}
+                          {n.by === 'owner' && r.status !== 'filed' && editing?.noteId !== n.id && (
+                            <button type="button" title="ویرایشِ همین متن"
+                              onClick={() => setEditing({ noteId: n.id, text: n.text })}
+                              className="text-gray-500 hover:text-gray-800">
+                              <Pencil size={12} />
+                            </button>
+                          )}
+                          {!!n.edited_at && (
+                            <span className="text-[10px] text-gray-400"
+                              title={n.original_text ? `متنِ اول: ${n.original_text}` : ''}>
+                              ویرایش شد
+                            </span>
+                          )}
                         </div>
-                        <div className="whitespace-pre-wrap text-[12.5px] text-gray-800">{n.text}</div>
+                        {editing?.noteId === n.id ? (
+                          <div>
+                            <textarea
+                              value={editing.text} rows={4} autoFocus
+                              onChange={(e) => setEditing({ noteId: n.id, text: e.target.value })}
+                              className="w-full rounded-lg border border-gray-300 p-2 text-[12.5px]" />
+                            <div className="mt-1 flex items-center gap-2">
+                              <button type="button" disabled={!editing.text.trim()}
+                                onClick={() => void saveEdit(r, n.id)}
+                                className="rounded-lg bg-gray-900 px-3 py-1 text-xs text-white disabled:opacity-50">
+                                ذخیرهٔ ویرایش
+                              </button>
+                              <button type="button" onClick={() => setEditing(null)}
+                                className="px-2 py-1 text-xs text-gray-600 hover:underline">انصراف</button>
+                              <span className="text-[10px] text-gray-400">
+                                متنِ اولیه نگه داشته می‌شود
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap text-[12.5px] text-gray-800">{n.text}</div>
+                        )}
                         {!!n.commits?.length && (
                           <div dir="ltr" className="mt-1 text-[10px] text-gray-500">
                             {n.commits.join(' · ')}
@@ -251,15 +300,15 @@ export default function InspectionPage() {
                         <div className="mt-2 flex gap-2 flex-wrap">
                           {n.shot_id && (
                             <figure className="max-w-xs">
-                              <img src={inspectionApi.shotUrl(n.shot_id)} alt="تصویرِ گزارش"
-                                className="rounded border border-gray-300" />
+                              <AuthedImage src={inspectionApi.shotUrl(n.shot_id)} alt="تصویرِ گزارش"
+                                className="rounded border border-gray-300 max-w-full" />
                               <figcaption className="text-[10px] text-gray-500">چیزی که دیدی</figcaption>
                             </figure>
                           )}
                           {n.after_shot_id && (
                             <figure className="max-w-xs">
-                              <img src={inspectionApi.shotUrl(n.after_shot_id)} alt="تصویرِ بعد از اصلاح"
-                                className="rounded border border-emerald-300" />
+                              <AuthedImage src={inspectionApi.shotUrl(n.after_shot_id)} alt="تصویرِ بعد از اصلاح"
+                                className="rounded border border-emerald-300 max-w-full" />
                               <figcaption className="text-[10px] text-emerald-700">بعد از کارِ ناظر</figcaption>
                             </figure>
                           )}
@@ -309,8 +358,8 @@ export default function InspectionPage() {
                                 <button type="button" onClick={() => void openPeek(f)}
                                   className="text-sky-700 hover:underline">متن</button>
                               )}
-                              <a href={inspectionApi.fileUrl(f.id)} target="_blank" rel="noreferrer"
-                                className="text-sky-700 hover:underline">دانلود</a>
+                              <AuthedDownload href={inspectionApi.fileUrl(f.id)} filename={f.filename}
+                                className="text-sky-700 hover:underline">دانلود</AuthedDownload>
                               {!!f.drive_link && (
                                 <a href={f.drive_link} target="_blank" rel="noreferrer"
                                   className="text-sky-700 hover:underline">درایو</a>
@@ -375,7 +424,7 @@ export default function InspectionPage() {
                     {r.status !== 'filed' && (
                       <div>
                         <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2}
-                          placeholder="اگر دستور یا توضیحِ بیشتری داری بنویس — برگه دوباره در صفِ ناظر می‌رود"
+                          placeholder="یادداشتِ تازه روی همین برگه (برای اصلاحِ متنِ بالا، دکمهٔ ✏ کنارش را بزن) — برگه دوباره در صفِ ناظر می‌رود"
                           className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
                         <button onClick={() => addNote(r)} disabled={!reply.trim()}
                           className="mt-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs text-white disabled:opacity-50">

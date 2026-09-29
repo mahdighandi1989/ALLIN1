@@ -6,6 +6,7 @@ things the sibling project learned the hard way, now enforced instead of merely
 documented.
 """
 import pytest
+from sqlalchemy import select
 
 from app.models.inspection import (
     OUTCOME_FIXED, STATUS_ANSWERED, STATUS_APPROVED, STATUS_FILED, STATUS_OPEN,
@@ -98,6 +99,91 @@ class TestTheColourCannotLie:
     def test_the_owners_tick_wins_over_everything(self):
         glow = sheet_glow(STATUS_APPROVED, [{"by": "reviewer", "outcome": "not-done"}])
         assert glow["key"] == STATUS_APPROVED
+
+
+class TestEditingANote:
+    """v152 — «باید بشه خود گزارش ادیت زد».
+
+    Appending a correction leaves the wrong text at the TOP of the sheet, which
+    is what the supervisor reads first. Editing fixes it in place — but a sheet
+    is a record, so nothing is overwritten without trace.
+    """
+
+    async def test_the_owner_can_correct_their_own_report(self, client, auth_headers):
+        rep = await _file(client, auth_headers, text="دکمه کار نمی‌کنه")
+        nid = rep["notes"][0]["id"]
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{nid}",
+                               headers=auth_headers, json={"text": "دکمهٔ جستجو کار نمی‌کند"})
+        assert r.status_code == 200, r.text
+        note = r.json()["report"]["notes"][0]
+        assert note["text"] == "دکمهٔ جستجو کار نمی‌کند"
+        # the sheet's headline follows the first note
+        assert r.json()["report"]["title"] == "دکمهٔ جستجو کار نمی‌کند"
+
+    async def test_the_original_is_kept_not_overwritten(self, client, auth_headers):
+        """Quarantine, not delete — the same instinct as rule 2."""
+        rep = await _file(client, auth_headers, text="اولین متن")
+        nid = rep["notes"][0]["id"]
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{nid}",
+                               headers=auth_headers, json={"text": "متنِ اصلاح‌شده"})
+        note = r.json()["report"]["notes"][0]
+        assert note["original_text"] == "اولین متن"
+        assert note["edited_at"]
+
+    async def test_editing_twice_keeps_the_FIRST_original(self, client, auth_headers):
+        rep = await _file(client, auth_headers, text="نسخهٔ یک")
+        nid = rep["notes"][0]["id"]
+        for t in ("نسخهٔ دو", "نسخهٔ سه"):
+            r = await client.patch(f"/api/inspection/{rep['id']}/notes/{nid}",
+                                   headers=auth_headers, json={"text": t})
+        note = r.json()["report"]["notes"][0]
+        assert note["original_text"] == "نسخهٔ یک", "the first version is the one worth keeping"
+        assert note["text"] == "نسخهٔ سه"
+
+    async def test_an_empty_edit_is_refused(self, client, auth_headers):
+        rep = await _file(client, auth_headers)
+        nid = rep["notes"][0]["id"]
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{nid}",
+                               headers=auth_headers, json={"text": "   "})
+        assert r.status_code == 422
+
+    async def test_a_missing_note_is_404_not_a_silent_no_op(self, client, auth_headers):
+        rep = await _file(client, auth_headers)
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/NOPE",
+                               headers=auth_headers, json={"text": "x"})
+        assert r.status_code == 404
+
+    async def test_a_filed_sheet_cannot_be_rewritten(self, client, auth_headers, db_session):
+        rep = await _file(client, auth_headers)
+        row = (await db_session.execute(select(InspectionReport).where(
+            InspectionReport.id == rep["id"]))).scalar_one()
+        row.status = STATUS_FILED
+        await db_session.commit()
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{rep['notes'][0]['id']}",
+                               headers=auth_headers, json={"text": "بعداً"})
+        assert r.status_code == 422
+        assert "بایگانی" in r.json()["detail"]
+
+    async def test_the_supervisor_cannot_rewrite_the_owners_report(
+            self, client, auth_headers, monkeypatch, test_user):
+        """Otherwise the conversation stops being evidence of anything."""
+        rep = await _file(client, auth_headers, text="متنِ مالک")
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{rep['notes'][0]['id']}",
+                               headers=auth_headers, json={"text": "چیزِ دیگری"})
+        assert r.status_code == 403
+
+    async def test_the_owner_cannot_rewrite_the_supervisors_answer(
+            self, client, auth_headers, monkeypatch, test_user):
+        rep = await _file(client, auth_headers)
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        ans = (await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                                 json={"text": "بررسی شد", "outcome": "not-done"})).json()["report"]
+        nid = ans["notes"][-1]["id"]
+        monkeypatch.delenv("SUPERVISOR_API_USER")
+        r = await client.patch(f"/api/inspection/{rep['id']}/notes/{nid}",
+                               headers=auth_headers, json={"text": "انجام شد!"})
+        assert r.status_code == 403
 
 
 class TestPreciseGeometry:

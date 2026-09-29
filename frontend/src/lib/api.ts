@@ -924,6 +924,8 @@ export const vouchersApi = {
 // v141 — «نظارت و سرکشی»: the owner's inspection sheets over the app's screens.
 export type InspectionNote = {
   id: string; by: 'owner' | 'reviewer'; at: string; text: string; author?: string
+  /** v152 — set once the note has been edited; the first version is kept */
+  original_text?: string; edited_at?: string
   shot_id?: string | null; outcome?: string | null; after_shot_id?: string | null; commits?: string[]
 }
 // v146 — a sample attached to a sheet: any type, up to 100MB. `extract_status`
@@ -972,6 +974,12 @@ export const inspectionApi = {
   },
   async create(body: { text: string; spot: any; shot?: string }): Promise<InspectionReport> {
     const { data } = await api.post('/api/inspection', body)
+    return data.report
+  },
+  /** v152 — correct what a note SAYS, in place. The original is kept on the
+   *  note as `original_text`; you may only edit your own side of the conversation. */
+  async editNote(id: string, noteId: string, text: string): Promise<InspectionReport> {
+    const { data } = await api.patch(`/api/inspection/${id}/notes/${noteId}`, { text })
     return data.report
   },
   async note(id: string, body: { text: string; shot?: string }): Promise<InspectionReport> {

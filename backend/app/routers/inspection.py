@@ -409,8 +409,8 @@ async def upload_file(
     # still gets the readable content instead of nothing.
     ex = ifiles.extract(data, filename, mime)
     try:
-        placed = ifiles.store(data=data, filename=filename, mime=mime,
-                              report_number=int(r.number or 0))
+        placed = await ifiles.store(data=data, filename=filename, mime=mime,
+                                    report_number=int(r.number or 0))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502,
                             detail=f"ذخیرهٔ فایل ممکن نشد: {exc}"[:300]) from exc
@@ -528,16 +528,21 @@ async def file_raw(file_id: str, db: AsyncSession = Depends(get_db),
     """
     row = await _file_or_404(db, file_id)
     try:
-        data = ifiles.load(row)
+        data = await ifiles.load(row)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=410, detail=str(exc)[:300]) from exc
     row.viewed_at = datetime.now(timezone.utc)
     await db.commit()
     # inline for an image so the browser shows it; everything else downloads
     disp = "inline" if (row.mime or "").startswith("image/") else "attachment"
+    # v152 — a Persian filename cannot go in a latin-1 header. Building this by
+    # hand returned 500 for every one of the owner's samples; the shared helper
+    # does RFC 5987 and neutralises quote/CRLF injection from the uploaded name.
+    from app.utils.http_headers import content_disposition
+
     return Response(
         content=data, media_type=row.mime or "application/octet-stream",
-        headers={"Content-Disposition": f'{disp}; filename="{row.filename}"',
+        headers={"Content-Disposition": content_disposition(disp, row.filename or "file"),
                  "Cache-Control": "private, max-age=300"})
 
 
@@ -765,6 +770,71 @@ async def add_note(report_id: str, payload: NoteIn, db: AsyncSession = Depends(g
         entity_type="inspection", entity_id=r.id,
         detail=f"گزارشِ {r.number} — " + (f"نتیجه: {payload.outcome}" if reviewer else "یادداشتِ مالک"),
         user=user, db=db)
+    return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+class EditNoteIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=MAX_TEXT)
+
+
+@router.patch("/{report_id}/notes/{note_id}")
+async def edit_note(report_id: str, note_id: str, payload: EditNoteIn,
+                    db: AsyncSession = Depends(get_db),
+                    user=Depends(get_current_active_user)):
+    """v152 — correct what a note SAYS, in place.
+
+    The owner asked to edit the report itself rather than append: «باید بشه خود
+    گزارش ادیت زد … الان به شکلی که گویا گزارشی در ادامهٔ گزارشِ قبل داری ثبت
+    می‌کنی». Adding a correction as a new note leaves the wrong text at the top of
+    the sheet, which is the text the supervisor reads first.
+
+    WHAT IS KEPT, BECAUSE A SHEET IS A RECORD
+      * the ORIGINAL text is preserved on the note as `original_text` the first
+        time it is edited, and `edited_at` marks it. Nothing is overwritten
+        without trace — this is the same instinct as rule 2: quarantine, not
+        delete. The board shows «ویرایش شد» and can show what it said before.
+      * you may only edit YOUR OWN kind of note. The owner cannot rewrite the
+        supervisor's answer and the supervisor cannot rewrite the owner's
+        report — otherwise the conversation stops being evidence of anything.
+      * a FILED sheet is closed. It lives in a binder; editing history there
+        would make the archive worthless.
+    """
+    r = (await db.execute(select(InspectionReport).where(
+        InspectionReport.id == report_id))).scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="گزارش پیدا نشد")
+    if r.status == STATUS_FILED:
+        raise HTTPException(status_code=422,
+                            detail="برگهٔ بایگانی‌شده ویرایش نمی‌شود — تاریخچه باید دست‌نخورده بماند")
+    text = _clean(payload.text)
+    if not text:
+        raise HTTPException(status_code=422, detail="متنِ یادداشت خالی است")
+
+    reviewer = await _is_supervisor(db, user)
+    notes = _notes(r)
+    target = next((n for n in notes if n.get("id") == note_id), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="یادداشت پیدا نشد")
+    mine = "reviewer" if reviewer else "owner"
+    if (target.get("by") or "owner") != mine:
+        raise HTTPException(
+            status_code=403,
+            detail=("یادداشتِ طرفِ مقابل ویرایش نمی‌شود — "
+                    "اگر نظری داری، یادداشتِ تازه بنویس"))
+
+    if not target.get("original_text"):
+        target["original_text"] = target.get("text", "")
+    target["text"] = text
+    target["edited_at"] = _now()
+    # the sheet's headline is the first line of the FIRST note
+    if notes and notes[0].get("id") == note_id:
+        r.title = _headline(text)
+    r.notes_json = json.dumps(notes, ensure_ascii=False)
+    await db.commit()
+    await db.refresh(r)
+    await record_audit(action="inspection_note_edit", entity_type="inspection",
+                       entity_id=r.id, detail=f"یادداشتِ برگهٔ {r.number} ویرایش شد",
+                       user=user, db=db)
     return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 

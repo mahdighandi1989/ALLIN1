@@ -446,28 +446,63 @@ class TestWhereTheBytesLive:
     async def test_with_drive_configured_the_file_goes_to_its_own_folder(
             self, client, auth_headers, monkeypatch):
         seen = {}
+        order = []
 
         def fake_upload(**kw):
             seen.update(kw)
+            order.append("upload")
             return {"id": "drive123", "link": "https://drive.example/f/drive123",
                     "folder_id": "fold", "action": "created"}
 
+        async def fake_prepare():
+            order.append("prepare")
+
         monkeypatch.setattr("app.services.google_drive.is_configured", lambda: True)
         monkeypatch.setattr("app.services.google_drive.upload_file", fake_upload)
+        monkeypatch.setattr("app.services.drive_sync.prepare", fake_prepare)
         rep = await _sheet(client, auth_headers)
         f = (await _upload(client, auth_headers, rep["id"], "spec.txt", b"hi")).json()["file"]
         assert f["store"] == "drive" and f["durable"] is True
         assert f["drive_link"] == "https://drive.example/f/drive123"
         # its own folder, per sheet, created on demand
         assert seen["path_parts"] == ["inspection", f"report-{rep['number']}"]
+        # v152 — AND THE CREDENTIAL STEP RAN FIRST. Without it the blocking Drive
+        # client has no OAuth token and every upload silently fell back to the
+        # container disk, while /backup/drive/status still read «connected: true»
+        # because IT resolves the token itself. Measured on production: both of
+        # the owner's samples were stored locally and would die with the deploy.
+        assert order == ["prepare", "upload"], order
+
+    async def test_the_credential_step_is_what_was_missing(
+            self, client, auth_headers, monkeypatch):
+        """The exact production failure, reproduced: Drive configured, but the
+        client never given a token."""
+        def unprepared_upload(**kw):
+            raise RuntimeError("Google Drive is not connected — no OAuth refresh token")
+
+        async def noop_prepare():
+            return None
+
+        monkeypatch.setattr("app.services.google_drive.is_configured", lambda: True)
+        monkeypatch.setattr("app.services.google_drive.upload_file", unprepared_upload)
+        monkeypatch.setattr("app.services.drive_sync.prepare", noop_prepare)
+        rep = await _sheet(client, auth_headers)
+        f = (await _upload(client, auth_headers, rep["id"], "a.txt", b"hi")).json()["file"]
+        # it still must not lose the file — but it must SAY it is not durable
+        assert f["store"] == "local" and f["durable"] is False
+        assert "no OAuth refresh token" in f["store_note"]
 
     async def test_a_drive_failure_falls_back_and_records_the_reason(
             self, client, auth_headers, monkeypatch):
         def boom(**kw):
             raise RuntimeError("no permission")
 
+        async def fake_prepare():
+            return None
+
         monkeypatch.setattr("app.services.google_drive.is_configured", lambda: True)
         monkeypatch.setattr("app.services.google_drive.upload_file", boom)
+        monkeypatch.setattr("app.services.drive_sync.prepare", fake_prepare)
         rep = await _sheet(client, auth_headers)
         f = (await _upload(client, auth_headers, rep["id"], "a.txt", b"hi")).json()["file"]
         assert f["store"] == "local"
@@ -480,6 +515,53 @@ class TestWhereTheBytesLive:
         r = await client.get(f"/api/inspection/files/{fid}/raw", headers=auth_headers)
         assert r.status_code == 200
         assert r.content == payload
+
+    async def test_a_persian_filename_can_actually_be_DOWNLOADED(
+            self, client, auth_headers):
+        """v152 — the upload accepted Persian names from the start; the DOWNLOAD
+        returned 500 for every one of them.
+
+        HTTP headers are latin-1, so «فرمت خلاصه پرونده.pdf» in a hand-built
+        Content-Disposition raises UnicodeEncodeError while the response is being
+        encoded. The owner's two samples looked lost when they were merely
+        undownloadable. Uploading a Persian name and never fetching it back is
+        exactly the half-test that let this through.
+        """
+        rep = await _sheet(client, auth_headers)
+        name = "فرمت خلاصه پرونده.pdf"
+        fid = (await _upload(client, auth_headers, rep["id"], name,
+                             b"%PDF-1.4 x")).json()["file"]["id"]
+        r = await client.get(f"/api/inspection/files/{fid}/raw", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.content == b"%PDF-1.4 x"
+        cd = r.headers["content-disposition"]
+        assert "filename*=UTF-8''" in cd
+        # the whole header must survive latin-1, which is what the server does
+        cd.encode("latin-1")
+
+    async def test_a_filename_cannot_inject_a_header(self, client, auth_headers):
+        """The name comes from whoever uploaded the file: a quote breaks out of
+        the parameter and a CRLF ends the response early."""
+        rep = await _sheet(client, auth_headers)
+        fid = (await _upload(client, auth_headers, rep["id"],
+                             'evil"; x=1\r\nX-Injected: yes.txt', b"hi")).json()["file"]["id"]
+        r = await client.get(f"/api/inspection/files/{fid}/raw", headers=auth_headers)
+        assert r.status_code == 200
+        assert "x-injected" not in {k.lower() for k in r.headers}
+        assert "\n" not in r.headers["content-disposition"]
+
+    async def test_a_missing_local_file_is_a_clean_410_not_a_500(
+            self, client, auth_headers, monkeypatch):
+        """«the deploy wiped it» must read as a message, not a server error."""
+        rep = await _sheet(client, auth_headers)
+        fid = (await _upload(client, auth_headers, rep["id"], "gone.txt", b"x")).json()["file"]["id"]
+
+        async def vanished(row):
+            raise FileNotFoundError("فایل در دسترس نیست")
+        monkeypatch.setattr(ifiles, "load", vanished)
+        r = await client.get(f"/api/inspection/files/{fid}/raw", headers=auth_headers)
+        assert r.status_code == 410
+        assert "در دسترس نیست" in r.json()["detail"]
 
     async def test_a_filename_cannot_escape_its_folder(self):
         assert "/" not in ifiles.safe_filename("../../etc/passwd")
