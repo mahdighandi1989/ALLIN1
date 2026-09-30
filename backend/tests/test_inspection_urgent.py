@@ -11,6 +11,7 @@ So: strict first-pressed-first order, exactly one run on a sheet at a time, and
 no way for a dead run to park the queue.
 """
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -375,3 +376,79 @@ class TestAFollowUpKeepsItsOwnAttachments:
                               json={"text": "تلاش", "file_ids": [up["file"]["id"]]})
         assert r.status_code == 200
         assert not any(f["id"] == up["file"]["id"] for f in r.json()["report"]["files"])
+
+
+class TestWhenWillItComeForThisOne:
+    """v168 — «وقتی دکمه فوری میزنم باید ناظر بگه چند دقیقه دیگه میره سراغش».
+
+    The countdown is measured from the round's own knocks, not written into the
+    code, because the schedule lives in a Routine this server cannot read. These
+    tests are about the WIRING — that the knock is really recorded and that the
+    answer really follows it; the arithmetic has its own pure tests in
+    `test_supervisor_rounds.py`.
+    """
+
+    async def test_pressing_urgent_answers_with_when(self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        r = await client.post(f"/api/inspection/{rep['id']}/urgent", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        nxt = r.json()["next_round"]
+        # An instant, not a duration: the page renders it in the owner's OWN
+        # local time, which is the thing they asked for.
+        assert datetime.fromisoformat(nxt["at"]).tzinfo is not None
+        assert nxt["in_minutes"] == pytest.approx(nxt["in_seconds"] / 60, abs=1)
+        assert nxt["in_seconds"] >= 0
+
+    async def test_with_nothing_watched_yet_it_admits_it_is_assuming(
+            self, client, auth_headers):
+        rep = await _sheet(client, auth_headers)
+        r = await client.post(f"/api/inspection/{rep['id']}/urgent", headers=auth_headers)
+        assert r.json()["next_round"]["basis"] == "assumed"
+
+    async def test_the_round_claiming_the_queue_is_what_records_a_knock(
+            self, client, auth_headers, monkeypatch, test_user, db_session):
+        """The claim is made on EVERY run, empty queue included — that is what
+        makes it a clock. An empty queue must still count as «it came»."""
+        from app.models.system_setting import SystemSetting
+        from app.routers.inspection import ROUND_LOG_KEY
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+        r = await client.post("/api/inspection/urgent/claim", headers=auth_headers,
+                              json={"by": "routine"})
+        assert r.status_code == 200 and r.json()["report"] is None      # empty queue
+        row = (await db_session.execute(select(SystemSetting).where(
+            SystemSetting.key == ROUND_LOG_KEY))).scalar_one_or_none()
+        assert row is not None and json.loads(row.value)
+
+    async def test_the_owner_opening_the_page_does_not_count_as_a_round(
+            self, client, auth_headers, db_session):
+        """Only the supervisor's claim is a knock. If merely reading the queue
+        counted, the owner refreshing the board would forge a heartbeat and the
+        countdown would point at a round that never happens."""
+        from app.models.system_setting import SystemSetting
+        from app.routers.inspection import ROUND_LOG_KEY
+        await client.get("/api/inspection/urgent", headers=auth_headers)
+        row = (await db_session.execute(select(SystemSetting).where(
+            SystemSetting.key == ROUND_LOG_KEY))).scalar_one_or_none()
+        assert row is None
+
+    async def test_once_watched_the_estimate_says_so(
+            self, client, auth_headers, monkeypatch, test_user, db_session):
+        from app.models.system_setting import SystemSetting
+        from app.routers.inspection import ROUND_LOG_KEY
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        seen = [now - timedelta(hours=3), now - timedelta(hours=2), now - timedelta(hours=1)]
+        db_session.add(SystemSetting(
+            key=ROUND_LOG_KEY, value=json.dumps([s.isoformat() for s in seen])))
+        await db_session.commit()
+        rep = await _sheet(client, auth_headers)
+        r = await client.post(f"/api/inspection/{rep['id']}/urgent", headers=auth_headers)
+        nxt = r.json()["next_round"]
+        assert nxt["basis"] == "observed"
+        assert nxt["every_minutes"] == 60
+        # the next one lands on the minute the round has been landing on
+        assert datetime.fromisoformat(nxt["at"]).minute == now.minute
+
+    async def test_the_fast_queue_carries_it_too(self, client, auth_headers):
+        """So the board can show «ناظر ساعت … می‌آید» without a second call."""
+        body = (await client.get("/api/inspection/urgent", headers=auth_headers)).json()
+        assert "next_round" in body and body["next_round"]["in_seconds"] >= 0

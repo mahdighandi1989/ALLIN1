@@ -1,4 +1,5 @@
 import api from './axios'
+import type { NextRound } from './nextRound'
 import type {
   User,
   Customer,
@@ -1001,8 +1002,12 @@ export const inspectionApi = {
     const { data } = await api.post(`/api/inspection/${id}/status`, { status })
     return data.report
   },
-  /** v155 — ask for this one NOW, ahead of the twice-weekly round. */
-  async rush(id: string): Promise<{ position: number; report: InspectionReport }> {
+  /** v155 — ask for this one NOW, ahead of the twice-weekly round.
+   *  v168 — and the answer says WHEN: `next_round.at` is a UTC instant the page
+   *  renders on the owner's own clock (see `lib/nextRound`). */
+  async rush(id: string): Promise<{
+    position: number; report: InspectionReport; next_round?: NextRound
+  }> {
     const { data } = await api.post(`/api/inspection/${id}/urgent`)
     return data
   },
@@ -1010,7 +1015,11 @@ export const inspectionApi = {
     const { data } = await api.delete(`/api/inspection/${id}/urgent`)
     return data.report
   },
-  async urgentQueue(): Promise<{ waiting: number; reports: (InspectionReport & { position: number })[] }> {
+  async urgentQueue(): Promise<{
+    waiting: number
+    reports: (InspectionReport & { position: number })[]
+    next_round?: NextRound
+  }> {
     const { data } = await api.get('/api/inspection/urgent')
     return data
   },

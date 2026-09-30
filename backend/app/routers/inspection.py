@@ -55,6 +55,8 @@ from app.models.inspection import (
     file_read_debt,
     sheet_glow,
 )
+from app.models.system_setting import SystemSetting
+from app.services.supervisor_rounds import next_round, record_round
 from app.routers.auth import get_current_active_user
 from app.services import inspection_files as ifiles
 from app.services.audit import record_audit
@@ -632,7 +634,8 @@ async def urgent_queue(db: AsyncSession = Depends(get_db),
         d["position"] = i + 1
         d["claimable"] = _claim_expired(r)
         out.append(d)
-    return {"ok": True, "waiting": len(out), "reports": out}
+    return {"ok": True, "waiting": len(out), "reports": out,
+            "next_round": await _next_round(db)}
 
 
 @router.get("/{report_id}")
@@ -957,7 +960,11 @@ async def mark_urgent(report_id: str, db: AsyncSession = Depends(get_db),
                            entity_id=r.id, detail=f"برگهٔ {r.number} فوری شد",
                            user=user, db=db)
     ahead = await _urgent_ahead(db, r)
-    return {"ok": True, "position": ahead + 1,
+    # v168 — the owner presses ⚡ and immediately wants to know WHEN. The instant
+    # is returned in UTC and rendered in the reader's own local time by the page:
+    # the server never guesses a timezone, because «۱۹ دقیقهٔ دیگر» has to be
+    # right on the clock the owner is actually looking at.
+    return {"ok": True, "position": ahead + 1, "next_round": await _next_round(db),
             "report": _to_dict(r, files=await _files_of(db, r.id))}
 
 
@@ -978,6 +985,43 @@ async def unmark_urgent(report_id: str, db: AsyncSession = Depends(get_db),
     await db.commit()
     await db.refresh(r)
     return {"ok": True, "report": _to_dict(r, files=await _files_of(db, r.id))}
+
+
+# ---------------------------------------------------------------------------
+# v168 — «چند دقیقهٔ دیگر می‌رود سراغش؟»
+#
+# The fast round is a Routine in claude.ai; this server cannot read its
+# schedule, so it MEASURES it instead. The round knocks here every time it runs
+# (it claims the queue even when the queue is empty), and those knocks are the
+# only honest source for a countdown. The arithmetic lives in
+# `services/supervisor_rounds.py`, tested without a scheduler; this is just the
+# row it is kept in — `system_settings`, which is already in the backup, so no
+# new table and no new surface to extend (rule 6).
+# ---------------------------------------------------------------------------
+ROUND_LOG_KEY = "inspection_urgent_rounds"
+
+
+async def _round_log(db: AsyncSession) -> str | None:
+    row = (await db.execute(select(SystemSetting)
+                            .where(SystemSetting.key == ROUND_LOG_KEY))).scalar_one_or_none()
+    return row.value if row else None
+
+
+async def _note_round(db: AsyncSession) -> None:
+    """The supervisor just knocked. Kept on its own, never inside another
+    commit's failure path: a lost heartbeat must not cost a claimed sheet."""
+    row = (await db.execute(select(SystemSetting)
+                            .where(SystemSetting.key == ROUND_LOG_KEY))).scalar_one_or_none()
+    value = record_round(row.value if row else None, datetime.now(timezone.utc))
+    if row:
+        row.value = value
+    else:
+        db.add(SystemSetting(key=ROUND_LOG_KEY, value=value))
+    await db.commit()
+
+
+async def _next_round(db: AsyncSession) -> dict:
+    return next_round(datetime.now(timezone.utc), await _round_log(db))
 
 
 async def _urgent_ahead(db: AsyncSession, r: InspectionReport) -> int:
@@ -1013,6 +1057,11 @@ async def claim_next_urgent(payload: ClaimIn, db: AsyncSession = Depends(get_db)
     """
     if not await _is_supervisor(db, user):
         raise HTTPException(status_code=403, detail="صفِ فوری را فقط ناظر برمی‌دارد")
+    # v168 — THE HEARTBEAT. This call is made on EVERY run, including the very
+    # common one that finds the queue empty, which is exactly what makes it a
+    # usable clock: it is the round announcing itself. Recorded before any of
+    # the work below, so a run that then fails still counts as «it came».
+    await _note_round(db)
     rows = (await db.execute(
         select(InspectionReport)
         .where(InspectionReport.urgent_at.isnot(None),

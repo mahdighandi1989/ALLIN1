@@ -13,6 +13,7 @@ import { geometryLabel } from '@/lib/inspectionSpot'
 import { AuthedDownload, AuthedImage } from '@/lib/AuthedMedia'
 import { TONE } from '@/lib/inspection'
 import { notifySheetsChanged } from '@/lib/inspectionHighlights'
+import { humanGap, localClock, rushMessage, type NextRound } from '@/lib/nextRound'
 import toast from 'react-hot-toast'
 
 const FA = '۰۱۲۳۴۵۶۷۸۹'
@@ -72,6 +73,11 @@ export default function InspectionPage() {
   const [upPct, setUpPct] = useState<{ id: string; name: string; pct: number } | null>(null)
   const [peek, setPeek] = useState<{ file: InspectionFile; text: string; loading: boolean } | null>(null)
   const [editing, setEditing] = useState<{ noteId: string; text: string } | null>(null)
+  // v168 — when the fast round is next due, measured by the server from the
+  // round's own visits. Kept here so the answer is on screen BEFORE the owner
+  // presses ⚡, not only in the toast afterwards.
+  const [nextRound, setNextRound] = useState<NextRound | null>(null)
+  const [tick, setTick] = useState(0)
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -86,9 +92,17 @@ export default function InspectionPage() {
       // regained focus — «ثبت گزارش مجدد … باعث نشد که رنگ سبز هایلایت دوباره
       // تغییر کنه». The overlay listens for this; it costs one event.
       notifySheetsChanged()
+      try { setNextRound((await inspectionApi.urgentQueue()).next_round ?? null) }
+      catch { /* the countdown is a courtesy — never fail the board over it */ }
     } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false) }
   }, [filter])
   useEffect(() => { void load() }, [load])
+  // The countdown is only true while it moves: a board left open for an hour
+  // would otherwise keep showing the minute it was opened at.
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 30_000)
+    return () => window.clearInterval(t)
+  }, [])
 
   const approve = async (r: InspectionReport) => {
     try {
@@ -129,10 +143,15 @@ export default function InspectionPage() {
         await inspectionApi.unrush(r.id)
         toast.success('از صفِ فوری بیرون آمد')
       } else {
-        const { position } = await inspectionApi.rush(r.id)
-        toast.success(position === 1
-          ? 'در صفِ فوری، نفرِ اول — ناظر در بازبینیِ بعدی همین را برمی‌دارد'
-          : `در صفِ فوری، نفرِ ${fa(position)} — به ترتیبی که زدی انجام می‌شود`)
+        // v168 — «باید ناظر بگه چند دقیقه دیگه میره سراغش». The server sends the
+        // instant; the sentence is built here so the clock is the owner's own.
+        const { position, next_round } = await inspectionApi.rush(r.id)
+        // `dir="rtl"` is not decoration here: the sentence mixes Persian with
+        // «۱۰:۲۳» and «(۱۹ دقیقهٔ دیگر)», and without an explicit direction the
+        // browser is free to reorder the phrase (the project's bidi rule — a
+        // green build never catches it).
+        toast.success(<span dir="rtl">{rushMessage(position, next_round)}</span>,
+                      { duration: 7000 })
       }
       await load()
     } catch (e) { toast.error(parseApiError(e)) }
@@ -272,10 +291,13 @@ export default function InspectionPage() {
               برای ثبتِ گزارشِ تازه، دکمهٔ 📝 بالای صفحه را روشن کن و دورِ همان چیز کادر بکش.
             </p>
           </div>
-          <button onClick={load} disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60">
-            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> تازه‌سازی
-          </button>
+          <div className="flex items-center gap-2">
+            {nextRound && <NextRoundChip nr={nextRound} tick={tick} />}
+            <button onClick={load} disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60">
+              <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> تازه‌سازی
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -665,5 +687,37 @@ export default function InspectionPage() {
         </div>
       )}
     </Layout>
+  )
+}
+
+/**
+ * v168 — «ناظر ساعتِ … می‌آید», on the owner's own clock.
+ *
+ * `tick` is a prop and not an internal timer on purpose: the board owns the
+ * minute tick, so one interval refreshes every countdown on the page instead of
+ * each chip running its own.
+ */
+function NextRoundChip({ nr, tick }: { nr: NextRound; tick: number }) {
+  // recomputed from the INSTANT, not from the minutes the server sent, so a
+  // board left open counts down instead of freezing on the number it loaded with
+  const left = Math.round((new Date(nr.at).getTime() - Date.now()) / 60000)
+  void tick
+  if (nr.basis === 'stale') {
+    return (
+      <span dir="rtl" title={`آخرین دورِ ناظر: ${localClock(nr.last_seen || nr.at)}`}
+        className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-800">
+        ⚡ ناظرِ فوری مدتی است سر نزده — روتینش را بررسی کن
+      </span>
+    )
+  }
+  return (
+    <span dir="rtl"
+      title={nr.basis === 'assumed'
+        ? 'تخمینی — هنوز دوری از ناظر ثبت نشده است'
+        : `هر ${nr.every_minutes} دقیقه · آخرین دور: ${localClock(nr.last_seen || nr.at)}`}
+      className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+      ⚡ دورِ بعدیِ ناظر: {localClock(nr.at)} ({humanGap(left)})
+      {nr.basis === 'assumed' && ' — تخمینی'}
+    </span>
   )
 }
