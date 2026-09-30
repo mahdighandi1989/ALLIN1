@@ -84,12 +84,8 @@ export function fillCaseBody(html: string, data: Prefill): FillResult {
       })
       return `<tr>${tds.join('')}</tr>`
     })
-    // Keep the paper's look: if the template showed more blank rows than we have
-    // data for, the spare ruled rows stay.
-    const spare = Math.max(0, existing.length - made.length)
-    for (let i = 0; i < spare; i++) {
-      made.push(`<tr>${Array.from({ length: width }, () => '<td><br></td>').join('')}</tr>`)
-    }
+    // Row count follows the data: the fill adds rows when the account has more
+    // than the template's blanks and drops the spare blanks when it has fewer.
     body.innerHTML = made.join('')
     rows += list.length
   }
@@ -108,5 +104,5 @@ export function fillCaseSubject(subject: string, f: Record<string, string>): str
   const e = (f.subject_entity || '').trim() || '..........'
   const a = (f.subject_account || '').trim() || '..........'
   const b = (f.subject_branch || '').trim() || '..........'
-  return `مــوضـوع : بـدهـی ${e} حـسـاب شـمـاره ${a} نـزد شـعبـه ${b}`
+  return `بـدهـی ${e} حـسـاب شـمـاره ${a} نـزد شـعبـه ${b}`
 }

@@ -86,14 +86,14 @@ export function caseReportBody(): string {
       `<tr><th style="width:22%">اصل بدهی<br>( + سود قبل از طبقه بندی)</th><th style="width:18%">سود معوق و جرایم تأخیر</th>` +
       `<th style="width:14%">هزینه های درهمی</th><th style="width:16%">جمع کل</th>` +
       `<th style="width:12%">ذخایر</th><th style="width:18%">هزینه های ریالی</th></tr>` +
-      `</thead><tbody><tr>${'<td>' + EMPTY + '</td>'.repeat(6)}</tr></tbody></table>`,
+      `</thead><tbody><tr>${`<td>${EMPTY}</td>`.repeat(6)}</tr></tbody></table>`,
     p(),
     p('<b>- مانده بدهی طبق حکم دادگاه به تاریخ روز تنظیم گزارش:</b>'),
     `<table><thead><tr>` +
       `<th style="width:18%">اصل بدهی</th><th style="width:24%">سود با نرخ ....٪<br>از تاریخ ..../..../....</th>` +
       `<th style="width:18%">هزینه های قانونی</th><th style="width:22%">مبالغ وصول شده<br>از تاریخ محاسبه حکم</th>` +
       `<th style="width:18%">جمع کل</th></tr></thead>` +
-      `<tbody><tr>${'<td>' + EMPTY + '</td>'.repeat(5)}</tr></tbody></table>`,
+      `<tbody><tr>${`<td>${EMPTY}</td>`.repeat(5)}</tr></tbody></table>`,
     p(),
     h('۶', 'مبالغ دریافتی از مدیونین/ضامنین (از تاریخ رکود):'),
     table('collections', ['تاریخ وصولی', 'مبالغ وصولی', 'نوع ارز', 'منشأ وصولی', 'اصل', 'سود', 'هزینه قانونی'], 2,
@@ -101,14 +101,14 @@ export function caseReportBody(): string {
     `<table><tbody><tr><td style="width:62%"><b>جمع وصولی ها از تاریخ رکود به درهم:</b></td><td>${EMPTY}</td></tr></tbody></table>`,
     p(),
     h('۷', 'وثایق و پشتوانه های مأخوذه به تفکیک نوع و مبلغ در هر بخش:'),
-    table('collaterals', ['نوع وثیقه', 'شماره رفرنس', 'مبلغ وثیقه (درهم)'], 6, { widths: ['46%', '28%', '26%'] }),
+    table('collaterals', ['نوع وثیقه', 'شماره رفرنس', 'مبلغ وثیقه (درهم)'], 2, { widths: ['46%', '28%', '26%'] }),
     p(),
     h('۸', 'مشخصات مصوبات اخذ شده تاکنون جهت تعیین تکلیف مطالبات:'),
-    table('approvals', ['مرجع مصوبه', 'تاریخ مصوبه', 'موضوع مصوبه', 'نتیجه'], 4,
+    table('approvals', ['مرجع مصوبه', 'تاریخ مصوبه', 'موضوع مصوبه', 'نتیجه'], 2,
           { widths: ['20%', '13%', '37%', '30%'] }),
     p(),
     p('<b>اقدامات صورت گرفته بر روی وثایق و نتایج حاصله:</b>'),
-    table('collateral_actions', ['نوع وثیقه', 'مبلغ وثیقه (درهم)', 'اقدامات صورت گرفته بر روی وثایق و نتایج حاصله'], 3,
+    table('collateral_actions', ['نوع وثیقه', 'مبلغ وثیقه (درهم)', 'اقدامات صورت گرفته بر روی وثایق و نتایج حاصله'], 2,
           { widths: ['24%', '16%', '60%'] }),
     p(),
     p('<b>❖ چکهای تنزیل شده:</b>'),
@@ -131,7 +131,7 @@ export function caseReportBody(): string {
 
 /** The «موضوع» line, in the template's spaced-out lettering. */
 export const CASE_SUBJECT =
-  'مــوضـوع : بـدهـی .......... حـسـاب شـمـاره .......... نـزد شـعبـه ..........'
+  'بـدهـی .......... حـسـاب شـمـاره .......... نـزد شـعبـه ..........'
 
 export const CASE_RECIPIENT_TITLE = 'ریاست محترم'
 export const CASE_RECIPIENT_DEPT = 'دایره حقوقی و پیگیری وصول مطالبات'

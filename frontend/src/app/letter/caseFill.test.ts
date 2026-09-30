@@ -45,14 +45,13 @@ describe('filling the case report from the account profile', () => {
     expect(r.rows).toBe(3)
   })
 
-  it('keeps the paper\'s spare ruled rows when there is less data than rows', () => {
-    // the collateral table starts with six blank rows and we supply two
-    const r = fillCaseBody(caseReportBody(), PREFILL)
-    const doc = new DOMParser().parseFromString(`<div>${r.html}</div>`, 'text/html')
-    const tbody = doc.querySelector('table[data-cr="collaterals"] tbody') as HTMLTableSectionElement
-    expect(tbody.rows.length).toBe(6)
-    expect(tbody.rows[0].textContent).toContain('490462')
-    expect((tbody.rows[5].textContent || '').trim()).toBe('')
+  it('resizes rows to the data: grows past the blanks, drops spare blanks', () => {
+    const many = { tables: { collaterals: [1, 2, 3, 4, 5].map((n) => ({ type: 't' + n, reference_no: 'r', amount: '1' })) } }
+    const rows = (h: string, k: string) => (new DOMParser().parseFromString(`<div>${h}</div>`, 'text/html')
+      .querySelector(`table[data-cr="${k}"] tbody`) as HTMLTableSectionElement).rows.length
+    expect(rows(fillCaseBody(caseReportBody(), many).html, 'collaterals')).toBe(5)
+    const one = { tables: { collaterals: [{ type: 'x', reference_no: 'r', amount: '1' }] } }
+    expect(rows(fillCaseBody(caseReportBody(), one).html, 'collaterals')).toBe(1)
   })
 
   it('NEVER overwrites a narrative blank the writer already filled', () => {
@@ -119,7 +118,7 @@ describe('the subject line', () => {
   })
 
   it('is left alone once the writer has written it', () => {
-    const mine = 'مــوضـوع : بـدهـی شرکتِ من حـسـاب شـمـاره ۱۲۳ نـزد شـعبـه دبی'
+    const mine = 'بـدهـی شرکتِ من حـسـاب شـمـاره ۱۲۳ نـزد شـعبـه دبی'
     expect(fillCaseSubject(mine, PREFILL.fields)).toBe(mine)
   })
 
