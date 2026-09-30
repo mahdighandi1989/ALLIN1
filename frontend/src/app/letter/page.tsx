@@ -2392,6 +2392,7 @@ export default function LetterPage() {
     type Unit = { kind: 'block'; h: number; html: string } | { kind: 'trow'; h: number; tid: number; header: string; headerH: number; rowHtml: string; topen: string }
     const units: Unit[] = []
     let tid = 0
+    const TBL_MARGIN = 6
     // recurse into wrappers so a table nested in a paste-wrapper <div> is still split
     const collect = (node: Element) => {
       for (const child of Array.from(node.children)) {
@@ -2400,12 +2401,14 @@ export default function LetterPage() {
           const rows = Array.from(c.querySelectorAll('tr'))
           if (rows.length > 1) {
             tid++
-            const header = (rows[0] as HTMLElement).outerHTML, headerH = (rows[0] as HTMLElement).offsetHeight
+            // offsetHeight excludes the table's 3px+3px CSS margin (.bcell table{margin:3px 0}); left
+            // uncounted, N tables on a page overflow it by ~6N px and the last row is clipped.
+            const header = (rows[0] as HTMLElement).outerHTML, headerH = (rows[0] as HTMLElement).offsetHeight + TBL_MARGIN
             // the OPENING tag keeps the table-level class/style (tblw width/offset) —
             // rebuilding pages with a bare <table> silently reset resized tables
             const topen = c.outerHTML.slice(0, c.outerHTML.indexOf('>') + 1)
             for (let i = 1; i < rows.length; i++) units.push({ kind: 'trow', tid, header, headerH, topen, rowHtml: (rows[i] as HTMLElement).outerHTML, h: (rows[i] as HTMLElement).offsetHeight })
-          } else units.push({ kind: 'block', html: c.outerHTML, h: c.offsetHeight })
+          } else units.push({ kind: 'block', html: c.outerHTML, h: c.offsetHeight + (c.tagName === 'TABLE' ? TBL_MARGIN : 0) })
         } else if (c.querySelector('table')) {
           collect(c)   // unwrap: promote the nested table (+ its siblings) to top-level units
         } else {

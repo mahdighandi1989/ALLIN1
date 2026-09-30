@@ -7,7 +7,7 @@ source:
   origin: "claude-code"
   imported_at: "2026-09-23T18:00:00Z"
 created_at: "2026-09-23T18:00:00Z"
-updated_at: "2026-09-23T18:00:00Z"
+updated_at: "2026-09-30T08:00:00Z"
 merged_from: []
 ---
 
@@ -118,6 +118,8 @@ console.log(p.scrollWidth, p.clientWidth,
 4. اصلاح را در همان هارنس بسنج، بعد وارد کد کن.
 5. قرارداد را با تستِ سورس قفل کن، چون build این کلاس را نمی‌گیرد.
 6. برای پرینت: `print-color-adjust`، و رنگِ روشن برای خوانایی در سیاه‌وسفید.
+
+7. (۲۰۲۶-۰۹-۳۰) `offsetHeight` حاشیه‌ی (margin) را نمی‌شمارد: paginatorِ نامه برای هر جدول ۶px کم می‌سنجید و با ۶ جدول در صفحه آخرین ردیف زیرِ clip می‌رفت؛ `scrollHeight > clientHeight` روی هر صفحه را در مرورگر بسنج. تستِ واحد و build این را نمی‌گیرند.
 
 ## 🔗 References
 - مرتبط: [rendering-bugs-get-ground-truth-before-theorising]
