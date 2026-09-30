@@ -14,8 +14,8 @@ import toast from 'react-hot-toast'
 import { inspectionApi, parseApiError, type InspectionReport } from './api'
 import { notifySheetsChanged } from './inspectionHighlights'
 import {
-  CROP_MIN_PX, geometryLabel, measureSpot, pickCaptureTarget, pickCropSheet, resolveSpot,
-  spotAddress, verifiedSelector,
+  CROP_MIN_PX, geometryLabel, measureSpot, pageElementsAt, pickCaptureTarget, pickCropSheet,
+  resolveSpot, spotAddress, verifiedSelector,
   type Rect, type UiSpot,
 } from './inspectionSpot'
 
@@ -118,7 +118,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     // excluded, or `elementsFromPoint` would answer «the overlay», every time.
     const cx = r.x + r.w / 2
     const cy = r.y + r.h / 2
-    const stack = document.elementsFromPoint(cx, cy).filter((el) => !el.hasAttribute('data-inspection-layer'))
+    const stack = pageElementsAt(cx, cy)
     // v150 — measure the box precisely, by the owner's instruction. The anchor is
     // the innermost element under the box's centre; its selector is round-trip
     // verified inside `verifiedSelector`, so an unusable one is stored as empty
@@ -169,9 +169,11 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     setShooting(true)
     try {
       const { toJpeg } = await import('html-to-image')
-      const el = document.elementsFromPoint(
+      // The dialog is already open by the time this runs, so «skip our own UI»
+      // has to mean the whole layer, not just its root — see `isOurOverlay`.
+      const el = pageElementsAt(
         sp.rect.x + sp.rect.w / 2, sp.rect.y + sp.rect.h / 2,
-      ).find((n) => !n.hasAttribute('data-inspection-layer')) as HTMLElement | undefined
+      )[0] as HTMLElement | undefined
       // The camera points at the whole reportable surface (v153), because that is
       // what the rasteriser draws faithfully; when the surface is a stack of A4
       // sheets, the finished picture is cut down to the ONE sheet the box landed

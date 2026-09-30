@@ -417,3 +417,35 @@ export function pickCropSheet(
   if (sheet === target || !target.contains(sheet)) return null
   return sheet
 }
+
+
+// v171 — WHAT BELONGS TO US, AND WHAT BELONGS TO THE PAGE.
+//
+// Everything this feature draws on top of the page — the drag layer, the report
+// dialog, the highlight overlay — carries `data-inspection-layer` on its ROOT.
+// Hit-testing has to skip all of it: a report about the page must never be a
+// report about the thing that took the report.
+//
+// THE BUG THIS EXISTS TO END. The check used to be `el.hasAttribute(...)`, which
+// asks only about the element itself. The dialog's own white card is a CHILD of
+// the layer, so it has no attribute of its own and passed the filter — and the
+// capture, which runs after the dialog has opened, asked `elementsFromPoint` at
+// the centre of the drawn box, got a div inside the dialog, and from there could
+// find neither the page's surface nor the sheet. So the crop was dropped and the
+// whole document was photographed: «وقتی یه قسمت انتخاب میکنم که رو یه صفحه‌س
+// همه صفحات فرم در اسکرین گزارش دیده میشه». The «retry capture» button inside
+// that dialog was wrong 100% of the time for the same reason.
+//
+// `closest` asks about the element AND its ancestors, which is the question that
+// was always meant, and it keeps being right for anything added to these layers
+// later — that is the point of fixing it here rather than at the two call sites.
+
+/** True when this element is part of the inspection UI rather than the page. */
+export function isOurOverlay(el: Element | null | undefined): boolean {
+  return !!el?.closest?.('[data-inspection-layer]')
+}
+
+/** The page elements under a viewport point, with our own overlays removed. */
+export function pageElementsAt(x: number, y: number, doc: Document = document): Element[] {
+  return doc.elementsFromPoint(x, y).filter((el) => !isOurOverlay(el))
+}

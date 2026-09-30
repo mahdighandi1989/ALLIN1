@@ -196,6 +196,68 @@ def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
     return out
 
 
+def where_block(r: dict) -> list:
+    """WHERE the owner pointed — the same answer in every brief.
+
+    v171 — this existed only inside `cmd_pull`, and the URGENT brief (which is
+    the path a rushed sheet actually takes) carried nothing but the page name and
+    a pair of document pixels. So a round answering «**در اینجا** یه باکس دستور
+    بذار» never saw which element the box landed on, let alone where inside it,
+    and put the new control «above the form». One description, used by both
+    briefs, is the fix — a second copy is how they drifted apart in the first
+    place.
+    """
+    out = []
+    out.append(f"- کجا: **{r.get('page_label')}**"
+               + (f" ← {r['section_label']}" if r.get("section_label") else ""))
+    out.append(f"- نشانیِ بازگشت: `{r.get('reopen')}`")
+    if r.get("dom_path"):
+        out.append(f"- عنصر: `{r['dom_path']}`")
+    if r.get("covered_text"):
+        out.append(f"- آنچه در کادر بود: {r['covered_text']}")
+    g = r.get("geometry") or {}
+    if not g:
+        return out
+    d = g.get("doc") or {}
+    vp = g.get("viewport") or {}
+    a = g.get("anchor") or {}
+    anch = a.get("path") or ""
+    rel, arect = a.get("rel") or {}, a.get("rect") or {}
+    out.append(
+        f"- **مختصات:** {round(d.get('w', 0))}×{round(d.get('h', 0))} پیکسل در "
+        f"x={round(d.get('x', 0))} y={round(d.get('y', 0))} (مختصاتِ سند) · "
+        f"پنجره {vp.get('w')}×{vp.get('h')}"
+        + (f" · dpr {g.get('dpr')}" if g.get("dpr") not in (None, 1) else ""))
+    out.append(
+        f"- **گره:** `{anch}` — با تغییرِ چیدمان هم همان‌جا می‌ماند"
+        if anch else
+        "- **گره:** به عنصری گره نخورد؛ فقط مختصاتِ سند معتبر است "
+        "(اگر چیدمان عوض شده باشد، جای کادر تقریبی است)")
+    # THE PART THAT WAS RECORDED AND NEVER READ.
+    #
+    # Document pixels say where the box was in a 1352-pixel window last Tuesday.
+    # They do NOT say «here», and «here» is the whole reason for drawing a box.
+    # The fractions do: the box's place INSIDE the element it landed on, which
+    # survives every resize and reflow and is the only form of this that can be
+    # acted on. They were measured, stored and shipped — and left out of the
+    # brief.
+    if anch and (rel.get("w") or rel.get("h")):
+        pc = lambda v: f"{round(float(v or 0) * 100)}٪"
+        out.append(
+            f"- **جای دقیق داخلِ همان گره:** از راستِ گره {pc(rel.get('x'))}، "
+            f"از بالای گره {pc(rel.get('y'))} · اندازهٔ کادر {pc(rel.get('w'))} "
+            f"عرض و {pc(rel.get('h'))} ارتفاعِ گره "
+            f"(خودِ گره {round(float(arect.get('w') or 0))}×"
+            f"{round(float(arect.get('h') or 0))} پیکسل بود)")
+        out.append(
+            "  > این کسرها «همان‌جا» را می‌گویند و با تغییرِ اندازهٔ پنجره هم "
+            "معتبرند. اگر خواسته «این را اینجا بگذار» است، جایش **همین** است — "
+            "نه «بالای فرم»، نه «کنارِ نزدیک‌ترین دکمه». اگر واقعاً همان‌جا ممکن "
+            "نیست، در جواب بنویس کجا گذاشتی و **چرا نشد**، و نتیجه را `partial` "
+            "بگذار نه `fixed`. (قاعدهٔ کامل: بخشِ ۰-ب-۴ در PROMPT.md)")
+    return out
+
+
 def cmd_pull() -> int:
     tok = login()
     q = api(tok, "/api/inspection/queue")
@@ -237,31 +299,8 @@ def cmd_pull() -> int:
             f"## گزارشِ {r['number']} — {r['title']}",
             "",
             f"- وضعیت: `{r['status']}` · {r.get('glow', {}).get('label', '')}",
-            f"- کجا: **{r.get('page_label')}**"
-            + (f" ← {r['section_label']}" if r.get("section_label") else ""),
-            f"- نشانیِ بازگشت: `{r.get('reopen')}`",
         ]
-        if r.get("dom_path"):
-            lines.append(f"- عنصر: `{r['dom_path']}`")
-        if r.get("covered_text"):
-            lines.append(f"- آنچه در کادر بود: {r['covered_text']}")
-        # v150 — WHERE exactly, and how big. The owner's reason for asking:
-        # «شاید چیزی که دارم بهش اشاره می‌کنم مربوط به همون قسمتِ خاص باشه».
-        g = r.get("geometry") or {}
-        if g:
-            d = g.get("doc") or {}
-            vp = g.get("viewport") or {}
-            anch = (g.get("anchor") or {}).get("path") or ""
-            lines.append(
-                f"- **مختصات:** {round(d.get('w', 0))}×{round(d.get('h', 0))} پیکسل در "
-                f"x={round(d.get('x', 0))} y={round(d.get('y', 0))} (مختصاتِ سند) · "
-                f"پنجره {vp.get('w')}×{vp.get('h')}"
-                + (f" · dpr {g.get('dpr')}" if g.get("dpr") not in (None, 1) else ""))
-            lines.append(
-                f"- **گره:** `{anch}` — با تغییرِ چیدمان هم همان‌جا می‌ماند"
-                if anch else
-                "- **گره:** به عنصری گره نخورد؛ فقط مختصاتِ سند معتبر است "
-                "(اگر چیدمان عوض شده باشد، جای کادر تقریبی است)")
+        lines += where_block(r)
         lines.append("")
         for i, n in enumerate(r.get("notes") or []):
             who = "🤖 ناظر" if n.get("by") == "reviewer" else "👤 مالک"
@@ -358,17 +397,9 @@ def cmd_urgent() -> int:
         "> بیرون نمی‌رود، و بقیهٔ صف پشتِ آن منتظرند.",
         "",
         f"- وضعیت: `{r['status']}` · {r.get('glow', {}).get('label', '')}",
-        f"- کجا: **{r.get('page_label')}**"
-        + (f" ← {r['section_label']}" if r.get("section_label") else ""),
-        f"- نشانیِ بازگشت: `{r.get('reopen')}`",
-        f"- در صف: {got.get('waiting', 1)} برگه",
-        "",
     ]
-    g = r.get("geometry") or {}
-    if g:
-        d = g.get("doc") or {}
-        lines.append(f"- مختصات: {round(d.get('w', 0))}×{round(d.get('h', 0))} در "
-                     f"x={round(d.get('x', 0))} y={round(d.get('y', 0))}")
+    lines += where_block(r)
+    lines += [f"- در صف: {got.get('waiting', 1)} برگه", ""]
     for i, n in enumerate(r.get("notes") or []):
         who = "🤖 ناظر" if n.get("by") == "reviewer" else "👤 مالک"
         lines += [f"**{who}** — {n.get('at', '')}", "", n.get("text", ""), ""]
