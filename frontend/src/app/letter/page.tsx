@@ -17,17 +17,18 @@ import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
-import { BRANCH_SENDERS, CASE_FOOTER, CASE_LOGO, CASE_NAME, branchFor, type CaseBranch } from './caseLetterhead'
+import {
+  BRANCH_SENDERS, CASE_BRANCHES, HOUSE_SENDERS, branchBySender, branchFor, paperOf,
+} from './caseLetterhead'
 import { CASE_RECIPIENT_DEPT, CASE_RECIPIENT_TITLE, CASE_SUBJECT, caseReportBody } from './caseTemplate'
 import { fillCaseBody, fillCaseSubject } from './caseFill'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
 import { repairHtml } from '@/lib/mojibake'
 
-// v169 — the standing two, then every branch we hold paper for. A case report
-// signed by a branch is signed by THAT branch; the list is built from
-// `CASE_BRANCHES`, so adding a branch there adds it here — «بشه از همون لیست
-// کشویی خودش بتونم تغییر بدم».
-const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی', ...BRANCH_SENDERS]
+// v169 — the standing two, then every branch. A case report signed by a branch
+// is signed by THAT branch, and the signature line is what chooses the paper.
+// The list is built from `CASE_BRANCHES`, so adding a branch there adds it here.
+const SENDERS = [...HOUSE_SENDERS, ...BRANCH_SENDERS]
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
 const NAZ = "'B Nazanin','BNazanin','Nazanin',serif"
 const TITR = "'Titr','B Titr','BTitr','B Nazanin',serif"
@@ -1190,26 +1191,29 @@ export default function LetterPage() {
       setAcct(o.account_no || ''); setTitle(o.title || ''); setGeneral(o.category === 'general'); setLetterId(o.id)
     } catch { toast.error('بارگذاریِ نامه ناموفق بود') }
   }
-  // Which paper this letter is printed on. A case report is the SAME letter on a
-  // BRANCH's letterhead instead of the regional office's — so only the three
-  // images change; every layout box, every control, stays as it is.
+  // Which paper this letter is printed on.
   //
-  // v169 — and WHICH branch comes from the account: «در صورتی که اکانتی که وارد
-  // کردم برای اون شعب بود این سربرگ ها ظاهر بشه». With no account, or an account
-  // whose branch we hold no paper for, it is the regional office set — «در حالت
-  // عادی اگر چیزی نزده بودم سربرگ تسهیلات باشه». Never a guess: `branchFor`
-  // returns null rather than picking something close.
+  // v170 — THE SIGNATURE LINE DECIDES. The account only pre-selects it: «با تغییر
+  // اون قسمت در انتهای نامه از لیست هم باید سربرگ و فوتر مناسب همون شعبه بشن».
+  // Deriving the paper from the account instead left the two out of step — the
+  // owner could change the signatory and keep the previous branch's telephone.
+  //
+  // The fallback is ALWAYS the facilities (regional office) set, for a house
+  // signatory, for a branch whose scans we do not hold yet, and for no account at
+  // all: «در حالت عادی اگر چیزی نزده بودم سربرگ تسهیلات باشه». It used to fall
+  // back to Ajman for any case report, which is how an Ajman letterhead appeared
+  // on a letter that had named no branch.
   const isCase = (f as any).tpl === 'case'
-  const [acctBranch, setAcctBranch] = useState<CaseBranch | null>(null)
+  const branch = isCase ? branchBySender(f.sender) : null
+  const paper = paperOf(branch)
   // Set the moment the writer picks a signatory themselves, or a saved letter is
-  // loaded. After that the branch never overwrites their choice — «بشه از همون
+  // loaded. After that the account never overwrites their choice — «بشه از همون
   // لیست کشویی خودش بتونم تغییر بدم» means their pick wins, not that it is
   // offered once and then taken away on the next keystroke.
   const senderChosen = useRef(false)
-  const paper = isCase ? acctBranch : null
-  const LOGO_SRC = paper ? paper.logo : isCase ? CASE_LOGO : LH_LOGO
-  const NAME_SRC = paper ? paper.name : isCase ? CASE_NAME : LH_NAME
-  const FOOTER_SRC = paper ? paper.footer : isCase ? CASE_FOOTER : LH_FOOTER
+  const LOGO_SRC = paper ? paper.logo : LH_LOGO
+  const NAME_SRC = paper ? paper.name : LH_NAME
+  const FOOTER_SRC = paper ? paper.footer : LH_FOOTER
 
   // v169 — A LETTERHEAD IS NEVER STRETCHED.
   //
@@ -1234,8 +1238,13 @@ export default function LetterPage() {
   const boxOf = (k: string) => {
     const b = L[k]
     if (k !== 'logo' || !paper?.logoBox) return b
-    const d = DEFAULT_LAYOUT.logo
-    const untouched = b.x === d.x && b.y === d.y && b.w === d.w && b.h === d.h
+    // «Untouched» has to include the boxes this override itself produces, or a
+    // template SAVED while a branch was selected would look hand-placed
+    // afterwards and the next branch's box would never apply.
+    const mine = [DEFAULT_LAYOUT.logo, ...CASE_BRANCHES
+      .map((x) => x.logoBox).filter(Boolean)
+      .map((o) => ({ x: m(o!.x), y: m(o!.y), w: m(o!.w), h: m(o!.h) }))]
+    const untouched = mine.some((d) => b.x === d.x && b.y === d.y && b.w === d.w && b.h === d.h)
     if (!untouched) return b
     const o = paper.logoBox
     return { ...b, x: m(o.x), y: m(o.y), w: m(o.w), h: m(o.h) }
@@ -1245,22 +1254,22 @@ export default function LetterPage() {
   // still typing the number, and skipped entirely outside a case report — no other
   // letter type changes paper.
   useEffect(() => {
-    if (!isCase) { setAcctBranch(null); return }
+    if (!isCase) return
     const acc = acct.trim()
-    if (acc.length < 4) { setAcctBranch(null); return }
+    if (acc.length < 4) return
     let alive = true
     const t = window.setTimeout(async () => {
       try {
         const pre = await caseReportsApi.prefill(acc)
         if (!alive) return
         const b = branchFor((pre.fields || {}).branch_name || (pre.fields || {}).subject_branch)
-        setAcctBranch(b)
         // OFFER the branch as the signatory; never override a deliberate choice.
+        // Setting the signatory is all this does — the paper follows from it, so
+        // the two can never disagree.
         if (b && !senderChosen.current) setF((s0) => ({ ...s0, sender: b.sender }))
       } catch {
         // an account that is not in the system yet is not an error here — it just
-        // means the usual paper, which is the documented fallback
-        if (alive) setAcctBranch(null)
+        // means the facilities paper, which is the documented fallback
       }
     }, 600)
     return () => { alive = false; window.clearTimeout(t) }
@@ -3254,11 +3263,13 @@ export default function LetterPage() {
               سربرگ عوض نشد؟» has no answer on screen. */}
           {isCase && (
             <span dir="rtl" className="ltr-hint"
-              title={paper ? `${paper.faName} — ${paper.enName}` : 'شعبه‌ای برای این حساب شناخته نشد؛ سربرگِ تسهیلات (سرپرستی) استفاده می‌شود'}
+              title={branch
+                ? (paper ? `${branch.faName} — ${branch.enName}` : `${branch.faName} — سربرگِ این شعبه هنوز داده نشده؛ فعلاً سربرگِ تسهیلات چاپ می‌شود`)
+                : 'امضاکننده یک شعبه نیست؛ سربرگِ تسهیلات (سرپرستی) استفاده می‌شود'}
               style={{ border: '1px solid', borderColor: paper ? '#bfdbfe' : '#e5e7eb',
                        background: paper ? '#eff6ff' : '#f9fafb', color: paper ? '#1d4ed8' : '#6b7280',
                        borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
-              سربرگ: {paper ? paper.sender : 'تسهیلات (پیش‌فرض)'}
+              سربرگ: {paper ? branch!.faName : 'تسهیلات (پیش‌فرض)'}{branch && !paper ? ' — کاغذش نیامده' : ''}
             </span>
           )}
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوانِ نامه (اختیاری)" className="meta-in" style={{ width: 160 }} />
