@@ -17,13 +17,17 @@ import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
-import { CASE_FOOTER, CASE_LOGO, CASE_NAME } from './caseLetterhead'
+import { BRANCH_SENDERS, CASE_FOOTER, CASE_LOGO, CASE_NAME, branchFor, type CaseBranch } from './caseLetterhead'
 import { CASE_RECIPIENT_DEPT, CASE_RECIPIENT_TITLE, CASE_SUBJECT, caseReportBody } from './caseTemplate'
 import { fillCaseBody, fillCaseSubject } from './caseFill'
 import { paginateAttHtml, mergeAdjacentTables } from './attPaginate'
 import { repairHtml } from '@/lib/mojibake'
 
-const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی']
+// v169 — the standing two, then every branch we hold paper for. A case report
+// signed by a branch is signed by THAT branch; the list is built from
+// `CASE_BRANCHES`, so adding a branch there adds it here — «بشه از همون لیست
+// کشویی خودش بتونم تغییر بدم».
+const SENDERS = ['سرپرستی منطقه خلیج فارس', 'دایره تسهیلات اعطایی', ...BRANCH_SENDERS]
 const CLASSES = ['داخلی', 'عادی', 'محرمانه', 'خیلی محرمانه']
 const NAZ = "'B Nazanin','BNazanin','Nazanin',serif"
 const TITR = "'Titr','B Titr','BTitr','B Nazanin',serif"
@@ -1178,6 +1182,7 @@ export default function LetterPage() {
         // An empty sender can never come from the select (options only) — treat
         // it as «not saved» and keep the default.
         if (typeof v.sender === 'string' && !v.sender.trim()) delete v.sender
+        else if (typeof v.sender === 'string') senderChosen.current = true   // a saved letter's signatory is a decision already made
         setF((s) => ({ ...s, ...v }))
       }
       if (o.layout) { const mm2: Record<string, Boxn> = { ...DEFAULT_LAYOUT }; for (const k in o.layout) mm2[k] = { ...(DEFAULT_LAYOUT[k] || {}), ...o.layout[k] }; mm2.body = { ...mm2.body, justify: true }; setL(mm2) }
@@ -1185,13 +1190,81 @@ export default function LetterPage() {
       setAcct(o.account_no || ''); setTitle(o.title || ''); setGeneral(o.category === 'general'); setLetterId(o.id)
     } catch { toast.error('بارگذاریِ نامه ناموفق بود') }
   }
-  // Which paper this letter is printed on. The case report is the SAME letter
-  // with the Ajman branch's letterhead instead of the regional office's — so only
-  // the three images change; every layout box, every control, stays as it is.
+  // Which paper this letter is printed on. A case report is the SAME letter on a
+  // BRANCH's letterhead instead of the regional office's — so only the three
+  // images change; every layout box, every control, stays as it is.
+  //
+  // v169 — and WHICH branch comes from the account: «در صورتی که اکانتی که وارد
+  // کردم برای اون شعب بود این سربرگ ها ظاهر بشه». With no account, or an account
+  // whose branch we hold no paper for, it is the regional office set — «در حالت
+  // عادی اگر چیزی نزده بودم سربرگ تسهیلات باشه». Never a guess: `branchFor`
+  // returns null rather than picking something close.
   const isCase = (f as any).tpl === 'case'
-  const LOGO_SRC = isCase ? CASE_LOGO : LH_LOGO
-  const NAME_SRC = isCase ? CASE_NAME : LH_NAME
-  const FOOTER_SRC = isCase ? CASE_FOOTER : LH_FOOTER
+  const [acctBranch, setAcctBranch] = useState<CaseBranch | null>(null)
+  // Set the moment the writer picks a signatory themselves, or a saved letter is
+  // loaded. After that the branch never overwrites their choice — «بشه از همون
+  // لیست کشویی خودش بتونم تغییر بدم» means their pick wins, not that it is
+  // offered once and then taken away on the next keystroke.
+  const senderChosen = useRef(false)
+  const paper = isCase ? acctBranch : null
+  const LOGO_SRC = paper ? paper.logo : isCase ? CASE_LOGO : LH_LOGO
+  const NAME_SRC = paper ? paper.name : isCase ? CASE_NAME : LH_NAME
+  const FOOTER_SRC = paper ? paper.footer : isCase ? CASE_FOOTER : LH_FOOTER
+
+  // v169 — A LETTERHEAD IS NEVER STRETCHED.
+  //
+  // The three header boxes used to scale their picture to fill the box exactly.
+  // That is harmless while the artwork happens to have the box's proportions —
+  // the regional office's emblem is 1.038:1 in a 1.033:1 box — and wrong the
+  // moment a branch's is shaped differently. Ajman's emblem sits BESIDE its
+  // branch name rather than above it (2.55:1), so it was being squeezed into 40%
+  // of its own width: «الان اشتباه». `contain` keeps every branch's paper at its
+  // own proportions; the anchoring keeps each mark where it sits on the real
+  // sheet — emblem hard left, wordmark hard right, banner centred.
+  //
+  // Scoped to case reports on purpose: the ordinary letter's header is the one
+  // the owner has been printing for months, and nothing here is a reason to move it.
+  const fit = (pos: string): React.CSSProperties =>
+    isCase ? { objectFit: 'contain', objectPosition: pos } : {}
+
+  // A branch whose artwork is shaped unlike the rest brings its own header box,
+  // measured off its own paper. Only where the letter's layout has not been
+  // moved by hand: a box the owner has dragged is a decision, and this must not
+  // undo it on the next keystroke.
+  const boxOf = (k: string) => {
+    const b = L[k]
+    if (k !== 'logo' || !paper?.logoBox) return b
+    const d = DEFAULT_LAYOUT.logo
+    const untouched = b.x === d.x && b.y === d.y && b.w === d.w && b.h === d.h
+    if (!untouched) return b
+    const o = paper.logoBox
+    return { ...b, x: m(o.x), y: m(o.y), w: m(o.w), h: m(o.h) }
+  }
+
+  // Resolve the account's branch. Debounced, because this runs while the owner is
+  // still typing the number, and skipped entirely outside a case report — no other
+  // letter type changes paper.
+  useEffect(() => {
+    if (!isCase) { setAcctBranch(null); return }
+    const acc = acct.trim()
+    if (acc.length < 4) { setAcctBranch(null); return }
+    let alive = true
+    const t = window.setTimeout(async () => {
+      try {
+        const pre = await caseReportsApi.prefill(acc)
+        if (!alive) return
+        const b = branchFor((pre.fields || {}).branch_name || (pre.fields || {}).subject_branch)
+        setAcctBranch(b)
+        // OFFER the branch as the signatory; never override a deliberate choice.
+        if (b && !senderChosen.current) setF((s0) => ({ ...s0, sender: b.sender }))
+      } catch {
+        // an account that is not in the system yet is not an error here — it just
+        // means the usual paper, which is the documented fallback
+        if (alive) setAcctBranch(null)
+      }
+    }, 600)
+    return () => { alive = false; window.clearTimeout(t) }
+  }, [acct, isCase])
 
   // «پر کردن از پروفایلِ حساب» — offer the facts the profile already holds.
   // It OFFERS: a blank the writer has filled, and a table they have typed into,
@@ -2337,7 +2410,7 @@ export default function LetterPage() {
   }
 
   const boxStyle = (k: string): React.CSSProperties => {
-    const b = L[k]
+    const b = boxOf(k)
     let left = b.x, width = b.w
     if (k === 'separator' && sepGeom) { left = sepGeom.x; width = sepGeom.w }
     return {
@@ -2673,7 +2746,9 @@ export default function LetterPage() {
   }
 
   const eb = editing ? L[editing] : null
-  const repImg = (k: string, src: string) => isHidden(k) ? null : <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%' }} /></div>
+  // the repeat on pages 2..n — same picture, same anchoring, or page 2 of a case
+  // report would carry a letterhead shaped differently from page 1
+  const repImg = (k: string, src: string) => isHidden(k) ? null : <div style={boxStyle(k)}><img src={src} alt="" style={{ width: '100%', height: '100%', ...fit(k === 'logo' ? 'left top' : k === 'name' ? 'right top' : 'center bottom') }} /></div>
   const P = (k: string, node: React.ReactNode, extra?: React.CSSProperties) => isHidden(k) ? null : <div style={{ ...boxStyle(k), ...extra }}>{node}</div>  // print: positioned, hide-aware
   const H = (h: string) => <span dangerouslySetInnerHTML={{ __html: h || '' }} />  // render a rich (HTML) value
 
@@ -2745,8 +2820,8 @@ export default function LetterPage() {
       const off = ci === 0 ? (t.offY || 0) : 0
       return (
       <div className="lsheet attsheet" key={`att-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
-        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('left top') }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('right top') }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
           <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
           {ci === 0
@@ -2758,7 +2833,7 @@ export default function LetterPage() {
         {ci === 0 && meta?.oversize && <div className="att-warn no-print" dir="rtl">یک ردیف از یک صفحهٔ کامل بلندتر است — متنِ آن ردیف را کوتاه‌تر کن</div>}
         <BodyCell html={chunk} editable={!design} onChangeHtml={(h) => onAttChunk(t, ci, h)} transformPaste={cleanPaste}
           style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7 }} />
-        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('center bottom') }} /></div>}
         {!isHidden('pagenum') && <div style={{ ...attHeadStyle('pagenum', land), pointerEvents: 'none' }}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
       )
@@ -2780,14 +2855,14 @@ export default function LetterPage() {
       const off = ci === 0 ? (t.offY || 0) : 0
       return (
       <div className={`psheet${land ? ' land' : ''}`} key={`patt-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
-        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
-        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('left top') }} /></div>}
+        {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('right top') }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>
           <span className="att-badge">جدول {fa(i + 1)} پیوست{chunks.length > 1 ? ` — برگ ${fa(ci + 1)} از ${fa(chunks.length)}` : ''}</span>
           <span style={{ fontFamily: latin(TITR), fontSize: '14pt', fontWeight: 700 }} dangerouslySetInnerHTML={{ __html: `${t.title || ''}${ci ? `${t.title ? ' ' : ''}(ادامه)` : ''}` }} />
         </div>
         <div className="bcell" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP + ATT_TITLE_H + off, width: contentW, height: Hh - ATT_TOP - ATT_TITLE_H - off - ATT_BOTTOM, fontFamily: latin(L.body.font), fontSize: `${13 * scale}pt`, direction: 'rtl', lineHeight: 1.7, ['--ind' as any]: '0' }} dangerouslySetInnerHTML={{ __html: chunk }} />
-        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /></div>}
+        {!isHidden('footer') && <div style={attHeadStyle('footer', land)}><img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('center bottom') }} /></div>}
         {!isHidden('pagenum') && <div style={attHeadStyle('pagenum', land)}>{`صفحه ${fa(first + ci + 1)} از ${fa(totalPageCount)}`}</div>}
       </div>
       )
@@ -2802,7 +2877,7 @@ export default function LetterPage() {
         {/* behind-text floats — painted first = under everything */}
         {floatLayer(pi, true)}
         {/* header + footer + page number repeat on every page (editable on page 1, mirrored after) */}
-        {pi === 0 ? <>{Box({ k: 'logo', children: <img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%' }} /> })}{Box({ k: 'name', children: <img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%' }} /> })}</>
+        {pi === 0 ? <>{Box({ k: 'logo', children: <img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('left top') }} /> })}{Box({ k: 'name', children: <img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('right top') }} /> })}</>
           : <>{repImg('logo', LOGO_SRC)}{repImg('name', NAME_SRC)}</>}
 
         {pi === 0 && <>
@@ -2827,12 +2902,12 @@ export default function LetterPage() {
             content would otherwise collide with its designed position; in «چیدمان»
             mode it sits at its TRUE designed spot so dragging isn't confusing) */}
         {isLast && (() => { const cs = (k: string) => (design ? 0 : closingShift[k] || 0); return <>
-          {Box({ k: 'sender', style: cs('sender') ? { top: L.sender.y + cs('sender') } : undefined, children: <select className="fld" value={f.sender} onChange={set('sender')}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
+          {Box({ k: 'sender', style: cs('sender') ? { top: L.sender.y + cs('sender') } : undefined, children: <select className="fld" value={f.sender} onChange={(e) => { senderChosen.current = true; set('sender')(e) }}>{SENDERS.map((s) => <option key={s}>{s}</option>)}</select> })}
           {Box({ k: 'copyto', style: cs('copyto') ? { top: L.copyto.y + cs('copyto') } : undefined, children: <span className="hangfld"><span className="hlbl">{Lbl({ k: 'copyto' })}</span><span className="hval"><RichSpan multiline value={f.copyTo} onChange={(h) => setF((s) => ({ ...s, copyTo: h }))} placeholder="------ (Enter: گیرندۀ بعدی)" /></span></span> })}
           {Box({ k: 'action', style: cs('action') ? { top: L.action.y + cs('action') } : undefined, children: <>{Lbl({ k: 'action' })}<RichSpan value={f.actionName} onChange={(h) => setF((s) => ({ ...s, actionName: h }))} placeholder="----" />{Lbl({ k: 'actionExt' })}<AutoInput dir="ltr" value={f.actionExt} onChange={set('actionExt')} placeholder="---" style={{ textAlign: 'right' }} /></> })}
         </> })()}
 
-        {pi === 0 ? Box({ k: 'footer', children: <img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%' }} /> }) : repImg('footer', FOOTER_SRC)}
+        {pi === 0 ? Box({ k: 'footer', children: <img src={FOOTER_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('center bottom') }} /> }) : repImg('footer', FOOTER_SRC)}
         {pi === 0
           ? Box({ k: 'pagenum', children: `صفحه ${fa(1)} از ${fa(totalPageCount)}` })
           : (isHidden('pagenum') ? null : <div style={{ ...boxStyle('pagenum'), pointerEvents: 'none' }}>{`صفحه ${fa(pi + 1)} از ${fa(totalPageCount)}`}</div>)}
@@ -3174,6 +3249,18 @@ export default function LetterPage() {
         <div className="ltr-controls no-print" style={{ marginTop: -4 }}>
           <span className="ltr-hint" style={{ fontWeight: 600 }}>ذخیرۀ نامه:</span>
           <input value={acct} onChange={(e) => setAcct(e.target.value)} disabled={general} placeholder="شمارۀ حساب" className="meta-in" style={{ width: 120 }} />
+          {/* v169 — which paper this is actually on. Without it the switch is
+              invisible until the owner looks closely at the emblem, and «چرا
+              سربرگ عوض نشد؟» has no answer on screen. */}
+          {isCase && (
+            <span dir="rtl" className="ltr-hint"
+              title={paper ? `${paper.faName} — ${paper.enName}` : 'شعبه‌ای برای این حساب شناخته نشد؛ سربرگِ تسهیلات (سرپرستی) استفاده می‌شود'}
+              style={{ border: '1px solid', borderColor: paper ? '#bfdbfe' : '#e5e7eb',
+                       background: paper ? '#eff6ff' : '#f9fafb', color: paper ? '#1d4ed8' : '#6b7280',
+                       borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+              سربرگ: {paper ? paper.sender : 'تسهیلات (پیش‌فرض)'}
+            </span>
+          )}
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوانِ نامه (اختیاری)" className="meta-in" style={{ width: 160 }} />
           <label className="ltr-hint" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={general} onChange={(e) => setGeneral(e.target.checked)} /> نامۀ عمومی</label>
           <div style={{ width: 180 }}><Combobox value={plain(f.recipientDept)} placeholder="اداره/دایرۀ گیرنده" fetch={fetchDepts}
