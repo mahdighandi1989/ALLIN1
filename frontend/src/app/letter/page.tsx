@@ -3280,8 +3280,6 @@ export default function LetterPage() {
         }
         `}</style>
 
-        <QuickCommandBar keyFa={KEY_FA} busy={quickBusy} canUndo={!!quickUndo} onRun={runQuick} onUndo={undoQuick} />
-
         <div className="ltr-controls no-print">
           {!design
             ? <button onClick={() => setDesign(true)} className="ltr-btn amber"><Move size={15} /> چیدمان (جابه‌جایی فیلدها)</button>
@@ -3327,6 +3325,8 @@ export default function LetterPage() {
           </button>
           <button onClick={doUndo} className="ltr-btn gray" title="برگرداندنِ آخرین تغییر — جدول/متن/اعمالِ هوش مصنوعی (تا ۴۰ مرحله)">↩ برگشت</button>
           <button onClick={() => setF((s) => ({ ...s, subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '' }))} className="ltr-btn gray"><Eraser size={14} /> پاک‌کردن</button>
+          {/* owner 2026-09-30: the bar lives IN this row, in the free space after «پاک‌کردن» */}
+          <QuickCommandBar keyFa={KEY_FA} busy={quickBusy} canUndo={!!quickUndo} onRun={runQuick} onUndo={undoQuick} />
           <span className="ltr-hint">{`متن را بنویس؛ هر صفحه که پر شود، خودکار صفحۀ جدید ساخته می‌شود (الان ${fa(totalPageCount)} صفحه). «چیدمان» = جابه‌جایی/تنظیمِ فیلدها (با دبل‌کلیک: چینش/جهت/تورفتگی).`}</span>
           <span className="ltr-hint" style={{ fontWeight: 700, color: '#16a34a', direction: 'ltr' }} title="نسخۀ کد — برای تأییدِ استقرار">build: v137</span>
         </div>

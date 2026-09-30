@@ -11,12 +11,15 @@
 //
 // This component only COLLECTS and SHOWS. Running and applying live in the page
 // (it owns the letter state); this keeps a bar bug from ever touching the letter.
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap, Crosshair, X, Undo2 } from 'lucide-react'
 import type { QuickSpot } from '../../lib/api'
 import { layoutKeysUnder, rectOnSheet, sheetIndexFor, type Item, type R } from '../../lib/quickSpot'
 
 export type QuickResult = { applied: string[]; notes: string[]; skipped: number; error?: string }
+
+// the API spot + what the page needs to keep drawing the box where the owner drew it
+type Anchored = QuickSpot & { k: number; vp: R; sx: number; sy: number }
 
 const MAX_BOXES = 5
 const MIN_PX = 12
@@ -29,13 +32,14 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
   onUndo: () => void
 }) {
   const [text, setText] = useState('')
-  const [spots, setSpots] = useState<QuickSpot[]>([])
+  const [spots, setSpots] = useState<Anchored[]>([])
+  const [, setTick] = useState(0)
   const [armed, setArmed] = useState(false)
   const [rect, setRect] = useState<R | null>(null)
   const [result, setResult] = useState<QuickResult | null>(null)
   const start = useRef<{ x: number; y: number } | null>(null)
 
-  const measure = useCallback((box: R): QuickSpot => {
+  const measure = useCallback((box: R): Anchored => {
     const sheets = Array.from(document.querySelectorAll<HTMLElement>('#ltr-edit .lsheet, #ltr-edit .psheet')).filter((s) => s.offsetWidth > 0)
     const sheetRects: R[] = sheets.map((s) => { const b = s.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height } })
     const idx = sheetIndexFor(box, sheetRects)          // 1-based, 0 = off the sheets
@@ -49,10 +53,11 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
     const keys = layoutKeysUnder(box, onPage)
     // the sheet may be CSS-scaled to fit the screen: report sheet-layout pixels,
     // which are the units the layout itself is stored in
+    let k = 1
     let rel: R = { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.w), h: Math.round(box.h) }
     if (idx) {
       const sr = sheetRects[idx - 1]
-      const k = sheets[idx - 1].offsetWidth > 0 && sr.w > 0 ? sheets[idx - 1].offsetWidth / sr.w : 1
+      k = sheets[idx - 1].offsetWidth > 0 && sr.w > 0 ? sheets[idx - 1].offsetWidth / sr.w : 1
       const on = rectOnSheet(box, sr)
       rel = { x: Math.round(on.x * k), y: Math.round(on.y * k), w: Math.round(on.w * k), h: Math.round(on.h * k) }
     }
@@ -68,8 +73,30 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
     return {
       page: idx, rect: rel, layout_keys: keys, covered_text: covered,
       section: inBar ? 'نوار دکمه‌های بالای فرم' : (idx ? `برگهٔ ${idx} فرم` : 'بیرون از برگه'),
+      k, vp: box, sx: window.scrollX, sy: window.scrollY,
     }
   }, [])
+
+  useEffect(() => {
+    if (!spots.length) return
+    const bump = () => setTick((n) => n + 1)
+    window.addEventListener('scroll', bump, true)
+    window.addEventListener('resize', bump)
+    return () => { window.removeEventListener('scroll', bump, true); window.removeEventListener('resize', bump) }
+  }, [spots.length])
+
+  // where a recorded box is on screen NOW: glued to its sheet when it was drawn on one
+  const markerRect = (sp: Anchored): R => {
+    if (sp.page) {
+      const sheets = Array.from(document.querySelectorAll<HTMLElement>('#ltr-edit .lsheet, #ltr-edit .psheet')).filter((x) => x.offsetWidth > 0)
+      const el = sheets[sp.page - 1]
+      if (el) {
+        const b = el.getBoundingClientRect()
+        return { x: b.left + sp.rect.x / sp.k, y: b.top + sp.rect.y / sp.k, w: sp.rect.w / sp.k, h: sp.rect.h / sp.k }
+      }
+    }
+    return { x: sp.vp.x - (window.scrollX - sp.sx), y: sp.vp.y - (window.scrollY - sp.sy), w: sp.vp.w, h: sp.vp.h }
+  }
 
   const onDown = (e: React.PointerEvent) => {
     start.current = { x: e.clientX, y: e.clientY }
@@ -93,7 +120,7 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
     const t = text.trim()
     if (!t || busy) return
     setResult(null)
-    const out = await onRun(t, spots)
+    const out = await onRun(t, spots.map(({ k: _k, vp: _vp, sx: _sx, sy: _sy, ...api }) => api))
     if (out) {
       setResult(out)
       // a request that went through is finished business; a failed one keeps its text
@@ -103,12 +130,14 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
 
   const label = (sp: QuickSpot, i: number) => {
     const k = sp.layout_keys.map((x) => keyFa[x] || x).join('، ')
-    return `کادر ${i + 1} — ${sp.page ? `برگهٔ ${sp.page}` : 'بیرون از برگه'}${k ? ` · ${k}` : ''}`
+    const r = sp.rect
+    return `کادر ${i + 1} — ${sp.page ? `برگهٔ ${sp.page}` : 'بیرون از برگه'}${k ? ` · ${k}` : ''} · x=${r.x} y=${r.y} ${r.w}×${r.h}`
   }
 
   return (
+    <>
     <div dir="rtl" data-qc-layer="1" className="no-print"
-      style={{ margin: '0 0 8px', padding: 8, border: '1px solid #c7d2fe', borderRadius: 10, background: '#eef2ff' }}>
+      style={{ flex: '1 1 420px', minWidth: 260, padding: '3px 8px', border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <Zap size={16} color="#4f46e5" />
         <b style={{ fontSize: 12, color: '#3730a3' }}>دستورِ سریع</b>
@@ -133,9 +162,11 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
           </button>
         )}
       </div>
+    </div>
 
+    <div dir="rtl" data-qc-layer="1" className="no-print" style={{ flexBasis: '100%' }}>
       {spots.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
           {spots.map((sp, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#fff', border: '1px solid #a5b4fc', color: '#3730a3' }}
               title={sp.covered_text ? `زیرِ کادر: ${sp.covered_text}` : ''}>
@@ -147,7 +178,7 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
         </div>
       )}
       {!spots.length && !result && (
-        <div style={{ marginTop: 4, fontSize: 11, color: '#6366f1' }}>
+        <div style={{ fontSize: 11, color: '#6366f1' }}>
           کادر اختیاری است؛ بدونِ کادر، هوش مصنوعی از روی دستور و ساختارِ فرم تشخیص می‌دهد کجا مقصود است. نتیجه بلافاصله روی فرم می‌نشیند و با «برگشتِ دستور» برمی‌گردد.
         </div>
       )}
@@ -174,6 +205,20 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
         </div>
       )}
 
+    </div>
+
+      {spots.map((sp, i) => {
+        const r = markerRect(sp)
+        return (
+          <div key={`m${i}`} data-qc-layer="1" className="no-print pointer-events-none fixed z-[80]"
+            style={{ left: r.x, top: r.y, width: r.w, height: r.h, border: '2px solid #4f46e5', background: 'rgba(99,102,241,0.12)', borderRadius: 3 }}>
+            <span style={{ position: 'absolute', top: -18, right: 0, background: '#4f46e5', color: '#fff', fontSize: 10, padding: '0 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+              ✓ ثبت شد · کادر {(i + 1).toLocaleString('fa-IR')}{sp.layout_keys.length ? ` · ${sp.layout_keys.map((x) => keyFa[x] || x).join('، ')}` : ''}
+            </span>
+          </div>
+        )
+      })}
+
       {armed && (
         <div data-qc-layer="1" dir="rtl"
           className="fixed inset-0 z-[90]"
@@ -190,6 +235,6 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
