@@ -14,7 +14,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap, Crosshair, X, Undo2 } from 'lucide-react'
 import type { QuickSpot } from '../../lib/api'
-import { layoutKeysUnder, rectOnSheet, sheetIndexFor, type Item, type R } from '../../lib/quickSpot'
+import {
+  headingAbove, layoutKeysUnder, rectOnSheet, sheetIndexFor, textInRect, type Item, type R,
+} from '../../lib/quickSpot'
 
 export type QuickResult = { applied: string[]; notes: string[]; skipped: number; error?: string }
 
@@ -61,17 +63,30 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
       const on = rectOnSheet(box, sr)
       rel = { x: Math.round(on.x * k), y: Math.round(on.y * k), w: Math.round(on.w * k), h: Math.round(on.h * k) }
     }
-    // the text under the box's centre — the innermost element that actually has some
     const stack = document.elementsFromPoint(box.x + box.w / 2, box.y + box.h / 2)
       .filter((el) => !el.closest('[data-qc-layer]'))
-    // a layout box under the centre names its own text; otherwise the innermost element with some
-    const inBox = stack.map((el) => el.closest('[data-lbox]')).find(Boolean) as HTMLElement | null | undefined
-    const withText = inBox || stack.find((el) => ((el.textContent || '').trim().length > 0 && (el.textContent || '').length < 600))
-    const covered = ((withText?.textContent || (stack[0] as HTMLElement | undefined)?.getAttribute?.('title') || '')
-      .replace(/\s+/g, ' ').trim()).slice(0, 400)
+    // v173 — WHAT IS UNDER THE BOX, BY GEOMETRY, NOT BY ANCESTRY.
+    //
+    // This used to climb from the centre up to the enclosing `[data-lbox]` and
+    // take that element's text. The whole letter body is ONE layout box, so a
+    // box drawn around the table in §3 reported the body's text — which begins
+    // at §1. Every box on the body described the same paragraph, confidently and
+    // wrongly: «پیش‌نمایشش جایی دیگه رو شناسایی کرده».
+    //
+    // The lines whose own rectangles fall inside the box are the answer, and a
+    // box over empty table cells has no text of its own — so the nearest heading
+    // above it is carried too, which is what names «۳- مشخصات تسهیلات…».
+    const scope = (idx ? sheets[idx - 1] : null)
+      || (stack.find((el) => el.closest('#ltr-edit')) as HTMLElement | undefined)
+      || null
+    const inside = textInRect(scope, box)
+    const heading = headingAbove(scope, box)
+    const covered = inside
+      ? (heading && !inside.startsWith(heading) ? `${heading} ← ${inside}` : inside)
+      : (heading ? `${heading} (کادر روی ناحیهٔ خالیِ زیرِ همین عنوان)` : '')
     const inBar = stack.some((el) => el.closest('.ltr-controls'))
     return {
-      page: idx, rect: rel, layout_keys: keys, covered_text: covered,
+      page: idx, rect: rel, layout_keys: keys, covered_text: covered.slice(0, 400),
       section: inBar ? 'نوار دکمه‌های بالای فرم' : (idx ? `برگهٔ ${idx} فرم` : 'بیرون از برگه'),
       k, vp: box, sx: window.scrollX, sy: window.scrollY,
     }
