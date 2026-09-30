@@ -68,22 +68,51 @@ describe('highlight preferences', () => {
   })
 })
 
-describe('the highlight colour is the sheet colour', () => {
-  const sheet = (glowTone: string, status = 'answered') =>
+describe('v166 — the highlight says whose turn it is', () => {
+  const sheet = (status: string, glowTone = 'fixed') =>
     ({ glow: { tone: glowTone, key: '', label: '' }, status } as any)
 
-  it('uses the OUTCOME tone, so a highlight can never disagree with its sheet', () => {
-    expect(toneOf(sheet('not-done'))).toBe(TONE_COLOR['not-done'])
-    expect(toneOf(sheet('fixed'))).toBe(TONE_COLOR.fixed)
-    expect(toneOf(sheet('needs-owner'))).toBe(TONE_COLOR['needs-owner'])
+  // The four states the owner named, each with one meaning.
+  it('is amber while it waits for the supervisor', () => {
+    expect(toneOf(sheet('open'))).toBe(TONE_COLOR.open)
   })
 
-  it('falls back to the status when there is no outcome yet', () => {
-    expect(toneOf({ glow: undefined, status: 'open' } as any)).toBe(TONE_COLOR.open)
+  it('turns green the moment the supervisor has replied', () => {
+    expect(toneOf(sheet('answered'))).toBe(TONE_COLOR.answered)
+  })
+
+  it('turns blue when the owner ticks it', () => {
+    expect(toneOf(sheet('approved'))).toBe(TONE_COLOR.approved)
+  })
+
+  it('goes back to amber when the owner writes again', () => {
+    // the server re-opens the sheet on an owner note (v158); the colour follows
+    expect(toneOf(sheet('open', 'fixed'))).toBe(TONE_COLOR.open)
+  })
+
+  // The regression that started this: the colour used to be the OUTCOME, so an
+  // answered sheet came back amber/grey/red and an approved one came out GREEN
+  // while its own badge on the board said blue.
+  it('does not let the outcome override the state', () => {
+    expect(toneOf(sheet('answered', 'partial'))).toBe(TONE_COLOR.answered)
+    expect(toneOf(sheet('answered', 'stale'))).toBe(TONE_COLOR.answered)
+    expect(toneOf(sheet('answered', 'not-done'))).toBe(TONE_COLOR.answered)
+    expect(toneOf(sheet('approved', 'fixed'))).toBe(TONE_COLOR.approved)
+  })
+
+  it('agrees with the board badge — green answered, blue approved', () => {
+    // bg-emerald-600 = 16,185,129 · bg-blue-600 = 59,130,246 (see TONE in ./inspection)
+    expect(TONE_COLOR.answered).toBe('16, 185, 129')
+    expect(TONE_COLOR.approved).toBe('59, 130, 246')
+  })
+
+  it('still honours an outcome tone for a status it does not know', () => {
+    expect(toneOf(sheet('some-future-state', 'needs-owner'))).toBe(TONE_COLOR['needs-owner'])
   })
 
   it('never returns undefined, whatever it is handed', () => {
     expect(toneOf({ glow: { tone: 'nonsense' }, status: 'nonsense' } as any))
       .toBe(TONE_COLOR.open)
+    expect(toneOf({ glow: undefined, status: 'open' } as any)).toBe(TONE_COLOR.open)
   })
 })

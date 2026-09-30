@@ -12,6 +12,7 @@ import { inspectionApi, parseApiError, type InspectionFile, type InspectionRepor
 import { geometryLabel } from '@/lib/inspectionSpot'
 import { AuthedDownload, AuthedImage } from '@/lib/AuthedMedia'
 import { TONE } from '@/lib/inspection'
+import { notifySheetsChanged } from '@/lib/inspectionHighlights'
 import toast from 'react-hot-toast'
 
 const FA = '۰۱۲۳۴۵۶۷۸۹'
@@ -78,6 +79,13 @@ export default function InspectionPage() {
       const d = await inspectionApi.list({ include_filed: true, status: filter || undefined })
       setReports(d.reports)
       setCounts(d.counts || {})
+      // v166 — TELL THE HIGHLIGHT LAYER. Every action on this board changes a
+      // sheet's colour: a tick makes it blue, a follow-up note sends it back to
+      // amber, a delete removes it. The board refreshed itself and said nothing,
+      // so the mark drawn on the page kept its old colour until the tab lost and
+      // regained focus — «ثبت گزارش مجدد … باعث نشد که رنگ سبز هایلایت دوباره
+      // تغییر کنه». The overlay listens for this; it costs one event.
+      notifySheetsChanged()
     } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false) }
   }, [filter])
   useEffect(() => { void load() }, [load])

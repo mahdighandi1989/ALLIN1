@@ -26,9 +26,10 @@
 // WHEN THEY DISAPPEAR
 // -------------------
 // A sheet is drawn while it is open / answered / approved, and stops being drawn
-// once it is `filed`. Filing happens when the supervisor runs its round and moves
-// every sheet the OWNER has ticked into a binder — so: tick it, and it is gone
-// from the page at the next round, still readable in the archive.
+// once it is `filed`. Filing happens when the supervisor runs its round — EVERY
+// round, the periodic one and the urgent one — and moves every sheet the OWNER
+// has ticked (the blue ones) into a binder. So: tick it, and it is gone from the
+// page at the next round, still readable in the archive.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inspectionApi, type InspectionReport } from './api'
@@ -83,22 +84,55 @@ export const notifySheetsChanged = () => {
   try { window.dispatchEvent(new CustomEvent(SHEETS_EVT)) } catch { /* SSR */ }
 }
 
-/** The colour of a sheet is the colour of its OUTCOME — the same rule the board
- *  follows, so a highlight and its sheet can never disagree. */
+// v166 — THE HIGHLIGHT IS THE CONVERSATION, NOT THE VERDICT.
+//
+// «وقتی مثلا جواب میده باید هایلایت تبدیل به رنگ سبز بشه و اگر دوباره اون گزارش
+// موجود گزارش و پیامی ثبت کردم دوباره نارنجی بشه و اگر تایید زدم کلا باید ابی
+// بشه و ناظر گزارش هایی که رنگ ابی دارن در هر دور بررسی میره بایگانی میکنه».
+//
+// Four states, one meaning each — whose TURN is it:
+//
+//   نارنجی  open      من منتظرم            ← also where a follow-up note sends it back
+//   سبز     answered  ناظر جواب داده
+//   آبی     approved  من تیک زدم           ← ناظر دورِ بعد بایگانی‌اش می‌کند
+//   —       filed     تمام                 ← هایلایت برداشته می‌شود
+//
+// Until v166 this drew the OUTCOME instead (fixed / partial / not-done /
+// needs-owner), so an answered sheet came back amber or grey depending on what
+// the supervisor claimed, and an approved sheet came out GREEN while its own
+// badge on the board said blue — the two palettes disagreed with each other.
+// The outcome is not lost: it is what the badge and the tooltip say, which is
+// where a word belongs. The colour on the page answers one question only.
 export const TONE_COLOR: Record<string, string> = {
-  open: '245, 158, 11',          // amber — waiting for the supervisor
-  answered: '59, 130, 246',      // blue
-  approved: '16, 185, 129',      // emerald — the owner ticked it
+  // the lifecycle — this is what a highlight is painted with
+  open: '245, 158, 11',          // amber — waiting for the supervisor (or asked again)
+  answered: '16, 185, 129',      // emerald — the supervisor has replied
+  approved: '59, 130, 246',      // blue — the owner ticked it; filed next round
+  filed: '107, 114, 128',        // grey — never drawn, kept so nothing resolves to undefined
+  // the outcome — no longer painted, kept because other surfaces read this map
+  // and because losing a colour is losing a capability
   fixed: '16, 185, 129',
   partial: '245, 158, 11',
-  'needs-owner': '139, 92, 246', // violet — waiting on a decision
+  'needs-owner': '139, 92, 246', // violet
   'not-done': '239, 68, 68',     // red
   stale: '107, 114, 128',        // grey
-  filed: '107, 114, 128',
 }
 
+/**
+ * The colour of a sheet is the colour of its STATE — whose turn it is.
+ *
+ * The outcome tone is still honoured for a status this does not know about, so
+ * a future state cannot silently fall through to «amber, waiting».
+ */
 export const toneOf = (r: InspectionReport): string =>
-  TONE_COLOR[r.glow?.tone || r.status] || TONE_COLOR.open
+  LIFECYCLE[r.status] || TONE_COLOR[r.glow?.tone || ''] || TONE_COLOR.open
+
+const LIFECYCLE: Record<string, string> = {
+  open: TONE_COLOR.open,
+  answered: TONE_COLOR.answered,
+  approved: TONE_COLOR.approved,
+  filed: TONE_COLOR.filed,
+}
 
 type Placed = {
   report: InspectionReport
