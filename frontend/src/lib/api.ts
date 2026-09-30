@@ -809,9 +809,11 @@ export const aiApi = {
 // them with checkboxes and applies only the ticked ones client-side.
 // ---------------------------------------------------------------------------
 export type LetterAiModel = { id: number; display_name: string; provider_key: string; provider_name: string; capabilities: string[]; priority: number }
+// v171 — a box the owner drew on the letter form, as the assistant receives it
+export type QuickSpot = { page: number; rect: { x: number; y: number; w: number; h: number }; layout_keys: string[]; covered_text: string; section: string }
 export type LetterAiTool = { id: string; label: string }
 export type LetterAiChange = {
-  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'paragraph_merge' | 'kb_write' | 'entity_write'
+  id: string; category: string; field: string; op: 'set_field' | 'text_replace' | 'note' | 'db_write' | 'link' | 'table_replace' | 'table_insert' | 'paragraph_merge' | 'kb_write' | 'entity_write' | 'set_layout' | 'set_label'
   title: string; detail: string; severity: 'low' | 'medium' | 'high'
   find?: string; replace?: string; occurrence?: 'first' | 'all'
   before?: string; after?: string; applicable: boolean
@@ -833,6 +835,8 @@ export type LetterAiChange = {
   // written by the Import page's own persist_customer once approved
   entity?: string; entity_key?: string; payload?: Record<string, unknown>
   source_file?: string
+  // set_layout only (v171) — absolute new values for ONE layout box (server-clamped)
+  props?: Record<string, number | boolean | string>
 }
 export type KbEntry = { id: string; content: string; source_kind: string; source_ref: string; account_no?: string; created_by?: string; created_at?: string }
 export type KbTopic = { id: string; title: string; category: string; entries: KbEntry[] }
@@ -856,7 +860,7 @@ export const letterAiApi = {
     const { data } = await api.get('/api/letter-ai/models')
     return data
   },
-  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; tables?: string[]; attachment_tables?: string[]; attachments_text?: { name: string; text: string }[]; model_id?: number | null }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[]; input_warnings?: string[] }> {
+  async analyze(body: { account_no?: string; fields: Record<string, any>; tools: string[]; instruction?: string; selection?: string; selections?: string[]; tables?: string[]; attachment_tables?: string[]; attachments_text?: { name: string; text: string }[]; model_id?: number | null; layout?: Record<string, any>; labels?: Record<string, string>; quick?: boolean; spots?: QuickSpot[]; hints?: { selected_text?: string; selected_layout_key?: string } }): Promise<{ ok: boolean; error?: string; model?: string; changes: LetterAiChange[]; count?: number; facts_used?: boolean; tools?: string[]; input_warnings?: string[] }> {
     const { data } = await api.post('/api/letter-ai/analyze', body, { timeout: 300000 })
     return data
   },

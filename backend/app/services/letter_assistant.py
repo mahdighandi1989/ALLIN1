@@ -42,6 +42,67 @@ TEXT_FIELDS = {"body", "subject", "recipientName", "recipientTitle", "recipientD
 
 BODY_FIELD = "body"
 
+# v171 — «نوار دستورِ سریع» + دسترسیِ کاملِ دستیار به ظاهرِ فرم.
+# The letter's look (sizes, positions, letterhead boxes, fonts, captions) lives in
+# the page's `layout`/`labels`, NOT in the text fields — so the assistant could
+# never change it. Two more review-first ops now reach it, validated by whitelist
+# and clamped to sane ranges, so a model cannot push a box off the sheet:
+#   set_layout — one layout box (logo/name/footer/body/…): x,y,w,h,size,…
+#   set_label  — one printed caption («شماره :», «موضوع :» …)
+LAYOUT_KEYS: Dict[str, str] = {
+    "logo": "لوگو (سربرگ)", "name": "نامِ بانک (سربرگ)", "footer": "فوتر (پاورقیِ سربرگ)",
+    "besmele": "بسمه تعالی", "shomareh": "شماره", "tarikh": "تاریخ", "peyvast": "پیوست",
+    "recName": "نامِ گیرنده", "recTitle": "سمت/ادارهٔ گیرنده", "classification": "طبقه‌بندی",
+    "subject": "موضوع", "separator": "خطِ جداکننده", "body": "متنِ نامه", "sender": "امضاکننده",
+    "copyto": "رونوشت", "action": "اقدام‌کننده", "pagenum": "شمارهٔ صفحه",
+}
+LABEL_KEYS: Dict[str, str] = {
+    "besmele": "بسمه تعالی", "shomareh": "شماره", "tarikh": "تاریخ", "peyvast": "پیوست",
+    "classification": "طبقه‌بندی", "subject": "موضوع", "copyto": "رونوشت",
+    "action": "اقدام‌کننده", "actionExt": "داخلیِ اقدام‌کننده",
+}
+# prop → (kind, lo, hi). Positions/sizes are CSS px on the A4 sheet (1mm ≈ 3.78px;
+# the sheet is ~794×1123px).
+LAYOUT_PROPS: Dict[str, tuple] = {
+    "x": ("num", -50, 900), "y": ("num", -50, 1250),
+    "w": ("num", 8, 900), "h": ("num", 1, 1250),
+    "size": ("num", 5, 60), "ls": ("num", 0, 12), "lh": ("num", 1.0, 3.5),
+    "indent": ("num", 0, 8), "contY": ("num", 0, 1250),
+    "bold": ("bool",), "underline": ("bool",), "justify": ("bool",), "hidden": ("bool",),
+    "align": ("enum", ("right", "center", "left")), "dir": ("enum", ("rtl", "ltr")),
+}
+MAX_LAYOUT_TOUCH = 30
+
+
+def clean_layout_props(props: Any) -> Dict[str, Any]:
+    """Whitelist + clamp a model-proposed layout patch. Unknown props/values are
+    dropped, numbers are clamped into their range — never trusted as-is."""
+    out: Dict[str, Any] = {}
+    if not isinstance(props, dict):
+        return out
+    for k, v in props.items():
+        spec = LAYOUT_PROPS.get(k)
+        if not spec:
+            continue
+        if spec[0] == "num":
+            if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+                continue
+            try:
+                n = float(v)
+            except (TypeError, ValueError):
+                continue
+            if n != n or n in (float("inf"), float("-inf")):
+                continue
+            n = max(spec[1], min(spec[2], n))
+            out[k] = round(n, 2) if k in ("ls", "lh", "indent") else int(round(n))
+        elif spec[0] == "bool":
+            if isinstance(v, bool):
+                out[k] = v
+        elif spec[0] == "enum":
+            if isinstance(v, str) and v in spec[1]:
+                out[k] = v
+    return out
+
 VALID_CATEGORIES = {
     "spelling", "grammar", "paragraphs", "tables",
     "consistency", "professional", "validation", "db_extract",
@@ -200,6 +261,31 @@ TOOLS: Dict[str, Dict[str, str]] = {
         ),
     },
 }
+
+# Internal tool: NOT listed in the assistant's tool picker (`TOOLS` feeds that);
+# it is what the Quick-Command bar runs. Same ops, same validators, same reviewer —
+# the bar is the assistant with a narrower, faster brief, so the two cannot disagree.
+QUICK_TOOL = "quick"
+QUICK_GUIDE = (
+    "حالت «دستورِ سریع»: کاربر یک خواستهٔ کوتاه و موردی نوشته (و ممکن است یک یا چند کادر روی "
+    "قسمت‌هایی از فرم کشیده باشد). فقط همان خواسته را اجرا کن، کامل و دقیق، و به چیزِ دیگری دست نزن: "
+    "بازبینیِ کلیِ نامه، بازنویسی‌های سلیقه‌ای و اصلاحاتِ نامرتبط ممنوع است. "
+    "هر خواسته را به opِ مناسب ترجمه کن: تغییرِ متن ⇒ text_replace/set_field/paragraph_merge؛ "
+    "تغییرِ اندازه/جا/فونت/ترازبندی/سربرگ (لوگو، نامِ بانک، فوتر) ⇒ set_layout؛ تغییرِ عنوانِ چاپی "
+    "(«شماره :» …) ⇒ set_label؛ جدول ⇒ table_replace/table_insert. "
+    "«کادرهای انتخاب‌شده» را به‌عنوانِ محلِ خواسته بگیر: اگر خواسته درباره‌ی «اینجا/این/همین» است، "
+    "همان کلیدهای layout و متنِ زیرِ کادر هدف‌اند. اگر کادری نکشیده یا مبهم است، از خودِ دستور و "
+    "فهرستِ فیلدها/layout حدس بزن که کجا مقصود است و در title بنویس کدام را هدف گرفتی. "
+    "برای «بزرگ‌تر/کوچک‌تر/بالاتر/پایین‌تر» مقدارِ فعلیِ layout را مبنا بگیر و مقدارِ مطلقِ نهایی بده. "
+    "هر واحد را که نمی‌توانی با opهای بالا اجرا کنی، در یک note با دلیل بگو."
+)
+
+
+def _tool_guide(t: str) -> Optional[str]:
+    if t == QUICK_TOOL:
+        return QUICK_GUIDE
+    return TOOLS[t]["guide"] if t in TOOLS else None
+
 
 # ---------------------------------------------------------------------------
 # Table HTML sanitizer — the ONLY way model-authored HTML ever reaches the
@@ -688,6 +774,71 @@ MAX_STYLE_SAMPLES = 3
 MAX_STYLE_CHARS = 1500
 
 
+
+LAYOUT_ADDENDUM = (
+    "\n12) opهای ظاهرِ فرم (فقط وقتی بخشِ «ظاهرِ فعلیِ فرم» در پیام هست و دستورِ اختصاصیِ کاربر "
+    "صریحاً تغییرِ ظاهر می‌خواهد): \"set_layout\" (field = یکی از کلیدهای layout، props = شیءِ "
+    "مقدارهای مطلقِ جدید مثل {\"size\":14} یا {\"w\":300,\"h\":90}؛ برای هر جعبه فقط یک change) و "
+    "\"set_label\" (field = کلیدِ عنوانِ چاپی، after = متنِ جدید). سربرگ = کلیدهای logo/name/footer: "
+    "تغییرِ اندازه‌شان با w/h و جایشان با x/y. مقدار را از عددهای فعلیِ همان بخش بساز و از محدودهٔ برگه "
+    "بیرون نزن. تغییرِ ظاهر را با تغییرِ متن قاطی نکن — هرکدام change جدا. برای این opها "
+    "find/replace لازم نیست.\n"
+)
+
+
+def _layout_section(layout: Dict[str, Any], labels: Dict[str, Any]) -> str:
+    """The form's CURRENT look, so set_layout/set_label can be expressed as absolute
+    values. Only whitelisted keys/props are echoed (the client is not trusted)."""
+    lines = [
+        "\n### ظاهرِ فعلیِ فرم (layout — واحدها px روی برگهٔ A4 با عرض≈۷۹۴ و ارتفاع≈۱۱۲۳؛ "
+        "هر میلی‌متر≈۳٫۷۸px). دسترسی به این بخش فقط وقتی مجاز است که «دستورِ اختصاصیِ کاربر» "
+        "صریحاً تغییرِ اندازه/جا/فونت/سربرگ/عنوانِ چاپی می‌خواهد — خودسرانه ظاهر را تغییر نده:",
+        "op=\"set_layout\": کلیدهای field (یکی از کلیدهای زیر) و props (شیءِ مقدارهای مطلقِ جدید — "
+        "فقط از x,y,w,h,size(پوینت),ls,lh,indent,contY,bold,underline,justify,hidden,align,dir)؛ "
+        "فقط ویژگی‌هایی که باید عوض شوند را بده. op=\"set_label\": field (کلیدِ عنوانِ چاپی) و after.",
+    ]
+    n = 0
+    for k, fa_name in LAYOUT_KEYS.items():
+        box = layout.get(k)
+        if not isinstance(box, dict):
+            continue
+        cur = {pk: box[pk] for pk in LAYOUT_PROPS if pk in box and box[pk] is not None}
+        lines.append(f"- {k} ({fa_name}): {json.dumps(cur, ensure_ascii=False)}")
+        n += 1
+        if n >= 40:
+            break
+    lab = {k: str(labels[k])[:60] for k in LABEL_KEYS if k in labels}
+    if lab:
+        lines.append("عنوان‌های چاپیِ فعلی (set_label): " + json.dumps(lab, ensure_ascii=False))
+    return "\n".join(lines)
+
+
+def _spots_section(spots: List[Dict[str, Any]], hints: Dict[str, Any]) -> str:
+    """The boxes the owner drew (and what the page knows they were looking at)."""
+    lines = ["\n### کادرهای انتخاب‌شده توسطِ کاربر روی فرم (محلِ خواسته؛ مختصات نسبت به برگه):"]
+    if not spots:
+        lines.append("هیچ کادری کشیده نشده — محلِ خواسته را از دستور و فهرستِ فیلدها/layout حدس بزن.")
+    for i, sp in enumerate(spots[:8], 1):
+        if not isinstance(sp, dict):
+            continue
+        keys = [k for k in (sp.get("layout_keys") or []) if k in LAYOUT_KEYS][:6]
+        rect = sp.get("rect") if isinstance(sp.get("rect"), dict) else {}
+        r = {k: rect.get(k) for k in ("x", "y", "w", "h") if isinstance(rect.get(k), (int, float))}
+        txt = str(sp.get("covered_text") or "").strip()[:400]
+        lines.append(
+            f"{i}. صفحهٔ {sp.get('page') or '؟'} — کلیدهای layoutِ زیرِ کادر (بیشترین هم‌پوشانی اول): "
+            f"{', '.join(keys) or 'هیچ (خارج از برگه/نوارِ ابزار)'} — مختصاتِ کادر روی برگه (px): "
+            f"{json.dumps(r)} — بخشِ صفحه: {str(sp.get('section') or '')[:60] or '—'}"
+            + (f" — متنِ زیرِ کادر: «{txt}»" if txt else ""))
+    sel = str(hints.get("selected_text") or "").strip()[:600]
+    if sel:
+        lines.append(f"متنی که کاربر همین حالا در نامه انتخاب کرده (اگر دستور «این» می‌گوید مقصود همین است): «{sel}»")
+    sk = str(hints.get("selected_layout_key") or "")
+    if sk in LAYOUT_KEYS:
+        lines.append(f"فیلدی که کاربر در حالتِ چیدمان انتخاب کرده: {sk} ({LAYOUT_KEYS[sk]})")
+    return "\n".join(lines)
+
+
 def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List[str],
                       instruction: str = "", selection: str = "",
                       selections: Optional[List[str]] = None,
@@ -695,7 +846,11 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
                       attachments_text: Optional[List[Dict[str, str]]] = None,
                       attachment_tables: Optional[List[str]] = None,
                       style_samples: Optional[List[Dict[str, str]]] = None,
-                      warnings_out: Optional[List[str]] = None) -> str:
+                      warnings_out: Optional[List[str]] = None,
+                      layout: Optional[Dict[str, Any]] = None,
+                      labels: Optional[Dict[str, Any]] = None,
+                      spots: Optional[List[Dict[str, Any]]] = None,
+                      hints: Optional[Dict[str, Any]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -727,6 +882,11 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
             head = f"— نمونهٔ {i}" + (f" (موضوع: {subj})" if subj else "")
             parts.append(head + ":\n" + str(smp.get("body") or "").strip()[:MAX_STYLE_CHARS])
 
+    if layout:
+        parts.append(_layout_section(layout, labels or {}))
+    if spots or hints:
+        parts.append(_spots_section(spots or [], hints or {}))
+
     parts.append("\n### حقایقِ پایگاه‌داده (منبعِ حقیقت برای اعتبارسنجی؛ کلیدهای "
                  "account_activity_log/journal_log = لاگِ کارهای همین حساب — جدیدترین اول؛ "
                  "اگر دستورِ کاربر به «لاگ‌ها/کارهای انجام‌شده» اشاره دارد از همین‌ها استخراج کن و "
@@ -734,7 +894,7 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     parts.append(json.dumps(facts, ensure_ascii=False, indent=1) if facts else "(بدون رکورد مرتبط)")
 
     parts.append("\n### ابزارهای درخواستی (فقط روی این‌ها تمرکز کن):")
-    guides = [f"- {TOOLS[t]['guide']}" for t in tools if t in TOOLS]
+    guides = [f"- {g}" for g in (_tool_guide(t) for t in tools) if g]
     parts.append("\n".join(guides) or "- اصلاحاتِ عمومیِ ویرایشی")
 
     # Gather the user's selected items (de-duped, order-preserving, capped).
@@ -860,7 +1020,8 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
 
 
 def parse_and_validate(raw_text: str, fields: Dict[str, Any],
-                       tables_count: int = 0) -> List[Dict[str, Any]]:
+                       tables_count: int = 0,
+                       layout: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Parse the model's JSON reply and keep ONLY changes that are safe to apply.
 
     The hallucination guard: a ``text_replace`` is dropped unless its ``find`` is
@@ -907,6 +1068,34 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
 
         if op == "note":
             item["applicable"] = False
+            out.append(item)
+            continue
+
+        if op == "set_layout":
+            # Only when the caller supplied a layout (i.e. the page can apply it).
+            if not layout or field not in LAYOUT_KEYS:
+                continue
+            props = clean_layout_props(ch.get("props"))
+            if not props or len(props) > MAX_LAYOUT_TOUCH:
+                continue
+            cur = layout.get(field) if isinstance(layout.get(field), dict) else {}
+            item["props"] = props
+            item["before"] = json.dumps({k: cur.get(k) for k in props if k in cur}, ensure_ascii=False)
+            item["after"] = json.dumps(props, ensure_ascii=False)
+            item["title"] = item["title"] if title else f"تغییرِ ظاهرِ «{LAYOUT_KEYS[field]}»"
+            item["applicable"] = True
+            out.append(item)
+            continue
+
+        if op == "set_label":
+            if not layout or field not in LABEL_KEYS:
+                continue
+            after = ch.get("after")
+            if not isinstance(after, str) or len(after) > 60:
+                continue
+            item["after"] = after
+            item["before"] = str(ch.get("before") or "")
+            item["applicable"] = True
             out.append(item)
             continue
 

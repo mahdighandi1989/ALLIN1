@@ -542,3 +542,68 @@ def test_completeness_contract_demands_every_source():
     assert "3 مورد" in p                        # 2 files + 1 in-flow table
     assert "هرگز خلاصه نکن" in p
     assert "جا نینداز" in p
+
+
+# ---------------------------------------------------------------------------
+# v171 — set_layout / set_label: the assistant's (and the Quick-Command bar's)
+# reach into the form's LOOK. Same rule as everything else here: the model only
+# proposes; this gate decides what is safe.
+# ---------------------------------------------------------------------------
+LAYOUT = {
+    "logo": {"x": 18, "y": 15, "w": 108, "h": 104, "size": 0},
+    "subject": {"x": 106, "y": 295, "w": 614, "size": 12, "align": "right"},
+}
+
+
+def _call_layout(model_changes, layout=LAYOUT):
+    raw = json.dumps({"changes": model_changes}, ensure_ascii=False)
+    return la.parse_and_validate(raw, FIELDS, layout=layout)
+
+
+def test_set_layout_is_clamped_and_whitelisted():
+    out = _call_layout([{
+        "op": "set_layout", "field": "logo", "title": "لوگو بزرگ‌تر",
+        "props": {"w": 99999, "h": "150", "evil": 1, "align": "diagonal", "hidden": "yes"},
+    }])
+    assert len(out) == 1
+    it = out[0]
+    assert it["applicable"] is True
+    # clamped into range, numeric strings accepted, unknown/invalid props dropped
+    assert it["props"] == {"w": 900, "h": 150}
+
+
+def test_set_layout_dropped_without_layout_or_with_unknown_key():
+    ch = [{"op": "set_layout", "field": "logo", "props": {"w": 100}}]
+    assert la.parse_and_validate(json.dumps({"changes": ch}), FIELDS) == []          # page cannot apply it
+    bad = [{"op": "set_layout", "field": "not_a_box", "props": {"w": 100}}]
+    assert _call_layout(bad) == []
+    empty = [{"op": "set_layout", "field": "logo", "props": {"nope": 1}}]
+    assert _call_layout(empty) == []
+
+
+def test_set_layout_bool_is_not_a_number():
+    out = _call_layout([{"op": "set_layout", "field": "subject", "props": {"size": True, "bold": True}}])
+    assert out[0]["props"] == {"bold": True}
+
+
+def test_set_label_only_known_keys_and_only_with_layout():
+    ok = _call_layout([{"op": "set_label", "field": "shomareh", "after": "شماره نامه : "}])
+    assert ok and ok[0]["after"] == "شماره نامه : "
+    assert _call_layout([{"op": "set_label", "field": "logo", "after": "x"}]) == []
+    assert la.parse_and_validate(json.dumps({"changes": [
+        {"op": "set_label", "field": "shomareh", "after": "x"}]}), FIELDS) == []
+
+
+def test_prompt_carries_layout_and_boxes_only_when_given():
+    base = la.build_user_prompt(FIELDS, {}, ["quick"], instruction="لوگو را بزرگ کن")
+    assert "ظاهرِ فعلیِ فرم" not in base and "### کادرهای انتخاب‌شده توسطِ کاربر" not in base
+    p = la.build_user_prompt(
+        FIELDS, {}, ["quick"], instruction="لوگو را بزرگ کن", layout=LAYOUT,
+        labels={"shomareh": "شماره : "},
+        spots=[{"page": 1, "layout_keys": ["logo", "hax"], "rect": {"x": 1, "y": 2, "w": 3, "h": 4},
+                "covered_text": "بانک"}],
+        hints={"selected_text": "متن انتخابی"},
+    )
+    assert "logo (لوگو (سربرگ))" in p and "حالت «دستورِ سریع»" in p
+    assert "hax" not in p          # unknown layout keys from the client never reach the model
+    assert "متن انتخابی" in p

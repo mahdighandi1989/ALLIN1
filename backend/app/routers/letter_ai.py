@@ -63,6 +63,15 @@ class AnalyzeRequest(BaseModel):
     attachment_tables: List[str] = Field(default_factory=list)
     attachments_text: List[Dict[str, str]] = Field(default_factory=list)  # [{name, text}]
     model_id: Optional[int] = None
+    # v171 — the form's LOOK (layout boxes + printed captions) so the assistant can
+    # change sizes / letterhead / captions too; absent ⇒ text-only, as before.
+    layout: Optional[Dict[str, Any]] = None
+    labels: Optional[Dict[str, Any]] = None
+    # v171 — «نوار دستورِ سریع»: quick=True runs the narrow one-shot brief; `spots`
+    # are the boxes the owner drew, `hints` what the page knows they were touching.
+    quick: bool = False
+    spots: List[Dict[str, Any]] = Field(default_factory=list)
+    hints: Dict[str, Any] = Field(default_factory=dict)
 
 
 async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
@@ -210,12 +219,16 @@ async def analyze(
 ):
     """Run the chosen (or auto) model over the letter and return validated,
     reviewable change proposals. Never mutates anything."""
-    tools = [t for t in (payload.tools or []) if t in la.TOOLS] or list(la.TOOLS.keys())
+    if payload.quick:
+        # the Quick-Command bar: one narrow brief, never the whole tool belt
+        tools = [la.QUICK_TOOL]
+    else:
+        tools = [t for t in (payload.tools or []) if t in la.TOOLS] or list(la.TOOLS.keys())
     facts = await _gather_facts(db, payload.account_no or "")
     # v88 — the office's own archive as the tone model for rewrites (rule 16)
     style = await _style_samples(db, str((payload.fields or {}).get("body") or ""))
 
-    system = la.SYSTEM_PROMPT
+    system = la.SYSTEM_PROMPT + (la.LAYOUT_ADDENDUM if payload.layout else "")
     # v123 — anything the budget had to cut comes back here and is surfaced to
     # the user as review rows; a silently trimmed input is what made partial
     # answers look complete.
@@ -224,7 +237,7 @@ async def analyze(
         payload.fields or {}, facts, tools, style_samples=style,
         instruction=payload.instruction or "", selection=payload.selection or "",
         selections=payload.selections or [],
-        tables=(payload.tables or []) if "tables" in tools else [],
+        tables=(payload.tables or []) if ("tables" in tools or payload.quick) else [],
         # attachment content feeds the full consistency/conformity pass AND the
         # KB harvest (db_extract may lift general/educational material out of
         # the attachments too); harmless to other tools (its section explains
@@ -232,6 +245,8 @@ async def analyze(
         attachments_text=(payload.attachments_text or []) if ({"full_check", "db_extract"} & set(tools)) else [],
         attachment_tables=(payload.attachment_tables or []) if ({"full_check", "db_extract"} & set(tools)) else [],
         warnings_out=prompt_warnings,
+        layout=payload.layout, labels=payload.labels,
+        spots=payload.spots, hints=payload.hints,
     )
 
     # v93 — the analyze prompt can be very large (attachment PDFs' text, all
@@ -295,7 +310,8 @@ async def analyze(
 
     changes = la.parse_and_validate(
         result.get("text") or "", payload.fields or {},
-        tables_count=(len(payload.tables or []) if "tables" in tools else 0),
+        tables_count=(len(payload.tables or []) if ("tables" in tools or payload.quick) else 0),
+        layout=payload.layout,
     )
 
     # When the extract-to-DB tool is on — or inline in-text prompts may ask to
@@ -340,7 +356,7 @@ async def analyze(
     await record_audit(
         action="analyze", entity_type="letter_ai", entity_id=None,
         account_no=(payload.account_no or None),
-        detail=f"دستیار هوشمندِ نامه — {len(changes)} پیشنهاد ({', '.join(tools)})"
+        detail=f"{'دستورِ سریعِ نامه' if payload.quick else 'دستیار هوشمندِ نامه'} — {len(changes)} پیشنهاد ({', '.join(tools)})"
                + (f" — {len(prompt_warnings)} هشدارِ بریده‌شدنِ ورودی" if prompt_warnings else ""),
         user=user, request=request, db=db,
     )

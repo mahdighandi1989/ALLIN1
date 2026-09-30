@@ -12,11 +12,12 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon, Download } from 'lucide-react'
 import { auditApi, caseReportsApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
-import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment } from '@/lib/api'
+import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment, QuickSpot } from '@/lib/api'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
 import { LH_LOGO, LH_NAME, LH_FOOTER } from './letterhead'
+import QuickCommandBar, { type QuickResult } from './QuickCommandBar'
 import {
   BRANCH_SENDERS, CASE_BRANCHES, HOUSE_SENDERS, branchBySender, branchFor, paperOf,
 } from './caseLetterhead'
@@ -885,6 +886,8 @@ export default function LetterPage() {
           attachment_tables: fcAttTables.length ? fcAttTables : undefined,
           attachments_text: fcAttTexts.length ? fcAttTexts : undefined,
           model_id: aiModelId === '' ? undefined : Number(aiModelId),
+          // v171 — the assistant may now also change the form's LOOK (sizes, letterhead, captions)
+          layout: L, labels,
         })
         setAiFactsUsed(!!r.facts_used)
         if (!r.ok) { setAiError(aiErrorText(r.error)); setAiRan(true); setAiChanges([]); return }
@@ -996,8 +999,15 @@ export default function LetterPage() {
     return err ? `خطای مدل: ${err}` : 'اجرای مدل ناموفق بود.'
   }
 
-  const applyAiChanges = async () => {
+  // v171 — ONE apply path for the assistant's ticked rows AND the Quick-Command bar, so the
+  // two can never disagree about what an op means. `quiet` = the bar reports for itself.
+  const applyAiChanges = async (
+    list: LetterAiChange[] = aiChanges, checkedMap: Record<string, boolean> = aiChecked,
+    opts?: { quiet?: boolean },
+  ): Promise<{ applied: number; notLocated: number; titles: string[] }> => {
     const nf: any = { ...f }
+    const layoutPatches: Record<string, Record<string, any>> = {}
+    const labelPatches: Record<string, string> = {}
     let applied = 0, notLocated = 0
     const appliedIds: string[] = []
     // db_write/link items go to the DB via the server (not onto the letter).
@@ -1008,8 +1018,21 @@ export default function LetterPage() {
     const entItems: { id: string; account_no: string; customer_name: string; entity_key: string; payload: Record<string, unknown> }[] = []
     // table_insert results: collected here and committed once after the loop.
     const newAttTables: AttTable[] = []
-    for (const ch of aiChanges) {
-      if (!aiChecked[ch.id] || !ch.applicable) continue
+    for (const ch of list) {
+      if (!checkedMap[ch.id] || !ch.applicable) continue
+      if (ch.op === 'set_layout') {
+        // absolute, server-clamped values for ONE layout box; unknown box ⇒ not located
+        if (!(ch.field in L) || !ch.props) { notLocated++; continue }
+        layoutPatches[ch.field] = { ...(layoutPatches[ch.field] || {}), ...ch.props }
+        applied++; appliedIds.push(ch.id)
+        continue
+      }
+      if (ch.op === 'set_label') {
+        if (!(ch.field in labels)) { notLocated++; continue }
+        labelPatches[ch.field] = String(ch.after ?? '')
+        applied++; appliedIds.push(ch.id)
+        continue
+      }
       if (ch.op === 'db_write') {
         if (ch.account_no && ch.key) dbItems.push({ id: ch.id, account_no: ch.account_no, customer_name: ch.customer_name || '', key: ch.key, value: String(ch.value ?? ch.after ?? '') })
         continue
@@ -1105,13 +1128,17 @@ export default function LetterPage() {
         else notLocated++
       }
     }
+    if (Object.keys(layoutPatches).length) {
+      setL((p) => { const n = { ...p }; for (const k of Object.keys(layoutPatches)) if (n[k]) n[k] = { ...n[k], ...layoutPatches[k] }; return n })
+    }
+    if (Object.keys(labelPatches).length) setLabels((p) => ({ ...p, ...labelPatches }))
     if (newAttTables.length) setAttTables((list) => [...list, ...newAttTables.map((t) => ({ ...t, html: fixHehHamza(t.html), title: fixHehHamza(t.title) }))])
     if (applied) {
       // model-authored text goes through the same heh+hamza normalization as typing
       for (const k of Object.keys(nf)) if (typeof nf[k] === 'string') nf[k] = fixHehHamza(nf[k])
-      setF(nf); toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`)
+      setF(nf); if (!opts?.quiet) toast.success(`${fa(applied)} مورد روی نامه اعمال شد — بازبینی و «ذخیره» کن`)
     }
-    if (notLocated) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
+    if (notLocated && !opts?.quiet) toast.error(`${fa(notLocated)} مورد در متنِ فعلی پیدا نشد و رد شد`)
 
     // Persist the approved extracted facts + profile↔profile links + KB items.
     if (dbItems.length || linkItems.length || kbItems.length || entItems.length) {
@@ -1149,9 +1176,56 @@ export default function LetterPage() {
       } catch (e) { toast.error('ثبت در پایگاه‌داده ناموفق: ' + parseApiError(e)) }
     }
 
-    if (!applied && !notLocated && !dbItems.length && !linkItems.length && !kbItems.length && !entItems.length) { toast('موردی برای اعمال تیک نخورده است'); return }
+    if (!applied && !notLocated && !dbItems.length && !linkItems.length && !kbItems.length && !entItems.length) { if (!opts?.quiet) toast('موردی برای اعمال تیک نخورده است'); return { applied, notLocated, titles: [] } }
     // drop applied rows; keep the rest so the user can iterate
     setAiChanges((cs) => cs.filter((c) => !appliedIds.includes(c.id)))
+    return { applied, notLocated, titles: list.filter((c) => appliedIds.includes(c.id)).map((c) => c.title) }
+  }
+  // --- v171 «دستورِ سریع» — the same AI, a narrower brief, applied AT ONCE. The safety net is
+  // a snapshot of everything the request can touch (text, tables, sizes, captions), so
+  // «برگشتِ دستور» always restores exactly the state before it. ---
+  const [quickBusy, setQuickBusy] = useState(false)
+  const [quickUndo, setQuickUndo] = useState<{ f: any; L: Record<string, Boxn>; labels: Record<string, string>; attTables: AttTable[] } | null>(null)
+  const QUICK_OPS = new Set(['set_field', 'text_replace', 'paragraph_merge', 'table_replace', 'table_insert', 'set_layout', 'set_label'])
+  const runQuick = async (instruction: string, spots: QuickSpot[]): Promise<QuickResult> => {
+    setQuickBusy(true)
+    try {
+      // tables travel only when the request is about tables (they are big)
+      const aboutTables = /جدول|ستون|ردیف|سطر|table/i.test(instruction)
+      const pickedTables = aboutTables ? getBodyTables().slice(0, 8) : []
+      sentTableUidsRef.current = pickedTables.map((t) => ({ uid: t.uid, attId: t.attId }))
+      const liveSel = ((typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || '').replace(/\s+/g, ' ').trim().slice(0, 600)
+      const r = await letterAiApi.analyze({
+        account_no: general ? undefined : (acct.trim() || undefined),
+        fields: f, tools: [], quick: true, instruction,
+        spots, hints: { selected_text: liveSel || undefined, selected_layout_key: (design && sel) ? sel : undefined },
+        layout: L, labels,
+        tables: pickedTables.length ? pickedTables.map((t) => t.html) : undefined,
+        model_id: aiModelId === '' ? undefined : Number(aiModelId),
+      })
+      if (!r.ok) return { applied: [], notes: [], skipped: 0, error: aiErrorText(r.error) }
+      for (const w of r.input_warnings || []) toast.error(w, { duration: 9000 })
+      const all = r.changes || []
+      const doable = all.filter((c) => c.applicable && QUICK_OPS.has(c.op))
+      const notes = all.filter((c) => c.op === 'note').map((c) => [c.title, c.detail].filter(Boolean).join(' — '))
+      if (!doable.length) {
+        return { applied: [], notes: notes.length ? notes : ['هوش مصنوعی تغییرِ قابل‌اجرایی برای این دستور پیدا نکرد — دستور را دقیق‌تر بنویس یا کادر بکش.'], skipped: 0 }
+      }
+      const snap = { f: { ...f }, L: { ...L }, labels: { ...labels }, attTables }
+      const checked: Record<string, boolean> = {}
+      for (const c of doable) checked[c.id] = true
+      const out = await applyAiChanges(doable, checked, { quiet: true })
+      if (out.applied) setQuickUndo(snap)
+      return { applied: out.titles, notes, skipped: out.notLocated }
+    } catch (e) {
+      return { applied: [], notes: [], skipped: 0, error: parseApiError(e) }
+    } finally { setQuickBusy(false) }
+  }
+  const undoQuick = () => {
+    if (!quickUndo) return
+    setF(quickUndo.f); setL(quickUndo.L); setLabels(quickUndo.labels); setAttTables(quickUndo.attTables)
+    setQuickUndo(null)
+    toast.success('دستورِ سریع برگردانده شد')
   }
   const aiApplicableCount = aiChanges.filter((c) => c.applicable && aiChecked[c.id]).length
 
@@ -2735,7 +2809,7 @@ export default function LetterPage() {
     const b = L[k]
     if (b.hidden) return null   // field removed for this letter
     return (
-      <div className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={{ ...boxStyle(k), ...style }}
+      <div data-lbox={k} className={`lbox${design ? ' dz' : ''}${sel === k && design ? ' seld' : ''}`} style={{ ...boxStyle(k), ...style }}
         onPointerDown={() => design && setSel(k)} onDoubleClick={(e) => { e.stopPropagation(); openPanel(k) }}>
         <div className="field-content">{children}</div>
         {design && <>
@@ -3205,6 +3279,8 @@ export default function LetterPage() {
           .psheet.land{page:attland;width:296mm;height:209mm}
         }
         `}</style>
+
+        <QuickCommandBar keyFa={KEY_FA} busy={quickBusy} canUndo={!!quickUndo} onRun={runQuick} onUndo={undoQuick} />
 
         <div className="ltr-controls no-print">
           {!design
@@ -3842,7 +3918,7 @@ export default function LetterPage() {
 
               <div className="lai-foot">
                 <button className="lai-cancel" onClick={() => setAiOpen(false)}>بستن</button>
-                <button className="lai-apply" onClick={applyAiChanges} disabled={aiApplicableCount === 0}>
+                <button className="lai-apply" onClick={() => void applyAiChanges()} disabled={aiApplicableCount === 0}>
                   <Check size={15} /> اعمالِ {aiApplicableCount ? fa(aiApplicableCount) + ' ' : ''}موردِ انتخاب‌شده
                 </button>
               </div>

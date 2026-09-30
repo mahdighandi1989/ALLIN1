@@ -338,3 +338,40 @@ async def test_analyze_uses_long_deadline_and_retries(client, auth_headers, db_s
     assert r.json().get("ok") is True
     assert len(calls) == 2                       # timed out once → retried once
     assert all(k.get("timeout") == 240.0 for k in calls)
+
+
+async def test_quick_command_runs_narrow_brief_and_returns_layout_ops(
+        client, auth_headers, db_session, monkeypatch):
+    """v171 — the Quick-Command bar: quick=True sends ONLY the quick brief (never
+    the whole tool belt), hands the model the layout + drawn boxes, and returns the
+    validated set_layout op (clamped) alongside a text edit."""
+    await _seed_usable_model(db_session)
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["prompt"] = prompt
+        seen["system"] = kwargs.get("system") or ""
+        return {"ok": True, "model": "m", "error": None, "text": json.dumps({"changes": [
+            {"op": "set_layout", "field": "logo", "title": "لوگو بزرگ‌تر",
+             "props": {"w": 5000, "h": 140}},
+            {"op": "db_write", "account_no": "1", "key": "phone", "value": "1"},
+        ]}, ensure_ascii=False)}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "fields": {"body": "<div>متن</div>", "subject": "موضوع"},
+        "tools": ["spelling", "grammar", "full_check"],      # must be ignored in quick mode
+        "quick": True, "instruction": "لوگو را بزرگ‌تر کن",
+        "layout": {"logo": {"x": 18, "y": 15, "w": 108, "h": 104, "size": 0}},
+        "labels": {"shomareh": "شماره : "},
+        "spots": [{"page": 1, "layout_keys": ["logo"], "rect": {"x": 5, "y": 5, "w": 100, "h": 100}}],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["tools"] == ["quick"]
+    assert "حالت «دستورِ سریع»" in seen["prompt"] and "بیشترین هم‌پوشانی" in seen["prompt"]
+    assert "set_layout" in seen["system"]
+    ops = [(c["op"], c.get("props")) for c in body["changes"]]
+    assert ops == [("set_layout", {"w": 900, "h": 140})]     # clamped; db_write never staged in quick mode
