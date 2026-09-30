@@ -69,6 +69,15 @@ class TestItSaysWhere:
         assert "20٪" in out and "31٪" in out          # its width and height
         assert "1049×140" in out                      # the element's own size
 
+    def test_the_horizontal_fraction_is_measured_from_the_LEFT(self, mod):
+        """v172 — the first version of this line said «از راستِ گره», which
+        mirrors every box that is not centred. The page is RTL; `rel.x` is not.
+        A near-centre box like this one hides the error, so it is pinned here."""
+        out = "\n".join(mod.where_block(SHEET))
+        assert "لبهٔ چپِ" in out
+        assert "از راستِ گره" not in out
+        assert "518 پیکسل" in out                     # 0.4938 × 1049, spelled out
+
     def test_it_says_what_to_do_with_them(self, mod):
         """A number nobody is told to act on is a number that gets skipped."""
         out = "\n".join(mod.where_block(SHEET))
@@ -123,3 +132,67 @@ class TestItDegradesHonestly:
                         "rel": {"x": 0, "y": 0, "w": 0, "h": 0}}}
         out = "\n".join(mod.where_block({"page_label": "x", "reopen": "/x", "geometry": g}))
         assert "جای دقیق داخلِ همان گره" not in out
+
+
+class TestAPlacementCannotBeClosedWithoutSayingWhere:
+    """v172 — «دقیقاً در محلی که خواستم کار انجام نشده و سلیقه رفتی».
+
+    A round closed a «put it HERE» sheet as `fixed`, and admitted a round later
+    that it had not looked at the coordinates at all. The old guard only asks for
+    a picture, and a picture of the wrong place passes it. So a sheet that both
+    names a place AND carries an anchored box must state where the thing went
+    before `fixed` is allowed.
+    """
+
+    def _sheet(self, said, anchored=True):
+        g = dict(SHEET["geometry"])
+        if not anchored:
+            g = {**g, "anchor": {**g["anchor"], "path": ""}}
+        return {**SHEET, "geometry": g, "notes": [{"by": "owner", "text": said}]}
+
+    def test_it_fires_on_the_sheet_that_started_this(self, mod):
+        assert mod.asks_for_a_place(self._sheet(
+            "در اینجا یه باکس دستور سریع یا نوار دستور و دکمه اجرا قرار بده")) is True
+
+    def test_it_fires_on_the_other_ways_of_saying_here(self, mod):
+        for said in ("همین‌جا را درست کن", "این قسمت را بزرگ‌تر کن",
+                     "در این محل یک دکمه بگذار", "همین بخش را جابه‌جا کن"):
+            assert mod.asks_for_a_place(self._sheet(said)) is True, said
+
+    def test_it_does_NOT_fire_on_a_request_that_is_not_about_a_place(self, mod):
+        """A wording fix or a calculation must not be dragged through this."""
+        for said in ("این عدد اشتباه محاسبه شده",
+                     "کلمهٔ موضوع دو بار تکرار شده",
+                     "فونت را بزرگ‌تر کن"):
+            assert mod.asks_for_a_place(self._sheet(said)) is False, said
+
+    def test_it_does_NOT_fire_when_no_box_was_drawn(self, mod):
+        """«اینجا» with nothing pointed at is a sentence the round cannot act on
+        precisely; demanding a placement line would be theatre."""
+        assert mod.asks_for_a_place(
+            self._sheet("در اینجا یک دکمه بگذار", anchored=False)) is False
+
+    def test_the_reviewers_own_words_do_not_trigger_it(self, mod):
+        """Otherwise a round could talk itself into the guard, or out of it."""
+        s = {**SHEET, "notes": [{"by": "reviewer", "text": "در اینجا گذاشتمش"}]}
+        assert mod.asks_for_a_place(s) is False
+
+    def test_the_flag_exists_and_is_optional_for_everything_else(self, mod):
+        import inspect
+        src = inspect.getsource(mod.main)
+        assert '"--place"' in src
+        assert "default=\"\"" in src
+
+    def test_fixed_without_it_is_refused_with_a_usable_message(self, mod):
+        src = SRC.read_text(encoding="utf-8")
+        i = src.index("asks_for_a_place(target)")
+        msg = src[i:i + 900]
+        assert "--place" in msg
+        assert "partial" in msg                      # what to do instead
+        assert "یک جای نزدیک" in msg                  # the failure, named
+
+    def test_the_placement_line_reaches_the_owner(self, mod):
+        """It is written into the answer, not swallowed as metadata — the owner
+        has to be able to read it and check it in one glance."""
+        src = SRC.read_text(encoding="utf-8")
+        assert "**جایی که گذاشته شد:**" in src

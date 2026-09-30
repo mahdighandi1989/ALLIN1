@@ -442,3 +442,98 @@ describe('pageElementsAt — our own UI is never mistaken for the page', () => {
     expect(pickCropSheet(el, target)!.id).toBe('p2')
   })
 })
+
+// v172 — THE FIELD THAT SAID «you drew a box around a stylesheet».
+//
+// A real sheet reached the supervisor with covered_text =
+// «/* English serif for LATIN LETTERS ONLY — Persian letters, digits …».
+// The owner had drawn a box on the letter toolbar; the page keeps its CSS in a
+// <style> block; textContent folds that in; and the text was taken from the
+// whole SURFACE because that page declares no data-report-section. So the one
+// field that says WHAT was pointed at was noise, and that round placed the new
+// control by taste — «سلیقه رفتی». A confidently wrong field is worse than an
+// empty one.
+describe('v172 — what was in the box, and nothing nobody can see', () => {
+  it('never reports a stylesheet as the thing that was covered', () => {
+    const root = mount(`
+      <main data-report-surface="/letter">
+        <style>/* English serif for LATIN LETTERS ONLY — keep the Persian font */</style>
+        <div class="ltr-controls"><button>پرینت</button><button>پاک‌کردن</button></div>
+      </main>`)
+    const text = visibleText(root.querySelector('main'))
+    expect(text).not.toContain('English serif')
+    expect(text).toContain('پرینت')
+  })
+
+  it.each(['style', 'script', 'noscript', 'template'])('skips <%s>', (tag) => {
+    const root = mount(`<div id="w"><${tag}>NOISE_TOKEN</${tag}><span>دیده می‌شود</span></div>`)
+    expect(visibleText(root.querySelector('#w'))).not.toContain('NOISE_TOKEN')
+  })
+
+  it('drops an unseen subtree even from a single-child chain', () => {
+    // the branch that takes `textContent` wholesale — where the bug actually was
+    const root = mount('<div id="w"><style>NOISE_TOKEN</style>متنِ واقعی</div>')
+    const t = visibleText(root.querySelector('#w'))
+    expect(t).not.toContain('NOISE_TOKEN')
+    expect(t).toContain('متنِ واقعی')
+  })
+
+  it('still separates neighbours instead of running them together', () => {
+    const root = mount('<div id="w"><span>جستجو</span><span>نوع حساب</span><span>شعبه</span></div>')
+    expect(visibleText(root.querySelector('#w'))).toBe('جستجو · نوع حساب · شعبه')
+  })
+})
+
+describe('v172 — the description comes from the spot, not from the whole page', () => {
+  const spotOn = (stack: Element[]) =>
+    resolveSpot({ rect: RECT, viewport: VIEW, stack })
+
+  it('describes the control under the box, not the entire surface', () => {
+    const root = mount(`
+      <main data-report-surface="/letter" data-report-surface-label="نامه">
+        <style>/* a long stylesheet nobody can see */</style>
+        <div class="ltr-controls" id="row">
+          <button id="print">پرینت</button><button>پاک‌کردن</button>
+        </div>
+        <div class="lsheet">برگهٔ نامه</div>
+      </main>`)
+    const btn = root.querySelector('#print')!
+    const got = spotOn([btn, root.querySelector('#row')!, root.querySelector('main')!])
+    expect(got.covered_text).toContain('پرینت')
+    expect(got.covered_text).not.toContain('stylesheet')
+    expect(got.covered_text).not.toContain('برگهٔ نامه')     // not the whole page
+  })
+
+  it('climbs out of a bare number to the label beside it', () => {
+    // «۲۷۶» on its own tells a supervisor nothing; the row does.
+    const root = mount(`
+      <main data-report-surface="/x">
+        <div id="row"><span>مانده حساب</span><span id="n">۲۷۶</span></div>
+      </main>`)
+    const got = spotOn([root.querySelector('#n')!, root.querySelector('#row')!,
+                        root.querySelector('main')!])
+    expect(got.covered_text).toContain('مانده حساب')
+  })
+
+  it('still prefers a declared section when the page has one', () => {
+    const root = mount(`
+      <main data-report-surface="/customers">
+        <section data-report-section="filters" data-report-section-label="فیلترها" id="sec">
+          <span>جستجو</span><span>نوع حساب</span>
+        </section>
+      </main>`)
+    const got = spotOn([root.querySelector('#sec')!, root.querySelector('main')!])
+    expect(got.section_id).toBe('filters')
+    expect(got.covered_text).toContain('جستجو')
+  })
+
+  it('does not climb past the surface into the rest of the document', () => {
+    const root = mount(`
+      <div>
+        <nav>منوی کناری · داشبورد · مشتریان</nav>
+        <main data-report-surface="/x" id="m"><div id="empty"></div></main>
+      </div>`)
+    const got = spotOn([root.querySelector('#empty')!, root.querySelector('#m')!])
+    expect(got.covered_text).not.toContain('منوی کناری')
+  })
+})

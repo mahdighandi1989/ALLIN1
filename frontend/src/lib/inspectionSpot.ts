@@ -259,6 +259,9 @@ export function placeSpot(
   return { rect: { ...geom.doc }, basis: 'document', approximate: true }
 }
 
+/** Tags whose text is code, not something anyone can see on the page. */
+const UNSEEN = new Set(['STYLE', 'SCRIPT', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'HEAD', 'TITLE'])
+
 /**
  * The visible text of what was covered, collapsed and capped.
  *
@@ -267,15 +270,47 @@ export function placeSpot(
  * walked and each level's children are joined with a separator, down to a small
  * depth: deep enough to reach the rows of a table, shallow enough not to split a
  * sentence into words.
+ *
+ * v172 — AND IT SKIPS WHAT NOBODY CAN SEE. `textContent` includes `<style>`, so
+ * a box drawn on a page that carries its CSS in a `<style>` block reported the
+ * STYLESHEET as «what was in the box». One real sheet reached the supervisor
+ * saying the owner had drawn a box around
+ * «/* English serif for LATIN LETTERS ONLY …», which is why that round placed
+ * the new control by taste: the one field that says WHAT was pointed at was
+ * noise. A field that is confidently wrong is worse than one left empty.
  */
 export function visibleText(el: Element | null, depth = MAX_DEPTH): string {
-  if (!el) return ''
-  const flat = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
-  const kids = Array.from(el.children ?? [])
-  const raw = depth > 0 && kids.length > 1
-    ? kids.map((k) => visibleText(k, depth - 1)).filter(Boolean).join(JOIN)
-    : flat
-  return raw.length > MAX_TEXT ? `${raw.slice(0, MAX_TEXT)}…` : raw
+  if (!el || UNSEEN.has(el.tagName)) return ''
+  const kids = Array.from(el.children ?? []).filter((k) => !UNSEEN.has(k.tagName))
+  if (depth > 0 && kids.length > 1) {
+    const raw = kids.map((k) => visibleText(k, depth - 1)).filter(Boolean).join(JOIN)
+    return raw.length > MAX_TEXT ? `${raw.slice(0, MAX_TEXT)}…` : raw
+  }
+  // A leaf, or a single-child chain: take the text but drop any unseen subtree,
+  // which `textContent` would otherwise fold in.
+  const own = Array.from(el.childNodes)
+    .filter((n) => n.nodeType === 3 || (n.nodeType === 1 && !UNSEEN.has((n as Element).tagName)))
+    .map((n) => n.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return own.length > MAX_TEXT ? `${own.slice(0, MAX_TEXT)}…` : own
+}
+
+/** The nearest ancestor (starting at `el` itself) whose visible text says
+ *  something, without climbing past `stop`. */
+function nearestTelling(el: Element | null, stop: Element | null): Element | null {
+  const MIN = 8                      // «۲۷۶» is not a description; a label is
+  let cur: Element | null = el
+  let best: Element | null = null
+  for (let i = 0; cur && i < 6; i++) {
+    const t = visibleText(cur, 1)
+    if (t.length >= MIN) return cur
+    if (t && !best) best = cur       // something short is still better than nothing
+    if (cur === stop) break
+    cur = cur.parentElement
+  }
+  return best ?? el ?? stop
 }
 
 export function resolveSpot(input: {
@@ -294,10 +329,18 @@ export function resolveSpot(input: {
   // Deliberately the same shape a URL fragment uses, so the supervisor's tool
   // has nothing to translate.
   const reopen = sectionId ? `${page}#${sectionId}` : page
-  // The text comes from the SECTION when the rectangle landed on one: the
-  // innermost element under a 200-pixel box is usually a <span>, and «۲۷۶» on
-  // its own tells a supervisor nothing.
-  const textFrom = section?.el ?? surface?.el ?? innermost
+  // The text comes from the closest thing that actually SAYS something: the
+  // innermost element under a 200-pixel box is often a bare <span>, and «۲۷۶» on
+  // its own tells a supervisor nothing — but the whole surface tells them even
+  // less.
+  //
+  // v172 — this used to be `section ?? surface ?? innermost`, so a page with no
+  // `data-report-section` (most of them) described every box as «the entire
+  // page», and on a page that carries its CSS in a `<style>` block that came out
+  // as a stylesheet. The rule now walks OUT from the spot only until it finds
+  // something readable, and stops at the section or the surface rather than
+  // starting there.
+  const textFrom = nearestTelling(innermost, section?.el ?? surface?.el ?? null)
   return {
     page,
     page_label: surface?.el.getAttribute('data-report-surface-label') ?? 'جایی در رابط',

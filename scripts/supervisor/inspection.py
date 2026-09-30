@@ -243,12 +243,21 @@ def where_block(r: dict) -> list:
     # brief.
     if anch and (rel.get("w") or rel.get("h")):
         pc = lambda v: f"{round(float(v or 0) * 100)}٪"
+        # `rel.x` is measured from the element's LEFT edge, because that is how
+        # every browser coordinate is measured — the page being RTL changes what
+        # the reader sees, not what x means. Calling it «from the right» (as the
+        # first version of this line did) mirrors every box that is not centred.
         out.append(
-            f"- **جای دقیق داخلِ همان گره:** از راستِ گره {pc(rel.get('x'))}، "
-            f"از بالای گره {pc(rel.get('y'))} · اندازهٔ کادر {pc(rel.get('w'))} "
+            f"- **جای دقیق داخلِ همان گره:** از **لبهٔ چپِ** گره {pc(rel.get('x'))}، "
+            f"از **بالای** گره {pc(rel.get('y'))} · اندازهٔ کادر {pc(rel.get('w'))} "
             f"عرض و {pc(rel.get('h'))} ارتفاعِ گره "
             f"(خودِ گره {round(float(arect.get('w') or 0))}×"
             f"{round(float(arect.get('h') or 0))} پیکسل بود)")
+        out.append(
+            f"  - یعنی روی خودِ صفحه: از لبهٔ چپِ گره "
+            f"{round(float(rel.get('x') or 0) * float(arect.get('w') or 0))} پیکسل و "
+            f"از بالای گره {round(float(rel.get('y') or 0) * float(arect.get('h') or 0))} "
+            f"پیکسل — صفحه راست‌به‌چپ است ولی مختصات مثلِ همیشه از چپ شمرده می‌شود.")
         out.append(
             "  > این کسرها «همان‌جا» را می‌گویند و با تغییرِ اندازهٔ پنجره هم "
             "معتبرند. اگر خواسته «این را اینجا بگذار» است، جایش **همین** است — "
@@ -440,6 +449,30 @@ def _data_url(path: str) -> str:
     return f"data:{mime};base64," + base64.b64encode(raw).decode()
 
 
+#: Words an owner uses when the REQUEST IS ABOUT A PLACE. A sheet whose text
+#: contains one of these, and which carries an anchored box, cannot be closed
+#: with «fixed» until the answer says where the thing was actually put.
+PLACE_WORDS = (
+    "در اینجا", "اینجا", "همین‌جا", "همینجا", "در این قسمت", "این قسمت",
+    "این محل", "در این محل", "همین قسمت", "همین بخش", "این نقطه",
+)
+
+
+def asks_for_a_place(report: dict) -> bool:
+    """v172 — is this sheet about WHERE, and does it actually point somewhere?
+
+    Both halves matter. «اینجا» with no anchored box is a sentence the round
+    cannot act on precisely, and an anchored box on a request that never mentions
+    a place (a wording fix, a calculation) must not drag this guard in.
+    """
+    anchored = bool((((report.get("geometry") or {}).get("anchor") or {}).get("path")))
+    if not anchored:
+        return False
+    said = " ".join(n.get("text", "") for n in (report.get("notes") or [])
+                    if n.get("by") != "reviewer")
+    return any(w in said for w in PLACE_WORDS)
+
+
 def cmd_answer(args) -> int:
     tok = login()
     text = args.text or (Path(args.text_file).read_text(encoding="utf-8") if args.text_file else "")
@@ -461,6 +494,27 @@ def cmd_answer(args) -> int:
     target = next((r for r in lst.get("reports", []) if r["number"] == args.number), None)
     if target is None:
         raise InspectionError(f"گزارشِ {args.number} پیدا نشد")
+
+    # v172 — «دقیقاً در محلی که خواستم کار انجام نشده و سلیقه رفتی».
+    #
+    # A round once closed a «put it HERE» sheet as `fixed` and admitted a round
+    # later that it had not looked at the coordinates at all. The existing guard
+    # only asks for a picture, and a picture of the wrong place still passes. So
+    # when the sheet both names a place and carries an anchored box, the answer
+    # has to SAY where it put the thing, in its own words, before `fixed` is
+    # allowed. It is one short line, it goes into the answer the owner reads, and
+    # it cannot be produced without having decided the question.
+    place = (getattr(args, "place", "") or "").strip()
+    if args.outcome == "fixed" and asks_for_a_place(target) and not place:
+        raise InspectionError(
+            "این برگه «جا» خواسته (کادر کشیده شده و متن می‌گوید «اینجا»). "
+            "برای «fixed» باید `--place \"…\"` بدهی و در یک جمله بنویسی دقیقاً "
+            "کجا گذاشتی‌اش — مثلاً «داخلِ همان ردیفِ دکمه‌ها، بعد از پاک‌کردن». "
+            "اگر همان‌جا ممکن نشد، نتیجه `partial` است و دلیلش را بنویس. "
+            "«یک جای نزدیک» با نتیجهٔ fixed یعنی گزارشِ غلط.")
+
+    if place:
+        text = f"{text.rstrip()}\n\n**جایی که گذاشته شد:** {place}"
 
     body = {"text": text.strip(), "outcome": args.outcome,
             "commits": args.commit or [], "dependencies": deps}
@@ -495,6 +549,9 @@ def main() -> int:
                    help="'نام=ok|missing|risk:توضیح' — تکرارشدنی")
     a.add_argument("--no-deps", action="store_true",
                    help="فقط وقتی واقعاً هیچ وابستگی‌ای ندارد")
+    a.add_argument("--place", default="",
+                   help="یک جمله: دقیقاً کجا گذاشته شد — برای برگه‌ای که «جا» خواسته "
+                        "و «fixed» می‌گیرد اجباری است")
     sub.add_parser("file", help="تیک‌خورده‌ها → زونکن")
     sub.add_parser("urgent", help="یک برگهٔ فوری را بردار (صفِ خارج از نوبت)")
     args = ap.parse_args()

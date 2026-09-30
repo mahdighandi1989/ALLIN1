@@ -96,3 +96,7 @@ docs/supervisor/inspection/shots/
 # v146 — the owner's attached samples, pulled as text on every run. Working
 # copies of material that lives in Drive; never the record itself.
 docs/supervisor/inspection/files/
+
+# local probe/verification database (v172 — never commit a DB)
+backend/_probe.db
+backend/qc_test.db
