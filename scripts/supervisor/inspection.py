@@ -209,9 +209,18 @@ def cmd_pull() -> int:
     lines = [
         "# کارتابلِ «نظارت و سرکشی»",
         "",
-        f"- بی‌پاسخ (**باید همین دور جواب بگیرند**): **{q.get('owed', 0)}**",
-        f"- پاسخ‌داده‌شده، منتظرِ تیکِ مالک: {q.get('waiting_for_owner', 0)}",
+        f"- بدهیِ این دور (**باید همین دور جواب بگیرند**): **{q.get('owed', 0)}**",
+        f"  - تازه و بی‌پاسخ: {q.get('unanswered', q.get('owed', 0))}",
+        f"  - **نیمه‌کاره/درست‌نشده — ادامهٔ کارِ دورِ قبل**: {q.get('unfinished', 0)}"
+        + (f" (برگه‌های {'، '.join(str(n) for n in q.get('unfinished_numbers') or [])})"
+           if q.get('unfinished_numbers') else ""),
+        f"- پاسخ‌داده‌شده و تمام، منتظرِ تیکِ مالک: {q.get('waiting_for_owner', 0)}",
         f"- تأییدشده و آمادهٔ بایگانی: {q.get('to_file', 0)}",
+        "",
+        "> **برگهٔ نیمه‌کاره تمام‌شده نیست.** `partial` یعنی «بقیه‌اش مانده» و",
+        "> `not-done` یعنی «هنوز کارِ نکرده دارد» — هر دو همین دور برمی‌گردند و",
+        "> باید ادامه پیدا کنند، نه اینکه دوباره همان توضیح نوشته شود. اگر واقعاً",
+        "> راهی نیست، `needs-owner` با گزینه‌های مشخص بگذار تا بماند دستِ مالک.",
         "",
         "> تصویرها در `shots/` هستند. **بازشان کن و نگاه کن** — تمامِ نکتهٔ این",
         "> سامانه این است که مالک چیزی را *دیده* که تست‌ها نمی‌بینند.",
@@ -300,7 +309,11 @@ def cmd_pull() -> int:
     # Re-ask after the reads: `files_to_read` from before the pull is the DEBT,
     # and what matters afterwards is whether anything is still outstanding.
     left = api(tok, "/api/inspection/queue").get("files_to_read", 0)
-    print(json.dumps({"owed": q.get("owed", 0), "waiting_for_owner": q.get("waiting_for_owner", 0),
+    print(json.dumps({"owed": q.get("owed", 0),
+                      "unanswered": q.get("unanswered", q.get("owed", 0)),
+                      "unfinished": q.get("unfinished", 0),
+                      "unfinished_numbers": q.get("unfinished_numbers") or [],
+                      "waiting_for_owner": q.get("waiting_for_owner", 0),
                       "to_file": q.get("to_file", 0),
                       "files_read": q.get("files_to_read", 0), "files_still_unread": left,
                       "brief": str(BRIEF.relative_to(ROOT))},

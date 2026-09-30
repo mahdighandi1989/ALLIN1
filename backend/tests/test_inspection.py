@@ -359,11 +359,20 @@ class TestTheOwnerSide:
 class TestTheQueue:
     async def test_it_separates_what_is_owed_from_what_waits_on_the_owner(
             self, client, auth_headers, monkeypatch, test_user):
+        """v167 — this test used to answer the sheet with `not-done` and expect
+        it to count as «waiting for the owner». That was the bug, not the
+        contract: a sheet whose own hint reads «این برگه هنوز کارِ نکرده دارد»
+        was not waiting on anybody, it was UNFINISHED, and nothing brought it
+        back. `needs-owner` is the outcome that genuinely waits on a decision,
+        so it is what this test uses now; the old shape is covered from the
+        other side by `TestHalfDoneWorkComesBack`.
+        """
         a = await _file(client, auth_headers, text="یک")
         await _file(client, auth_headers, text="دو")
         monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
         await client.post(f"/api/inspection/{a['id']}/notes", headers=auth_headers,
-                          json={"text": "بررسی شد", "outcome": "not-done"})
+                          json={"text": "با ساختار نمی‌خواند؛ گزینه‌ها: …",
+                                "outcome": "needs-owner"})
         q = (await client.get("/api/inspection/queue", headers=auth_headers)).json()
         assert q["owed"] == 1 and q["waiting_for_owner"] == 1
 
@@ -410,3 +419,91 @@ class TestTheSupervisorIsNamedOnTheSERVER:
         r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
                               json={"text": "درست شد", "outcome": "fixed", "after_shot": PNG})
         assert r.status_code == 422
+
+
+class TestHalfDoneWorkComesBack:
+    """v167 — «نیمه‌کاره» یعنی بقیه‌اش مانده، پس باید برگردد.
+
+    The owner asked it plainly: «ایا این نیمه کاره یعنی سیستم و ناظر بعدا ادامه
+    کارها رو روش انجام خواهند داد؟ ... یادش میمونه؟» It did not. The moment the
+    supervisor wrote `partial`, the sheet left `owed`, the round exited clean,
+    and the remainder was owed to nobody — the label remembered, the queue did
+    not. A sheet is finished only when the work is DONE WITH PROOF, or parked on
+    the owner's decision.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _as_supervisor(self, monkeypatch, test_user):
+        monkeypatch.setenv("SUPERVISOR_API_USER", test_user.username)
+
+    async def _answered(self, client, headers, **note):
+        rep = await _file(client, headers)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=headers, json=note)
+        assert r.status_code == 200, r.text
+        return rep
+
+    async def _queue(self, client, headers):
+        return (await client.get("/api/inspection/queue", headers=headers)).json()
+
+    async def test_a_half_done_sheet_is_still_owed_next_round(self, client, auth_headers):
+        rep = await self._answered(client, auth_headers,
+                                   text="نیمی‌اش شد", outcome="partial")
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 1
+        assert q["unfinished"] == 1 and q["unanswered"] == 0
+        assert q["unfinished_numbers"] == [rep["number"]]
+        assert q["waiting_for_owner"] == 0
+
+    async def test_a_sheet_that_was_not_done_comes_back_too(self, client, auth_headers):
+        await self._answered(client, auth_headers, text="نشد چون…", outcome="not-done")
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 1 and q["unfinished"] == 1
+
+    async def test_a_reply_with_no_outcome_at_all_is_not_finished_either(
+            self, client, auth_headers):
+        """A bare reply is not evidence of anything — the same rule `sheet_glow`
+        already applies to the colour."""
+        await self._answered(client, auth_headers, text="نگاه کردم")
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 1 and q["unfinished"] == 1
+
+    async def test_a_proven_fix_is_finished_and_waits_for_the_owner(
+            self, client, auth_headers):
+        await self._answered(client, auth_headers, text="درست شد",
+                             outcome=OUTCOME_FIXED, after_shot=PNG)
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 0 and q["unfinished"] == 0
+        assert q["waiting_for_owner"] == 1
+
+    async def test_a_claim_of_fixed_without_proof_never_reaches_the_queue(
+            self, client, auth_headers):
+        """Belt and braces: the API refuses it outright (see the sibling test),
+        so «fixed» in the queue always means «fixed with a picture»."""
+        rep = await _file(client, auth_headers)
+        r = await client.post(f"/api/inspection/{rep['id']}/notes", headers=auth_headers,
+                              json={"text": "شد", "outcome": OUTCOME_FIXED})
+        assert r.status_code == 422
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 1 and q["unanswered"] == 1
+
+    async def test_a_sheet_parked_on_the_owner_is_not_chased_every_round(
+            self, client, auth_headers):
+        """`needs-owner` is the ONE answer that stops the loop — otherwise a
+        question the owner has not answered would be re-asked forever."""
+        await self._answered(client, auth_headers,
+                             text="با ساختار نمی‌خواند؛ دو گزینه: …",
+                             outcome="needs-owner")
+        q = await self._queue(client, auth_headers)
+        assert q["owed"] == 0 and q["unfinished"] == 0
+        assert q["waiting_for_owner"] == 1
+
+    async def test_the_numbers_still_add_up(self, client, auth_headers):
+        """Three sheets, one of each kind — the three counters must partition
+        the live queue, or a round reports a total nobody can act on."""
+        await self._answered(client, auth_headers, text="نیمه", outcome="partial")
+        await self._answered(client, auth_headers, text="با مالک", outcome="needs-owner")
+        await _file(client, auth_headers)                      # untouched
+        q = await self._queue(client, auth_headers)
+        assert q["unanswered"] == 1 and q["unfinished"] == 1 and q["waiting_for_owner"] == 1
+        assert q["owed"] == 2
+        assert len(q["reports"]) == q["unanswered"] + q["unfinished"] + q["waiting_for_owner"]

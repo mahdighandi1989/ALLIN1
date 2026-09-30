@@ -41,6 +41,7 @@ from app.models.inspection import (
     BINDER_CAPACITY,
     EXTRACT_LABEL,
     OUTCOME_FIXED,
+    OUTCOME_NEEDS_OWNER,
     OUTCOMES,
     STATUS_ANSWERED,
     STATUS_APPROVED,
@@ -334,13 +335,33 @@ async def queue(db: AsyncSession = Depends(get_db), user=Depends(get_current_act
         .where(InspectionReport.status.in_([STATUS_OPEN, STATUS_ANSWERED]))
         .order_by(InspectionReport.number)
     )).scalars().all()
-    unanswered = [r for r in rows if r.status == STATUS_OPEN]
     fmap = await _files_by_report(db, [r.id for r in rows])
     reports = [_to_dict(r, files=fmap.get(r.id, [])) for r in rows]
+    # v167 — «نیمه‌کاره» IS STILL WORK, AND IT HAS TO COME BACK.
+    #
+    # Until now `owed` counted only the untouched sheets, so the moment the
+    # supervisor wrote `partial` the sheet dropped out of what it owed and
+    # nothing ever brought the remainder back: the label said «بخشی انجام شد؛
+    # بقیه‌اش…» and the «بقیه» was owed to nobody. `not-done` was worse — its own
+    # hint says «این برگه هنوز کارِ نکرده دارد» while the round reported a clean
+    # exit. The owner asked the obvious question: «یادش می‌مونه؟»
+    #
+    # The rule is now the one the colour already implies: a sheet is finished
+    # only when the work is DONE WITH PROOF (`fixed` + its after picture) or
+    # parked on the owner's decision (`needs-owner`). Everything else — partial,
+    # not-done, a reply with no outcome at all — is still owed and comes back
+    # next round. `unfinished` is reported separately from `unanswered` so the
+    # round can say «۲ تازه، ۱ نیمه‌کاره» rather than one undifferentiated number.
+    unanswered = [r for r in reports if r["status"] == STATUS_OPEN]
+    unfinished = [r for r in reports if r["status"] == STATUS_ANSWERED
+                  and (r.get("glow") or {}).get("tone") not in (OUTCOME_FIXED, OUTCOME_NEEDS_OWNER)]
     return {
         "ok": True,
-        "owed": len(unanswered),
-        "waiting_for_owner": len(rows) - len(unanswered),
+        "owed": len(unanswered) + len(unfinished),
+        "unanswered": len(unanswered),
+        "unfinished": len(unfinished),
+        "unfinished_numbers": [r["number"] for r in unfinished],
+        "waiting_for_owner": len(rows) - len(unanswered) - len(unfinished),
         "to_file": (await db.execute(
             select(func.count(InspectionReport.id))
             .where(InspectionReport.status == STATUS_APPROVED))).scalar() or 0,
