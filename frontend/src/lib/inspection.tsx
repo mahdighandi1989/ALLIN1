@@ -14,7 +14,8 @@ import toast from 'react-hot-toast'
 import { inspectionApi, parseApiError, type InspectionReport } from './api'
 import { notifySheetsChanged } from './inspectionHighlights'
 import {
-  CROP_MIN_PX, geometryLabel, measureSpot, resolveSpot, spotAddress, verifiedSelector,
+  CROP_MIN_PX, geometryLabel, measureSpot, pickCaptureTarget, pickCropSheet, resolveSpot,
+  spotAddress, verifiedSelector,
   type Rect, type UiSpot,
 } from './inspectionSpot'
 
@@ -171,28 +172,35 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       const el = document.elementsFromPoint(
         sp.rect.x + sp.rect.w / 2, sp.rect.y + sp.rect.h / 2,
       ).find((n) => !n.hasAttribute('data-inspection-layer')) as HTMLElement | undefined
-      // v153 — ALWAYS the whole surface, never the nearest little section.
-      //
-      // Preferring the section produced a 458×53 strip on one page and the whole
-      // page on another: the same button gave a picture with context or without,
-      // depending on where the owner happened to draw. Context is the entire
-      // value of a screenshot — «حداقل خوب کل صفحه هم تو عکس باشه» — and the mark
-      // drawn below is what says WHERE, so the section no longer has to.
-      const target = (el?.closest('[data-report-surface]')
-        || document.querySelector('[data-report-surface]')
-        || el) as HTMLElement | undefined
+      // The camera points at the whole reportable surface (v153), because that is
+      // what the rasteriser draws faithfully; when the surface is a stack of A4
+      // sheets, the finished picture is cut down to the ONE sheet the box landed
+      // on — «فقط همان صفحه باید باشه». Both rules, and the browser evidence
+      // behind them, live with `pickCaptureTarget` / `pickCropSheet`.
+      const target = pickCaptureTarget(el)
       if (!target) return
+      const sheet = pickCropSheet(el, target)
       // v154 — `backgroundColor` is not optional for JPEG. Without it the element's
       // transparent background becomes BLACK, and the capture came out as a dark
       // negative of a white page — technically a screenshot, practically unreadable.
       // Seen only by looking at the produced file; no assertion would have caught it.
+      // v165 — `margin: 0` is not cosmetic, it is the difference between a mark
+      // that points at the right thing and one that does not. The rasteriser
+      // copies the COMPUTED style onto its clone, and a centred element
+      // (`mx-auto` on the surface here) computes its `auto` margins to real
+      // pixels — so the clone was drawn shifted inside its own picture by half
+      // the leftover width. Measured in Chromium on a 1400px window: a constant
+      // 36px to the right, zero vertical, zero scale. Every mark was off by that
+      // much, on every page — «مختصاتش خیلی اشتباه و دقیق نیست». The element's
+      // own margin has no business being inside a picture OF that element.
       const data = await toJpeg(target, {
         quality: 0.82, pixelRatio: 1, cacheBust: true,
         backgroundColor: '#ffffff',
+        style: { margin: '0' },
       })
-      // v153 — MARK THE BOX ON THE PICTURE. The capture is of the whole surface,
-      // which is what makes it worth looking at, but unmarked it only says
-      // «somewhere on this page». The owner asked for both to corroborate each
+      // v153 — MARK THE BOX ON THE PICTURE. The capture is of the whole sheet
+      // (or surface), which is what makes it worth looking at, but unmarked it
+      // only says «somewhere on this page». The owner asked for both to corroborate each
       // other: «اگر با مختصات پیدا نکرد با عکس بتونه تطبیق بده». If the anchor
       // element is gone later and the coordinates fall back to «approximate»,
       // the marked picture is what still pins the spot down.
@@ -204,9 +212,27 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
         await new Promise<void>((res, rej) => {
           probe.onload = () => res(); probe.onerror = () => rej(new Error('x')); probe.src = data
         })
-        const box = boxInImage(sp.rect, tr,
-          { width: probe.naturalWidth, height: probe.naturalHeight })
-        if (box) out = await annotate(data, box)
+        // v165 — the rasteriser renders the element's BORDER BOX (offsetWidth ×
+        // offsetHeight), so that is the box the picture's pixels map onto. The
+        // visible rectangle can differ from it in exactly one way that matters
+        // here: a CSS transform (the printable sheets are scaled to fit the
+        // screen), and that ratio is what turns a viewport coordinate back into
+        // a layout coordinate. Scrolling needs no compensation — a scroll
+        // container's border box IS its visible box, and the rasteriser renders
+        // that same border box.
+        const geom = {
+          left: tr.left, top: tr.top, width: tr.width, height: tr.height,
+          layoutWidth: target.offsetWidth, layoutHeight: target.offsetHeight,
+        }
+        const image = { width: probe.naturalWidth, height: probe.naturalHeight }
+        const box = boxInImage(sp.rect, geom, image)
+        // the sheet, measured the very same way, so the crop and the mark can
+        // never disagree about where anything is
+        const sr = sheet?.getBoundingClientRect()
+        const crop = sr
+          ? boxInImage({ x: sr.left, y: sr.top, w: sr.width, h: sr.height }, geom, image)
+          : null
+        if (box) out = await annotate(data, box, crop)
       } catch {
         // marking failed — keep the plain capture rather than losing the evidence
       }

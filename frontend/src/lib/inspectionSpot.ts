@@ -364,3 +364,56 @@ export function matchesSpot(reopen: string | undefined, want: string): boolean {
   })
   return ra[1] === rb[1] && samePage(ra[0], rb[0])
 }
+
+// v165 — ONE SHEET OUT OF A STACK, WITHOUT POINTING THE CAMERA AT IT.
+//
+// «الان مثلا از یه فرم چند صفحه ای اسکرین گرفتم فقط یه قسمت از یه صفحه، تو
+// اسکرین و عکس ثبت شده همه صفحات داره نشون میده که لزومی نداره و فقط همون صفحه
+// باید باشه».
+//
+// The obvious fix — rasterise the sheet instead of the surface — is WRONG, and a
+// real browser said so. html-to-image re-renders the node inside an SVG
+// foreignObject, and the deeper the node, the more of the page's layout context
+// it loses: pointed at one `.psheet`, Chromium dropped the heading and the
+// paragraph outright and pushed the table 240px off the right edge, while the
+// very same rasteriser pointed at the surface rendered all three sheets
+// perfectly. A picture that is itself wrong cannot be rescued by any amount of
+// coordinate arithmetic.
+//
+// So the camera stays where v153 put it — on the whole surface, which renders
+// faithfully — and the SHEET is cut out of the finished picture afterwards. The
+// owner gets the one page they pointed at, drawn correctly.
+//
+// A sheet is a page of paper on screen. Sheets opt in with `data-report-page`;
+// the selectors of the existing printable pages are listed too, so they work
+// without being edited one by one. A screen that is not a stack of sheets has no
+// crop and is captured whole, exactly as v153 decided.
+export const PAGE_SEL =
+  '[data-report-page], .psheet, .lsheet, .csheet, .ol-page, .sn-page, #cf-sheet'
+
+/** The element to rasterise: the whole reportable surface, else the element itself. */
+export function pickCaptureTarget(
+  el: Element | null | undefined,
+  doc: ParentNode = document,
+): HTMLElement | null {
+  const surface = el?.closest?.('[data-report-surface]')
+  if (surface) return surface as HTMLElement
+  return (doc.querySelector('[data-report-surface]') ?? el ?? null) as HTMLElement | null
+}
+
+/**
+ * The sheet to cut the finished picture down to, or null when this screen is not
+ * a stack of sheets — in which case the whole capture is kept.
+ *
+ * Never returns a sheet that is not inside the captured target: cropping to
+ * something outside the picture would cut out empty space.
+ */
+export function pickCropSheet(
+  el: Element | null | undefined,
+  target: Element | null | undefined,
+): HTMLElement | null {
+  const sheet = el?.closest?.(PAGE_SEL) as HTMLElement | null
+  if (!sheet || !target) return null
+  if (sheet === target || !target.contains(sheet)) return null
+  return sheet
+}

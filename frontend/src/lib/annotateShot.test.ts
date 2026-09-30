@@ -5,7 +5,7 @@
  * from the canvas: a wrong mapping would put the rectangle somewhere the owner
  * never clicked, which is worse than leaving the picture bare.
  */
-import { boxInImage } from './annotateShot'
+import { boxInImage, clampCrop } from './annotateShot'
 
 const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height })
@@ -51,5 +51,93 @@ describe('boxInImage', () => {
       rect(0, 0, 0, 0), { width: 100, height: 100 })).toBeNull()
     expect(boxInImage({ x: 1, y: 1, w: 1, h: 1 },
       rect(0, 0, 100, 100), { width: 0, height: 0 })).toBeNull()
+  })
+})
+
+describe('v165 — the mark lands where the owner drew, not where it fits', () => {
+  it('is unchanged for a plain element that neither scrolls nor scales', () => {
+    const box = boxInImage(
+      { x: 150, y: 250, w: 100, h: 40 },
+      { left: 100, top: 200, width: 800, height: 600 },
+      { width: 800, height: 600 })!
+    expect(box).toEqual({ x: 50, y: 50, w: 100, h: 40 })
+  })
+
+  it('needs no special case for a scroll container', () => {
+    // Its border box IS its visible box, and the rasteriser renders that same
+    // border box — so layout and viewport agree and nothing has to be added back.
+    const box = boxInImage(
+      { x: 150, y: 250, w: 100, h: 40 },
+      { left: 100, top: 200, width: 800, height: 600,
+        layoutWidth: 800, layoutHeight: 600 },
+      { width: 800, height: 600 })!
+    expect(box).toEqual({ x: 50, y: 50, w: 100, h: 40 })
+  })
+
+  it('accounts for a CSS transform that shrank the element on screen', () => {
+    // laid out 1000 wide, displayed 500 wide ⇒ everything on screen is half size
+    const box = boxInImage(
+      { x: 150, y: 100, w: 50, h: 20 },
+      { left: 100, top: 100, width: 500, height: 500,
+        layoutWidth: 1000, layoutHeight: 1000 },
+      { width: 1000, height: 1000 })!
+    expect(box).toEqual({ x: 100, y: 0, w: 100, h: 40 })
+  })
+
+  it('scales with the picture when it was rasterised above 1x', () => {
+    const box = boxInImage(
+      { x: 150, y: 250, w: 100, h: 40 },
+      { left: 100, top: 200, width: 800, height: 600,
+        layoutWidth: 800, layoutHeight: 600 },
+      { width: 1600, height: 1200 })!
+    expect(box).toEqual({ x: 100, y: 100, w: 200, h: 80 })
+  })
+
+  it('handles a transform AND a high-density raster together', () => {
+    const box = boxInImage(
+      { x: 200, y: 100, w: 50, h: 50 },
+      { left: 100, top: 100, width: 500, height: 500,
+        layoutWidth: 1000, layoutHeight: 1000 },
+      { width: 2000, height: 2000 })!
+    expect(box).toEqual({ x: 400, y: 0, w: 200, h: 200 })
+  })
+
+  it('still refuses a box that falls outside the picture', () => {
+    expect(boxInImage(
+      { x: 5000, y: 5000, w: 10, h: 10 },
+      { left: 0, top: 0, width: 800, height: 600, layoutWidth: 800, layoutHeight: 600 },
+      { width: 800, height: 600 })).toBeNull()
+  })
+})
+
+// v165 — the crop that turns «every sheet» into «the sheet you pointed at».
+describe('clampCrop — cutting one sheet out of the picture', () => {
+  it('keeps a crop that sits inside the picture', () => {
+    expect(clampCrop({ x: 24, y: 1200, w: 794, h: 1123 }, 1328, 3500))
+      .toEqual({ x: 24, y: 1200, w: 794, h: 1123 })
+  })
+
+  it('never reads past the edge — that would come out black on a JPEG', () => {
+    expect(clampCrop({ x: 24, y: 3000, w: 794, h: 1123 }, 1328, 3500))
+      .toEqual({ x: 24, y: 3000, w: 794, h: 500 })
+  })
+
+  it('pulls a negative origin back to zero', () => {
+    expect(clampCrop({ x: -30, y: -10, w: 200, h: 200 }, 400, 400))
+      .toEqual({ x: 0, y: 0, w: 200, h: 200 })
+  })
+
+  it('drops a crop that is already the whole picture', () => {
+    expect(clampCrop({ x: 0, y: 0, w: 400, h: 400 }, 400, 400)).toBeNull()
+  })
+
+  it('drops a degenerate crop rather than producing a sliver', () => {
+    expect(clampCrop({ x: 0, y: 0, w: 8, h: 300 }, 400, 400)).toBeNull()
+    expect(clampCrop({ x: 399, y: 0, w: 100, h: 300 }, 400, 400)).toBeNull()
+  })
+
+  it('has nothing to do when there is no crop', () => {
+    expect(clampCrop(null, 400, 400)).toBeNull()
+    expect(clampCrop(undefined, 400, 400)).toBeNull()
   })
 })

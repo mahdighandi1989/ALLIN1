@@ -7,8 +7,8 @@
  * which is worse than not answering at all.
  */
 import {
-  domPath, geometryLabel, matchesSpot, measureSpot, normalizePath, placeSpot, querySelectorPath, samePage,
-  resolveSpot, spotAddress, verifiedSelector, visibleText,
+  domPath, geometryLabel, matchesSpot, measureSpot, normalizePath, pickCaptureTarget, pickCropSheet, placeSpot,
+  querySelectorPath, samePage, resolveSpot, spotAddress, verifiedSelector, visibleText,
 } from './inspectionSpot'
 
 function mount(html: string): HTMLElement {
@@ -300,5 +300,72 @@ describe('normalizePath / samePage', () => {
     // a section id is the page author's own string — not case-levelled
     expect(matchesSpot('/customers#Filters', '/customers#filters')).toBe(false)
     expect(matchesSpot(undefined, '/customers')).toBe(false)
+  })
+})
+
+// v165 — «فقط همان صفحه باید باشه». The picture must show ONE sheet of a
+// multi-sheet document. The camera still points at the whole surface (pointing
+// it at a sheet makes the rasteriser render that sheet wrongly — see the module);
+// the sheet is what the finished picture is cropped to.
+describe('pickCaptureTarget / pickCropSheet — one sheet, from a faithful picture', () => {
+  const stack = () => mount(`
+    <main data-report-surface="/letter">
+      <div class="print-wrap">
+        <div class="psheet" id="p1"><p id="a">page one</p></div>
+        <div class="psheet" id="p2"><p id="b">page two</p></div>
+        <div class="psheet" id="p3"><p id="c">page three</p></div>
+      </div>
+    </main>`)
+
+  it('rasterises the whole surface, never a single sheet', () => {
+    const root = stack()
+    const t = pickCaptureTarget(root.querySelector('#b'))!
+    expect(t.getAttribute('data-report-surface')).toBe('/letter')
+  })
+
+  it('crops to the sheet the box landed on', () => {
+    const root = stack()
+    const t = pickCaptureTarget(root.querySelector('#b'))!
+    expect(pickCropSheet(root.querySelector('#b'), t)!.id).toBe('p2')
+    expect(pickCropSheet(root.querySelector('#c'), t)!.id).toBe('p3')
+  })
+
+  it('does not crop an ordinary screen that is not a stack of sheets', () => {
+    const root = mount(`
+      <main data-report-surface="/customers">
+        <section data-report-section="filters"><input id="q" /></section>
+      </main>`)
+    const t = pickCaptureTarget(root.querySelector('#q'))!
+    expect(t.getAttribute('data-report-surface')).toBe('/customers')
+    expect(pickCropSheet(root.querySelector('#q'), t)).toBeNull()
+  })
+
+  it('accepts a sheet that opts in with data-report-page', () => {
+    const root = mount(`
+      <main data-report-surface="/x">
+        <div data-report-page="2" id="sheet"><b id="k">k</b></div>
+      </main>`)
+    const t = pickCaptureTarget(root.querySelector('#k'))!
+    expect(pickCropSheet(root.querySelector('#k'), t)!.id).toBe('sheet')
+  })
+
+  it('refuses to crop to a sheet that is not inside the picture', () => {
+    const root = mount(`
+      <div>
+        <div class="psheet" id="loose"><b id="k">k</b></div>
+        <main data-report-surface="/x"><p>x</p></main>
+      </div>`)
+    const t = pickCaptureTarget(null)!          // falls back to the surface
+    expect(pickCropSheet(root.querySelector('#k'), t)).toBeNull()
+  })
+
+  it('falls back to the surface when the box is off any element', () => {
+    mount('<main data-report-surface="/x"><p>x</p></main>')
+    expect(pickCaptureTarget(null)!.getAttribute('data-report-surface')).toBe('/x')
+  })
+
+  it('returns the element itself when nothing is reportable', () => {
+    const root = mount('<div><span id="s">s</span></div>')
+    expect(pickCaptureTarget(root.querySelector('#s'))!.id).toBe('s')
   })
 })
