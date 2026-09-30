@@ -131,11 +131,18 @@ describe('paperOf — a branch prints on its own paper, or on the default', () =
     expect(paperOf(undefined)).toBeNull()
   })
 
-  it('carries the branch box for the one branch shaped unlike the rest', () => {
-    // Ajman prints its emblem beside its name; with the square default box it
-    // renders correct-but-tiny, which is what the owner saw.
-    expect(paperOf(branchFor('2900'))!.logoBox).toEqual({ x: 14, y: 3, w: 47, h: 18 })
-    expect(paperOf(branchFor('2898'))!.logoBox).toBeUndefined()
+  it('needs no branch box now that every branch is drawn the same way', () => {
+    // v174 — Ajman used to print its mark BESIDE its branch name (2.55:1) and
+    // needed a box of its own. Rebuilt in the house layout it is 1.159:1, the
+    // same as Al Maktoum, so the ordinary header box fits every branch.
+    for (const b of CASE_BRANCHES) expect(b.logoBox).toBeUndefined()
+  })
+
+  it('still carries a branch box through when one is given', () => {
+    // The mechanism stays for the next branch whose paper really is shaped
+    // differently — untested code is code that will not work when it is needed.
+    const odd = { ...CASE_BRANCHES[0], logoBox: { x: 14, y: 3, w: 47, h: 18 } }
+    expect(paperOf(odd)!.logoBox).toEqual({ x: 14, y: 3, w: 47, h: 18 })
   })
 })
 
