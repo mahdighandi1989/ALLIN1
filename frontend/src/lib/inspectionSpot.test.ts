@@ -7,8 +7,9 @@
  * which is worse than not answering at all.
  */
 import {
-  domPath, geometryLabel, matchesSpot, measureSpot, normalizePath, pickCaptureTarget, pickCropSheet, placeSpot,
-  querySelectorPath, samePage, resolveSpot, spotAddress, verifiedSelector, visibleText,
+  domPath, geometryLabel, isOurOverlay, matchesSpot, measureSpot, normalizePath, pageElementsAt,
+  pickCaptureTarget, pickCropSheet, placeSpot, querySelectorPath, samePage, resolveSpot,
+  spotAddress, verifiedSelector, visibleText,
 } from './inspectionSpot'
 
 function mount(html: string): HTMLElement {
@@ -367,5 +368,77 @@ describe('pickCaptureTarget / pickCropSheet — one sheet, from a faithful pictu
   it('returns the element itself when nothing is reportable', () => {
     const root = mount('<div><span id="s">s</span></div>')
     expect(pickCaptureTarget(root.querySelector('#s'))!.id).toBe('s')
+  })
+})
+
+// v171 — THE ROOT OF «همه صفحات فرم در اسکرین گزارش دیده میشه».
+//
+// The capture asks the DOM what is under the drawn box, and it asks AFTER the
+// report dialog has opened. The old check (`el.hasAttribute`) only asked about
+// the element itself, so the dialog's own card — a child of the layer — read as
+// page content: no surface above it, no sheet around it, so the crop was
+// dropped and the whole multi-sheet document was photographed. Fixing it at the
+// two call sites would have left the next overlay to repeat it.
+describe('pageElementsAt — our own UI is never mistaken for the page', () => {
+  // jsdom has no hit-testing, so the stack is supplied — what is under test is
+  // the FILTER, which is where the bug was.
+  const at = (els: Element[]) =>
+    pageElementsAt(10, 10, { elementsFromPoint: () => els } as unknown as Document)
+
+  it('drops a NESTED element of an inspection layer, not just its root', () => {
+    const root = mount(`
+      <div>
+        <div data-inspection-layer="1" id="layer">
+          <div class="card" id="card"><button id="btn">ثبت</button></div>
+        </div>
+        <main data-report-surface="/letter"><div class="lsheet" id="sheet">x</div></main>
+      </div>`)
+    const btn = root.querySelector('#btn')!
+    const card = root.querySelector('#card')!
+    const layer = root.querySelector('#layer')!
+    const sheet = root.querySelector('#sheet')!
+    expect(at([btn, card, layer, sheet]).map((e) => e.id)).toEqual(['sheet'])
+  })
+
+  it('keeps the page element that was underneath', () => {
+    const root = mount(`
+      <div>
+        <div data-inspection-layer="1"><div id="backdrop">.</div></div>
+        <main data-report-surface="/x"><p id="target">متن</p></main>
+      </div>`)
+    const got = at([root.querySelector('#backdrop')!, root.querySelector('#target')!])
+    expect(got[0].id).toBe('target')
+  })
+
+  it('is unchanged for a page with no overlay at all', () => {
+    const root = mount('<main data-report-surface="/x"><p id="p">x</p></main>')
+    expect(at([root.querySelector('#p')!]).map((e) => e.id)).toEqual(['p'])
+  })
+
+  it('isOurOverlay answers about ancestors, which is the question', () => {
+    const root = mount(`
+      <div data-inspection-layer="1"><span><b id="deep">x</b></span></div>
+      <p id="page">y</p>`)
+    expect(isOurOverlay(root.querySelector('#deep'))).toBe(true)
+    expect(isOurOverlay(root.querySelector('#page'))).toBe(false)
+    expect(isOurOverlay(null)).toBe(false)
+    expect(isOurOverlay(undefined)).toBe(false)
+  })
+
+  // The whole point: with the dialog open, the box must STILL resolve to the
+  // sheet it was drawn on, so the capture is cropped to that one page.
+  it('still finds the sheet to crop to while the dialog is open', () => {
+    const root = mount(`
+      <div>
+        <div data-inspection-layer="1"><div class="dlg" id="dlg">گزارش</div></div>
+        <main data-report-surface="/letter">
+          <div class="lsheet" id="p1"><p id="a">one</p></div>
+          <div class="lsheet" id="p2"><p id="b">two</p></div>
+        </main>
+      </div>`)
+    const el = at([root.querySelector('#dlg')!, root.querySelector('#b')!])[0]
+    const target = pickCaptureTarget(el)!
+    expect(target.getAttribute('data-report-surface')).toBe('/letter')
+    expect(pickCropSheet(el, target)!.id).toBe('p2')
   })
 })
