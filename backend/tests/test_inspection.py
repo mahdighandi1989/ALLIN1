@@ -507,3 +507,77 @@ class TestHalfDoneWorkComesBack:
         assert q["unanswered"] == 1 and q["unfinished"] == 1 and q["waiting_for_owner"] == 1
         assert q["owed"] == 2
         assert len(q["reports"]) == q["unanswered"] + q["unfinished"] + q["waiting_for_owner"]
+
+
+class TestABigPictureIsNotRefused:
+    """v175 — «این خطایی که موقع ثبت گزارش میزنم و ریشه‌ای درست کن که محدودیتی نباشه».
+
+    The owner pasted their own screenshot and the report came back «shot: String
+    should have at most 1400000 characters» — about a megabyte of base64, smaller
+    than an ordinary full-screen PNG. The best evidence this system can get was
+    the one thing it turned away.
+
+    The real fix is on the page (every picture is re-encoded before it is sent).
+    What is held here is the server's half: a ceiling high enough that nothing
+    the page sends can reach it, a refusal written in words if it ever does, and
+    — the dangerous one — oversize never passing silently.
+    """
+
+    def _url(self, chars: int) -> str:
+        head = "data:image/png;base64,"
+        return head + "A" * (chars - len(head))
+
+    async def test_a_picture_far_bigger_than_the_old_ceiling_is_accepted(
+            self, client, auth_headers):
+        """4 MB — three times what used to be refused, and an ordinary screenshot."""
+        r = await client.post("/api/inspection", headers=auth_headers,
+                              json={"text": "درستش کن", "spot": SPOT,
+                                    "shot": self._url(4_000_000)})
+        assert r.status_code == 200, r.text[:300]
+
+    def test_the_ceiling_is_high_enough_that_the_page_cannot_reach_it(self):
+        from app.routers.inspection import MAX_SHOT_BYTES
+        # the page aims to stay under 3_000_000 (SHOT_MAX_CHARS); the server must
+        # be comfortably above that, or the two race each other
+        assert MAX_SHOT_BYTES >= 3_000_000 * 2
+
+    async def test_past_the_ceiling_it_says_so_in_words_the_owner_can_act_on(
+            self, client, auth_headers):
+        from app.routers.inspection import MAX_SHOT_BYTES
+        r = await client.post("/api/inspection", headers=auth_headers,
+                              json={"text": "x", "spot": SPOT,
+                                    "shot": self._url(MAX_SHOT_BYTES + 50)})
+        assert r.status_code == 422
+        body = r.text
+        assert "تصویر بیش از حد بزرگ است" in body
+        assert "String should have at most" not in body      # the old message
+
+    async def test_oversize_is_never_dropped_in_silence(self, client, auth_headers):
+        """THE DANGEROUS ONE. `_split_data_url` used to return None for a picture
+        that was too big — exactly as it does for «this is not an image» — so a
+        shot that got past the schema was thrown away without a word: the sheet
+        filed with no picture and nobody was told."""
+        from fastapi import HTTPException
+        from app.routers.inspection import MAX_SHOT_BYTES, _split_data_url
+        with pytest.raises(HTTPException) as e:
+            _split_data_url(self._url(MAX_SHOT_BYTES + 10))
+        assert e.value.status_code == 413
+
+    def test_something_that_is_not_an_image_is_still_dropped_quietly(self):
+        """Unchanged on purpose: «there was nothing to store» is not an error."""
+        from app.routers.inspection import _split_data_url
+        for junk in (None, "", "hello", "data:text/html;base64,AAA", 42):
+            assert _split_data_url(junk) is None
+
+    async def test_the_picture_really_is_stored_and_served_back(
+            self, client, auth_headers):
+        """A ceiling that accepts the request but loses the bytes would pass every
+        test above and still fail the owner."""
+        rep = (await client.post("/api/inspection", headers=auth_headers,
+                                 json={"text": "با عکس", "spot": SPOT, "shot": PNG})).json()["report"]
+        sid = rep["notes"][0]["shot_id"]
+        assert sid
+        got = await client.get(f"/api/inspection/shots/{sid}", headers=auth_headers)
+        assert got.status_code == 200
+        assert got.headers["content-type"].startswith("image/")
+        assert len(got.content) > 0

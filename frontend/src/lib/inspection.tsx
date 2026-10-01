@@ -13,6 +13,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import toast from 'react-hot-toast'
 import { inspectionApi, parseApiError, type InspectionReport } from './api'
 import { notifySheetsChanged } from './inspectionHighlights'
+import { shrinkShot } from './shrinkShot'
 import {
   CROP_MIN_PX, geometryLabel, measureSpot, pageElementsAt, pickCaptureTarget, pickCropSheet,
   resolveSpot, spotAddress, verifiedSelector,
@@ -238,6 +239,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       } catch {
         // marking failed — keep the plain capture rather than losing the evidence
       }
+      out = await shrinkShot(out)      // v175 — a tall surface renders big too
       setShot((prev) => (prev?.kind === 'pasted' ? prev : { data: out, kind: 'rendered' }))
     } catch (e) {
       toast.error('تصویربرداری از این بخش ممکن نشد — می‌توانی اسکرین‌شاتِ خودت را بچسبانی')
@@ -252,7 +254,19 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
     if (!file) return
     e.preventDefault()
     const fr = new FileReader()
-    fr.onload = () => setShot({ data: String(fr.result || ''), kind: 'pasted' })
+    // v175 — SHRINK BEFORE IT IS EVER HELD, let alone sent. A 4K screenshot is
+    // 10-15 MB as a data URL and the server used to refuse anything over ~1.4 MB
+    // («String should have at most 1400000 characters»), so the owner's own
+    // screenshot — the best evidence this system can get — was the one thing it
+    // turned away. `shrinkShot` never fails: if the browser cannot re-encode, the
+    // original is kept, because a big picture beats no picture.
+    fr.onload = () => {
+      const raw = String(fr.result || '')
+      setShot({ data: raw, kind: 'pasted' })
+      void shrinkShot(raw).then((small) => {
+        if (small !== raw) setShot((prev) => (prev?.data === raw ? { data: small, kind: 'pasted' } : prev))
+      })
+    }
     fr.readAsDataURL(file)
   }, [])
 

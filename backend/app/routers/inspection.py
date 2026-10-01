@@ -32,7 +32,7 @@ from typing import Any, List, Optional
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      Response, UploadFile)
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,7 +64,27 @@ from app.services.audit import record_audit
 router = APIRouter(tags=["inspection"], dependencies=[Depends(get_current_active_user)])
 
 MAX_TEXT = 6000
-MAX_SHOT_BYTES = 1_400_000
+#: v175 — HOW BIG A PICTURE MAY BE, and why there is a number here at all.
+#
+# «این خطایی که موقع ثبت گزارش میزنم و ریشه‌ای درست کن که محدودیتی نباشه».
+#
+# The owner pasted their own screenshot and the report was REFUSED: «String
+# should have at most 1400000 characters». The old ceiling was about a megabyte
+# of base64 — smaller than an ordinary full-screen PNG — so the one thing that
+# makes this system worth having, a real picture of what they saw, was the thing
+# it turned away.
+#
+# The real fix is on the page: the browser now re-encodes every picture, pasted
+# or rendered, down to something sane before it is ever sent (see
+# `frontend/src/lib/shrinkShot.ts`). A screenshot is evidence for a human and a
+# text model; it never needs to be ten megabytes. So in practice there is no
+# limit any more — nothing the owner can paste reaches this number.
+#
+# The number itself stays, generously, because the picture travels inside a JSON
+# body and is decoded in memory: without ANY ceiling a single request could take
+# the server down, which would be a worse failure than a refused screenshot. It
+# is now ~12 MB of base64 (~9 MB of image), far above anything the page sends.
+MAX_SHOT_BYTES = 12_000_000
 #: Only the sheets still on the wall count. Archived ones live forever.
 MAX_ACTIVE = int(os.getenv("INSPECTION_MAX_ACTIVE", "500"))
 
@@ -111,12 +131,41 @@ def _clean(v: Any, limit: int = MAX_TEXT) -> str:
     return str(v or "").replace("\x00", "")[:limit].strip()
 
 
+def _check_shot_size(v: Optional[str]) -> Optional[str]:
+    """The schema-level guard, in a sentence the owner can act on.
+
+    v175 — this used to be `Field(max_length=1_400_000)`, so a pasted screenshot
+    came back as «shot: String should have at most 1400000 characters» — English,
+    about a field name nobody has heard of, and with no hint of what to do. The
+    ceiling is now ~12 MB and the page shrinks pictures before sending, so this
+    should be unreachable; if it ever fires it says so in words.
+    """
+    if isinstance(v, str) and len(v) > MAX_SHOT_BYTES:
+        raise ValueError(
+            f"تصویر بیش از حد بزرگ است (~{len(v) // 1_000_000} مگابایت). "
+            "صفحه تصویرها را پیش از ارسال کوچک می‌کند؛ اگر این پیام را می‌بینی "
+            "یعنی آن مرحله اجرا نشده — صفحه را تازه کن و دوباره تلاش کن.")
+    return v
+
+
 def _split_data_url(shot: Optional[str]) -> Optional[tuple]:
-    """`(mime, base64)` for a well-formed image data URL, else None."""
+    """`(mime, base64)` for a well-formed image data URL, else None.
+
+    v175 — OVERSIZE IS NO LONGER SILENT. This used to return None for a picture
+    that was too big, exactly as it does for «this is not an image», so a shot
+    that squeezed past the request schema was DROPPED without a word: the sheet
+    filed with no picture and nobody was told. The two cases are not the same —
+    one is «there was nothing to store», the other is «you sent something and we
+    threw it away» — so the size case raises now, and says what to do.
+    """
     if not isinstance(shot, str) or not shot.startswith(_DATA_URL):
         return None
     if len(shot) > MAX_SHOT_BYTES:
-        return None
+        raise HTTPException(
+            status_code=413,
+            detail=f"تصویر بیش از حد بزرگ است ({len(shot) // 1_000_000} مگابایت). "
+                   "صفحه تصویرها را پیش از ارسال کوچک می‌کند؛ اگر این پیام را "
+                   "می‌بینی یعنی آن مرحله اجرا نشده — صفحه را تازه کن و دوباره بچسبان.")
     try:
         head, payload = shot.split(",", 1)
     except ValueError:
@@ -670,7 +719,9 @@ class SpotIn(BaseModel):
 class CreateIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=MAX_TEXT)
     spot: SpotIn
-    shot: Optional[str] = Field(None, max_length=MAX_SHOT_BYTES)
+    shot: Optional[str] = None
+
+    _shot_size = field_validator("shot")(_check_shot_size)
 
 
 @router.post("")
@@ -719,11 +770,15 @@ async def create_report(payload: CreateIn, db: AsyncSession = Depends(get_db),
 
 class NoteIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=MAX_TEXT)
-    shot: Optional[str] = Field(None, max_length=MAX_SHOT_BYTES)
+    shot: Optional[str] = None
+
+    _shot_size = field_validator("shot")(_check_shot_size)
     #: Supervisor only — what really happened.
     outcome: Optional[str] = Field(None, max_length=16)
     #: Supervisor only — proof it looked after fixing.
-    after_shot: Optional[str] = Field(None, max_length=MAX_SHOT_BYTES)
+    after_shot: Optional[str] = None
+
+    _after_size = field_validator("after_shot")(_check_shot_size)
     commits: List[str] = Field(default_factory=list, max_length=20)
     #: Supervisor only — the dependency walk behind the answer.
     dependencies: List[dict] = Field(default_factory=list, max_length=60)
