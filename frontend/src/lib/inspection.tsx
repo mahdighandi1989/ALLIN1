@@ -15,8 +15,8 @@ import { inspectionApi, parseApiError, type InspectionReport } from './api'
 import { notifySheetsChanged } from './inspectionHighlights'
 import { shrinkShot } from './shrinkShot'
 import {
-  CROP_MIN_PX, geometryLabel, measureSpot, pageElementsAt, pickCaptureTarget, pickCropSheet,
-  resolveSpot, spotAddress, verifiedSelector,
+  CROP_MIN_PX, boundedCaptureTarget, captureChain, captureRatio, geometryLabel, measureSpot,
+  pageElementsAt, pickCaptureTarget, pickCropSheet, resolveSpot, spotAddress, verifiedSelector,
   type Rect, type UiSpot,
 } from './inspectionSpot'
 
@@ -180,8 +180,18 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       // sheets, the finished picture is cut down to the ONE sheet the box landed
       // on — «فقط همان صفحه باید باشه». Both rules, and the browser evidence
       // behind them, live with `pickCaptureTarget` / `pickCropSheet`.
-      const target = pickCaptureTarget(el)
-      if (!target) return
+      const surface = pickCaptureTarget(el)
+      if (!surface) return
+      // v176 — DO NOT RASTERISE SOMETHING THAT CAN KILL THE TAB. The Knowledge
+      // Base surface is 1112×19096 (21 MP); drawing it cost hundreds of MB across
+      // three canvases and Chromium died with «Aw, Snap!». Take the largest
+      // ancestor of the box that fits the budget instead — on a long page that is
+      // the card the box is in, which is both cheaper and more useful than a
+      // 19000-pixel strip. See `boundedCaptureTarget`.
+      const target = (boundedCaptureTarget(
+        captureChain(el, surface),
+        (n) => ({ w: (n as HTMLElement).offsetWidth, h: (n as HTMLElement).offsetHeight }),
+      ) ?? surface) as HTMLElement
       const sheet = pickCropSheet(el, target)
       // v154 — `backgroundColor` is not optional for JPEG. Without it the element's
       // transparent background becomes BLACK, and the capture came out as a dark
@@ -196,8 +206,12 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       // 36px to the right, zero vertical, zero scale. Every mark was off by that
       // much, on every page — «مختصاتش خیلی اشتباه و دقیق نیست». The element's
       // own margin has no business being inside a picture OF that element.
+      // and the backstop: if even that element is enormous (one giant table, a
+      // canvas), draw it at less than 1:1. A coarser picture is a worse picture;
+      // a dead tab is no picture at all.
+      const ratio = captureRatio({ w: target.offsetWidth, h: target.offsetHeight })
       const data = await toJpeg(target, {
-        quality: 0.82, pixelRatio: 1, cacheBust: true,
+        quality: 0.82, pixelRatio: ratio, cacheBust: true,
         backgroundColor: '#ffffff',
         style: { margin: '0' },
       })

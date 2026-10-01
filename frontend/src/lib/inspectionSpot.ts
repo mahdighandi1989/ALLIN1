@@ -492,3 +492,92 @@ export function isOurOverlay(el: Element | null | undefined): boolean {
 export function pageElementsAt(x: number, y: number, doc: Document = document): Element[] {
   return doc.elementsFromPoint(x, y).filter((el) => !isOurOverlay(el))
 }
+
+// v176 — A CAPTURE MUST NEVER BE ABLE TO KILL THE TAB.
+//
+// «چندین بار اومدم تو چندین مرورگر متفاوت برای این قسمت گزارش بزنم، یهو صفحه
+// قفل میکنه و هنگ میکنه و بعدشم صفحه میره» — and the tab died with «Aw, Snap!»,
+// which is the renderer running out of memory, not a bug in a handler.
+//
+// Measured: the Knowledge Base surface is 1112 × 19096 px — 21.2 MEGAPIXELS, one
+// continuous handbook. Rasterising it costs ~85 MB for the bitmap alone, and the
+// pipeline then builds two more canvases of the same size (the mark, then the
+// shrink) on top of the serialised SVG of a 19000px DOM. Hundreds of megabytes
+// for a picture of one paragraph. Data Quality is 16 MP and was on the same
+// edge — this was never about one page.
+//
+// Two bounds, both needed:
+//
+//   • a target that FITS. Instead of always photographing the whole surface,
+//     take the largest ancestor of the drawn box that is under budget. On a long
+//     page that is the card or the section the box is in — which is cheaper AND
+//     more useful than a 19000-pixel strip with a mark somewhere in it.
+//   • a density that FITS, as a backstop, for the case where even the element
+//     under the box is enormous (one giant table, a canvas). Rendering at less
+//     than 1:1 is a worse picture; a dead tab is no picture.
+
+/** Pixels we are willing to rasterise. ~6 MP is a 2500×2400 picture — far more
+ *  than any screenshot needs, and ~24 MB of bitmap rather than hundreds. */
+export const CAPTURE_MAX_PX = 6_000_000
+
+/** No single side beyond this, whatever the area says: very long thin strips hit
+ *  per-dimension limits in the browser before they hit the area budget. */
+export const CAPTURE_MAX_SIDE = 8000
+
+export type Sized = { w: number; h: number }
+
+/**
+ * The element to rasterise, from the chain OUTERMOST → innermost (surface …
+ * element under the box). The first one that fits the budget wins, so the
+ * picture keeps as much context as it can afford.
+ *
+ * Returns the innermost when nothing fits — paired with `captureRatio`, which
+ * then brings that one down. Never returns null for a non-empty chain: the owner
+ * gets a picture.
+ */
+export function boundedCaptureTarget<T>(
+  chain: readonly T[],
+  sizeOf: (t: T) => Sized,
+  budget = CAPTURE_MAX_PX,
+  maxSide = CAPTURE_MAX_SIDE,
+): T | null {
+  if (!chain.length) return null
+  for (const t of chain) {
+    const s = sizeOf(t)
+    if (!s || !(s.w > 0) || !(s.h > 0)) continue
+    if (s.w * s.h <= budget && s.w <= maxSide && s.h <= maxSide) return t
+  }
+  return chain[chain.length - 1]
+}
+
+/**
+ * How densely to rasterise so the result stays inside the budget: 1 whenever it
+ * already does, and less than 1 only when the element itself is too big.
+ */
+export function captureRatio(
+  size: Sized,
+  budget = CAPTURE_MAX_PX,
+  maxSide = CAPTURE_MAX_SIDE,
+): number {
+  const w = size?.w || 0
+  const h = size?.h || 0
+  if (!(w > 0) || !(h > 0)) return 1
+  const byArea = Math.sqrt(budget / (w * h))
+  const bySide = maxSide / Math.max(w, h)
+  return Math.min(1, byArea, bySide)
+}
+
+/** The chain from the capture target down to the element under the box, outermost
+ *  first — what `boundedCaptureTarget` chooses from. */
+export function captureChain(el: Element | null | undefined,
+                             target: Element | null | undefined): Element[] {
+  const out: Element[] = []
+  let cur: Element | null = el ?? null
+  while (cur) {
+    out.push(cur)
+    if (cur === target) break
+    cur = cur.parentElement
+  }
+  if (target && !out.includes(target)) out.push(target)
+  return out.reverse()                       // outermost first
+}

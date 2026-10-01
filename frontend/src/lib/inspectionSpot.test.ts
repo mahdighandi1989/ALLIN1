@@ -7,6 +7,7 @@
  * which is worse than not answering at all.
  */
 import {
+  CAPTURE_MAX_PX, CAPTURE_MAX_SIDE, boundedCaptureTarget, captureChain, captureRatio,
   domPath, geometryLabel, isOurOverlay, matchesSpot, measureSpot, normalizePath, pageElementsAt,
   pickCaptureTarget, pickCropSheet, placeSpot, querySelectorPath, samePage, resolveSpot,
   spotAddress, verifiedSelector, visibleText,
@@ -535,5 +536,101 @@ describe('v172 — the description comes from the spot, not from the whole page'
       </div>`)
     const got = spotOn([root.querySelector('#empty')!, root.querySelector('#m')!])
     expect(got.covered_text).not.toContain('منوی کناری')
+  })
+})
+
+// v176 — «صفحه قفل میکنه و هنگ میکنه و بعدشم صفحه میره» → «Aw, Snap!».
+//
+// That is the renderer running out of memory. Measured cause: the Knowledge Base
+// surface is 1112×19096 px — 21.2 MEGAPIXELS — and the capture rasterised it,
+// then marked it on a second canvas of the same size, then shrank it on a third.
+// Data Quality is 16 MP and sat on the same edge, so this was never one page.
+describe('v176 — a capture can never be big enough to kill the tab', () => {
+  const S = (w: number, h: number) => ({ w, h })
+
+  it('still photographs an ordinary surface whole', () => {
+    const chain = [S(1328, 1200), S(800, 400), S(200, 60)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[0])
+  })
+
+  it('steps inward on the page that actually crashed', () => {
+    // surface 1112×19096 (21 MP) → the card the box is in
+    const surface = S(1112, 19096)
+    const card = S(1000, 1400)
+    const para = S(900, 80)
+    expect(boundedCaptureTarget([surface, card, para], (x) => x)).toBe(card)
+  })
+
+  it('keeps the MOST context that fits, not the least', () => {
+    const big = S(1200, 9000), mid = S(1100, 3000), small = S(400, 200)
+    expect(boundedCaptureTarget([big, mid, small], (x) => x)).toBe(mid)
+  })
+
+  it('refuses a very long thin strip even when its area is modest', () => {
+    // 600 × 30000 is only 18 MP but blows past per-dimension limits
+    const strip = S(600, 30000), card = S(600, 900)
+    expect(boundedCaptureTarget([strip, card], (x) => x)).toBe(card)
+  })
+
+  it('still returns something when nothing fits — never no picture', () => {
+    const chain = [S(20000, 20000), S(12000, 12000)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[1])
+  })
+
+  it('skips an element that has not been laid out', () => {
+    const hidden = S(0, 0), card = S(900, 600)
+    expect(boundedCaptureTarget([hidden, card], (x) => x)).toBe(card)
+  })
+
+  it('has nothing to choose from an empty chain', () => {
+    expect(boundedCaptureTarget([], (x: any) => x)).toBeNull()
+  })
+})
+
+describe('captureRatio — the backstop when even the inner element is huge', () => {
+  it('is 1:1 for anything of a normal size', () => {
+    expect(captureRatio({ w: 1328, h: 1123 })).toBe(1)
+    expect(captureRatio({ w: 2000, h: 2000 })).toBe(1)
+  })
+
+  it('brings a 21-megapixel surface inside the budget', () => {
+    const s = { w: 1112, h: 19096 }
+    const r = captureRatio(s)
+    expect(r).toBeLessThan(1)
+    expect(s.w * r * s.h * r).toBeLessThanOrEqual(CAPTURE_MAX_PX * 1.01)
+  })
+
+  it('respects the per-side limit as well as the area', () => {
+    const s = { w: 300, h: 40000 }
+    const r = captureRatio(s)
+    expect(s.h * r).toBeLessThanOrEqual(CAPTURE_MAX_SIDE + 1)
+  })
+
+  it('never returns 0 or a negative, whatever it is handed', () => {
+    for (const s of [{ w: 0, h: 0 }, { w: -1, h: 10 }, { w: NaN, h: 10 }] as any[])
+      expect(captureRatio(s)).toBe(1)
+  })
+})
+
+describe('captureChain — outermost first, so the widest view that fits wins', () => {
+  it('runs from the surface down to the element under the box', () => {
+    const root = mount(`
+      <main data-report-surface="/knowledge" id="surface">
+        <section id="card"><p id="para">متن</p></section>
+      </main>`)
+    const chain = captureChain(root.querySelector('#para'), root.querySelector('#surface'))
+    expect(chain.map((n) => n.id)).toEqual(['surface', 'card', 'para'])
+  })
+
+  it('still includes the target when the element is not inside it', () => {
+    const root = mount(`
+      <div><main data-report-surface="/x" id="surface"></main><p id="stray">x</p></div>`)
+    const chain = captureChain(root.querySelector('#stray'), root.querySelector('#surface'))
+    expect(chain.map((n) => n.id)).toContain('surface')
+    expect(chain.map((n) => n.id)).toContain('stray')
+  })
+
+  it('is empty for nothing at all', () => {
+    expect(captureChain(null, null)).toEqual([])
   })
 })
