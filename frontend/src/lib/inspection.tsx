@@ -15,8 +15,9 @@ import { inspectionApi, parseApiError, type InspectionReport } from './api'
 import { notifySheetsChanged } from './inspectionHighlights'
 import { shrinkShot } from './shrinkShot'
 import {
-  CROP_MIN_PX, boundedCaptureTarget, captureChain, captureRatio, geometryLabel, measureSpot,
-  pageElementsAt, pickCaptureTarget, pickCropSheet, resolveSpot, spotAddress, verifiedSelector,
+  CAPTURE_DEADLINE_MS, CROP_MIN_PX, bandAround, boundedCaptureTarget, captureChain, captureRatio,
+  geometryLabel, measureSpot, pageElementsAt, pickCaptureTarget, pickCropSheet, resolveSpot,
+  spotAddress, verifiedSelector, withDeadline,
   type Rect, type UiSpot,
 } from './inspectionSpot'
 
@@ -190,8 +191,25 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       // 19000-pixel strip. See `boundedCaptureTarget`.
       const target = (boundedCaptureTarget(
         captureChain(el, surface),
-        (n) => ({ w: (n as HTMLElement).offsetWidth, h: (n as HTMLElement).offsetHeight }),
-      ) ?? surface) as HTMLElement
+        (n) => ({
+          w: (n as HTMLElement).offsetWidth,
+          h: (n as HTMLElement).offsetHeight,
+          // v177 — pixels are not the only cost: Properties is 0.83 MP and took
+          // 21 SECONDS, because the rasteriser clones every node and inlines
+          // every computed style, and that subtree holds 9165 of them.
+          nodes: n.querySelectorAll('*').length,
+        }),
+      )) as HTMLElement | null
+      if (!target) {
+        // v177 — no region here can be photographed without freezing the tab
+        // (Properties: every candidate around the box carries 9000+ nodes, and
+        // the rasteriser takes 16 s on them, synchronously). Saying so at once is
+        // the honest answer; a pasted screenshot is better evidence anyway.
+        setShot(null)
+        toast('این صفحه برای تصویربرداریِ خودکار سنگین است — اسکرین‌شاتِ خودت را Ctrl+V کن',
+              { icon: '📋', duration: 6000 })
+        return
+      }
       const sheet = pickCropSheet(el, target)
       // v154 — `backgroundColor` is not optional for JPEG. Without it the element's
       // transparent background becomes BLACK, and the capture came out as a dark
@@ -210,11 +228,22 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       // canvas), draw it at less than 1:1. A coarser picture is a worse picture;
       // a dead tab is no picture at all.
       const ratio = captureRatio({ w: target.offsetWidth, h: target.offsetHeight })
-      const data = await toJpeg(target, {
+      // v177 — AND A DEADLINE, which is the only bound that also covers the page
+      // nobody has tested. «یهو صفحه قفل میکنه و هنگ میکنه»: every other rule
+      // here is a guess made in advance about a measurable cost; this one simply
+      // refuses to wait. Abandoning the picture is not losing it — the owner can
+      // paste their own, and the dialog says so.
+      const data = await withDeadline(toJpeg(target, {
         quality: 0.82, pixelRatio: ratio, cacheBust: true,
         backgroundColor: '#ffffff',
         style: { margin: '0' },
-      })
+      }), CAPTURE_DEADLINE_MS)
+      if (!data) {
+        setShot(null)
+        toast('تصویرِ خودکار برای این صفحه گرفته نشد — اسکرین‌شاتِ خودت را Ctrl+V کن',
+              { icon: '📋', duration: 6000 })
+        return
+      }
       // v153 — MARK THE BOX ON THE PICTURE. The capture is of the whole sheet
       // (or surface), which is what makes it worth looking at, but unmarked it
       // only says «somewhere on this page». The owner asked for both to corroborate each
@@ -246,9 +275,12 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
         // the sheet, measured the very same way, so the crop and the mark can
         // never disagree about where anything is
         const sr = sheet?.getBoundingClientRect()
+        // A sheet of paper crops to the sheet; a long page crops to a BAND around
+        // the box. Without the band a tall capture was shrunk whole and Data
+        // Quality came out 193 pixels wide — inside every budget, and useless.
         const crop = sr
           ? boxInImage({ x: sr.left, y: sr.top, w: sr.width, h: sr.height }, geom, image)
-          : null
+          : (box ? bandAround(box, image, window.innerHeight) : null)
         if (box) out = await annotate(data, box, crop)
       } catch {
         // marking failed — keep the plain capture rather than losing the evidence

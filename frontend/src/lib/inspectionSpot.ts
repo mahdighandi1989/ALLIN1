@@ -524,7 +524,26 @@ export const CAPTURE_MAX_PX = 6_000_000
  *  per-dimension limits in the browser before they hit the area budget. */
 export const CAPTURE_MAX_SIDE = 8000
 
-export type Sized = { w: number; h: number }
+export type Sized = { w: number; h: number; nodes?: number }
+
+/** A picture shorter than this is not evidence. Choosing by area alone once
+ *  picked a `<tr>` and produced a 1343×40 strip: inside the budget, and useless. */
+export const CAPTURE_MIN_H = 160
+
+/** The cost of a capture is not pixels — it is NODES. Measured with the real
+ *  rasteriser on the real pages:
+ *
+ *      3141 nodes → 6.3 s      4555 nodes → 5.6 s      9165 nodes → 16.3 s
+ *
+ *  and that work is SYNCHRONOUS, which is the whole point: see `withDeadline`.
+ *  5000 keeps the two heavy-but-usable pages and refuses the one that freezes. */
+export const CAPTURE_MAX_NODES = 5000
+
+/** A deadline for the parts of a capture that genuinely yield (decoding images,
+ *  loading fonts). It CANNOT interrupt the synchronous half — see `withDeadline`
+ *  — which is why the node budget above is the bound that actually protects the
+ *  page, and this one is only a net under the rest. */
+export const CAPTURE_DEADLINE_MS = 7000
 
 /**
  * The element to rasterise, from the chain OUTERMOST → innermost (surface …
@@ -542,12 +561,31 @@ export function boundedCaptureTarget<T>(
   maxSide = CAPTURE_MAX_SIDE,
 ): T | null {
   if (!chain.length) return null
+  const fits = (s: Sized) =>
+    s && s.w > 0 && s.h > 0
+    && s.w * s.h <= budget && s.w <= maxSide && s.h <= maxSide
+    && s.h >= CAPTURE_MIN_H
+    && (s.nodes ?? 0) <= CAPTURE_MAX_NODES
+  for (const t of chain) if (fits(sizeOf(t))) return t
+  // Nothing fits outright. Over the PIXEL budget is survivable — `captureRatio`
+  // brings the density down — but over the NODE budget is not, because that cost
+  // is paid synchronously and no timer can take it back. So: the biggest view
+  // that is still affordable to serialise.
+  let best: T | null = null
+  let bestArea = -1
   for (const t of chain) {
     const s = sizeOf(t)
-    if (!s || !(s.w > 0) || !(s.h > 0)) continue
-    if (s.w * s.h <= budget && s.w <= maxSide && s.h <= maxSide) return t
+    if (!s || !(s.w > 0) || s.h < CAPTURE_MIN_H) continue
+    if ((s.nodes ?? 0) > CAPTURE_MAX_NODES) continue
+    const area = s.w * s.h
+    if (area > bestArea) { bestArea = area; best = t }
   }
-  return chain[chain.length - 1]
+  // Still nothing: this page has no region that can be photographed without
+  // freezing the tab. Say so at once instead of trying and hanging for 16
+  // seconds — the owner can paste their own screenshot, which is better evidence
+  // anyway. Properties is this page: every candidate around the box carries
+  // 9000+ nodes.
+  return best
 }
 
 /**
@@ -580,4 +618,57 @@ export function captureChain(el: Element | null | undefined,
   }
   if (target && !out.includes(target)) out.push(target)
   return out.reverse()                       // outermost first
+}
+
+
+/**
+ * v177 — THE BAND. What to crop out of a finished capture when it is a long
+ * page rather than a sheet of paper.
+ *
+ * Without this, a tall capture was shrunk whole: Data Quality came out
+ * 193×2600 — a 193-pixel-wide ribbon of a 14000-pixel page, which is inside
+ * every budget and tells nobody anything. Cropping a band keeps the FULL WIDTH,
+ * where the text is, and throws away the vertical distance nobody asked about.
+ *
+ * All coordinates are in the finished picture's own pixels.
+ */
+export function bandAround(
+  box: { x: number; y: number; w: number; h: number },
+  image: { width: number; height: number },
+  viewportH = 700,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!image.width || !image.height) return null
+  // Enough to read the box in its context: three times its height, and never
+  // less than a screenful, but never more than the picture has.
+  const want = Math.min(image.height, Math.max(box.h * 3, viewportH, CAPTURE_MIN_H * 2))
+  if (want >= image.height * 0.9) return null       // the picture is already a band
+  const centre = box.y + box.h / 2
+  let y = Math.round(centre - want / 2)
+  y = Math.max(0, Math.min(y, image.height - want))
+  return { x: 0, y, w: image.width, h: Math.round(want) }
+}
+
+/**
+ * Run `work`, or give up after `ms`.
+ *
+ * WHAT IT CANNOT DO, which is worth knowing before trusting it: a timer cannot
+ * interrupt SYNCHRONOUS work. The rasteriser clones the subtree and inlines every
+ * computed style on the main thread; on the Properties page that is 16.25 seconds
+ * during which no timer runs at all, so this deadline fired only after the work
+ * it was meant to cut short had already finished. Measured, not assumed — the
+ * first version of this fix relied on it and did nothing.
+ *
+ * So the real protection is the NODE BUDGET, which refuses to start such a
+ * capture. This remains as a net under the parts that do yield: decoding images,
+ * waiting on fonts, a stalled resource.
+ */
+export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    let done = false
+    const t = setTimeout(() => { if (!done) { done = true; resolve(null) } }, ms)
+    work.then(
+      (v) => { if (!done) { done = true; clearTimeout(t); resolve(v) } },
+      () => { if (!done) { done = true; clearTimeout(t); resolve(null) } },
+    )
+  })
 }

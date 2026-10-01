@@ -7,7 +7,9 @@
  * which is worse than not answering at all.
  */
 import {
-  CAPTURE_MAX_PX, CAPTURE_MAX_SIDE, boundedCaptureTarget, captureChain, captureRatio,
+  CAPTURE_DEADLINE_MS, CAPTURE_MAX_NODES, CAPTURE_MAX_PX, CAPTURE_MAX_SIDE, CAPTURE_MIN_H,
+  bandAround,
+  boundedCaptureTarget, captureChain, captureRatio, withDeadline,
   domPath, geometryLabel, isOurOverlay, matchesSpot, measureSpot, normalizePath, pageElementsAt,
   pickCaptureTarget, pickCropSheet, placeSpot, querySelectorPath, samePage, resolveSpot,
   spotAddress, verifiedSelector, visibleText,
@@ -572,9 +574,12 @@ describe('v176 — a capture can never be big enough to kill the tab', () => {
     expect(boundedCaptureTarget([strip, card], (x) => x)).toBe(card)
   })
 
-  it('still returns something when nothing fits — never no picture', () => {
+  it('takes the biggest view when nothing fits but everything is cheap to draw', () => {
+    // v177 — «never no picture» was v176's rule and it was wrong: a huge subtree
+    // CANNOT be drawn in time and no timer can cut it short. Pixels alone are
+    // survivable, so these are kept and `captureRatio` scales them.
     const chain = [S(20000, 20000), S(12000, 12000)]
-    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[1])
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[0])
   })
 
   it('skips an element that has not been laid out', () => {
@@ -632,5 +637,127 @@ describe('captureChain — outermost first, so the widest view that fits wins', 
 
   it('is empty for nothing at all', () => {
     expect(captureChain(null, null)).toEqual([])
+  })
+})
+
+// v177 — the sweep after v176: the tab no longer died, but THREE pages were
+// still wrong, each for its own reason. Measured on the real app:
+//
+//   /staff/      → 1343×40   a `<tr>` is «within budget» and is not evidence
+//   /data-quality/ → 193×2600  a 14000px page shrunk whole, 193 pixels wide
+//   /properties/ → 21 SECONDS  0.83 MP, but 9165 nodes and 610 SVGs to serialise
+describe('v177 — the three the sweep found', () => {
+  const S = (w: number, h: number, nodes = 0) => ({ w, h, nodes })
+
+  it('never picks a strip too short to read (/staff/: 1343×40)', () => {
+    const chain = [S(1112, 7731, 4000), S(1343, 7515, 3800), S(1343, 40, 8), S(259, 40, 2)]
+    const got = boundedCaptureTarget(chain, (x) => x)
+    expect(got!.h).toBeGreaterThanOrEqual(CAPTURE_MIN_H)
+  })
+
+  it('steps over a subtree that is cheap in pixels and ruinous in nodes', () => {
+    // main is only 0.83 MP but holds a 9165-node table; the small one is both
+    const main = S(1112, 747, 9165)
+    const inner = S(1064, 451, 300)
+    expect(boundedCaptureTarget([main, inner], (x) => x)).toBe(inner)
+  })
+
+  it('over the PIXEL budget is survivable — take the biggest affordable view', () => {
+    // /data-quality/: nothing fits outright; the two big ones are cheap to
+    // serialise, so the largest of them wins and `captureRatio` scales it.
+    const chain = [S(1112, 14385, 3100), S(1064, 14337, 3000), S(900, 42, 5)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[0])
+  })
+
+  it('REFUSES rather than freezing when every candidate is ruinous to serialise', () => {
+    // /properties/, measured: toJpeg takes 16.25 SECONDS on this subtree, and it
+    // is synchronous, so no timer can cut it short. Returning null lets the page
+    // say so at once instead of hanging.
+    const chain = [S(1112, 747, 9165), S(1064, 699, 9164), S(1683, 10533, 9066),
+                   S(1683, 35, 29), S(104, 35, 0)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBeNull()
+  })
+
+  it('keeps a heavy-but-usable page rather than refusing everything', () => {
+    // /staff/: 4555 nodes → 5.6 s. Unpleasant, not a freeze.
+    const chain = [S(1112, 7731, 4555), S(1343, 40, 8)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[0])
+  })
+
+  it('still takes the whole surface on an ordinary page', () => {
+    const chain = [S(1112, 1431, 900), S(800, 400, 100)]
+    expect(boundedCaptureTarget(chain, (x) => x)).toBe(chain[0])
+  })
+})
+
+describe('bandAround — full width, and only the height that was asked about', () => {
+  const IMG = { width: 1064, height: 14337 }
+
+  it('keeps the whole width — that is where the text is', () => {
+    const b = bandAround({ x: 100, y: 7000, w: 400, h: 100 }, IMG)!
+    expect(b.x).toBe(0)
+    expect(b.w).toBe(IMG.width)
+  })
+
+  it('is centred on the box and stays inside the picture', () => {
+    const b = bandAround({ x: 0, y: 7000, w: 400, h: 100 }, IMG)!
+    expect(b.y).toBeLessThan(7050)
+    expect(b.y + b.h).toBeGreaterThan(7050)
+    expect(b.y).toBeGreaterThanOrEqual(0)
+    expect(b.y + b.h).toBeLessThanOrEqual(IMG.height)
+  })
+
+  it('does not run off the top for a box at the very start', () => {
+    const b = bandAround({ x: 0, y: 5, w: 400, h: 40 }, IMG)!
+    expect(b.y).toBe(0)
+  })
+
+  it('does not run off the bottom for a box at the very end', () => {
+    const b = bandAround({ x: 0, y: IMG.height - 60, w: 400, h: 50 }, IMG)!
+    expect(b.y + b.h).toBeLessThanOrEqual(IMG.height)
+  })
+
+  it('gives a tall box enough room to be seen whole', () => {
+    const b = bandAround({ x: 0, y: 5000, w: 400, h: 900 }, IMG)!
+    expect(b.h).toBeGreaterThanOrEqual(900)
+  })
+
+  it('does nothing when the picture is already about that tall', () => {
+    expect(bandAround({ x: 0, y: 100, w: 400, h: 100 }, { width: 800, height: 700 })).toBeNull()
+  })
+
+  it('is safe with an empty picture', () => {
+    expect(bandAround({ x: 0, y: 0, w: 1, h: 1 }, { width: 0, height: 0 })).toBeNull()
+  })
+})
+
+describe('withDeadline — the bound that covers the page nobody has tested', () => {
+  it('passes the value through when the work finishes in time', async () => {
+    await expect(withDeadline(Promise.resolve('ok'), 1000)).resolves.toBe('ok')
+  })
+
+  it('cannot interrupt synchronous work — which is why the node budget exists', () => {
+    // Measured: the rasteriser blocks the main thread for 16.25 s on the
+    // Properties subtree, so the timer does not run until after the work it was
+    // meant to cut short has finished. The first version of this fix relied on
+    // this deadline alone and did nothing at all.
+    expect(CAPTURE_MAX_NODES).toBeGreaterThan(0)
+  })
+
+  it('gives up rather than waiting for ever', async () => {
+    jest.useFakeTimers()
+    const p = withDeadline(new Promise(() => {}), CAPTURE_DEADLINE_MS)
+    jest.advanceTimersByTime(CAPTURE_DEADLINE_MS + 10)
+    await expect(p).resolves.toBeNull()
+    jest.useRealTimers()
+  })
+
+  it('turns a rejection into «no picture», never an unhandled error', async () => {
+    await expect(withDeadline(Promise.reject(new Error('boom')), 1000)).resolves.toBeNull()
+  })
+
+  it('waits long enough for the slowest page measured, and not much longer', () => {
+    expect(CAPTURE_DEADLINE_MS).toBeGreaterThanOrEqual(5000)
+    expect(CAPTURE_DEADLINE_MS).toBeLessThanOrEqual(10000)
   })
 })
