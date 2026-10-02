@@ -15,13 +15,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Zap, Crosshair, X, Undo2 } from 'lucide-react'
 import type { QuickSpot } from '../../lib/api'
 import {
-  headingAbove, layoutKeysUnder, rectOnSheet, sheetIndexFor, textInRect, type Item, type R,
+  headingAbove, layoutKeysUnder, rectOnSheet, rowsInRect, sheetIndexFor, textInRect, type BarSpot, type Item, type R,
 } from '../../lib/quickSpot'
 
 export type QuickResult = { applied: string[]; notes: string[]; skipped: number; error?: string }
 
 // the API spot + what the page needs to keep drawing the box where the owner drew it
-type Anchored = QuickSpot & { k: number; vp: R; sx: number; sy: number }
+type Anchored = BarSpot & { k: number; vp: R; sx: number; sy: number }
 
 const MAX_BOXES = 5
 const MIN_PX = 12
@@ -30,7 +30,7 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
   keyFa: Record<string, string>
   busy: boolean
   canUndo: boolean
-  onRun: (instruction: string, spots: QuickSpot[]) => Promise<QuickResult | void>
+  onRun: (instruction: string, spots: BarSpot[]) => Promise<QuickResult | void>
   onUndo: () => void
 }) {
   const [text, setText] = useState('')
@@ -85,7 +85,11 @@ export default function QuickCommandBar({ keyFa, busy, canUndo, onRun, onUndo }:
       ? (heading && !inside.startsWith(heading) ? `${heading} ← ${inside}` : inside)
       : (heading ? `${heading} (کادر روی ناحیهٔ خالیِ زیرِ همین عنوان)` : '')
     const inBar = stack.some((el) => el.closest('.ltr-controls'))
+    // v178 — the table(s) under the box, by their rows' stable ids (+ the attachment page)
+    const rows = rowsInRect(scope, box)
+    const attId = (idx ? sheets[idx - 1].getAttribute('data-att-id') : null) || undefined
     return {
+      rows, att_id: attId,
       page: idx, rect: rel, layout_keys: keys, covered_text: covered.slice(0, 400),
       section: inBar ? 'نوار دکمه‌های بالای فرم' : (idx ? `برگهٔ ${idx} فرم` : 'بیرون از برگه'),
       k, vp: box, sx: window.scrollX, sy: window.scrollY,

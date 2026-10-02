@@ -607,3 +607,63 @@ def test_prompt_carries_layout_and_boxes_only_when_given():
     assert "logo (لوگو (سربرگ))" in p and "حالت «دستورِ سریع»" in p
     assert "hax" not in p          # unknown layout keys from the client never reach the model
     assert "متن انتخابی" in p
+
+
+# ---------------------------------------------------------------------------
+# v178 — «دستورِ سریع … نمی‌فهمه و تمکین نمی‌کنه … بهونه میاره … حتی کادر هم کشیدم»
+# ---------------------------------------------------------------------------
+
+def test_table_delete_validates_index_and_records_why_not():
+    rej = []
+    raw = json.dumps({"changes": [
+        {"op": "table_delete", "table_index": 2, "title": "حذفِ جدولِ پیوست"},
+        {"op": "table_delete", "table_index": 5, "title": "بی‌جا"},
+        {"op": "table_delete", "title": "بی‌شماره"},
+    ]}, ensure_ascii=False)
+    out = la.parse_and_validate(raw, FIELDS, tables_count=2, rejected=rej)
+    assert [(c["op"], c["table_index"], c["applicable"]) for c in out] == [("table_delete", 2, True)]
+    assert len(rej) == 2 and "۵" not in rej[0]["reason"] and "5" in rej[0]["reason"]
+    assert all(r["reason"] for r in rej)
+
+
+def test_every_dropped_proposal_says_why():
+    """A silent drop is what turned an order into a bare «تغییری اعمال نشد»."""
+    rej = []
+    raw = json.dumps({"changes": [
+        {"op": "text_replace", "field": "body", "find": "عبارتی که نیست", "replace": "x", "title": "t1"},
+        {"op": "set_field", "field": "body", "after": "کلِ متن", "title": "t2"},
+        {"op": "made_up_op", "title": "t3"},
+        {"op": "db_write", "account_no": "1", "key": "k", "value": "v"},   # staged elsewhere — not a rejection
+        {"op": "text_replace", "field": "body", "find": "با سلام و احترام", "replace": "با سلام", "title": "ok"},
+    ]}, ensure_ascii=False)
+    out = la.parse_and_validate(raw, FIELDS, rejected=rej)
+    assert [c["title"] for c in out] == ["ok"]
+    assert [r["title"] for r in rej] == ["t1", "t2", "t3"]
+    assert "عبارتی که نیست" in rej[0]["reason"] and "text_replace" in rej[1]["reason"]
+
+
+def test_quick_prefix_overrides_the_conservative_reviewer():
+    p = la.QUICK_SYSTEM_PREFIX
+    assert "مجری" in p and "در صورتِ تمایل" in p and "برگشتِ دستور" in p
+    # it is a PREFIX for quick mode only — the reviewer's own prompt is untouched
+    assert "مجری" not in la.SYSTEM_PROMPT and "table_delete" in la.SYSTEM_PROMPT
+    assert "table_delete" in la.QUICK_GUIDE and "دستورهای قبلیِ همین نامه" in la.QUICK_GUIDE
+
+
+def test_quick_prompt_names_tables_boxes_and_history():
+    p = la.build_user_prompt(
+        FIELDS, {}, ["quick"], instruction="این جدول را حذف کن",
+        tables=["<table><tr data-r=\"a\"><td>x</td></tr></table>", "<table><tr><td>y</td></tr></table>"],
+        table_labels=["جدول ۱ — داخلِ متن", "جدول ۱ پیوست — صفحهٔ پیوست"],
+        spots=[{"page": 3, "layout_keys": [], "rect": {"x": 1, "y": 2, "w": 3, "h": 4},
+                "table_indexes": [2, 99, True, "x"]}],
+        history=[{"instruction": "جدول پیوست را حذف کن", "applied": [],
+                  "notes": ["در صورتِ تمایل اعلام فرمایید"]}],
+    )
+    assert "[جدول 2 — جدول ۱ پیوست — صفحهٔ پیوست]" in p
+    assert "روی جدولِ شمارهٔ 2 از فهرستِ" in p and "99" not in p.split("کادرهای انتخاب‌شده")[1].split("\n")[1]
+    assert "کاربر: «جدول پیوست را حذف کن»" in p and "اعمال شد: هیچ" in p
+    # history is capped to the last MAX_HISTORY turns
+    many = [{"instruction": f"دستور {i}", "applied": [], "notes": []} for i in range(10)]
+    hp = la.build_user_prompt(FIELDS, {}, ["quick"], instruction="x", history=many)
+    assert "دستور 9" in hp and "دستور 5" not in hp

@@ -13,6 +13,7 @@ import Layout from '@/components/Layout'
 import { Printer, Eraser, Move, Check, RotateCcw, Save, FilePlus, Table, Sparkles, X, Image as ImageIcon, Download } from 'lucide-react'
 import { auditApi, caseReportsApi, crmApi, departmentsApi, lettersApi, letterAiApi, parseApiError, downloadFile } from '@/lib/api'
 import type { LetterAiChange, LetterAiModel, LetterAiTool, LetterAttachment, QuickSpot } from '@/lib/api'
+import { spotTouches, type BarSpot } from '@/lib/quickSpot'
 import { LetterSummary } from '@/types'
 import Combobox from '@/components/Combobox'
 import toast from 'react-hot-toast'
@@ -1018,6 +1019,8 @@ export default function LetterPage() {
     const entItems: { id: string; account_no: string; customer_name: string; entity_key: string; payload: Record<string, unknown> }[] = []
     // table_insert results: collected here and committed once after the loop.
     const newAttTables: AttTable[] = []
+    // v178 — table_delete on an attachment page: committed once after the loop too
+    const delAttIds: string[] = []
     for (const ch of list) {
       if (!checkedMap[ch.id] || !ch.applicable) continue
       if (ch.op === 'set_layout') {
@@ -1089,6 +1092,27 @@ export default function LetterPage() {
         else notLocated++
         continue
       }
+      if (ch.op === 'table_delete') {
+        // v178 — remove the EXACT table that was sent (uid-mapped like table_replace):
+        // an attachment table takes its whole page(s) with it; a body table leaves the text.
+        const sent = ch.table_index != null ? sentTableUidsRef.current[ch.table_index - 1] : undefined
+        if (!sent) { notLocated++; continue }
+        if (sent.attId) {
+          if (!attTables.some((t) => t.id === sent.attId)) { notLocated++; continue }
+          delAttIds.push(sent.attId)
+          applied++; appliedIds.push(ch.id)
+          continue
+        }
+        const d = document.createElement('div')
+        d.innerHTML = normalizeBodyHtml(nf.body || '')
+        mergeAdjacentTables(d); normalizeTables(d)
+        const tbl = d.querySelector(`tr[data-r="${cssEsc(sent.uid)}"]`)?.closest('table')
+        if (!tbl) { notLocated++; continue }
+        tbl.remove()
+        nf.body = d.innerHTML
+        applied++; appliedIds.push(ch.id)
+        continue
+      }
       if (ch.op === 'table_replace') {
         // Replace the EXACT table the user selected (uid-mapped from the list
         // sent with analyze). HTML was whitelist-sanitized server-side.
@@ -1132,6 +1156,7 @@ export default function LetterPage() {
       setL((p) => { const n = { ...p }; for (const k of Object.keys(layoutPatches)) if (n[k]) n[k] = { ...n[k], ...layoutPatches[k] }; return n })
     }
     if (Object.keys(labelPatches).length) setLabels((p) => ({ ...p, ...labelPatches }))
+    if (delAttIds.length) setAttTables((list) => list.filter((t) => !delAttIds.includes(t.id)))
     if (newAttTables.length) setAttTables((list) => [...list, ...newAttTables.map((t) => ({ ...t, html: fixHehHamza(t.html), title: fixHehHamza(t.title) }))])
     if (applied) {
       // model-authored text goes through the same heh+hamza normalization as typing
@@ -1186,21 +1211,34 @@ export default function LetterPage() {
   // «برگشتِ دستور» always restores exactly the state before it. ---
   const [quickBusy, setQuickBusy] = useState(false)
   const [quickUndo, setQuickUndo] = useState<{ f: any; L: Record<string, Boxn>; labels: Record<string, string>; attTables: AttTable[] } | null>(null)
-  const QUICK_OPS = new Set(['set_field', 'text_replace', 'paragraph_merge', 'table_replace', 'table_insert', 'set_layout', 'set_label'])
-  const runQuick = async (instruction: string, spots: QuickSpot[]): Promise<QuickResult> => {
+  const QUICK_OPS = new Set(['set_field', 'text_replace', 'paragraph_merge', 'table_replace', 'table_insert', 'table_delete', 'set_layout', 'set_label'])
+  // v178 — the bar's conversation on THIS letter: «دوباره / نه منظورم … / بله انجام بده»
+  // only mean something if the model sees what it was asked and did a moment ago.
+  const quickHistory = useRef<{ instruction: string; applied: string[]; notes: string[] }[]>([])
+  const runQuick = async (instruction: string, barSpots: BarSpot[]): Promise<QuickResult> => {
     setQuickBusy(true)
     try {
-      // tables travel only when the request is about tables (they are big)
-      const aboutTables = /جدول|ستون|ردیف|سطر|table/i.test(instruction)
-      const pickedTables = aboutTables ? getBodyTables().slice(0, 8) : []
-      sentTableUidsRef.current = pickedTables.map((t) => ({ uid: t.uid, attId: t.attId }))
+      // v178 — EVERY table on the form travels (body + attachment pages), each labelled with
+      // where it lives. This used to depend on the words «جدول/ستون/ردیف» in the request, so
+      // «پیوست را حذف کن» or a box drawn round a table reached a model that saw no table at all.
+      const allTables = getBodyTables().slice(0, 8)
+      const picked = allTables.reduce((n, t) => n + t.html.length, 0) > 120000
+        ? allTables.filter((t, i) => i < 2 || barSpots.some((sp) => spotTouches(sp, t)))
+        : allTables
+      sentTableUidsRef.current = picked.map((t) => ({ uid: t.uid, attId: t.attId }))
+      const spots: QuickSpot[] = barSpots.map(({ rows: _r, att_id: _a, ...api }) => {
+        const ix = picked.map((t, i) => (spotTouches({ rows: _r, att_id: _a }, t) ? i + 1 : 0)).filter(Boolean)
+        return ix.length ? { ...api, table_indexes: ix } : api
+      })
       const liveSel = ((typeof window !== 'undefined' ? window.getSelection()?.toString() : '') || '').replace(/\s+/g, ' ').trim().slice(0, 600)
       const r = await letterAiApi.analyze({
         account_no: general ? undefined : (acct.trim() || undefined),
         fields: f, tools: [], quick: true, instruction,
         spots, hints: { selected_text: liveSel || undefined, selected_layout_key: (design && sel) ? sel : undefined },
         layout: L, labels,
-        tables: pickedTables.length ? pickedTables.map((t) => t.html) : undefined,
+        tables: picked.length ? picked.map((t) => t.html) : undefined,
+        table_labels: picked.length ? picked.map((t) => `${t.attId ? 'صفحهٔ پیوستِ جداگانه بعد از نامه' : 'داخلِ متنِ نامه'} — ${t.label}`) : undefined,
+        history: quickHistory.current.length ? quickHistory.current : undefined,
         model_id: aiModelId === '' ? undefined : Number(aiModelId),
       })
       if (!r.ok) return { applied: [], notes: [], skipped: 0, error: aiErrorText(r.error) }
@@ -1208,7 +1246,11 @@ export default function LetterPage() {
       const all = r.changes || []
       const doable = all.filter((c) => c.applicable && QUICK_OPS.has(c.op))
       const notes = all.filter((c) => c.op === 'note').map((c) => [c.title, c.detail].filter(Boolean).join(' — '))
+      const remember = (applied: string[]) => {
+        quickHistory.current = [...quickHistory.current, { instruction, applied, notes }].slice(-4)
+      }
       if (!doable.length) {
+        remember([])
         return { applied: [], notes: notes.length ? notes : ['هوش مصنوعی تغییرِ قابل‌اجرایی برای این دستور پیدا نکرد — دستور را دقیق‌تر بنویس یا کادر بکش.'], skipped: 0 }
       }
       const snap = { f: { ...f }, L: { ...L }, labels: { ...labels }, attTables }
@@ -1216,6 +1258,7 @@ export default function LetterPage() {
       for (const c of doable) checked[c.id] = true
       const out = await applyAiChanges(doable, checked, { quiet: true })
       if (out.applied) setQuickUndo(snap)
+      remember(out.titles)
       return { applied: out.titles, notes, skipped: out.notLocated }
     } catch (e) {
       return { applied: [], notes: [], skipped: 0, error: parseApiError(e) }
@@ -1232,6 +1275,7 @@ export default function LetterPage() {
   const loadLetter = async (id: string) => {
     try {
       undoReset()   // history belongs to ONE letter — undoing across letters would cross-paste bodies
+      quickHistory.current = []   // so does the quick bar's conversation
       const o = await lettersApi.get(id)
       if (o.values) {
         const v: any = { ...o.values }
@@ -1404,7 +1448,7 @@ export default function LetterPage() {
     else lettersApi.list({}).then(setLetterList).catch(() => setLetterList([]))  // no account → recent letters (all)
   }, [acct, general, letterId])
 
-  const newLetter = () => { undoReset(); setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
+  const newLetter = () => { undoReset(); quickHistory.current = []; setLetterId(null); setTitle(''); setAttTables([]); setFloats([]); setFloatSel(null); setF((s) => ({ ...s, serial: '', year: String(new Date().getFullYear()), date: todayYMD(), subject: '', body: '', copyTo: '', actionName: '', actionExt: '', recipientName: '', recipientDept: '', recipientTitle: 'رئیس محترم' })) }
   const saveLetter = async () => {
     if (!general && !acct.trim()) { toast.error('شمارۀ حساب را وارد کن، یا «نامۀ عمومی» را تیک بزن'); return }
     setSavingLetter(true)
@@ -2902,7 +2946,7 @@ export default function LetterPage() {
     return chunks.map((chunk, ci) => {
       const off = ci === 0 ? (t.offY || 0) : 0
       return (
-      <div className="lsheet attsheet" key={`att-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
+      <div className="lsheet attsheet" data-att-id={t.id} key={`att-${t.id}-${ci}`} style={land ? { width: W, height: Hh } : undefined}>
         {!isHidden('logo') && <div style={attHeadStyle('logo', land)}><img src={LOGO_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('left top') }} /></div>}
         {!isHidden('name') && <div style={attHeadStyle('name', land)}><img src={NAME_SRC} alt="" style={{ width: '100%', height: '100%', ...fit('right top') }} /></div>}
         <div className="att-ttl" dir="rtl" style={{ position: 'absolute', left: ATT_MARGIN, top: ATT_TOP, width: contentW }}>

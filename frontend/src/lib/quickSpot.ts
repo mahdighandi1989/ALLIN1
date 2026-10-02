@@ -6,6 +6,8 @@
 // window scrolls, the sheet does not) and the text underneath. Pure on purpose: it
 // takes plain rectangles, so a test can drive it without a browser.
 
+import type { QuickSpot } from './api'
+
 export type R = { x: number; y: number; w: number; h: number }
 export type Item = { key: string; rect: R }
 
@@ -156,4 +158,34 @@ export function headingAbove(
     }
   }
   return best
+}
+
+// v178 — WHICH TABLE IS UNDER THE BOX.
+//
+// «حتی کادر هم کشیدم» — a box round a table used to reach the model as a layout key
+// («متنِ نامه») and some text; the table itself was never named, and was not even sent
+// unless the request happened to say «جدول». Every table row carries a stable `data-r`
+// id, so the rows the box overlaps identify the table exactly — on a body page (where a
+// table may be split across sheets) as well as on an attachment page (`data-att-id`).
+/** What the bar records beyond the API spot: the rows under the box + its attachment page. */
+export type BarSpot = QuickSpot & { rows?: string[]; att_id?: string }
+
+/** `data-r` ids of the table rows the box overlaps (geometry, not ancestry). */
+export function rowsInRect(scope: ParentNode | null, box: R, max = 40): string[] {
+  if (!scope) return []
+  const out: string[] = []
+  for (const tr of Array.from(scope.querySelectorAll<HTMLElement>('tr[data-r]'))) {
+    const b = tr.getBoundingClientRect()
+    if (overlapArea(box, { x: b.left, y: b.top, w: b.width, h: b.height }) <= 0) continue
+    const id = tr.getAttribute('data-r') || ''
+    if (id && !out.includes(id)) out.push(id)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** Does a recorded box touch this (sent) table? Its attachment page, or any of its rows. */
+export function spotTouches(sp: { rows?: string[]; att_id?: string }, t: { html: string; attId?: string }): boolean {
+  if (sp.att_id && t.attId === sp.att_id) return true
+  return (sp.rows || []).some((r) => t.html.indexOf(`data-r="${r}"`) !== -1)
 }

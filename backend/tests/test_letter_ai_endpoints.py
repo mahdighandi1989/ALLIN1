@@ -375,3 +375,74 @@ async def test_quick_command_runs_narrow_brief_and_returns_layout_ops(
     assert "set_layout" in seen["system"]
     ops = [(c["op"], c.get("props")) for c in body["changes"]]
     assert ops == [("set_layout", {"w": 900, "h": 140})]     # clamped; db_write never staged in quick mode
+
+
+async def test_quick_command_corrects_itself_once_and_explains_the_rest(
+        client, auth_headers, db_session, monkeypatch):
+    """v178 — «بار دوم … بهونه میاره یا نمی‌فهمه». A quick order runs under the
+    executor preface (never the review-only identity), sees every table with where it
+    lives + its own previous turns, and when the validator drops a proposal the model
+    gets ONE corrective round with the reasons; what still fails comes back as a note
+    with its reason instead of a bare «تغییری اعمال نشد»."""
+    await _seed_usable_model(db_session)
+    calls = []
+
+    async def fake_complete(db, prompt, **kwargs):
+        calls.append((prompt, kwargs.get("system") or ""))
+        if len(calls) == 1:
+            return {"ok": True, "model": "m", "text": json.dumps({"changes": [
+                {"op": "text_replace", "field": "body", "find": "جملهٔ خیالی", "replace": "", "title": "حذفِ ارجاع"},
+                {"op": "table_delete", "table_index": 3, "title": "حذفِ جدولِ پیوست"},
+            ]}, ensure_ascii=False)}
+        return {"ok": True, "model": "m", "text": json.dumps({"changes": [
+            {"op": "text_replace", "field": "body", "find": "به شرح جدول پیوست", "replace": "", "title": "حذفِ ارجاع"},
+            {"op": "table_delete", "table_index": 2, "title": "حذفِ جدولِ پیوست"},
+            {"op": "set_field", "field": "body", "after": "x", "title": "بازنویسیِ کل"},
+        ]}, ensure_ascii=False)}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "fields": {"body": "<div>مبالغ به شرح جدول پیوست اعلام می‌گردد.</div>"},
+        "quick": True, "instruction": "جدول پیوست و ارجاعش را حذف کن",
+        "tables": ["<table><tr><td>a</td></tr></table>", "<table><tr><td>b</td></tr></table>"],
+        "table_labels": ["جدول ۱ — داخلِ متن", "جدول ۱ پیوست"],
+        "history": [{"instruction": "پیوست را بردار", "applied": [], "notes": ["در صورتِ تمایل اعلام فرمایید"]}],
+        "spots": [{"page": 2, "layout_keys": [], "rect": {"x": 1, "y": 1, "w": 9, "h": 9}, "table_indexes": [2]}],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(calls) == 2
+    first_prompt, system = calls[0]
+    assert system.startswith(la_prefix()) and "مجری" in system
+    assert "[جدول 2 — جدول ۱ پیوست]" in first_prompt and "کاربر: «پیوست را بردار»" in first_prompt
+    assert "روی جدولِ شمارهٔ 2" in first_prompt
+    assert "بازخوردِ اعتبارسنج" in calls[1][0] and "جملهٔ خیالی" in calls[1][0]
+    done = [(c["op"], c.get("table_index")) for c in body["changes"] if c["applicable"]]
+    assert done == [("text_replace", None), ("table_delete", 2)]
+    notes = [c for c in body["changes"] if c["op"] == "note"]
+    assert len(notes) == 1 and notes[0]["title"].startswith("اجرا نشد") and "text_replace" in notes[0]["detail"]
+
+
+def la_prefix():
+    from app.services import letter_assistant as la
+    return la.QUICK_SYSTEM_PREFIX
+
+
+async def test_review_assistant_keeps_its_own_identity(client, auth_headers, db_session, monkeypatch):
+    """The executor preface is for the quick bar only — the review assistant still proposes."""
+    await _seed_usable_model(db_session)
+    seen = {}
+
+    async def fake_complete(db, prompt, **kwargs):
+        seen["system"] = kwargs.get("system") or ""
+        return {"ok": True, "model": "m", "text": json.dumps({"changes": [
+            {"op": "text_replace", "field": "body", "find": "نیست", "replace": "x"}]})}
+
+    import app.routers.letter_ai as mod
+    monkeypatch.setattr(mod.inference, "complete", fake_complete)
+    r = await client.post("/api/letter-ai/analyze", headers=auth_headers, json={
+        "fields": {"body": "<div>متن</div>"}, "tools": ["spelling"]})
+    assert r.status_code == 200
+    assert "مجری" not in seen["system"] and "محافظه‌کار" in seen["system"]
+    assert r.json()["changes"] == []          # no retry / no rejection notes outside quick mode

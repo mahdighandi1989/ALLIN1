@@ -1,5 +1,5 @@
 import {
-  headingAbove, layoutKeysUnder, overlapArea, rectOnSheet, sheetIndexFor, textInRect,
+  headingAbove, layoutKeysUnder, overlapArea, rectOnSheet, rowsInRect, sheetIndexFor, spotTouches, textInRect,
   type Item, type R,
 } from './quickSpot'
 
@@ -159,5 +159,33 @@ describe('headingAbove — naming the section a box of empty cells sits in', () 
     document.body.appendChild(r)
     expect(headingAbove(r, { x: 32, y: 400, w: 681, h: 60 },
       () => [{ x: 40, y: 300, w: 700, h: 30 }])).toBe('')
+  })
+})
+
+
+// v178 — «حتی کادر هم کشیدم»: the box must name the TABLE it was drawn round.
+describe('quickSpot — table under the box', () => {
+  const mk = (rows: { id: string; top: number }[]) => {
+    const d = document.createElement('div')
+    d.innerHTML = `<table>${rows.map((r) => `<tr data-r="${r.id}"><td>x</td></tr>`).join('')}</table>`
+    const trs = Array.from(d.querySelectorAll('tr')) as HTMLElement[]
+    trs.forEach((tr, i) => {
+      tr.getBoundingClientRect = () => ({ left: 100, top: rows[i].top, width: 500, height: 30, right: 600, bottom: rows[i].top + 30, x: 100, y: rows[i].top, toJSON: () => ({}) }) as DOMRect
+    })
+    return d
+  }
+  it('collects only the rows the box overlaps', () => {
+    const d = mk([{ id: 'a', top: 100 }, { id: 'b', top: 130 }, { id: 'c', top: 400 }])
+    expect(rowsInRect(d, { x: 90, y: 95, w: 300, h: 60 })).toEqual(['a', 'b'])
+    expect(rowsInRect(d, { x: 700, y: 95, w: 50, h: 60 })).toEqual([])
+    expect(rowsInRect(null, { x: 0, y: 0, w: 1, h: 1 })).toEqual([])
+  })
+  it('matches a sent table by any of its rows, or by its attachment page', () => {
+    const body = { html: '<table><tr data-r="a"></tr><tr data-r="b"></tr></table>' }
+    const att = { html: '<table><tr data-r="z"></tr></table>', attId: 'att1' }
+    expect(spotTouches({ rows: ['b'] }, body)).toBe(true)
+    expect(spotTouches({ rows: ['b'] }, att)).toBe(false)
+    expect(spotTouches({ att_id: 'att1', rows: [] }, att)).toBe(true)
+    expect(spotTouches({}, body)).toBe(false)
   })
 })

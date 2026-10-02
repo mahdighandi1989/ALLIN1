@@ -277,7 +277,38 @@ QUICK_GUIDE = (
     "همان کلیدهای layout و متنِ زیرِ کادر هدف‌اند. اگر کادری نکشیده یا مبهم است، از خودِ دستور و "
     "فهرستِ فیلدها/layout حدس بزن که کجا مقصود است و در title بنویس کدام را هدف گرفتی. "
     "برای «بزرگ‌تر/کوچک‌تر/بالاتر/پایین‌تر» مقدارِ فعلیِ layout را مبنا بگیر و مقدارِ مطلقِ نهایی بده. "
-    "هر واحد را که نمی‌توانی با opهای بالا اجرا کنی، در یک note با دلیل بگو."
+    "حذفِ جدول (داخلِ متن یا صفحهٔ پیوست) ⇒ table_delete؛ انتقالِ جدول بینِ متن و پیوست ⇒ "
+    "table_delete روی جدولِ فعلی + table_insert با همان html و placementِ مقصد؛ تغییرِ «پیوست: "
+    "دارد/ندارد» ⇒ set_field روی attachment. "
+    "اگر بخشِ «دستورهای قبلیِ همین نامه» در پیام هست، دستورِ تازه را ادامهٔ همان گفت‌وگو بخوان: "
+    "«دوباره/درستش کن/نه منظورم … بود/همان را/بله انجام بده» به همان موضوعِ قبلی برمی‌گردد؛ "
+    "اگر قبلاً چیزی را پرسیده یا رد کرده بودی و کاربر حالا تأیید یا تکرار کرده، این‌بار اجرا کن. "
+    "هر واحد را که با هیچ‌کدام از opهای بالا شدنی نیست، در یک note با دلیلِ فنیِ مشخص بگو "
+    "(نه پرسشِ «در صورتِ تمایل»)."
+)
+
+# v178 — «دستورِ سریع … نمی‌فهمه و تمکین نمی‌کنه … بهونه میاره». The bar ran under
+# SYSTEM_PROMPT, whose identity is «a conservative editor who never applies anything,
+# only proposes; in doubt, give a note». A quick command IS the user's decision and
+# is applied at once with a full undo — so under that identity the model kept
+# answering an order with a polite advisory («در صورتِ تمایل اعلام فرمایید»). This
+# preface takes precedence in quick mode only; the anti-hallucination rules stay.
+QUICK_SYSTEM_PREFIX = (
+    "### حالتِ «دستورِ سریع» — این بخش بر همهٔ قواعدِ پایین مقدم است\n"
+    "در این حالت تو «مجری» هستی، نه پیشنهاددهنده: هر change که بدهی فوراً روی فرم اعمال "
+    "می‌شود و کاربر با یک دکمه («برگشتِ دستور») همه را برمی‌گرداند. دستورِ کاربر خودش "
+    "تأییدِ اوست. پس:\n"
+    "- اجازه نگیر، نپرس «در صورتِ تمایل اعلام فرمایید»، تأییدِ دوباره نخواه، گزینه پیشنهاد "
+    "نده — همان کاری را که خواسته شده کامل انجام بده.\n"
+    "- عبارت‌های «تو هرگز چیزی را مستقیم اعمال نمی‌کنی»، «محافظه‌کار» و «در شک، note بده» در "
+    "قواعدِ پایین در این حالت لغو است؛ قواعدِ سلیقه‌ایِ بازبینیِ کلی (۸ تا ۱۳ و ۱۶) فقط وقتی "
+    "به کار می‌آیند که خودِ دستور بازنویسی/اصلاحِ متن بخواهد. هر مقداری را که کاربر صریحاً "
+    "خواسته (امضاکننده، شعبه، عنوان، عدد، جمله) عیناً همان را بگذار، حتی اگر با پیش‌فرض‌های "
+    "قاعدهٔ ۱۳ نخواند.\n"
+    "- فقط دو چیز پابرجاست: find عیناً از متنِ فعلی کپی شود، و هیچ دادهٔ مالی/عددی از خودت "
+    "نساز. note فقط برای بخشی که با هیچ opی شدنی نیست، با دلیلِ فنیِ مشخص.\n"
+    "- حذفِ متن = text_replace با replace خالی؛ حذفِ جدول = table_delete؛ افزودنِ جمله کنارِ "
+    "عبارتی موجود = text_replace که find همان عبارت و replace «عبارت + متنِ تازه» است.\n\n"
 )
 
 
@@ -651,7 +682,9 @@ SYSTEM_PROMPT = (
     "با کلیدهای account_no/customer_name/key/value)؛ و فقط اگر «جدول‌های انتخاب‌شده» به تو داده "
     "شده باشد — \"table_replace\" (بازطراحیِ کاملِ یکی از همان جدول‌ها: کلیدهای table_index "
     "(شمارهٔ جدول در فهرستِ داده‌شده، از 1) و html (HTML کاملِ جدولِ جدید، فقط تگ‌های جدول/"
-    "تأکیدِ ساده، بدون script/link/img))؛ و — فقط وقتی «دستورِ اختصاصیِ کاربر» ساختِ جدولِ "
+    "تأکیدِ ساده، بدون script/link/img)) و \"table_delete\" (حذفِ کاملِ یکی از همان جدول‌ها — "
+    "داخلِ متن یا صفحهٔ پیوست — فقط وقتی دستورِ کاربر حذفش را خواسته: کلیدِ table_index)؛ "
+    "و — فقط وقتی «دستورِ اختصاصیِ کاربر» ساختِ جدولِ "
     "«جدید» را می‌خواهد — \"table_insert\" (ساختِ یک جدولِ نو: کلیدهای html (HTML کاملِ جدول، "
     "همان محدودیت‌های table_replace)، table_title (عنوانِ اختیاریِ بالای جدول) و placement: "
     "\"body\" یعنی داخلِ متنِ نامه (جدولِ کوچک/مرتبط با متن) یا \"attachment\" یعنی صفحهٔ "
@@ -825,17 +858,43 @@ def _spots_section(spots: List[Dict[str, Any]], hints: Dict[str, Any]) -> str:
         rect = sp.get("rect") if isinstance(sp.get("rect"), dict) else {}
         r = {k: rect.get(k) for k in ("x", "y", "w", "h") if isinstance(rect.get(k), (int, float))}
         txt = str(sp.get("covered_text") or "").strip()[:400]
+        tix = [int(t) for t in (sp.get("table_indexes") or [])
+               if isinstance(t, (int, float)) and not isinstance(t, bool) and 1 <= int(t) <= MAX_TABLES][:4]
         lines.append(
             f"{i}. صفحهٔ {sp.get('page') or '؟'} — کلیدهای layoutِ زیرِ کادر (بیشترین هم‌پوشانی اول): "
             f"{', '.join(keys) or 'هیچ (خارج از برگه/نوارِ ابزار)'} — مختصاتِ کادر روی برگه (px): "
             f"{json.dumps(r)} — بخشِ صفحه: {str(sp.get('section') or '')[:60] or '—'}"
-            + (f" — متنِ زیرِ کادر: «{txt}»" if txt else ""))
+            + (f" — متنِ زیرِ کادر: «{txt}»" if txt else "")
+            + (f" — ⟵ این کادر روی جدولِ شمارهٔ {', '.join(str(t) for t in tix)} از فهرستِ «جدول‌های فرم» است "
+               "(اگر دستور دربارهٔ «این/همین» است، هدف همین جدول است)" if tix else ""))
     sel = str(hints.get("selected_text") or "").strip()[:600]
     if sel:
         lines.append(f"متنی که کاربر همین حالا در نامه انتخاب کرده (اگر دستور «این» می‌گوید مقصود همین است): «{sel}»")
     sk = str(hints.get("selected_layout_key") or "")
     if sk in LAYOUT_KEYS:
         lines.append(f"فیلدی که کاربر در حالتِ چیدمان انتخاب کرده: {sk} ({LAYOUT_KEYS[sk]})")
+    return "\n".join(lines)
+
+
+MAX_HISTORY = 4
+
+
+def _history_section(history: List[Dict[str, Any]]) -> str:
+    """v178 — the quick bar's previous turns on THIS letter. Without them every
+    request was a stranger: «دوباره»، «نه، منظورم جدولِ دوم بود»، «بله انجام بده»
+    pointed at nothing, and the model answered the second request blind."""
+    lines = ["\n### دستورهای قبلیِ همین نامه (قدیمی‌تر اول؛ آنچه «اعمال شد» الان در متن/فرمِ فعلی هست — "
+             "دستورِ تازه را ادامهٔ همین گفت‌وگو بخوان):"]
+    for i, h in enumerate([x for x in history if isinstance(x, dict)][-MAX_HISTORY:], 1):
+        ins = str(h.get("instruction") or "").strip()[:400]
+        if not ins:
+            continue
+        app_ = [str(a).strip()[:160] for a in (h.get("applied") or []) if str(a).strip()][:8]
+        notes = [str(n).strip()[:300] for n in (h.get("notes") or []) if str(n).strip()][:4]
+        lines.append(f"{i}. کاربر: «{ins}»")
+        lines.append("   اعمال شد: " + ("؛ ".join(app_) if app_ else "هیچ"))
+        if notes:
+            lines.append("   پاسخِ تو: " + " | ".join(notes))
     return "\n".join(lines)
 
 
@@ -850,7 +909,9 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
                       layout: Optional[Dict[str, Any]] = None,
                       labels: Optional[Dict[str, Any]] = None,
                       spots: Optional[List[Dict[str, Any]]] = None,
-                      hints: Optional[Dict[str, Any]] = None) -> str:
+                      hints: Optional[Dict[str, Any]] = None,
+                      table_labels: Optional[List[str]] = None,
+                      history: Optional[List[Dict[str, Any]]] = None) -> str:
     """Assemble the user message: the letter's plain-text fields + DB facts +
     the requested tools + optional free-form instruction and the user's SELECTED
     snippets. ``selections`` is the list the user gathered (many, separate pieces);
@@ -884,6 +945,8 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
 
     if layout:
         parts.append(_layout_section(layout, labels or {}))
+    if history:
+        parts.append(_history_section(history))
     if spots or hints:
         parts.append(_spots_section(spots or [], hints or {}))
 
@@ -960,9 +1023,14 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     if tbls:
         parts.append(
             "\n### جدول‌های انتخاب‌شده توسطِ کاربر (HTML فعلی — شماره‌ها برای table_index):"
+            if not table_labels else
+            "\n### جدول‌های فرم (HTML فعلی — شماره‌ها برای table_index در table_replace/table_delete؛ "
+            "جای هر جدول کنارِ شماره‌اش آمده):"
         )
+        labs = [str(x or "").strip()[:120] for x in (table_labels or [])]
         for i, t in enumerate(tbls, 1):
-            parts.append(f"[جدول {i}]\n{t[:20000]}")
+            where = labs[i - 1] if i - 1 < len(labs) and labs[i - 1] else ""
+            parts.append(f"[جدول {i}{' — ' + where if where else ''}]\n{t[:20000]}")
         parts.append(
             "قواعدِ کار با جدول‌های انتخاب‌شده:\n"
             "- اگر «دستورِ اختصاصیِ کاربر» خواسته‌ای دربارهٔ جدول(ها) دارد، آن را کامل و همه‌جانبه "
@@ -1019,9 +1087,17 @@ def build_user_prompt(fields: Dict[str, Any], facts: Dict[str, Any], tools: List
     return "\n".join(parts)
 
 
+def _reject(rejected: Optional[List[Dict[str, str]]], op: str, title: str, reason: str) -> None:
+    """Record WHY a proposal was dropped. Silently dropping was what made the
+    quick bar answer an order with «تغییری اعمال نشد» and no reason (v178)."""
+    if rejected is not None:
+        rejected.append({"op": op, "title": (title or op)[:200], "reason": reason[:300]})
+
+
 def parse_and_validate(raw_text: str, fields: Dict[str, Any],
                        tables_count: int = 0,
-                       layout: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                       layout: Optional[Dict[str, Any]] = None,
+                       rejected: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, Any]]:
     """Parse the model's JSON reply and keep ONLY changes that are safe to apply.
 
     The hallucination guard: a ``text_replace`` is dropped unless its ``find`` is
@@ -1074,9 +1150,11 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
         if op == "set_layout":
             # Only when the caller supplied a layout (i.e. the page can apply it).
             if not layout or field not in LAYOUT_KEYS:
+                _reject(rejected, op, title, f"کلیدِ ظاهرِ «{field}» شناخته نیست")
                 continue
             props = clean_layout_props(ch.get("props"))
             if not props or len(props) > MAX_LAYOUT_TOUCH:
+                _reject(rejected, op, title, "props خالی/نامعتبر است (فقط x,y,w,h,size,… با مقدارِ عددیِ مطلق)")
                 continue
             cur = layout.get(field) if isinstance(layout.get(field), dict) else {}
             item["props"] = props
@@ -1089,9 +1167,11 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
 
         if op == "set_label":
             if not layout or field not in LABEL_KEYS:
+                _reject(rejected, op, title, f"عنوانِ چاپیِ «{field}» شناخته نیست")
                 continue
             after = ch.get("after")
             if not isinstance(after, str) or len(after) > 60:
+                _reject(rejected, op, title, "after باید متنِ کوتاه (حداکثر ۶۰ نویسه) باشد")
                 continue
             item["after"] = after
             item["before"] = str(ch.get("before") or "")
@@ -1106,11 +1186,15 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             try:
                 ti = int(ch.get("table_index"))
             except (TypeError, ValueError):
+                _reject(rejected, op, title, "شمارهٔ جدول (table_index) نیامده یا عدد نیست")
                 continue
             if not (1 <= ti <= tables_count):
+                _reject(rejected, op, title,
+                        f"جدولِ شمارهٔ {ti} وجود ندارد (فقط {tables_count} جدول فرستاده شده)")
                 continue
             clean = sanitize_table_html(str(ch.get("html") or ""))
             if not clean:
+                _reject(rejected, op, title, "html جدول خالی/نامعتبر است")
                 continue
             item["field"] = BODY_FIELD
             item["table_index"] = ti
@@ -1121,12 +1205,34 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             out.append(item)
             continue
 
+        if op == "table_delete":
+            # Remove ONE of the tables that were sent (body or attachment page).
+            # Same index contract as table_replace; the client deletes by uid.
+            try:
+                ti = int(ch.get("table_index"))
+            except (TypeError, ValueError):
+                _reject(rejected, op, title, "شمارهٔ جدول (table_index) نیامده یا عدد نیست")
+                continue
+            if not (1 <= ti <= tables_count):
+                _reject(rejected, op, title,
+                        f"جدولِ شمارهٔ {ti} وجود ندارد (فقط {tables_count} جدول فرستاده شده)")
+                continue
+            item["field"] = BODY_FIELD
+            item["table_index"] = ti
+            item["before"] = f"جدول {ti}"
+            item["after"] = "حذف"
+            item["title"] = item["title"] if title else f"حذفِ جدولِ {ti}"
+            item["applicable"] = True
+            out.append(item)
+            continue
+
         if op == "table_insert":
             # A brand-NEW table authored by the model (needs no pre-existing or
             # selected table). Same whitelist sanitizer as table_replace — this
             # is the only path model HTML takes into the letter.
             clean = sanitize_table_html(str(ch.get("html") or ""))
             if not clean:
+                _reject(rejected, op, title, "html جدول خالی/نامعتبر است")
                 continue
             placement = str(ch.get("placement") or "body").strip().lower()
             if placement not in ("body", "attachment"):
@@ -1152,11 +1258,16 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             raw_parts = ch.get("parts")
             replace = ch.get("replace")
             if not isinstance(raw_parts, list) or not isinstance(replace, str) or not replace.strip():
+                _reject(rejected, op, title, "parts/replace نیامده")
                 continue
             parts_txt = [str(p).strip() for p in raw_parts if isinstance(p, str) and str(p).strip()][:6]
             if len(parts_txt) < 2:
+                _reject(rejected, op, title, "دست‌کم دو تکه (parts) لازم است")
                 continue
-            if not all(p in haystack or _norm_ws(_fold_heh(p)) in _norm_ws(_fold_heh(haystack)) for p in parts_txt):
+            missing = [p for p in parts_txt
+                       if not (p in haystack or _norm_ws(_fold_heh(p)) in _norm_ws(_fold_heh(haystack)))]
+            if missing:
+                _reject(rejected, op, title, f"این تکه عیناً در متن نیست: «{missing[0][:80]}»")
                 continue
             item["field"] = fld
             item["parts"] = parts_txt
@@ -1169,9 +1280,14 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
 
         if op == "set_field":
             if field not in SCALAR_FIELDS:
-                continue  # body/unknown → not settable wholesale
+                # body/unknown → not settable wholesale
+                _reject(rejected, op, title,
+                        "set_field برای body مجاز نیست — متنِ نامه را با text_replace/paragraph_merge تغییر بده"
+                        if field == BODY_FIELD else f"فیلدِ «{field}» شناخته نیست")
+                continue
             after = ch.get("after")
             if after is None:
+                _reject(rejected, op, title, "after نیامده")
                 continue
             item["after"] = str(after)
             item["before"] = str(ch.get("before") if ch.get("before") is not None else plain.get(field, ""))
@@ -1181,10 +1297,14 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
 
         if op == "text_replace":
             if field not in TEXT_FIELDS:
+                _reject(rejected, op, title,
+                        f"فیلدِ «{field}» متنِ آزاد نیست — برای فیلدهای کوتاه set_field بده"
+                        if field in SCALAR_FIELDS else f"فیلدِ «{field}» شناخته نیست")
                 continue
             find = ch.get("find")
             replace = ch.get("replace")
             if not isinstance(find, str) or not find.strip() or replace is None:
+                _reject(rejected, op, title, "find/replace نیامده")
                 continue
             haystack = plain.get(field, "")
             # Hallucination guard: the exact snippet must exist (verbatim, or with
@@ -1192,6 +1312,7 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             # safely on the client → drop the change.
             located = find in haystack or _norm_ws(_fold_heh(find)) in _norm_ws(_fold_heh(haystack))
             if not located:
+                _reject(rejected, op, title, f"این عبارت عیناً در «{field}» نیست: «{find.strip()[:80]}»")
                 continue
             occ = str(ch.get("occurrence") or "first").strip()
             if occ not in ("first", "all"):
@@ -1204,6 +1325,8 @@ def parse_and_validate(raw_text: str, fields: Dict[str, Any],
             item["applicable"] = True
             out.append(item)
             continue
+        if op not in ("db_write", "kb_write", "link", "entity_write"):   # staged elsewhere
+            _reject(rejected, op, title, f"op «{op}» شناخته نیست")
         # unknown op → skip
     return out
 

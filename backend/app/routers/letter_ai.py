@@ -72,6 +72,10 @@ class AnalyzeRequest(BaseModel):
     quick: bool = False
     spots: List[Dict[str, Any]] = Field(default_factory=list)
     hints: Dict[str, Any] = Field(default_factory=dict)
+    # v178 — where each sent table lives («داخلِ متن» / «صفحهٔ پیوست …»), and the
+    # quick bar's previous turns on this letter (instruction → applied/notes).
+    table_labels: List[str] = Field(default_factory=list)
+    history: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 async def _gather_facts(db: AsyncSession, account_no: str) -> Dict[str, Any]:
@@ -228,7 +232,8 @@ async def analyze(
     # v88 — the office's own archive as the tone model for rewrites (rule 16)
     style = await _style_samples(db, str((payload.fields or {}).get("body") or ""))
 
-    system = la.SYSTEM_PROMPT + (la.LAYOUT_ADDENDUM if payload.layout else "")
+    system = ((la.QUICK_SYSTEM_PREFIX if payload.quick else "")
+              + la.SYSTEM_PROMPT + (la.LAYOUT_ADDENDUM if payload.layout else ""))
     # v123 — anything the budget had to cut comes back here and is surfaced to
     # the user as review rows; a silently trimmed input is what made partial
     # answers look complete.
@@ -247,6 +252,8 @@ async def analyze(
         warnings_out=prompt_warnings,
         layout=payload.layout, labels=payload.labels,
         spots=payload.spots, hints=payload.hints,
+        table_labels=(payload.table_labels or []) if payload.quick else None,
+        history=(payload.history or []) if payload.quick else None,
     )
 
     # v93 — the analyze prompt can be very large (attachment PDFs' text, all
@@ -308,11 +315,41 @@ async def analyze(
                 "facts_used": bool(facts),
             }
 
+    tables_count = len(payload.tables or []) if ("tables" in tools or payload.quick) else 0
+    rejected: List[Dict[str, str]] = []
     changes = la.parse_and_validate(
         result.get("text") or "", payload.fields or {},
-        tables_count=(len(payload.tables or []) if ("tables" in tools or payload.quick) else 0),
-        layout=payload.layout,
+        tables_count=tables_count, layout=payload.layout, rejected=rejected,
     )
+
+    # v178 — the quick bar answers an ORDER, so a proposal the validator had to drop
+    # (a `find` copied loosely, a table number off by one, set_field on body) must
+    # not end as a bare «تغییری اعمال نشد». The model gets ONE corrective round with
+    # the exact reasons; what still fails is reported as a note with its reason.
+    if payload.quick and rejected:
+        fb = "\n".join(f"- {r['op']} «{r['title']}»: {r['reason']}" for r in rejected[:12])
+        prompt3 = (
+            prompt
+            + "\n\n### پاسخِ قبلیِ تو (JSON):\n" + (result.get("text") or "")[:12000]
+            + "\n\n### بازخوردِ اعتبارسنج — این تغییرها اجرا نشدند:\n" + fb
+            + "\nهمین حالا خروجیِ کامل و اصلاح‌شده را بده (همهٔ تغییرها، نه فقط اصلاح‌شده‌ها): find را "
+              "کاراکتربه‌کاراکتر از «متنِ نامه»ی بالا کپی کن، table_index را از فهرستِ جدول‌ها بردار، "
+              "و برای body هرگز set_field نده."
+        )
+        retry = await _an_complete(prompt3)
+        if retry.get("ok"):
+            rejected2: List[Dict[str, str]] = []
+            changes2 = la.parse_and_validate(
+                retry.get("text") or "", payload.fields or {},
+                tables_count=tables_count, layout=payload.layout, rejected=rejected2,
+            )
+            if sum(1 for c in changes2 if c.get("applicable")) >= sum(1 for c in changes if c.get("applicable")):
+                changes, rejected, result = changes2, rejected2, retry
+        changes.extend({
+            "id": f"rej-{i}", "op": "note", "category": "other", "field": "",
+            "severity": "medium", "applicable": False,
+            "title": f"اجرا نشد: {r['title']}", "detail": r["reason"],
+        } for i, r in enumerate(rejected, 1))
 
     # When the extract-to-DB tool is on — or inline in-text prompts may ask to
     # RECORD data («... این موارد ثبت بشه») — stage the model's db_write
