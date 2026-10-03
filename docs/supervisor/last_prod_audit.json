@@ -1,5 +1,64 @@
 {
- "base": "(تنظیم نشده)",
- "connected": false,
- "error": "SUPERVISOR_API_BASE تنظیم نشده — بدونِ آن نمی‌دانم به کجا وصل شوم"
+ "base": "https://banking-ops-api.onrender.com",
+ "connected": true,
+ "sections": {
+  "account_type": {
+   "total": 44608,
+   "conflicts": 118,
+   "undecided": 0,
+   "undecided_with_evidence": 0,
+   "agreed": 41037,
+   "book_total": 44608,
+   "examined": 44608,
+   "has_more": false,
+   "partial": false,
+   "passes": 3
+  },
+  "data_quality": {
+   "total_customers": 44608,
+   "book_total": 44608,
+   "examined": 44608,
+   "partial": false,
+   "passes": 9,
+   "walk_truncated": false,
+   "average_percent": 8,
+   "weakest_section": "اعتباری و بازبینی",
+   "top_gaps": [
+    "اقامتِ طلایی (بله/خیر)",
+    "تاریخ صدور ویزا",
+    "تعداد پرونده‌های قبلی",
+    "نوع ویزا",
+    "شمارهٔ ویزا"
+   ]
+  },
+  "drive": {
+   "configured": true,
+   "connected": true,
+   "mode": "oauth",
+   "interval_hours": 24,
+   "last_snapshot_at": "2026-10-02T12:25:23.011495+00:00",
+   "snapshot_age_hours": 14.9,
+   "snapshot_overdue": false
+  }
+ },
+ "coverage": {
+  "sections": [
+   {
+    "section": "بازبینیِ نوعِ حساب",
+    "examined": 44608,
+    "book_total": 44608,
+    "percent": 100,
+    "partial": false
+   },
+   {
+    "section": "کیفیتِ داده",
+    "examined": 44608,
+    "book_total": 44608,
+    "percent": 100,
+    "partial": false
+   }
+  ],
+  "any_partial": false,
+  "warnings": []
+ }
 }

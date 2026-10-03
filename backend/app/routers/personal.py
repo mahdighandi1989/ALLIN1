@@ -23,6 +23,12 @@ from app.models.personal import PersonalNote
 from app.models.system_setting import SystemSetting
 from app.utils.security import get_current_user
 
+SMTP_MISSING_FA = (
+    "ارسال ایمیل هنوز راه‌اندازی نشده: سرورِ ایمیل (SMTP) روی سامانه تنظیم نیست. "
+    "مدیر سامانه باید متغیرهای SMTP_HOST و SMTP_USERNAME و SMTP_PASSWORD را روی سرور بگذارد. "
+    "یادداشت‌های شما ارسال‌نشده باقی ماندند و چیزی از دست نرفت."
+)
+
 router = APIRouter(tags=["personal"], dependencies=[Depends(get_current_user)])
 
 
@@ -50,7 +56,11 @@ async def list_notes(db: AsyncSession = Depends(get_db), user=Depends(get_curren
             select(PersonalNote).where(PersonalNote.username == _uname(user)).order_by(PersonalNote.created_at.desc())
         )
     ).scalars().all()
-    return {"items": [_dict(n) for n in rows], "total": len(rows)}
+    from app.services.email import smtp_configured
+
+    # ``email_ready`` lets the page say up front that the one-button email can't
+    # work yet, instead of letting the user press it and read a raw error.
+    return {"items": [_dict(n) for n in rows], "total": len(rows), "email_ready": smtp_configured()}
 
 
 class NoteCreate(BaseModel):
@@ -111,7 +121,7 @@ async def send_notes_email(db: AsyncSession = Depends(get_db), user=Depends(get_
     from app.services.email import send_email, smtp_configured
 
     if not smtp_configured():
-        raise HTTPException(status_code=400, detail="SMTP is not configured (set SMTP_HOST / SMTP_USERNAME / SMTP_PASSWORD).")
+        raise HTTPException(status_code=400, detail=SMTP_MISSING_FA)
     uname = _uname(user)
     to = (await _setting(db, "personal_notes_email")) or getattr(user, "email", "") or ""
     if not to:

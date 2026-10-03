@@ -18,8 +18,8 @@ export interface Section {
   blocks: Block[]
 }
 
-export const KB_TITLE = 'دانش‌نامه دایره تسهیلات اعطایی (CFD)'
-export const KB_SUBTITLE = 'بانک صادرات ایران — سرپرستی امارات | راهنمای عملیاتی و مستندسازی اعتباری'
+export const KB_TITLE = 'دانش‌نامهٔ عملیات بانکی'
+export const KB_SUBTITLE = 'بانک صادرات ایران — سرپرستی امارات | راهنمای عملیاتی، مستندسازی و دانشِ سازمانی (اعتبارات، حقوقی، تطبیق، عملیات)'
 
 export const SECTIONS: Section[] = [
   {

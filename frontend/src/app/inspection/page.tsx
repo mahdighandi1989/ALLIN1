@@ -7,7 +7,7 @@
 // whole reason this page is trustworthy.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '@/components/Layout'
-import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X, Pencil } from 'lucide-react'
+import { RefreshCw, Check, Trash2, ExternalLink, Paperclip, X, Pencil, Plus } from 'lucide-react'
 import { inspectionApi, parseApiError, type InspectionFile, type InspectionReport } from '@/lib/api'
 import { geometryLabel } from '@/lib/inspectionSpot'
 import { AuthedDownload, AuthedImage } from '@/lib/AuthedMedia'
@@ -77,6 +77,11 @@ export default function InspectionPage() {
   // round's own visits. Kept here so the answer is on screen BEFORE the owner
   // presses ⚡, not only in the toast afterwards.
   const [nextRound, setNextRound] = useState<NextRound | null>(null)
+  // v-general — a request that points at no place on screen (or at a place that
+  // does not exist yet) is filed from here instead of from a box on a page.
+  const [generalOpen, setGeneralOpen] = useState(false)
+  const [generalText, setGeneralText] = useState('')
+  const [generalBusy, setGeneralBusy] = useState(false)
   const [tick, setTick] = useState(0)
 
   const load = useCallback(async () => {
@@ -248,6 +253,25 @@ export default function InspectionPage() {
     }
   }, [watching, filter])
 
+  const fileGeneral = async () => {
+    const text = generalText.trim()
+    if (!text || generalBusy) return
+    setGeneralBusy(true)
+    try {
+      await inspectionApi.create({
+        text,
+        spot: {
+          page: '/inspection/', page_label: 'درخواستِ عمومی',
+          section_id: 'general', section_label: 'بدونِ محلِ مشخص',
+          reopen: '/inspection/', dom_path: '', covered_text: '',
+        },
+      })
+      setGeneralText(''); setGeneralOpen(false)
+      toast.success('درخواست ثبت شد و در صفِ ناظر است')
+      await load()
+    } catch (e) { toast.error(parseApiError(e)) } finally { setGeneralBusy(false) }
+  }
+
   const summary = useMemo(() => ({
     open: counts.open || 0, answered: counts.answered || 0,
     approved: counts.approved || 0, filed: counts.filed || 0,
@@ -293,12 +317,39 @@ export default function InspectionPage() {
           </div>
           <div className="flex items-center gap-2">
             {nextRound && <NextRoundChip nr={nextRound} tick={tick} />}
+            <button onClick={() => setGeneralOpen((o) => !o)} type="button"
+              className="flex items-center gap-1.5 rounded-lg bg-gray-900 text-white px-3 py-1.5 text-sm hover:bg-gray-800">
+              <Plus size={14} /> درخواستِ عمومی
+            </button>
             <button onClick={load} disabled={busy}
               className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60">
               <RefreshCw size={14} className={busy ? 'animate-spin' : ''} /> تازه‌سازی
             </button>
           </div>
         </div>
+
+        {generalOpen && (
+          <div className="rounded-xl border border-gray-300 bg-white p-4 space-y-2">
+            <div className="text-sm font-semibold text-gray-800">درخواستِ عمومی</div>
+            <p className="text-xs text-gray-500">
+              برای چیزی که به جای مشخصی از صفحه‌ها اشاره نمی‌کند، یا جایی برایش هنوز ساخته نشده
+              (فیچر تازه، تغییرِ کلی، سؤال). مثلِ بقیهٔ برگه‌ها در صفِ ناظر می‌رود و همین‌جا پیگیری می‌شود.
+            </p>
+            <textarea value={generalText} dir="auto" rows={4} autoFocus
+              onChange={(e) => setGeneralText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void fileGeneral() }}
+              placeholder="درخواستت را بنویس… (Ctrl+Enter برای ثبت)"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setGeneralOpen(false) }}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50">انصراف</button>
+              <button type="button" onClick={() => void fileGeneral()} disabled={generalBusy || !generalText.trim()}
+                className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+                {generalBusy ? 'در حال ثبت…' : 'ثبت درخواست'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {([['open', 'در انتظارِ ناظر', 'border-amber-200 bg-amber-50 text-amber-800'],

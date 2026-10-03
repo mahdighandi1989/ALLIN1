@@ -12,6 +12,8 @@
   "partners": 0,
   "attachments": 0,
   "attachments_unattributed": 0,
+  "inspection_files": 0,
+  "inspection_files_orphaned": 0,
   "account_type_contradictions": 0,
   "account_type_undecided": 0
  },

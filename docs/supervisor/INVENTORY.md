@@ -5,14 +5,14 @@
 
 | سنجه | تعداد |
 |---|---|
-| صفحه‌ها | 33 |
+| صفحه‌ها | 34 |
 | آیتم‌های منو | 20 |
-| دکمه‌ها | 347 |
-| ورودی‌ها (input/select/textarea) | 344 |
-| مسیرهای API | 233 |
-| متدهای کلاینتِ API | 183 |
-| سرویس‌ها | 41 |
-| مدل‌ها | 27 |
+| دکمه‌ها | 368 |
+| ورودی‌ها (input/select/textarea) | 357 |
+| مسیرهای API | 245 |
+| متدهای کلاینتِ API | 193 |
+| سرویس‌ها | 42 |
+| مدل‌ها | 28 |
 
 ## منوی کناری
 
@@ -45,33 +45,34 @@
 |---|---|---|---|---|---|
 | `/audit` | 155 | 4 | 5 | 0 | 1 |
 | `/auth/callback` | 53 | 0 | 0 | 0 | 0 |
+| `/case-report` | 687 | 10 | 8 | 0 | 7 |
 | `/charge-tariff` | 215 | 5 | 12 | 0 | 3 |
 | `/cleanup` | 344 | 3 | 3 | 0 | 6 |
 | `/credit-file` | 172 | 3 | 1 | 0 | 3 |
 | `/credit-file-corporate` | 673 | 15 | 41 | 0 | 7 |
 | `/credit-file-retail` | 620 | 13 | 40 | 0 | 4 |
-| `/customer-detail` | 1423 | 42 | 32 | 0 | 27 |
+| `/customer-detail` | 1450 | 43 | 32 | 0 | 28 |
 | `/customers` | 564 | 12 | 12 | 0 | 5 |
 | `/daily-log` | 71 | 1 | 2 | 0 | 1 |
 | `/dashboard` | 427 | 0 | 0 | 0 | 2 |
-| `/data-quality` | 341 | 7 | 2 | 1 | 3 |
+| `/data-quality` | 345 | 7 | 2 | 1 | 3 |
 | `/facilities` | 579 | 13 | 18 | 0 | 5 |
 | `/facility-detail` | 250 | 5 | 2 | 0 | 2 |
-| `/forms` | 154 | 0 | 0 | 2 | 0 |
+| `/forms` | 176 | 1 | 0 | 2 | 0 |
 | `/general` | 168 | 6 | 4 | 0 | 9 |
-| `/import` | 296 | 3 | 3 | 0 | 2 |
-| `/inspection` | 416 | 9 | 2 | 0 | 10 |
+| `/import` | 303 | 3 | 3 | 0 | 2 |
+| `/inspection` | 775 | 17 | 5 | 0 | 16 |
 | `/knowledge` | 247 | 1 | 1 | 0 | 2 |
-| `/letter` | 3692 | 102 | 37 | 0 | 26 |
+| `/letter` | 3976 | 103 | 37 | 0 | 29 |
 | `/login` | 219 | 2 | 2 | 1 | 0 |
 | `/offer-letter` | 1890 | 38 | 35 | 0 | 8 |
 | `/` | 40 | 0 | 0 | 0 | 0 |
-| `/personal` | 107 | 3 | 3 | 0 | 5 |
+| `/personal` | 121 | 3 | 3 | 0 | 5 |
 | `/profile` | 150 | 2 | 5 | 0 | 2 |
 | `/properties` | 287 | 8 | 6 | 0 | 5 |
 | `/reports` | 194 | 5 | 0 | 0 | 3 |
 | `/sanction` | 450 | 9 | 25 | 0 | 2 |
-| `/settings` | 449 | 12 | 2 | 0 | 13 |
+| `/settings` | 530 | 12 | 4 | 0 | 13 |
 | `/staff` | 177 | 6 | 14 | 0 | 5 |
 | `/trash` | 116 | 1 | 0 | 0 | 2 |
 | `/users` | 275 | 7 | 7 | 0 | 5 |
@@ -105,6 +106,13 @@
 | PUT | `/api/auth/me` |
 | POST | `/api/auth/refresh` |
 | POST | `/api/auth/verify` |
+| GET | `/api/case-reports/` |
+| POST | `/api/case-reports/` |
+| GET | `/api/case-reports/prefill` |
+| GET | `/api/case-reports/{report_id}` |
+| PATCH | `/api/case-reports/{report_id}` |
+| DELETE | `/api/case-reports/{report_id}` |
+| GET | `/api/case-reports/{report_id}/attachments` |
 | GET | `/api/charge-tariff` |
 | POST | `/api/charge-tariff` |
 | GET | `/api/charge-tariff/` |
@@ -223,11 +231,16 @@
 | GET | `/api/inspection/files/{file_id}/text` |
 | GET | `/api/inspection/queue` |
 | GET | `/api/inspection/shots/{shot_id}` |
+| GET | `/api/inspection/urgent` |
+| POST | `/api/inspection/urgent/claim` |
 | GET | `/api/inspection/{report_id}` |
 | DELETE | `/api/inspection/{report_id}` |
 | POST | `/api/inspection/{report_id}/files` |
 | POST | `/api/inspection/{report_id}/notes` |
+| PATCH | `/api/inspection/{report_id}/notes/{note_id}` |
 | POST | `/api/inspection/{report_id}/status` |
+| POST | `/api/inspection/{report_id}/urgent` |
+| DELETE | `/api/inspection/{report_id}/urgent` |
 | GET | `/api/knowledge/` |
 | POST | `/api/knowledge/entries` |
 | DELETE | `/api/knowledge/entries/{entry_id}` |

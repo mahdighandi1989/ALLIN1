@@ -281,6 +281,11 @@ async def sync_provider_models(db: AsyncSession, provider_key: str) -> Dict[str,
 
     for m in existing:
         if (m.source or "catalog") != "custom" and m.api_id not in live_ids:
+            # Detach any task route first so a delisted model never leaves a
+            # dangling route (the scheduled sync removes models unattended).
+            from app.models.ai_config import AITaskRoute
+            for r in (await db.execute(select(AITaskRoute).where(AITaskRoute.model_id == m.id))).scalars():
+                r.model_id = None
             await db.delete(m)
             removed += 1
 

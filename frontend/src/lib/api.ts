@@ -303,6 +303,8 @@ export type DataQuality = {
   // v144 — the sweep is capped at `limit`; these say how much of the book it saw.
   // Optional because an older backend does not send them.
   book_total?: number; examined?: number; limit?: number; partial?: boolean
+  // whole-book mode: `customers` holds only the worst rows; these are exact book-wide counts
+  customers_shown?: number; customers_total?: number; below_50?: number
   sections: { key: string; title: string; filled: number; total: number; percent: number }[]
   common_gaps: { field: string; label: string; section: string; section_title: string; count: number }[]
 }
@@ -351,7 +353,7 @@ export const crmApi = {
   // v130 — one sweep over the whole book: worst records first, weakest section,
   // and the single field missing most often.
   async dataQuality(limit = 2000): Promise<DataQuality> {
-    const { data } = await api.get('/api/crm/data-quality', { params: { limit }, timeout: 120000 })
+    const { data } = await api.get('/api/crm/data-quality', { params: { limit, whole_book: true }, timeout: 180000 })
     return data
   },
   async runMerge(): Promise<any> {
@@ -590,7 +592,7 @@ export const generalApi = {
 // Personal (private, per-user) notes + email digest (A8/A11/A16)
 // ---------------------------------------------------------------------------
 export const personalApi = {
-  async list(): Promise<{ items: any[]; total: number }> {
+  async list(): Promise<{ items: any[]; total: number; email_ready?: boolean }> {
     const { data } = await api.get('/api/personal/notes')
     return data
   },
@@ -1137,7 +1139,7 @@ export const importsApi = {
     return data
   },
   // AI document import: list document/vision models (wired from Settings) + analyze a file.
-  async aiModels(): Promise<{ models: any[]; drive_enabled: boolean }> {
+  async aiModels(): Promise<{ models: any[]; drive_enabled: boolean; model_sync?: { interval_hours: number; last_run_at: string | null } }> {
     const { data } = await api.get('/api/imports/ai-models')
     return data
   },

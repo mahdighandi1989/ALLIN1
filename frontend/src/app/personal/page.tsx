@@ -15,9 +15,10 @@ export default function PersonalNotesPage() {
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('Today')
   const [sending, setSending] = useState(false)
+  const [emailReady, setEmailReady] = useState(true)
 
   const load = async () => {
-    try { setNotes((await personalApi.list()).items) }
+    try { const r = await personalApi.list(); setNotes(r.items); setEmailReady(r.email_ready !== false) }
     catch (e) { toast.error(parseApiError(e)) } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
@@ -35,11 +36,18 @@ export default function PersonalNotesPage() {
       setNotes((ns) => ns.map((x) => x.id === n.id ? u : x))
     } catch (e) { toast.error(parseApiError(e)) }
   }
+  // Optimistic: the row disappears the instant it is clicked (the server round
+  // trip on a cold instance can take many seconds), and comes back in place if
+  // the server refuses.
   const remove = async (id: string) => {
+    const before = notes
+    setNotes((ns) => ns.filter((x) => x.id !== id))
     try {
       await personalApi.remove(id)
-      setNotes((ns) => ns.filter((x) => x.id !== id))
-    } catch (e) { toast.error(parseApiError(e)) }
+    } catch (e) {
+      setNotes(before)
+      toast.error(parseApiError(e))
+    }
   }
   const sendEmail = async () => {
     setSending(true)
@@ -62,12 +70,18 @@ export default function PersonalNotesPage() {
       <p className="text-xs text-gray-400 mb-5">یادداشت‌های شخصیِ روزانه؛ با یک دکمه می‌توانید موارد ارسال‌نشده را ایمیل کنید (آدرس/کلید/امضا در Settings).</p>
 
       <div className="max-w-3xl space-y-4">
+        {!emailReady && (
+          <div dir="rtl" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            ارسال ایمیل هنوز راه‌اندازی نشده (سرورِ SMTP روی سامانه تنظیم نیست)؛ دکمهٔ «Email unsent» تا آن زمان غیرفعال است. یادداشت‌ها همچنان ذخیره می‌شوند.
+          </div>
+        )}
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="flex gap-2 mb-2">
             <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category"
               className="w-32 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
             <span className="flex-1" />
-            <button onClick={sendEmail} disabled={sending || unsent === 0} type="button"
+            <button onClick={sendEmail} disabled={sending || unsent === 0 || !emailReady} type="button"
+              title={emailReady ? undefined : 'سرورِ ایمیل (SMTP) هنوز تنظیم نشده'}
               className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg px-3 py-1.5 text-sm">
               <Mail size={14} /> {sending ? 'Sending…' : `Email unsent (${unsent})`}
             </button>

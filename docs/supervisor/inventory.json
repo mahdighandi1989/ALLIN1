@@ -23,6 +23,17 @@
    "api_calls": 0
   },
   {
+   "route": "/case-report",
+   "file": "frontend/src/app/case-report/page.tsx",
+   "lines": 687,
+   "buttons": 10,
+   "onclick": 10,
+   "inputs": 8,
+   "forms": 0,
+   "links": 0,
+   "api_calls": 7
+  },
+  {
    "route": "/charge-tariff",
    "file": "frontend/src/app/charge-tariff/page.tsx",
    "lines": 215,
@@ -80,13 +91,13 @@
   {
    "route": "/customer-detail",
    "file": "frontend/src/app/customer-detail/page.tsx",
-   "lines": 1423,
-   "buttons": 42,
-   "onclick": 44,
+   "lines": 1450,
+   "buttons": 43,
+   "onclick": 46,
    "inputs": 32,
    "forms": 1,
    "links": 0,
-   "api_calls": 27
+   "api_calls": 28
   },
   {
    "route": "/customers",
@@ -124,7 +135,7 @@
   {
    "route": "/data-quality",
    "file": "frontend/src/app/data-quality/page.tsx",
-   "lines": 341,
+   "lines": 345,
    "buttons": 7,
    "onclick": 7,
    "inputs": 2,
@@ -157,9 +168,9 @@
   {
    "route": "/forms",
    "file": "frontend/src/app/forms/page.tsx",
-   "lines": 154,
-   "buttons": 0,
-   "onclick": 0,
+   "lines": 176,
+   "buttons": 1,
+   "onclick": 1,
    "inputs": 0,
    "forms": 0,
    "links": 2,
@@ -179,7 +190,7 @@
   {
    "route": "/import",
    "file": "frontend/src/app/import/page.tsx",
-   "lines": 296,
+   "lines": 303,
    "buttons": 3,
    "onclick": 3,
    "inputs": 3,
@@ -190,13 +201,13 @@
   {
    "route": "/inspection",
    "file": "frontend/src/app/inspection/page.tsx",
-   "lines": 416,
-   "buttons": 9,
-   "onclick": 10,
-   "inputs": 2,
+   "lines": 775,
+   "buttons": 17,
+   "onclick": 18,
+   "inputs": 5,
    "forms": 0,
    "links": 0,
-   "api_calls": 10
+   "api_calls": 16
   },
   {
    "route": "/knowledge",
@@ -212,13 +223,13 @@
   {
    "route": "/letter",
    "file": "frontend/src/app/letter/page.tsx",
-   "lines": 3692,
-   "buttons": 102,
-   "onclick": 86,
+   "lines": 3976,
+   "buttons": 103,
+   "onclick": 87,
    "inputs": 37,
    "forms": 0,
    "links": 0,
-   "api_calls": 26
+   "api_calls": 29
   },
   {
    "route": "/login",
@@ -256,7 +267,7 @@
   {
    "route": "/personal",
    "file": "frontend/src/app/personal/page.tsx",
-   "lines": 107,
+   "lines": 121,
    "buttons": 3,
    "onclick": 3,
    "inputs": 3,
@@ -311,10 +322,10 @@
   {
    "route": "/settings",
    "file": "frontend/src/app/settings/page.tsx",
-   "lines": 449,
+   "lines": 530,
    "buttons": 12,
    "onclick": 10,
-   "inputs": 2,
+   "inputs": 4,
    "forms": 2,
    "links": 0,
    "api_calls": 13
@@ -985,11 +996,27 @@
   },
   {
    "group": "inspectionApi",
+   "method": "editNote"
+  },
+  {
+   "group": "inspectionApi",
    "method": "note"
   },
   {
    "group": "inspectionApi",
    "method": "setStatus"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "rush"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "unrush"
+  },
+  {
+   "group": "inspectionApi",
+   "method": "urgentQueue"
   },
   {
    "group": "inspectionApi",
@@ -1137,6 +1164,30 @@
   },
   {
    "group": "lettersApi",
+   "method": "remove"
+  },
+  {
+   "group": "caseReportsApi",
+   "method": "list"
+  },
+  {
+   "group": "caseReportsApi",
+   "method": "get"
+  },
+  {
+   "group": "caseReportsApi",
+   "method": "prefill"
+  },
+  {
+   "group": "caseReportsApi",
+   "method": "attachments"
+  },
+  {
+   "group": "caseReportsApi",
+   "method": "save"
+  },
+  {
+   "group": "caseReportsApi",
    "method": "remove"
   },
   {
@@ -1845,6 +1896,55 @@
     "DELETE"
    ],
    "name": "delete_letter"
+  },
+  {
+   "path": "/api/case-reports/",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_case_reports"
+  },
+  {
+   "path": "/api/case-reports/prefill",
+   "methods": [
+    "GET"
+   ],
+   "name": "prefill"
+  },
+  {
+   "path": "/api/case-reports/{report_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "get_case_report"
+  },
+  {
+   "path": "/api/case-reports/",
+   "methods": [
+    "POST"
+   ],
+   "name": "create_case_report"
+  },
+  {
+   "path": "/api/case-reports/{report_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "update_case_report"
+  },
+  {
+   "path": "/api/case-reports/{report_id}/attachments",
+   "methods": [
+    "GET"
+   ],
+   "name": "list_case_report_attachments"
+  },
+  {
+   "path": "/api/case-reports/{report_id}",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "delete_case_report"
   },
   {
    "path": "/api/letter-ai/models",
@@ -2757,6 +2857,13 @@
    "name": "get_shot"
   },
   {
+   "path": "/api/inspection/urgent",
+   "methods": [
+    "GET"
+   ],
+   "name": "urgent_queue"
+  },
+  {
    "path": "/api/inspection/{report_id}",
    "methods": [
     "GET"
@@ -2783,6 +2890,34 @@
     "POST"
    ],
    "name": "add_note"
+  },
+  {
+   "path": "/api/inspection/{report_id}/urgent",
+   "methods": [
+    "POST"
+   ],
+   "name": "mark_urgent"
+  },
+  {
+   "path": "/api/inspection/{report_id}/urgent",
+   "methods": [
+    "DELETE"
+   ],
+   "name": "unmark_urgent"
+  },
+  {
+   "path": "/api/inspection/urgent/claim",
+   "methods": [
+    "POST"
+   ],
+   "name": "claim_next_urgent"
+  },
+  {
+   "path": "/api/inspection/{report_id}/notes/{note_id}",
+   "methods": [
+    "PATCH"
+   ],
+   "name": "edit_note"
   },
   {
    "path": "/api/inspection/{report_id}/status",
@@ -2859,11 +2994,13 @@
   "relationships",
   "snapshots",
   "staff_seed",
+  "supervisor_rounds",
   "telegram"
  ],
  "models": [
   "ai_config",
   "audit_log",
+  "case_report",
   "charge_tariff",
   "cleanup_run",
   "credit_review",
@@ -2891,13 +3028,13 @@
   "user"
  ],
  "totals": {
-  "pages": 33,
+  "pages": 34,
   "menu_items": 20,
-  "buttons": 347,
-  "inputs": 344,
-  "routes": 233,
-  "api_methods": 183,
-  "services": 41,
-  "models": 27
+  "buttons": 368,
+  "inputs": 357,
+  "routes": 245,
+  "api_methods": 193,
+  "services": 42,
+  "models": 28
  }
 }

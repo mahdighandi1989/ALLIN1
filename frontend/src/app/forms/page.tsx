@@ -2,7 +2,8 @@
 
 import Layout from '@/components/Layout'
 import Link from 'next/link'
-import { Printer, FileSignature, Mail, ArrowLeft } from 'lucide-react'
+import { useState } from 'react'
+import { Printer, FileSignature, Mail, ArrowLeft, ChevronDown } from 'lucide-react'
 
 // Central hub for printable forms. Adding a new form = adding one entry here
 // (a card), NOT a new top-level navigation tab. Group with `category` so the
@@ -77,6 +78,26 @@ const FORMS: FormDef[] = [
   },
 ]
 
+// Long descriptions are clamped to 3 lines with a toggle, so one wordy card does
+// not stretch the whole row — the full text is never dropped, just folded.
+const CLAMP_OVER = 200
+function Description({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > CLAMP_OVER
+  return (
+    <div className="mt-2 flex-1">
+      <p className={`text-xs text-gray-500 leading-6 ${long && !open ? 'line-clamp-3' : ''}`}>{text}</p>
+      {long && (
+        <button type="button" onClick={() => setOpen((o) => !o)}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800">
+          {open ? 'کمتر' : 'ادامهٔ توضیحات'}
+          <ChevronDown size={12} className={open ? 'rotate-180' : ''} />
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function FormsPage() {
   const categories = Array.from(new Set(FORMS.map((f) => f.category)))
 
@@ -111,7 +132,7 @@ export default function FormsPage() {
                       </div>
                       <div className="font-bold text-gray-900">{f.title}</div>
                       {f.subtitle && <div className="text-sm text-gray-500 mt-0.5">{f.subtitle}</div>}
-                      <p className="text-xs text-gray-500 leading-6 mt-2 flex-1">{f.description}</p>
+                      <Description text={f.description} />
                       <div className="grid grid-cols-2 gap-2 mt-3">
                         {links.map((l) => (
                           <Link key={l.href} href={l.href}

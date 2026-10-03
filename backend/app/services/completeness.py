@@ -341,6 +341,10 @@ async def sweep_all(db, *, limit: int = 2000, offset: int = 0) -> dict:
         "has_more": offset + len(out) < book_total,
         "partial": len(out) < book_total,
         "average_percent": avg,
+        # additive: exact building blocks so several passes can be merged without
+        # re-deriving an average from rounded averages (see sweep_book).
+        "percent_sum": sum(x["percent"] for x in out),
+        "below_50": sum(1 for x in out if x["percent"] < 50),
         "sections": [
             {"key": k, "title": SECTION_TITLES[k], "filled": sec_totals[k][0],
              "total": sec_totals[k][1],
@@ -348,4 +352,64 @@ async def sweep_all(db, *, limit: int = 2000, offset: int = 0) -> dict:
             for k in SECTION_ORDER if sec_totals[k][1]
         ],
         "common_gaps": sorted(gap_counts.values(), key=lambda g: -g["count"]),
+    }
+
+
+async def sweep_book(db, *, page: int = 2500, keep_worst: int = 500) -> dict:
+    """The WHOLE book in one answer, by walking :func:`sweep_all` in passes.
+
+    The page used to say «this report saw only 2000 of 44,608 customers — raise
+    the cap», and there was no control to raise it with. The remedy has to be on
+    the server: each pass stays a fixed handful of queries (bounded memory), the
+    passes are merged exactly (sums, not averages of averages), and only the
+    ``keep_worst`` lowest-scoring customers are returned as rows — 44k rows of
+    JSON is not a dashboard. ``customers_total`` says how many were scored so the
+    truncated list is never mistaken for the book.
+    """
+    page = max(1, min(int(page), 5000))
+    offset = 0
+    book_total = 0
+    examined = 0
+    percent_sum = 0
+    below_50 = 0
+    worst: list = []
+    sec: dict = {}
+    gaps: dict = {}
+    while True:
+        r = await sweep_all(db, limit=page, offset=offset)
+        book_total = r["book_total"]
+        examined += r["examined"]
+        percent_sum += r.get("percent_sum", 0)
+        below_50 += r.get("below_50", 0)
+        worst = sorted(worst + r["customers"], key=lambda x: (x["percent"], -x["missing_count"]))[:keep_worst]
+        for s_ in r["sections"]:
+            t = sec.setdefault(s_["key"], {"key": s_["key"], "title": s_["title"], "filled": 0, "total": 0})
+            t["filled"] += s_["filled"]
+            t["total"] += s_["total"]
+        for g in r["common_gaps"]:
+            t = gaps.setdefault(g["field"], {**g, "count": 0})
+            t["count"] += g["count"]
+        if not r["has_more"] or r["examined"] == 0:
+            break
+        offset += page
+    sections = [
+        {**v, "percent": round(100 * v["filled"] / v["total"]) if v["total"] else 100}
+        for k in SECTION_ORDER for v in ([sec[k]] if k in sec else [])
+    ]
+    return {
+        "customers": worst,
+        "customers_shown": len(worst),
+        "customers_total": examined,
+        "total_customers": examined,
+        "book_total": book_total,
+        "examined": examined,
+        "limit": page,
+        "offset": 0,
+        "has_more": False,
+        "partial": examined < book_total,
+        "average_percent": round(percent_sum / examined) if examined else 0,
+        "percent_sum": percent_sum,
+        "below_50": below_50,
+        "sections": sections,
+        "common_gaps": sorted(gaps.values(), key=lambda g: -g["count"]),
     }

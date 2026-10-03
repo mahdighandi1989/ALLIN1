@@ -80,7 +80,7 @@ export default function DataQualityPage() {
     return list
   }, [data, q, type, gapField])
 
-  const worst = (data?.customers || []).filter((c) => c.percent < 50).length
+  const worst = data?.below_50 ?? (data?.customers || []).filter((c) => c.percent < 50).length
 
   return (
     <Layout>
@@ -114,7 +114,6 @@ export default function DataQualityPage() {
                 {' '}{fa(data.book_total ?? 0)} مشتریِ پرونده را دیده است
                 ({fa(Math.round((100 * (data.examined ?? data.total_customers)) / (data.book_total || 1)))}٪).
                 {' '}میانگین، بخش‌ها و «کمبودهای پرتکرار» فقط دربارهٔ همین نمونه‌اند — نه کلِ پرونده.
-                {' '}برای دیدنِ بیشتر، سقف را بالا ببرید.
               </div>
             )}
 
@@ -326,6 +325,11 @@ export default function DataQualityPage() {
                 ))}
                 {!rows.length && <div className="px-3 py-6 text-sm text-gray-500 text-center">موردی با این فیلترها نیست.</div>}
               </div>
+              {data && data.customers_total != null && data.customers_total > (data.customers_shown ?? 0) && (
+                <div className="px-3 py-2 text-[12px] text-gray-500 border-t border-gray-100">
+                  همهٔ {fa(data.customers_total)} مشتری سنجیده شد؛ اعدادِ بالا مالِ کلِ پرونده‌اند و این فهرست فقط {fa(data.customers_shown ?? 0)} ناقص‌ترین را نشان می‌دهد.
+                </div>
+              )}
               {rows.length > 300 && (
                 <div className="px-3 py-2 text-[12px] text-gray-500 border-t border-gray-100">
                   {fa(rows.length)} مورد پیدا شد؛ ۳۰۰ موردِ ناقص‌ترین نشان داده شد — با جست‌وجو محدودترش کن.

@@ -214,3 +214,41 @@ class TestDataQualitySweep:
 
     async def test_sweep_requires_auth(self, client: AsyncClient):
         assert (await client.get("/api/crm/data-quality")).status_code == 401
+
+
+class TestWholeBookSweep:
+    """The page said «only 2000 of 44,608 — raise the cap» with no control to
+    raise it. `whole_book` walks every pass server-side and merges exactly."""
+
+    async def _seed(self, db_session):
+        await TestDataQualitySweep()._seed(db_session)
+        db_session.add(Customer(account_no="900003", name="Third Corp",
+                                account_type=AccountType.CORPORATE, status=CustomerStatus.ACTIVE))
+        await db_session.commit()
+
+    async def test_merged_passes_equal_one_big_pass(self, db_session):
+        await self._seed(db_session)
+        one = await comp.sweep_all(db_session, limit=5000)
+        merged = await comp.sweep_book(db_session, page=1)  # 1 customer per pass
+        assert merged["examined"] == merged["book_total"] == one["examined"] >= 3
+        assert merged["partial"] is False
+        assert merged["average_percent"] == one["average_percent"]
+        assert merged["below_50"] == one["below_50"]
+        assert [s["percent"] for s in merged["sections"]] == [s["percent"] for s in one["sections"]]
+        g1 = {g["field"]: g["count"] for g in one["common_gaps"]}
+        g2 = {g["field"]: g["count"] for g in merged["common_gaps"]}
+        assert g1 == g2
+        assert [c["account_no"] for c in merged["customers"]] == [c["account_no"] for c in one["customers"]]
+
+    async def test_only_the_worst_rows_are_returned_but_totals_stay_exact(self, db_session):
+        await self._seed(db_session)
+        r = await comp.sweep_book(db_session, page=1, keep_worst=2)
+        assert r["customers_shown"] == len(r["customers"]) == 2
+        assert r["customers_total"] == r["examined"] >= 3
+        assert r["customers_total"] > r["customers_shown"]
+
+    async def test_endpoint_flag(self, client: AsyncClient, auth_headers, db_session):
+        await self._seed(db_session)
+        body = (await client.get("/api/crm/data-quality?whole_book=true", headers=auth_headers)).json()
+        assert body["partial"] is False
+        assert body["examined"] == body["book_total"] >= 3

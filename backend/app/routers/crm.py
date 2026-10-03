@@ -733,6 +733,7 @@ async def get_completeness(
 async def data_quality(
     limit: int = Query(2000, ge=1, le=5000),
     offset: int = Query(0, ge=0),
+    whole_book: bool = Query(False, description="walk every pass and merge — the whole book, worst rows only"),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_active_user),
 ):
@@ -742,7 +743,9 @@ async def data_quality(
     Read-only, and costs a fixed handful of queries no matter how many customers
     exist (see :func:`completeness.sweep_all`), so it is safe to open on demand.
     """
-    from app.services.completeness import sweep_all
+    from app.services.completeness import sweep_all, sweep_book
+    if whole_book:
+        return await sweep_book(db)
     # v144 — `offset` walks the book in passes; `book_total`/`partial`/`has_more`
     # in the response say how much of it this pass actually saw.
     return await sweep_all(db, limit=limit, offset=offset)

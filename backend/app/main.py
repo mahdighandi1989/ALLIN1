@@ -112,9 +112,19 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # never let an optional feature break boot
         logger.error("Could not start database-cleanup scheduler: %s", exc)
 
+    # Refresh the AI model list from each provider's live API on a persisted
+    # schedule (no more manual «sync» button). Best-effort; never blocks boot.
+    model_sync_task = None
+    try:
+        from app.ai import model_sync
+
+        model_sync_task = asyncio.create_task(model_sync.run_periodic_model_sync())
+    except Exception as exc:  # never let an optional feature break boot
+        logger.error("Could not start AI model auto-sync: %s", exc)
+
     yield
 
-    for _bg_task in (drive_task, cleanup_task):
+    for _bg_task in (drive_task, cleanup_task, model_sync_task):
         if _bg_task is not None:
             _bg_task.cancel()
             try:

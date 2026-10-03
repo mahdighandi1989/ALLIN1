@@ -26,6 +26,7 @@ export default function ImportPage() {
   // v103 — optional operator instructions the extraction model MUST follow;
   // the per-file result then reports exactly what was done because of them.
   const [instructions, setInstructions] = useState('')
+  const [modelSync, setModelSync] = useState<{ interval_hours: number; last_run_at: string | null } | null>(null)
   // v118 — the v117 «Drive policy inbox» card was REMOVED from this page at the
   // owner's explicit request (2026-09-05: the one-off batch was handled outside
   // the app, and production Drive runs in OAuth mode where the app cannot see
@@ -34,7 +35,7 @@ export default function ImportPage() {
 
   useEffect(() => {
     importsApi.aiModels()
-      .then((d) => { setModels(d.models || []); setDriveEnabled(!!d.drive_enabled) })
+      .then((d) => { setModels(d.models || []); setDriveEnabled(!!d.drive_enabled); setModelSync(d.model_sync || null) })
       .catch(() => {})
   }, [])
 
@@ -114,6 +115,12 @@ export default function ImportPage() {
             <div className="text-[11px] text-gray-400 pb-2">
               فعال/غیرفعال و مسیریابیِ مدل‌ها فقط در «تنظیمات».
               {driveEnabled ? ' · Drive متصل است' : ' · Drive متصل نیست'}
+              {modelSync && (
+                <span className="block mt-0.5">
+                  فهرستِ مدل‌ها خودکار از سرویس‌دهنده‌ها به‌روز می‌شود (هر {modelSync.interval_hours} ساعت)
+                  {modelSync.last_run_at ? ` · آخرین: ${new Date(modelSync.last_run_at).toLocaleString('fa-IR')}` : ' · هنوز اولین اجرا نشده'}
+                </span>
+              )}
             </div>
           </div>
 

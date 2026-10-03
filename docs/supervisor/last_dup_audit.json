@@ -1,0 +1,743 @@
+{
+  "tables_seen": [
+    "attachments",
+    "charge_rules",
+    "checklist_progress",
+    "credit_reviews",
+    "custom_tasks",
+    "customer_links",
+    "customer_notes",
+    "customer_profiles",
+    "customers",
+    "departments",
+    "exchange_rates",
+    "facilities",
+    "general_profiles",
+    "guarantors",
+    "inspection_binders",
+    "inspection_files",
+    "inspection_reports",
+    "inspection_shots",
+    "journal_entries",
+    "kb_entries",
+    "kb_topics",
+    "letters",
+    "mortgaged_properties",
+    "partners",
+    "property_events",
+    "securities",
+    "staff_members",
+    "system_settings"
+  ],
+  "findings": [
+    {
+      "rule": "customers: same account_no twice",
+      "level": "certain",
+      "scope": "global",
+      "note": "",
+      "groups": 0,
+      "rows": 0,
+      "examples": []
+    },
+    {
+      "rule": "customers: identical name under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "may be a genuine second account — a list for a person, not a deletion",
+      "groups": 773,
+      "rows": 1735,
+      "examples": [
+        {
+          "accounts": [
+            "101303",
+            "125800"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112183",
+            "121795"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "302023",
+            "317506"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101112",
+            "111993"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "305109",
+            "318811"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "132150",
+            "253861",
+            "274215"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "101419",
+            "129449",
+            "181127"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "110151",
+            "271505"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101274",
+            "124612",
+            "131421"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "101357",
+            "127848"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "guarantors: same cheque twice in one account",
+      "level": "probable",
+      "scope": "account",
+      "note": "",
+      "groups": 4,
+      "rows": 8,
+      "examples": [
+        {
+          "accounts": [
+            "324063"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "351394"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "351394"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "354230"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "guarantors: same cheque number under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "",
+      "groups": 1,
+      "rows": 2,
+      "examples": [
+        {
+          "accounts": [
+            "126970",
+            "158218"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "securities: same security cheque twice in one account",
+      "level": "probable",
+      "scope": "account",
+      "note": "",
+      "groups": 7,
+      "rows": 14,
+      "examples": [
+        {
+          "accounts": [
+            "501801"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "501857"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "125718"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "384008"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "475703"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "452366"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "473500"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "securities: same security cheque number under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "",
+      "groups": 4,
+      "rows": 9,
+      "examples": [
+        {
+          "accounts": [
+            "113817",
+            "451020",
+            "451657"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "112301",
+            "114748"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "124894",
+            "134894"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "124358",
+            "127819"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "fixed_deposits: same deposit twice in one account",
+      "level": "certain",
+      "scope": "account",
+      "note": "",
+      "groups": 0,
+      "rows": 0,
+      "examples": []
+    },
+    {
+      "rule": "fixed_deposits: same deposit number under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "",
+      "groups": 0,
+      "rows": 0,
+      "examples": []
+    },
+    {
+      "rule": "mortgaged_properties: same deed twice in one account",
+      "level": "probable",
+      "scope": "account",
+      "note": "",
+      "groups": 1,
+      "rows": 2,
+      "examples": [
+        {
+          "accounts": [
+            "501427"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "mortgaged_properties: same deed under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "",
+      "groups": 3,
+      "rows": 7,
+      "examples": [
+        {
+          "accounts": [
+            "115420",
+            "115553"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112025",
+            "112909",
+            "201155"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "112909",
+            "201155"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "partners: same person twice in one account",
+      "level": "probable",
+      "scope": "account",
+      "note": "same name in one company; could be a role split — check before merging",
+      "groups": 1,
+      "rows": 2,
+      "examples": [
+        {
+          "accounts": [
+            "112744"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "attachments: identical file twice in one account",
+      "level": "certain",
+      "scope": "account",
+      "note": "",
+      "groups": 0,
+      "rows": 0,
+      "examples": []
+    },
+    {
+      "rule": "attachments: identical file under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "",
+      "groups": 29,
+      "rows": 190,
+      "examples": [
+        {
+          "accounts": [
+            "062272",
+            "182428",
+            "475478"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "1060212",
+            "350994",
+            "351380",
+            "354636"
+          ],
+          "count": 4
+        },
+        {
+          "accounts": [
+            "111150",
+            "111714",
+            "112025",
+            "112121",
+            "112244",
+            "112603"
+          ],
+          "count": 116
+        },
+        {
+          "accounts": [
+            "112744",
+            "114274",
+            "202920",
+            "865253"
+          ],
+          "count": 4
+        },
+        {
+          "accounts": [
+            "112744",
+            "114274"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "124076",
+            "127987"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "128211",
+            "129167",
+            "131757"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "139686",
+            "453060",
+            "475400",
+            "673836"
+          ],
+          "count": 4
+        },
+        {
+          "accounts": [
+            "156218",
+            "321801",
+            "354541"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "172127",
+            "301408",
+            "451555"
+          ],
+          "count": 3
+        }
+      ]
+    },
+    {
+      "rule": "customer_profiles: same trade_license_no under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "one document number on two accounts: duplicate customer, or a shared identity",
+      "groups": 158,
+      "rows": 323,
+      "examples": [
+        {
+          "accounts": [
+            "110254",
+            "130619"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "110332",
+            "113428"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "110494",
+            "131156"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "110501",
+            "110502"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "111400",
+            "115230"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "111990",
+            "152970"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112117",
+            "112836"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112268",
+            "115270"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112341",
+            "154222"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112440",
+            "113290"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "customer_profiles: same passport_no under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "one document number on two accounts: duplicate customer, or a shared identity",
+      "groups": 462,
+      "rows": 960,
+      "examples": [
+        {
+          "accounts": [
+            "112629",
+            "124769"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112744",
+            "114274"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112881",
+            "521382"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "112990",
+            "130441"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "113175",
+            "124475"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "113505",
+            "125326",
+            "126929"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "113894",
+            "125887"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "114343",
+            "132061"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "114391",
+            "130516"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "114505",
+            "521815"
+          ],
+          "count": 2
+        }
+      ]
+    },
+    {
+      "rule": "customer_profiles: same emirates_id_no under several accounts",
+      "level": "review",
+      "scope": "cross-account",
+      "note": "one document number on two accounts: duplicate customer, or a shared identity",
+      "groups": 819,
+      "rows": 1847,
+      "examples": [
+        {
+          "accounts": [
+            "101030",
+            "120837",
+            "128384",
+            "131717"
+          ],
+          "count": 4
+        },
+        {
+          "accounts": [
+            "101058",
+            "122040"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101112",
+            "111993"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101123",
+            "126055",
+            "214590",
+            "522811"
+          ],
+          "count": 4
+        },
+        {
+          "accounts": [
+            "101125",
+            "170321"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101128",
+            "112041",
+            "121783"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "101130",
+            "112183",
+            "121795"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "101133",
+            "111994"
+          ],
+          "count": 2
+        },
+        {
+          "accounts": [
+            "101137",
+            "170444",
+            "170999"
+          ],
+          "count": 3
+        },
+        {
+          "accounts": [
+            "101144",
+            "216535"
+          ],
+          "count": 2
+        }
+      ]
+    }
+  ],
+  "certain_groups": 0,
+  "review_groups": 2262,
+  "reachable": true,
+  "row_counts": {
+    "customers": 44609,
+    "facilities": 118,
+    "customer_profiles": 44533,
+    "guarantors": 209,
+    "securities": 1068,
+    "mortgaged_properties": 374,
+    "fixed_deposits": 0,
+    "partners": 129,
+    "checklist_progress": 62,
+    "facility_checklists": 0,
+    "custom_tasks": 121,
+    "customer_notes": 1,
+    "journal_entries": 862,
+    "attachments": 425,
+    "general_profiles": 2,
+    "general_checklists": 0,
+    "general_checklist_items": 0,
+    "property_events": 63,
+    "customer_links": 6,
+    "letters": 23,
+    "case_reports": 0,
+    "credit_reviews": 69,
+    "offer_letters": 0,
+    "offer_attachments": 0,
+    "offer_calculations": 0,
+    "charge_rules": 8,
+    "exchange_rates": 6,
+    "departments": 7,
+    "staff_members": 187,
+    "system_settings": 27,
+    "kb_topics": 396,
+    "kb_entries": 464,
+    "personal_notes": 0,
+    "inspection_binders": 1,
+    "inspection_reports": 9,
+    "inspection_files": 2,
+    "inspection_shots": 16
+  }
+}

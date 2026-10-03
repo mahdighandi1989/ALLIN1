@@ -464,7 +464,10 @@ async def ai_import_models(db: AsyncSession = Depends(get_db), user=Depends(get_
     for m in vis_caps:
         if m["id"] not in doc_ids:
             models.append({**m, "supports_pdf": False})
-    return {"models": models, "drive_enabled": drive_sync.is_enabled()}
+    from app.ai import model_sync
+
+    return {"models": models, "drive_enabled": drive_sync.is_enabled(),
+            "model_sync": await model_sync.status(db)}
 
 
 def _import_rules(fname: str) -> str:
