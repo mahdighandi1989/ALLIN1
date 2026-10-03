@@ -16,6 +16,8 @@ export interface Section {
   id: string
   title: string
   blocks: Block[]
+  /** 'review' = گردآوری‌شده از دانشِ عمومی، هنوز با متنِ رسمیِ قانون/بخشنامه تطبیق داده نشده */
+  status?: 'verified' | 'review'
 }
 
 export const KB_TITLE = 'دانش‌نامهٔ عملیات بانکی'

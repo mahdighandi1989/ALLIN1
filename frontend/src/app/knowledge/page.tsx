@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
-import { BookOpen, Search, ListTree, Sparkles, Trash2 } from 'lucide-react'
-import { SECTIONS, KB_TITLE, KB_SUBTITLE, type Block, type Section } from './content'
+import { BookOpen, Search, ListTree, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
+import { KB_TITLE, type Block, type Section } from './content'
+import { KB_TABS, type TabId } from './tabs'
+import { COMPARE_ROWS, CHANGELOG, VERDICT_LABEL, type Verdict } from './content-compare'
 import { knowledgeApi, type KbTopic } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 
@@ -88,6 +90,65 @@ function BlockView({ b }: { b: Block }) {
   }
 }
 
+const VERDICT_STYLE: Record<Verdict, string> = {
+  confirmed: 'bg-green-50 text-green-700 border-green-200',
+  rejected: 'bg-red-50 text-red-700 border-red-200',
+  review: 'bg-amber-50 text-amber-800 border-amber-200',
+}
+
+const COMPARE_COLS: { key: 'saderat' | 'uae' | 'iran' | 'intl' | 'islamic'; label: string }[] = [
+  { key: 'saderat', label: 'بانک صادرات' },
+  { key: 'uae', label: 'امارات' },
+  { key: 'iran', label: 'ایران' },
+  { key: 'intl', label: 'بین‌المللی' },
+  { key: 'islamic', label: 'اسلامی' },
+]
+
+function CompareView({ query }: { query: string }) {
+  const q = query.toLowerCase()
+  const rows = COMPARE_ROWS.filter((r) => !q || JSON.stringify(r).toLowerCase().includes(q))
+  const count = (v: Verdict) => COMPARE_ROWS.filter((r) => r.verdict === v).length
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 text-sm">
+        {(['confirmed', 'rejected', 'review'] as Verdict[]).map((v) => (
+          <span key={v} className={`border rounded-full px-3 py-1 ${VERDICT_STYLE[v]}`}>
+            {VERDICT_LABEL[v]}: {count(v)}
+          </span>
+        ))}
+      </div>
+      {rows.map((r) => (
+        <section key={r.topic} className="bg-white border border-gray-200 rounded-xl p-5">
+          <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-gray-100">
+            <h2 className="text-lg font-bold text-blue-800">{r.topic}</h2>
+            <span className={`text-xs border rounded-full px-2.5 py-1 ${VERDICT_STYLE[r.verdict]}`}>{VERDICT_LABEL[r.verdict]}</span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
+            {COMPARE_COLS.map((c) => (
+              <div key={c.key} className="bg-gray-50 rounded-lg p-2.5">
+                <div className="text-[11px] font-bold text-gray-500 mb-1">{c.label}</div>
+                <div className="text-sm text-gray-700 leading-6">{r[c.key] || '—'}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-gray-700 leading-7">{r.note}</p>
+        </section>
+      ))}
+      {rows.length === 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-10 text-center text-gray-400">نتیجه‌ای برای «{query}» پیدا نشد.</div>
+      )}
+      <section className="bg-white border border-gray-200 rounded-xl p-5">
+        <h2 className="text-base font-bold text-gray-800 mb-2">تغییرات اخیر (ناظر)</h2>
+        <ul className="space-y-1.5 text-sm text-gray-600">
+          {CHANGELOG.map((c, i) => (
+            <li key={i}><span className="text-gray-400" dir="ltr">{c.date}</span> — {c.text}</li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
+
 function topicMatches(t: KbTopic, q: string): boolean {
   if (!q) return true
   const hay = (t.title + ' ' + t.category + ' ' + t.entries.map((e) => e.content + ' ' + (e.source_ref || '')).join(' ')).toLowerCase()
@@ -97,12 +158,20 @@ function topicMatches(t: KbTopic, q: string): boolean {
 export default function KnowledgePage() {
   const { user } = useAuth()
   const [query, setQuery] = useState('')
+  const [tabId, setTabId] = useState<TabId>('saderat')
+  const tab = KB_TABS.find((t) => t.id === tabId) || KB_TABS[0]
+  useEffect(() => {
+    const h = window.location.hash.replace('#tab-', '')
+    if (KB_TABS.some((t) => t.id === h)) setTabId(h as TabId)
+  }, [])
+  const pickTab = (id: TabId) => { setTabId(id); window.history.replaceState(null, '', `#tab-${id}`) }
+  const isSaderat = tab.id === 'saderat'
   const [dyn, setDyn] = useState<KbTopic[]>([])
   const canEdit = user && ['admin', 'editor'].includes((user as any).role || '')
   const loadDyn = () => knowledgeApi.list().then((r) => setDyn(r.topics || [])).catch(() => setDyn([]))
   useEffect(() => { loadDyn() }, [])
-  const visible = useMemo(() => SECTIONS.filter((s) => sectionMatches(s, query)), [query])
-  const dynVisible = useMemo(() => dyn.filter((t) => topicMatches(t, query)), [dyn, query])
+  const visible = useMemo(() => tab.sections.filter((s) => sectionMatches(s, query)), [tab, query])
+  const dynVisible = useMemo(() => (isSaderat ? dyn.filter((t) => topicMatches(t, query)) : []), [dyn, query, isSaderat])
   // the LIVE index of the dynamic part: categories in first-seen order
   const dynCats = useMemo(() => {
     const out: { cat: string; topics: KbTopic[] }[] = []
@@ -128,9 +197,35 @@ export default function KnowledgePage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{KB_TITLE}</h1>
-            <p className="text-gray-500 text-sm mt-0.5">{KB_SUBTITLE}</p>
+            <p className="text-gray-500 text-sm mt-0.5">{tab.description}</p>
           </div>
         </div>
+
+        {/* Tabs — ۶ تب، زیرِ زیرعنوانِ همان سربرگ */}
+        <div role="tablist" className="flex flex-wrap gap-1.5 mt-3 border-b border-gray-200">
+          {KB_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={t.id === tab.id}
+              onClick={() => pickTab(t.id)}
+              className={`px-4 py-2 text-sm rounded-t-lg border border-b-0 transition-colors ${
+                t.id === tab.id
+                  ? 'bg-white text-blue-700 font-bold border-gray-200 -mb-px'
+                  : 'bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {!isSaderat && tab.id !== 'compare' && (
+          <div className="mt-3 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-6">
+            <AlertTriangle size={14} className="mt-1 shrink-0" />
+            <span>این تب را ناظرِ دوره‌ای تکمیل و به‌روز می‌کند. بخش‌های «نیازمند بررسی» از دانشِ عمومی گردآوری شده و هنوز با متنِ رسمیِ آخرین قانون/بخشنامه تطبیق نخورده‌اند — پیش از اتکا در تصمیمِ عملیاتی، نتیجهٔ تب «تطبیق» را ببینید.</span>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative my-5">
@@ -138,11 +233,12 @@ export default function KnowledgePage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="جست‌وجو در دانش‌نامه (مثلاً: ترهین، AECB، اوردرافت، کارمزد، چک ضمانتی)…"
+            placeholder={isSaderat ? 'جست‌وجو در دانش‌نامه (مثلاً: ترهین، AECB، اوردرافت، کارمزد، چک ضمانتی)…' : 'جست‌وجو در این تب…'}
             className="w-full border border-gray-300 rounded-xl py-2.5 pr-10 pl-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           />
         </div>
 
+        {tab.id === 'compare' ? <CompareView query={query} /> : (
         <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* Table of contents (فهرست) */}
           <aside className="lg:w-72 w-full lg:sticky lg:top-20 shrink-0">
@@ -196,6 +292,9 @@ export default function KnowledgePage() {
               >
                 <h2 className="text-lg font-bold text-blue-800 mb-4 pb-2 border-b border-gray-100">
                   {s.title}
+                  {s.status === 'review' && (
+                    <span className="mr-2 align-middle text-[11px] font-normal bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2 py-0.5">نیازمند بررسی</span>
+                  )}
                 </h2>
                 {s.blocks.map((b, i) => <BlockView key={i} b={b} />)}
               </section>
@@ -236,10 +335,11 @@ export default function KnowledgePage() {
               </div>
             )}
             <p className="text-xs text-gray-400 text-center pt-2">
-              منبع: گردآوری و سازمان‌دهیِ اسناد عملیاتیِ دایره تسهیلات اعطایی (CFD) — بانک صادرات ایران، سرپرستی امارات.
+              {isSaderat ? 'منبع: گردآوری و سازمان‌دهیِ اسناد عملیاتیِ دایره تسهیلات اعطایی (CFD) — بانک صادرات ایران، سرپرستی امارات.' : 'نگهدارنده: ناظرِ دوره‌ای — محتوا آموزشی است و جایگزینِ متنِ رسمیِ قانون، بخشنامه یا نظرِ حقوقی/شرعی نیست.'}
             </p>
           </div>
         </div>
+        )}
       </div>
     </Layout>
   )
