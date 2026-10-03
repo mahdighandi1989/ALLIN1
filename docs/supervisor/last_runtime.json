@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:59499",
+ "base": "http://127.0.0.1:40475",
  "server_started": true,
  "endpoints": [
   {
@@ -75,7 +75,7 @@
   {
    "path": "/api/crm/backup/drive/status",
    "status": 200,
-   "bytes": 146
+   "bytes": 220
   },
   {
    "path": "/api/general/profiles",
@@ -85,7 +85,7 @@
   {
    "path": "/api/personal/notes",
    "status": 200,
-   "bytes": 22
+   "bytes": 42
   },
   {
    "path": "/api/staff/",
@@ -106,6 +106,16 @@
    "path": "/api/letters/",
    "status": 200,
    "bytes": 2
+  },
+  {
+   "path": "/api/case-reports/",
+   "status": 200,
+   "bytes": 2
+  },
+  {
+   "path": "/api/case-reports/prefill",
+   "status": 422,
+   "bytes": 146
   },
   {
    "path": "/api/letter-ai/models",
@@ -215,7 +225,7 @@
   {
    "path": "/api/trash/",
    "status": 200,
-   "bytes": 80
+   "bytes": 97
   },
   {
    "path": "/api/audit/",
@@ -245,7 +255,7 @@
   {
    "path": "/api/imports/ai-models",
    "status": 200,
-   "bytes": 35
+   "bytes": 107
   },
   {
    "path": "/api/settings/",
@@ -315,7 +325,12 @@
   {
    "path": "/api/inspection/queue",
    "status": 200,
-   "bytes": 85
+   "bytes": 139
+  },
+  {
+   "path": "/api/inspection/urgent",
+   "status": 200,
+   "bytes": 172
   },
   {
    "path": "/health",
@@ -327,7 +342,7 @@
   {
    "route": "/audit",
    "rendered": true,
-   "text_len": 586,
+   "text_len": 598,
    "buttons": 4,
    "inputs": 5,
    "clicked": 4,
@@ -357,9 +372,25 @@
    "console_errors": [],
    "console_error_count": 0,
    "bad_responses": [],
-   "request_failures": [
-    "GET http://127.0.0.1:59499/api/auth/me"
-   ],
+   "request_failures": [],
+   "server_alive_after": true
+  },
+  {
+   "route": "/case-report",
+   "rendered": true,
+   "text_len": 5046,
+   "buttons": 18,
+   "inputs": 44,
+   "clicked": 6,
+   "skipped_destructive": 0,
+   "buttons_unreachable": 12,
+   "buttons_examined": 18,
+   "buttons_not_examined": 0,
+   "button_coverage_percent": 100,
+   "console_errors": [],
+   "console_error_count": 0,
+   "bad_responses": [],
+   "request_failures": [],
    "server_alive_after": true
   },
   {
@@ -581,13 +612,13 @@
   {
    "route": "/forms",
    "rendered": true,
-   "text_len": 2086,
-   "buttons": 3,
+   "text_len": 2481,
+   "buttons": 4,
    "inputs": 0,
-   "clicked": 3,
+   "clicked": 4,
    "skipped_destructive": 0,
    "buttons_unreachable": 0,
-   "buttons_examined": 3,
+   "buttons_examined": 4,
    "buttons_not_examined": 0,
    "button_coverage_percent": 100,
    "console_errors": [],
@@ -617,7 +648,7 @@
   {
    "route": "/import",
    "rendered": true,
-   "text_len": 899,
+   "text_len": 988,
    "buttons": 4,
    "inputs": 2,
    "clicked": 4,
@@ -635,13 +666,13 @@
   {
    "route": "/inspection",
    "rendered": true,
-   "text_len": 733,
-   "buttons": 9,
+   "text_len": 799,
+   "buttons": 10,
    "inputs": 0,
    "clicked": 6,
    "skipped_destructive": 0,
-   "buttons_unreachable": 3,
-   "buttons_examined": 9,
+   "buttons_unreachable": 4,
+   "buttons_examined": 10,
    "buttons_not_examined": 0,
    "button_coverage_percent": 100,
    "console_errors": [],
@@ -653,7 +684,7 @@
   {
    "route": "/knowledge",
    "rendered": true,
-   "text_len": 30329,
+   "text_len": 30356,
    "buttons": 3,
    "inputs": 1,
    "clicked": 3,
@@ -671,13 +702,13 @@
   {
    "route": "/letter",
    "rendered": true,
-   "text_len": 846,
-   "buttons": 14,
-   "inputs": 12,
+   "text_len": 1161,
+   "buttons": 16,
+   "inputs": 13,
    "clicked": 6,
    "skipped_destructive": 0,
-   "buttons_unreachable": 8,
-   "buttons_examined": 14,
+   "buttons_unreachable": 10,
+   "buttons_examined": 16,
    "buttons_not_examined": 0,
    "button_coverage_percent": 100,
    "console_errors": [],
@@ -725,7 +756,7 @@
   {
    "route": "/personal",
    "rendered": true,
-   "text_len": 530,
+   "text_len": 677,
    "buttons": 5,
    "inputs": 2,
    "clicked": 5,
@@ -815,9 +846,9 @@
   {
    "route": "/settings",
    "rendered": true,
-   "text_len": 2325,
+   "text_len": 2910,
    "buttons": 14,
-   "inputs": 17,
+   "inputs": 19,
    "clicked": 6,
    "skipped_destructive": 0,
    "buttons_unreachable": 8,
@@ -904,22 +935,22 @@
   }
  ],
  "summary": {
-  "endpoints_checked": 64,
+  "endpoints_checked": 67,
   "endpoints_5xx": 0,
   "endpoints_5xx_expected": 1,
   "endpoints_dead": 0,
-  "pages_checked": 32,
+  "pages_checked": 33,
   "pages_blank": 0,
   "pages_with_console_errors": 0,
   "pages_that_killed_the_server": 0,
   "pages_after_which_server_was_slow": 0,
-  "buttons_clicked": 164,
+  "buttons_clicked": 171,
   "buttons_skipped_destructive": 1,
-  "buttons_visible_total": 1639,
-  "buttons_examined": 287,
+  "buttons_visible_total": 1661,
+  "buttons_examined": 309,
   "buttons_not_examined": 1352,
-  "buttons_unreachable": 122,
-  "button_coverage_percent": 18,
+  "buttons_unreachable": 137,
+  "button_coverage_percent": 19,
   "pages_with_partial_button_coverage": 6,
   "max_clicks_per_page": 18
  }
