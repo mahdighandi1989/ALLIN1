@@ -12,6 +12,7 @@ Dispatches by provider family:
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, Optional
 
@@ -217,6 +218,53 @@ async def _fetch_live_models(family: str, base_url: str, key: str, oauth: bool) 
     return out
 
 
+_DEFAULT_PRIORITY = 5
+_SKIP_RANK = re.compile(r"preview|exp|latest|image|tts|audio|embed|live|thinking", re.I)
+
+
+def _tier_version(api_id: str):
+    """(tier, version-tuple) for ids we can rank (claude-opus-5-5, gemini-2.5-pro);
+    ``None`` for anything else (previews, dated aliases, unknown families)."""
+    mid = (api_id or "").lower()
+    if _SKIP_RANK.search(mid):
+        return None
+    m = re.match(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?!\d)", mid)
+    if m:
+        return m.group(1), (int(m.group(2)), int(m.group(3) or 0))
+    m = re.match(r"(?:models/)?gemini-(\d+)(?:\.(\d+))?-(pro|flash-lite|flash)$", mid)
+    if m:
+        return "gemini-" + m.group(3), (int(m.group(1)), int(m.group(2) or 0))
+    return None
+
+
+def rank_newest_first(models) -> int:
+    """Within a provider+tier, give models still at the default priority a better
+    priority than the best hand-ranked older sibling, newest first — so «auto»
+    (lowest priority wins) follows the newest model without anyone pressing a
+    button. Never touches custom models or priorities someone already set.
+    Returns the number of models re-ranked."""
+    groups: Dict[Any, list] = {}
+    for m in models:
+        if (m.source or "catalog") == "custom":
+            continue
+        tv = _tier_version(m.api_id)
+        if tv:
+            groups.setdefault((m.provider_key, tv[0]), []).append((tv[1], m))
+    changed = 0
+    for items in groups.values():
+        ranked = [(v, m) for v, m in items if m.priority != _DEFAULT_PRIORITY]
+        if not ranked:
+            continue
+        anchor_v, anchor = min(ranked, key=lambda x: x[1].priority)
+        newer = sorted([(v, m) for v, m in items
+                        if m.priority == _DEFAULT_PRIORITY and v > anchor_v],
+                       key=lambda x: x[0], reverse=True)
+        for i, (_, m) in enumerate(newer):
+            m.priority = anchor.priority - (len(newer) - i)
+            changed += 1
+    return changed
+
+
 async def sync_provider_models(db: AsyncSession, provider_key: str) -> Dict[str, Any]:
     """Refresh a provider's models from its live API. Reconciles the DB.
 
@@ -289,9 +337,13 @@ async def sync_provider_models(db: AsyncSession, provider_key: str) -> Dict[str,
             await db.delete(m)
             removed += 1
 
+    await db.flush()
+    reranked = rank_newest_first(
+        (await db.execute(select(AIModel).where(AIModel.provider_key == provider_key))).scalars().all())
     await db.commit()
     return {
         "ok": True,
+        "reranked": reranked,
         "added": added,
         "updated": updated,
         "removed": removed,

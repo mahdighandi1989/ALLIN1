@@ -64,3 +64,35 @@ async def test_delisted_model_detaches_its_route_instead_of_dangling(db_session,
     from sqlalchemy import select
     route = (await db_session.execute(select(AITaskRoute).where(AITaskRoute.task == "chat"))).scalar_one()
     assert route.model_id is None
+
+
+def _mk(api_id, prio, source="discovered", provider="claude_subscription"):
+    return AIModel(model_key=f"{provider}:{api_id}", api_model_id=api_id, provider_key=provider,
+                   display_name=api_id, enabled=True, capabilities=["text"], priority=prio,
+                   source=source, is_custom=(source == "custom"))
+
+
+def test_newest_model_outranks_older_hand_ranked_sibling():
+    from app.ai.tester import rank_newest_first
+
+    old = _mk("claude-opus-4-8", 1)
+    n55, n5 = _mk("claude-opus-5-5", 5), _mk("claude-opus-5", 5)
+    older = _mk("claude-opus-4-6", 5)
+    son = _mk("claude-sonnet-5-5", 5)
+    custom = _mk("claude-opus-9", 5, source="custom")
+    pre = _mk("claude-opus-6-preview", 5)
+    assert rank_newest_first([old, n55, n5, older, son, custom, pre]) == 2
+    assert n55.priority < n5.priority < old.priority
+    assert older.priority == 5 and son.priority == 5   # no ranked sonnet anchor
+    assert custom.priority == 5 and pre.priority == 5
+    assert rank_newest_first([old, n55, n5, older]) == 0   # idempotent
+
+
+def test_gemini_versions_rank_within_tier():
+    from app.ai.tester import rank_newest_first
+
+    old = _mk("gemini-2.0-flash", 3, provider="gemini")
+    new = _mk("gemini-2.5-flash", 5, provider="gemini")
+    pro = _mk("gemini-2.5-pro", 5, provider="gemini")
+    rank_newest_first([old, new, pro])
+    assert new.priority < old.priority and pro.priority == 5
