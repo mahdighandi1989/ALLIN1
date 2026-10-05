@@ -62,6 +62,8 @@ function groupFiles(r: any): FileRow[] {
   return rows
 }
 
+const PAGE_SIZES = [5, 10, 20, 50, 100]
+
 export default function InspectionPage() {
   const [reports, setReports] = useState<InspectionReport[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
@@ -83,6 +85,19 @@ export default function InspectionPage() {
   const [generalText, setGeneralText] = useState('')
   const [generalBusy, setGeneralBusy] = useState(false)
   const [tick, setTick] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem('inspection.pageSize'))
+      if (PAGE_SIZES.includes(v)) setPageSize(v)
+    } catch { /* storage unavailable — default stays */ }
+  }, [])
+  useEffect(() => { setPage(1) }, [filter, pageSize])
+  const pageCount = Math.max(1, Math.ceil(reports.length / pageSize))
+  const curPage = Math.min(page, pageCount)
+  const pageReports = useMemo(
+    () => reports.slice((curPage - 1) * pageSize, curPage * pageSize), [reports, curPage, pageSize])
 
   const load = useCallback(async () => {
     setBusy(true)
@@ -380,8 +395,29 @@ export default function InspectionPage() {
           </div>
         )}
 
-        <div className="space-y-3">
-          {reports.map((r) => {
+        {reports.length > 0 && (
+          <div dir="rtl" className="flex items-center gap-2 flex-wrap text-xs text-gray-600">
+            <label className="flex items-center gap-1">
+              تعداد در هر صفحه
+              <select value={pageSize} className="border border-gray-300 rounded px-1 py-[2px]"
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setPageSize(v)
+                  try { localStorage.setItem('inspection.pageSize', String(v)) } catch { /* ignore */ }
+                }}>
+                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <span>· {reports.length} گزارش · صفحهٔ {curPage} از {pageCount}</span>
+            <button disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}
+              className="rounded border border-gray-300 px-2 py-[2px] disabled:opacity-40">قبلی</button>
+            <button disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}
+              className="rounded border border-gray-300 px-2 py-[2px] disabled:opacity-40">بعدی</button>
+          </div>
+        )}
+
+        <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          {pageReports.map((r) => {
             const expanded = openId === r.id
             const lastReviewer = [...(r.notes || [])].reverse().find((n) => n.by === 'reviewer')
             return (
