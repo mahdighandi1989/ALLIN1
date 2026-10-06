@@ -96,3 +96,19 @@ def test_gemini_versions_rank_within_tier():
     pro = _mk("gemini-2.5-pro", 5, provider="gemini")
     rank_newest_first([old, new, pro])
     assert new.priority < old.priority and pro.priority == 5
+
+
+def test_drop_superseded_keeps_newest_per_tier_and_dedupes():
+    from app.ai.tester import drop_superseded
+
+    def m(pk, aid, name, pri=5):
+        return {"provider_key": pk, "api_model_id": aid, "display_name": name, "priority": pri}
+
+    items = [
+        m("a", "claude-opus-5-5", "Opus 5.5", -1), m("a", "claude-opus-4-8", "Opus 4.8", 1),
+        m("a", "claude-haiku-4-5-20251001", "Haiku 4.5"),
+        m("g", "gemini-2.5-flash", "Gemini 2.5 Flash"), m("g", "gemini-2.5-flash", "Gemini 2.5 Flash"),
+        m("g", "gemini-2.0-flash", "Gemini 2.0 Flash"), m("g", "gemini-3-preview", "G3 preview"),
+    ]
+    names = [i["display_name"] for i in drop_superseded(items)]
+    assert names == ["Opus 5.5", "Haiku 4.5", "Gemini 2.5 Flash", "G3 preview"]

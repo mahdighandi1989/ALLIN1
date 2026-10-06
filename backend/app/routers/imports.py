@@ -465,7 +465,9 @@ async def ai_import_models(db: AsyncSession = Depends(get_db), user=Depends(get_
         if m["id"] not in doc_ids:
             models.append({**m, "supports_pdf": False})
     from app.ai import model_sync
+    from app.ai.tester import drop_superseded
 
+    models = drop_superseded(models)  # older same-tier versions / duplicate names stay in Settings only
     return {"models": models, "drive_enabled": drive_sync.is_enabled(),
             "model_sync": await model_sync.status(db)}
 

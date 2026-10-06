@@ -265,6 +265,34 @@ def rank_newest_first(models) -> int:
     return changed
 
 
+def drop_superseded(items: list) -> list:
+    """Picker-only view (nothing is deleted): per provider+tier keep just the
+    newest rankable version, and collapse same-named duplicates to the best
+    priority. Unrankable ids (previews, unknown families, custom) always stay.
+    ``items`` are dicts with provider_key / api_model_id / display_name /
+    priority; order is preserved."""
+    newest: Dict[Any, tuple] = {}
+    for it in items:
+        tv = _tier_version(it.get("api_model_id"))
+        if tv:
+            k = (it.get("provider_key"), tv[0])
+            if k not in newest or tv[1] > newest[k]:
+                newest[k] = tv[1]
+    seen: Dict[Any, int] = {}
+    out = []
+    for it in items:
+        tv = _tier_version(it.get("api_model_id"))
+        if tv and tv[1] < newest[(it.get("provider_key"), tv[0])]:
+            continue
+        name = (it.get("display_name") or "").strip().lower()
+        k = (it.get("provider_key"), name)
+        if name and k in seen:
+            continue
+        seen[k] = 1
+        out.append(it)
+    return out
+
+
 async def sync_provider_models(db: AsyncSession, provider_key: str) -> Dict[str, Any]:
     """Refresh a provider's models from its live API. Reconciles the DB.
 

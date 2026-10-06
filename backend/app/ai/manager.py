@@ -171,7 +171,8 @@ class AIManager:
             ok = "documents" in caps if need == "documents" else (("vision" in caps) or ("documents" in caps))
             if ok and self._try_build(m, providers, "document_extraction"):
                 out.append({"id": m.id, "display_name": m.display_name, "capabilities": list(caps),
-                            "provider_key": m.provider_key, "priority": m.priority})
+                            "provider_key": m.provider_key, "priority": m.priority,
+                            "api_model_id": m.api_id})
         return out
 
     async def list_usable(self, db: AsyncSession, need: Optional[str] = None) -> list:
