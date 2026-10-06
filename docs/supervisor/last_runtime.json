@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:40475",
+ "base": "http://127.0.0.1:46403",
  "server_started": true,
  "endpoints": [
   {
@@ -330,7 +330,7 @@
   {
    "path": "/api/inspection/urgent",
    "status": 200,
-   "bytes": 172
+   "bytes": 170
   },
   {
    "path": "/health",
@@ -360,7 +360,7 @@
   {
    "route": "/auth/callback",
    "rendered": true,
-   "text_len": 3341,
+   "text_len": 3342,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -372,7 +372,9 @@
    "console_errors": [],
    "console_error_count": 0,
    "bad_responses": [],
-   "request_failures": [],
+   "request_failures": [
+    "GET http://127.0.0.1:46403/api/auth/me"
+   ],
    "server_alive_after": true
   },
   {
@@ -540,7 +542,7 @@
   {
    "route": "/dashboard",
    "rendered": true,
-   "text_len": 3341,
+   "text_len": 3342,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -561,8 +563,8 @@
    "text_len": 517,
    "buttons": 4,
    "inputs": 0,
-   "clicked": 3,
-   "skipped_destructive": 1,
+   "clicked": 4,
+   "skipped_destructive": 0,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -666,7 +668,7 @@
   {
    "route": "/inspection",
    "rendered": true,
-   "text_len": 799,
+   "text_len": 798,
    "buttons": 10,
    "inputs": 0,
    "clicked": 6,
@@ -684,13 +686,13 @@
   {
    "route": "/knowledge",
    "rendered": true,
-   "text_len": 30356,
-   "buttons": 3,
+   "text_len": 30389,
+   "buttons": 9,
    "inputs": 1,
-   "clicked": 3,
+   "clicked": 6,
    "skipped_destructive": 0,
-   "buttons_unreachable": 0,
-   "buttons_examined": 3,
+   "buttons_unreachable": 3,
+   "buttons_examined": 9,
    "buttons_not_examined": 0,
    "button_coverage_percent": 100,
    "console_errors": [],
@@ -720,7 +722,7 @@
   {
    "route": "/login",
    "rendered": true,
-   "text_len": 3341,
+   "text_len": 3342,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -944,12 +946,12 @@
   "pages_with_console_errors": 0,
   "pages_that_killed_the_server": 0,
   "pages_after_which_server_was_slow": 0,
-  "buttons_clicked": 171,
-  "buttons_skipped_destructive": 1,
-  "buttons_visible_total": 1661,
-  "buttons_examined": 309,
+  "buttons_clicked": 175,
+  "buttons_skipped_destructive": 0,
+  "buttons_visible_total": 1667,
+  "buttons_examined": 315,
   "buttons_not_examined": 1352,
-  "buttons_unreachable": 137,
+  "buttons_unreachable": 140,
   "button_coverage_percent": 19,
   "pages_with_partial_button_coverage": 6,
   "max_clicks_per_page": 18

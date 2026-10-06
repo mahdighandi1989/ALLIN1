@@ -712,10 +712,10 @@
     "partners": 129,
     "checklist_progress": 62,
     "facility_checklists": 0,
-    "custom_tasks": 121,
+    "custom_tasks": 122,
     "customer_notes": 1,
     "journal_entries": 862,
-    "attachments": 425,
+    "attachments": 426,
     "general_profiles": 2,
     "general_checklists": 0,
     "general_checklist_items": 0,
@@ -731,13 +731,13 @@
     "exchange_rates": 6,
     "departments": 7,
     "staff_members": 187,
-    "system_settings": 27,
-    "kb_topics": 396,
-    "kb_entries": 464,
+    "system_settings": 28,
+    "kb_topics": 398,
+    "kb_entries": 466,
     "personal_notes": 0,
     "inspection_binders": 1,
-    "inspection_reports": 9,
+    "inspection_reports": 12,
     "inspection_files": 2,
-    "inspection_shots": 16
+    "inspection_shots": 26
   }
 }

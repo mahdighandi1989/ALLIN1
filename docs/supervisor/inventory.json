@@ -201,10 +201,10 @@
   {
    "route": "/inspection",
    "file": "frontend/src/app/inspection/page.tsx",
-   "lines": 775,
-   "buttons": 17,
-   "onclick": 18,
-   "inputs": 5,
+   "lines": 811,
+   "buttons": 19,
+   "onclick": 20,
+   "inputs": 6,
    "forms": 0,
    "links": 0,
    "api_calls": 16
@@ -212,9 +212,9 @@
   {
    "route": "/knowledge",
    "file": "frontend/src/app/knowledge/page.tsx",
-   "lines": 247,
-   "buttons": 1,
-   "onclick": 1,
+   "lines": 347,
+   "buttons": 2,
+   "onclick": 2,
    "inputs": 1,
    "forms": 0,
    "links": 0,
@@ -3030,8 +3030,8 @@
  "totals": {
   "pages": 34,
   "menu_items": 20,
-  "buttons": 368,
-  "inputs": 357,
+  "buttons": 371,
+  "inputs": 358,
   "routes": 245,
   "api_methods": 193,
   "services": 42,
