@@ -72,6 +72,7 @@ def _targets() -> dict:
         InspectionBinder, InspectionFile, InspectionReport, InspectionShot,
     )
     from app.models.kb import KnowledgeEntry, KnowledgeTopic
+    from app.models.kb_chat import KbChatFile, KbChatMessage, KbChatSession
     from app.models.letter import Letter
     from app.models.offer_letter import OfferAttachment, OfferCalculation, OfferLetter
     from app.models.personal import PersonalNote
@@ -114,6 +115,9 @@ def _targets() -> dict:
         "system_settings": SystemSetting,
         "kb_topics": KnowledgeTopic,
         "kb_entries": KnowledgeEntry,
+        "kb_chat_sessions": KbChatSession,
+        "kb_chat_messages": KbChatMessage,
+        "kb_chat_files": KbChatFile,
         "personal_notes": PersonalNote,
         # the owner's own supervision record
         "inspection_binders": InspectionBinder,

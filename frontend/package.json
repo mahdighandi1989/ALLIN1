@@ -7,7 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "tsc --noEmit && next build",
+    "export-kb": "node scripts/export-kb.mjs",
+    "build": "node scripts/export-kb.mjs && tsc --noEmit && next build",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",

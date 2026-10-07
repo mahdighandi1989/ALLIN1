@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Layout from '@/components/Layout'
-import { BookOpen, Search, ListTree, Sparkles, Trash2, AlertTriangle } from 'lucide-react'
+import { BookOpen, Search, ListTree, Sparkles, Trash2, AlertTriangle, MessageSquare } from 'lucide-react'
+import KbChat from './KbChat'
 import { KB_TITLE, type Block, type Section } from './content'
 import { KB_TABS, type TabId } from './tabs'
 import { COMPARE_ROWS, CHANGELOG, VERDICT_LABEL, type Verdict } from './content-compare'
@@ -167,11 +168,13 @@ export default function KnowledgePage() {
   const pickTab = (id: TabId) => { setTabId(id); window.history.replaceState(null, '', `#tab-${id}`) }
   const isSaderat = tab.id === 'saderat'
   const [dyn, setDyn] = useState<KbTopic[]>([])
+  const [chatOpen, setChatOpen] = useState(false)
   const canEdit = user && ['admin', 'editor'].includes((user as any).role || '')
   const loadDyn = () => knowledgeApi.list().then((r) => setDyn(r.topics || [])).catch(() => setDyn([]))
   useEffect(() => { loadDyn() }, [])
   const visible = useMemo(() => tab.sections.filter((s) => sectionMatches(s, query)), [tab, query])
-  const dynVisible = useMemo(() => (isSaderat ? dyn.filter((t) => topicMatches(t, query)) : []), [dyn, query, isSaderat])
+  // filed topics live under THEIR tab (old rows have no tab = «saderat», where they always showed)
+  const dynVisible = useMemo(() => (tab.id === 'compare' ? [] : dyn.filter((t) => (t.tab || 'saderat') === tab.id && topicMatches(t, query))), [dyn, query, tab.id])
   // the LIVE index of the dynamic part: categories in first-seen order
   const dynCats = useMemo(() => {
     const out: { cat: string; topics: KbTopic[] }[] = []
@@ -195,11 +198,16 @@ export default function KnowledgePage() {
           <div className="bg-blue-600 text-white rounded-xl p-2.5">
             <BookOpen size={22} />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold text-gray-900">{KB_TITLE}</h1>
             <p className="text-gray-500 text-sm mt-0.5">{tab.description}</p>
           </div>
+          <button type="button" onClick={() => setChatOpen(true)} data-testid="kb-chat-open"
+            className="shrink-0 inline-flex items-center gap-1.5 bg-blue-600 text-white text-sm font-bold rounded-xl px-4 py-2.5 hover:bg-blue-700 shadow-sm">
+            <MessageSquare size={17} /> گفت‌وگو و …
+          </button>
         </div>
+        {chatOpen && <KbChat onClose={() => setChatOpen(false)} canAsk={!!user && (!!(user as any).is_admin || ['admin', 'editor'].includes((user as any).role || ''))} onFiled={loadDyn} />}
 
         {/* Tabs — ۶ تب، زیرِ زیرعنوانِ همان سربرگ */}
         <div role="tablist" className="flex flex-wrap gap-1.5 mt-3 border-b border-gray-200">
@@ -260,7 +268,7 @@ export default function KnowledgePage() {
                 {dynCats.length > 0 && (
                   <div className="pt-2 mt-2 border-t border-gray-100">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-violet-700 px-3 pb-1">
-                      <Sparkles size={13} /> مطالبِ برداشت‌شده از نامه‌ها
+                      <Sparkles size={13} /> مطالبِ برداشت‌شده از نامه‌ها و گفت‌وگو
                     </div>
                     {dynCats.map((c) => (
                       <div key={c.cat}>

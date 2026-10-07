@@ -15,10 +15,22 @@ import hashlib
 import re
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kb import KnowledgeTopic, KnowledgeEntry
+
+
+# The دانش‌نامه tabs that can hold filed (dynamic) topics. «compare» is a
+# read-only cross-tab view, so nothing is ever filed under it.
+KB_TABS = ("saderat", "uae", "intl", "iran", "islamic")
+DEFAULT_TAB = "saderat"
+
+
+def norm_tab(tab: str) -> str:
+    """A valid tab id, or ''. Callers decide what '' means — this never guesses."""
+    t = (tab or "").strip().lower()
+    return t if t in KB_TABS else ""
 
 
 def norm_title(s: str) -> str:
@@ -38,6 +50,7 @@ async def upsert_entry(
     db: AsyncSession, *, topic_title: str, content: str,
     category: str = "", source_kind: str = "letter_ai", source_ref: str = "",
     account_no: str = "", username: str = "", global_dedupe: bool = False,
+    tab: str = "",
 ) -> dict:
     """Group ``content`` under the topic named ``topic_title`` (created if new).
 
@@ -50,14 +63,20 @@ async def upsert_entry(
         return {"ok": False, "reason": "empty"}
 
     tnorm = norm_title(title)
-    topic: Optional[KnowledgeTopic] = (await db.execute(
-        select(KnowledgeTopic).where(KnowledgeTopic.title_norm == tnorm,
+    # ``tab`` omitted (every pre-existing caller) = the legacy behaviour: match by
+    # title anywhere, file new topics under the default tab. A given tab scopes the
+    # match to that tab, so «ضمانت‌نامه» under two tabs stays two topics.
+    want_tab = norm_tab(tab)
+    q = select(KnowledgeTopic).where(KnowledgeTopic.title_norm == tnorm,
                                      KnowledgeTopic.is_deleted == False)  # noqa: E712
-    )).scalars().first()
+    if want_tab:
+        q = q.where(func.coalesce(func.nullif(KnowledgeTopic.tab, ""), DEFAULT_TAB) == want_tab)
+    topic: Optional[KnowledgeTopic] = (await db.execute(q)).scalars().first()
     created_topic = False
     if topic is None:
         topic = KnowledgeTopic(title=title[:300], title_norm=tnorm,
-                               category=(category or "عمومی")[:120], created_by=username)
+                               category=(category or "عمومی")[:120], created_by=username,
+                               tab=want_tab or DEFAULT_TAB)
         db.add(topic)
         await db.flush()
         created_topic = True

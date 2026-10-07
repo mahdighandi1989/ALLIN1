@@ -271,7 +271,9 @@ def local_dir() -> Path:
     return p
 
 
-async def store(*, data: bytes, filename: str, mime: str, report_number: int) -> dict:
+async def store(*, data: bytes, filename: str, mime: str, report_number: int = 0,
+                path_parts: list | None = None, stored_name: str = "",
+                local_prefix: str = "") -> dict:
     """Put the bytes where they will still be there next month.
 
     Drive first, because the container disk does not survive a deploy. A local
@@ -294,8 +296,10 @@ async def store(*, data: bytes, filename: str, mime: str, report_number: int) ->
     import asyncio
     name = safe_filename(filename)
     sha = hashlib.sha256(data).hexdigest()
-    # a distinct name per upload, so two samples with the same filename coexist
-    stored_name = f"{sha[:8]}-{name}"
+    # a distinct name per upload, so two samples with the same filename coexist.
+    # (KB chat passes its own coded ``stored_name`` / ``path_parts`` /
+    # ``local_prefix``; the sheet defaults below are unchanged.)
+    stored_name = stored_name or f"{sha[:8]}-{name}"
     out = {"filename": name, "mime": mime, "byte_size": len(data), "sha256": sha,
            "store": "", "drive_id": "", "drive_link": "", "local_path": "",
            "store_note": ""}
@@ -307,7 +311,7 @@ async def store(*, data: bytes, filename: str, mime: str, report_number: int) ->
             await drive_sync.prepare()
             res = await asyncio.to_thread(
                 gd.upload_file,
-                path_parts=[DRIVE_ROOT, f"report-{int(report_number)}"],
+                path_parts=path_parts or [DRIVE_ROOT, f"report-{int(report_number)}"],
                 filename=stored_name, data=data,
                 mimetype=mime or "application/octet-stream")
             out.update(store="drive", drive_id=res.get("id") or "",
@@ -318,7 +322,7 @@ async def store(*, data: bytes, filename: str, mime: str, report_number: int) ->
         logger.warning("inspection file → Drive failed: %s", exc)
         reason = f"آپلود به Drive شکست خورد: {type(exc).__name__}: {exc}"[:300]
 
-    path = local_dir() / f"r{int(report_number)}-{stored_name}"
+    path = local_dir() / f"{local_prefix or 'r' + str(int(report_number)) + '-'}{stored_name}"
     path.write_bytes(data)
     out.update(store="local", local_path=str(path),
                store_note=(reason + " — فایل روی دیسکِ کانتینر ذخیره شد و "

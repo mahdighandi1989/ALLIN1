@@ -38,6 +38,10 @@ class KnowledgeTopic(Base):
     # normalized title for grouping/dedup (casefolded, whitespace-collapsed)
     title_norm = Column(String(300), index=True, nullable=False)
     category = Column(String(120), default="عمومی")     # درس/رویه/بخشنامه/…
+    # which دانش‌نامه TAB the topic lives under (saderat|uae|intl|iran|islamic).
+    # NULL/'' = «saderat»: every row written before the column existed was shown
+    # on that tab, and still is.
+    tab = Column(String(20), default="saderat")
     created_by = Column(String(80))
     is_deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

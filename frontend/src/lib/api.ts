@@ -841,7 +841,7 @@ export type LetterAiChange = {
   props?: Record<string, number | boolean | string>
 }
 export type KbEntry = { id: string; content: string; source_kind: string; source_ref: string; account_no?: string; created_by?: string; created_at?: string }
-export type KbTopic = { id: string; title: string; category: string; entries: KbEntry[] }
+export type KbTopic = { id: string; title: string; category: string; tab?: string; entries: KbEntry[] }
 export const knowledgeApi = {
   async list(): Promise<{ topics: KbTopic[]; categories: string[]; count: number }> {
     const { data } = await api.get('/api/knowledge/')
@@ -855,7 +855,54 @@ export const knowledgeApi = {
     const { data } = await api.delete(`/api/knowledge/entries/${encodeURIComponent(id)}`)
     return data
   },
+  // ── گفت‌وگو با دانش‌نامه ────────────────────────────────────────────────
+  async chatModels(): Promise<KbChatModels> {
+    const { data } = await api.get('/api/knowledge/chat/models')
+    return data
+  },
+  async chatSessions(): Promise<{ sessions: KbChatSessionRow[] }> {
+    const { data } = await api.get('/api/knowledge/chat/sessions')
+    return data
+  },
+  async chatSession(id: string): Promise<{ session: { id: string; title: string }; messages: KbChatMessage[]; files: KbChatFile[] }> {
+    const { data } = await api.get(`/api/knowledge/chat/sessions/${encodeURIComponent(id)}`)
+    return data
+  },
+  async chatAsk(body: { question: string; session_id?: string; model_id?: number | null; allow_web: boolean; files: File[] }): Promise<{ session_id: string; user: KbChatMessage; assistant: KbChatMessage; files: KbChatFile[] }> {
+    const form = new FormData()
+    form.append('question', body.question)
+    if (body.session_id) form.append('session_id', body.session_id)
+    if (body.model_id != null) form.append('model_id', String(body.model_id))
+    form.append('allow_web', String(body.allow_web))
+    body.files.forEach((f) => form.append('files', f))
+    const { data } = await api.post('/api/knowledge/chat/ask', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 900000 })
+    return data
+  },
+  async chatApprove(messageId: string, body: { model_id?: number | null; tab?: string }): Promise<KbChatApproveResult> {
+    try {
+      const { data } = await api.post(`/api/knowledge/chat/messages/${encodeURIComponent(messageId)}/approve`, body, { timeout: 300000 })
+      return data
+    } catch (e: any) {
+      if (e?.response?.status === 409 && e.response.data?.error === 'tab_unclear') return e.response.data
+      throw e
+    }
+  },
+  chatFileUrl(id: string): string {
+    return `/api/knowledge/chat/files/${encodeURIComponent(id)}/raw`
+  },
 }
+export type KbChatModel = { id: number; display_name: string; provider_name: string; api_model_id: string; fast: boolean; web: boolean; files: boolean; vision: boolean; cheap: boolean; price_known: boolean; recommended: boolean; context_window?: number | null; input_cost_per_1m?: number | null }
+export type KbChatModels = { models: KbChatModel[]; default_model_id: number | null; sync: { interval_hours: number; last_run_at?: string | null }; limits: { max_file_mb: number; max_request_mb: number; max_files: number } }
+export type KbChatSessionRow = { id: string; title: string; created_by?: string; created_at?: string; updated_at?: string }
+export type KbChatSource = { url: string; title: string }
+export type KbChatMessage = {
+  id: string; session_id: string; role: 'user' | 'assistant'; content: string; source: '' | 'kb' | 'web' | 'none'
+  model_name: string; web_model_name: string; sources: KbChatSource[]; kb_state: '' | 'pending' | 'filed'; kb_topic_id?: string | null
+  kb_placement: string; error: string; created_by?: string; created_at?: string
+  meta: { kb?: { total_sections: number; included_sections: number; trimmed: boolean }; warnings?: string[]; unread_files?: string[]; file_ids?: string[]; web_model_reason?: string }
+}
+export type KbChatFile = { id: string; message_id?: string | null; filename: string; mime: string; byte_size: number; extract_status: string; note: string; text_chars: number; truncated: boolean; store: string; drive_link: string; durable: boolean; store_note: string }
+export type KbChatApproveResult = { ok?: boolean; error?: string; message?: string; tabs?: { id: string; label: string }[]; placement?: string; tab?: string; already?: boolean; duplicate?: boolean }
 export type LetterAiDbOutcome = { account_no: string; key: string; outcome: string; profile_created?: boolean; reason?: string }
 export const letterAiApi = {
   async models(): Promise<{ ok: boolean; models: LetterAiModel[]; tools: LetterAiTool[]; available: boolean }> {
