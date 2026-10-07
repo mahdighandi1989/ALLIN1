@@ -6,7 +6,7 @@
  * itself. A countdown that keeps promising «۱۹ دقیقهٔ دیگر» while the routine is
  * switched off is the failure this is written against.
  */
-import { humanGap, localClock, rushMessage, type NextRound } from './nextRound'
+import { everyText, humanGap, localClock, rushMessage, type NextRound } from './nextRound'
 
 const iso = (h: number, m: number, day = 30) =>
   new Date(2026, 8, day, h, m, 0).toISOString()      // LOCAL time in, ISO out
@@ -83,5 +83,20 @@ describe('rushMessage — what the owner actually reads', () => {
   it('still says something useful when the server sent nothing', () => {
     expect(rushMessage(1, null)).toContain('بازبینیِ بعدی')
     expect(rushMessage(1, { ...nr(), at: '' })).toContain('بازبینیِ بعدی')
+  })
+})
+
+// v179 — the urgent round now runs every 3 hours
+describe('nextRound — a three-hour schedule', () => {
+  it('says the cadence in hours', () => {
+    expect(everyText(180)).toBe('هر ۳ ساعت')
+    expect(everyText(60)).toBe('هر ۱ ساعت')
+    expect(everyText(45)).toBe('هر ۴۵ دقیقه')
+  })
+  it('a late round is «on its way», never three hours away', () => {
+    const nr = { at: '2026-10-07T09:26:00Z', in_seconds: 0, in_minutes: 0, every_minutes: 180, basis: 'due', last_seen: '2026-10-07T06:26:00Z' }
+    const msg = rushMessage(1, nr, new Date('2026-10-07T09:35:00Z'))
+    expect(msg).toContain('هر لحظه می‌رسد')
+    expect(msg).not.toContain('ساعت و')
   })
 })

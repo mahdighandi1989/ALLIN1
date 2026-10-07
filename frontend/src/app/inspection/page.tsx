@@ -13,7 +13,7 @@ import { geometryLabel } from '@/lib/inspectionSpot'
 import { AuthedDownload, AuthedImage } from '@/lib/AuthedMedia'
 import { TONE } from '@/lib/inspection'
 import { notifySheetsChanged } from '@/lib/inspectionHighlights'
-import { humanGap, localClock, rushMessage, type NextRound } from '@/lib/nextRound'
+import { everyText, humanGap, localClock, rushMessage, type NextRound } from '@/lib/nextRound'
 import toast from 'react-hot-toast'
 
 const FA = '۰۱۲۳۴۵۶۷۸۹'
@@ -797,11 +797,21 @@ function NextRoundChip({ nr, tick }: { nr: NextRound; tick: number }) {
       </span>
     )
   }
+  // v179 — the slot passed and it has not knocked yet (or the board was left open
+  // past the slot): late, arriving any moment — never «3 hours away»
+  if (nr.basis === 'due' || left <= 0) {
+    return (
+      <span dir="rtl" title={`${everyText(nr.every_minutes)} · آخرین دور: ${localClock(nr.last_seen || nr.at)}`}
+        className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+        ⚡ دورِ ناظر ({localClock(nr.at)}) در راه است — هر لحظه می‌رسد
+      </span>
+    )
+  }
   return (
     <span dir="rtl"
       title={nr.basis === 'assumed'
         ? 'تخمینی — هنوز دوری از ناظر ثبت نشده است'
-        : `هر ${nr.every_minutes} دقیقه · آخرین دور: ${localClock(nr.last_seen || nr.at)}`}
+        : `${everyText(nr.every_minutes)} · آخرین دور: ${localClock(nr.last_seen || nr.at)}`}
       className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
       ⚡ دورِ بعدیِ ناظر: {localClock(nr.at)} ({humanGap(left)})
       {nr.basis === 'assumed' && ' — تخمینی'}

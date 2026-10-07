@@ -118,3 +118,42 @@ class TestTheNumbersTheOwnerReads:
     def test_it_never_counts_backwards(self):
         r = next_round(at(10, 22, day=30) + timedelta(seconds=59), None)
         assert r["in_seconds"] >= 0 and r["in_minutes"] >= 0
+
+
+class TestWhenTheScheduleBecameEveryThreeHours:
+    """v179 — the owner moved the urgent Routine from hourly to every 3 hours
+    and asked whether the chip still tells the truth."""
+
+    HOURLY = [at(h, 26, day=6) for h in range(14, 24)]          # ten hourly knocks
+
+    def test_production_today(self):
+        """Last knock 06:26:32 UTC, three-hourly ⇒ 09:26 UTC = 13:26 in UTC+4."""
+        stamps = [at(0, 26, day=7), at(3, 26, day=7),
+                  datetime(2026, 9, 7, 6, 26, 32, tzinfo=UTC)]
+        r = next_round(datetime(2026, 9, 7, 8, 54, 25, tzinfo=UTC), log(*stamps))
+        assert r["basis"] == "observed" and r["every_minutes"] == 180
+        assert r["at"].startswith("2026-09-07T09:26:32")
+
+    def test_a_changed_cadence_is_followed_within_two_runs_not_eighteen_hours(self):
+        stamps = self.HOURLY + [at(2, 26, day=7), at(5, 26, day=7)]
+        r = next_round(at(6, 0, day=7), log(*stamps))
+        assert r["every_minutes"] == 180
+        assert r["at"] == at(8, 26, day=7).isoformat()
+
+    def test_a_late_round_is_due_not_three_hours_away(self):
+        stamps = [at(0, 26), at(3, 26), at(6, 26)]
+        r = next_round(at(9, 35), log(*stamps))
+        assert r["basis"] == "due" and r["at"] == at(9, 26).isoformat()
+        assert r["in_minutes"] == 0
+        # past the grace window it is the next slot — still not stale
+        r = next_round(at(9, 57), log(*stamps))
+        assert r["basis"] == "observed" and r["at"] == at(12, 26).isoformat()
+
+    def test_a_manual_run_does_not_move_the_schedule(self):
+        stamps = [at(0, 26), at(3, 26), at(6, 26), at(7, 41)]
+        r = next_round(at(8, 0), log(*stamps))
+        assert r["at"] == at(9, 26).isoformat() and r["every_minutes"] == 180
+
+    def test_an_hourly_round_that_already_came_is_not_due(self):
+        r = next_round(at(10, 30), log(at(8, 7), at(9, 7), at(10, 7)))
+        assert r["basis"] == "observed" and r["at"] == at(11, 7).isoformat()

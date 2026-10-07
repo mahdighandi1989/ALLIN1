@@ -20,8 +20,9 @@ export type NextRound = {
   /** the measured cadence, in minutes */
   every_minutes: number
   /** observed = we have watched it · assumed = a default, nothing watched yet ·
-   *  stale = it has not come for several cycles, so it may be switched off */
-  basis: 'observed' | 'assumed' | 'stale' | string
+   *  stale = it has not come for several cycles, so it may be switched off ·
+   *  due = its slot (`at`) has just passed and it has not knocked yet — late, not gone */
+  basis: 'observed' | 'assumed' | 'stale' | 'due' | string
   last_seen: string | null
 }
 
@@ -47,6 +48,12 @@ export function humanGap(minutes: number): string {
   return m ? `${fa(h)} ساعت و ${fa(m)} دقیقهٔ دیگر` : `${fa(h)} ساعتِ دیگر`
 }
 
+/** «هر ۳ ساعت» / «هر ۴۵ دقیقه» — the measured cadence in the owner's words. */
+export function everyText(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return ''
+  return minutes % 60 === 0 ? `هر ${fa(minutes / 60)} ساعت` : `هر ${fa(Math.round(minutes))} دقیقه`
+}
+
 /**
  * The whole sentence the owner sees after pressing ⚡.
  *
@@ -63,6 +70,9 @@ export function rushMessage(position: number, nr?: NextRound | null, now?: Date)
   if (nr.basis === 'stale') {
     return `${place} — ولی ناظر از ${localClock(nr.last_seen || nr.at, now)} تا حالا سر نزده؛`
       + ' ممکن است روتینش خاموش باشد. بررسی کن.'
+  }
+  if (nr.basis === 'due') {
+    return `${place} · دورِ ناظر قرار بود ساعتِ ${localClock(nr.at, now)} باشد و هر لحظه می‌رسد`
   }
   const when = `ساعتِ ${localClock(nr.at, now)} (${humanGap(nr.in_minutes)})`
   const hedge = nr.basis === 'assumed' ? ' — تخمینی، هنوز دوری ثبت نشده' : ''

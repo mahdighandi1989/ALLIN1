@@ -66,28 +66,45 @@ def next_round(now: datetime,
     with ``at`` an ISO-8601 UTC instant. The caller renders it in ITS OWN local
     time — the server never guesses the reader's timezone, because a number that
     says «۱۹ دقیقهٔ دیگر» has to be right on the reader's own clock.
+
+    v179 — the schedule went from hourly to every three hours and three things
+    showed (`experiences/measure-the-schedule-you-cannot-read.md`):
+      * the cadence was the median of ALL kept gaps, so it kept saying «hourly»
+        for ~18 h after the change — now: the median of the last few gaps;
+      * a run that was a few minutes late flipped the answer to the NEXT slot,
+        three hours out — now: inside a grace window it is ``due`` («در راه»);
+      * an extra/manual run became the anchor and shifted every later estimate —
+        now: only the knocks on the scheduled minute define the schedule.
     """
     now = _utc(now)
     stamps = _parse(raw)
-    gaps = [(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])
+    sched = _scheduled(stamps)
+    gaps = [(b - a).total_seconds() for a, b in zip(sched, sched[1:])
             if 0 < (b - a).total_seconds() <= 24 * 3600]
 
     basis, every = "assumed", 3600.0
     at = _at_minute(now, assumed_minute)
 
     if gaps:
-        every = _median(gaps)
+        every = _snap(_median(gaps[-RECENT_GAPS:]))
+        grace = min(GRACE_MAX, every / 3)
         if HOURLY_LO <= every <= HOURLY_HI:
             # An hourly round: the minute it lands on is the stable fact, so a
             # single late run does not drag the estimate around.
-            at = _at_minute(now, _common_minute(stamps))
             every = 3600.0
+            grace = min(GRACE_MAX, every / 3)
+            at = _at_minute(now - timedelta(seconds=grace), _common_minute(sched))
         else:
-            # Some other cadence — step forward from the last knock.
-            at = stamps[-1]
-            while at <= now:
+            # Some other cadence — step forward from the last SCHEDULED knock.
+            at = sched[-1]
+            while at <= now - timedelta(seconds=grace):
                 at += timedelta(seconds=every)
+        if at <= now and stamps[-1] >= at - timedelta(minutes=MINUTE_TOL):
+            at += timedelta(seconds=every)       # that slot already came
         basis = "observed"
+        if at <= now:
+            # the slot has passed, nothing has knocked since: it is late, not gone
+            basis = "due"
         if (now - stamps[-1]).total_seconds() > STALE_CYCLES * every:
             basis = "stale"
 
@@ -99,6 +116,43 @@ def next_round(now: datetime,
         "basis": basis,
         "last_seen": stamps[-1].isoformat() if stamps else None,
     }
+
+
+#: The cadence is read from this many most-recent gaps: one missed run cannot
+#: move the median, and a changed schedule takes over within two runs.
+RECENT_GAPS = 3
+
+#: A knock within this many minutes of the scheduled minute is the schedule.
+MINUTE_TOL = 3
+
+#: How long past its slot a round counts as «late» rather than «skipped».
+GRACE_MAX = 30 * 60
+
+
+def _scheduled(stamps: list[datetime]) -> list[datetime]:
+    """The knocks that ARE the schedule. A cron Routine lands on one minute
+    every time; a manual/extra run lands anywhere. The schedule is the minute
+    shared by the newest knock that has company among the last few — so a
+    changed minute is followed and a stray run is ignored."""
+    recent = stamps[-6:]
+    for s in reversed(recent):
+        members = [t for t in stamps if _minute_gap(s, t) <= MINUTE_TOL]
+        if sum(1 for t in recent if _minute_gap(s, t) <= MINUTE_TOL) >= 2:
+            return members
+    return stamps
+
+
+def _minute_gap(a: datetime, b: datetime) -> float:
+    d = abs((a.minute + a.second / 60) - (b.minute + b.second / 60))
+    return min(d, 60 - d)
+
+
+def _snap(seconds: float) -> float:
+    """A cron N-hourly cadence measured with a few seconds of jitter is N hours."""
+    hours = round(seconds / 3600)
+    if hours >= 1 and abs(seconds - hours * 3600) <= 10 * 60:
+        return hours * 3600.0
+    return seconds
 
 
 # --------------------------------------------------------------------------- #

@@ -443,7 +443,10 @@ class TestWhenWillItComeForThisOne:
         rep = await _sheet(client, auth_headers)
         r = await client.post(f"/api/inspection/{rep['id']}/urgent", headers=auth_headers)
         nxt = r.json()["next_round"]
-        assert nxt["basis"] == "observed"
+        # v179 — the last knock was exactly one hour ago, so this very minute IS the
+        # slot and nothing has knocked yet: «در راه» (due) is the honest answer, not
+        # «next hour». Either way it is a measured estimate on the observed minute.
+        assert nxt["basis"] in ("observed", "due")
         assert nxt["every_minutes"] == 60
         # the next one lands on the minute the round has been landing on
         assert datetime.fromisoformat(nxt["at"]).minute == now.minute
