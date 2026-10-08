@@ -7315,3 +7315,52 @@ build سبز ⇒ `main` به‌صورتِ fast-forward به `c4d6ccbf` رسید 
 - **تغییر:** (۱) `utils/offer_ref.py` تحمل‌پذیرتر شد: جداکنندهٔ فقط‌فاصله، نویسه‌های نامرئی (ZWNJ/RLM…)، NBSP، خط‌تیره/اسلشِ مشابه. (۲) `FacilityResponse.offer_ref` اگر `name` مرجع نداشت از `notes` می‌خواند. (۳) `doc_ingest`: فیلدِ `offer_ref` به پرامپت اضافه شد؛ تسهیلات اول با کلیدِ بدون‌جداکننده تطبیق می‌خورد، دو مرجعِ متفاوت هرگز ادغام نمی‌شوند، و `name` فقط اگر خالی بود (fill‑empty) پر می‌شود. (۴) `imports.py`: ردیفِ اکسل با همان مرجعِ موجود تکراری حساب و رد می‌شود.
 - **وابستگی/ریسک:** بدون تغییر اسکیما ⇒ قانون ۶ دست‌نخورده. دادهٔ موجود بازنویسی نشد (backfill عمداً نه؛ نمایش از `name`/`notes` محاسبه می‌شود). ۴ تستِ `test_account_type_review` در این محیط (pydantic جدیدتر از پین) از قبل هم قرمزند و به این تغییر ربطی ندارند.
 - **باز مانده:** تسهیلاتی که مرجعش در هیچ‌جای داده نیست (۱۶ مورد `-`/`???` در seed) مرجع ندارند — حدس زده نمی‌شود.
+
+## 2026-10-08 — «نظارت و سرکشی»: هر قالبی کامل خوانده می‌شود (صوت/ویدیو، ZIP ِ بازگشتی، doc/rtf/odf/epub/ایمیل)
+
+**نوع:** FINDING + CHANGE. **خواستهٔ مالک (برای همهٔ پروژه‌ها):** «هر نوع فرمتی باید خونده بشه توسط ناظر … و
+حتی کامل هم خونده بشه نه خلاصه و یا اوایل اون فایل»؛ صدا، ویدیو، زیپ، انواعِ عکس و متن.
+
+**یافته‌ها (پیش از این تغییر، در `backend/app/services/inspection_files.py`):**
+- `.doc` ⇒ `unsupported` («استخراج‌کننده نداریم»).
+- ZIP ⇒ فقط **فهرستِ نام‌ها** با `status=ok` — یعنی ناظر «خواندم» می‌گفت بی‌آنکه یک خط از محتوا دیده باشد.
+- صوت/ویدیو و هر پسوندِ ناشناخته (`.rtf`، `.odt`، `.epub`، `.eml`، `.msg`، `.conf`…) ⇒ `unsupported`؛
+  بدهیِ خواندن با یک بار گرفتنِ `/raw` صاف می‌شد — یعنی ناظر می‌توانست بی‌آنکه صدایی شنیده باشد جواب بدهد.
+- CLI ِ ناظر (`scripts/supervisor/inspection.py`) تصویرهای HEIC/TIFF/BMP/AVIF را بی‌تبدیل می‌گذاشت (ابزارِ Read
+  نشانشان نمی‌دهد)، زیپ را باز نمی‌کرد، و پاک‌سازیِ پوشه با `unlink` روی زیرپوشه می‌شکست.
+- روتین‌ها (`trig_01Wgus2…` فوری، `trig_0169qVp…` کامل) فقط به `docs/supervisor/URGENT_PROMPT.md` /
+  `PROMPT.md` اشاره می‌کنند — پرامپتِ اصلی همان فایل‌هاست؛ پیامِ ذخیره‌شدهٔ روتین‌ها **عوض نشد**.
+
+**تغییرها:**
+1. `services/inspection_formats.py` (تازه): خواننده‌های کامل برای `.doc` (جدولِ قطعه‌های OLE)، `.xls`، RTF،
+   ODT/ODS/ODP، EPUB به ترتیبِ spine، `.eml`/`.msg` همراهِ **همهٔ پیوست‌ها**، ZIP ِ **بازگشتی** (هر عضو از
+   همان `extract()` ِ پروژه رد می‌شود)، SVG، و «هر بایتی که متن است، با هر پسوندی». `extract()` فقط در
+   نقطه‌هایی که قبلاً `unsupported`/فهرستِ نام می‌داد به آن وصل شد؛ خواننده‌های موجود (PDF، docx، کاربرگ با
+   `workbook_to_text`، pptx) دست نخوردند.
+2. صوت/ویدیو (و ZIP ِ دارای آن‌ها) ⇒ وضعیتِ تازهٔ `pending`. `services/inspection_media.py` (تازه):
+   رونویسیِ **کلمه‌به‌کلمه با برچسبِ زمان** با Gemini (ویدیو: + شرحِ هر صحنه و نوشته‌های روی تصویر)، بالای
+   ۱۵MB از Files API، و ادامه تا نشانگرِ `<<END>>` (حداکثر ۴۰ دور؛ رسیدن به سقف ⇒ `truncated` اعلام می‌شود).
+   کلید: اول ردیفِ `gemini` در «تنظیماتِ AI» (`ai_providers`، از راهِ `AIManager.effective_api_key` و یک
+   ContextVar که `asyncio.to_thread` به نخِ رونویسی می‌برد)، بعد env (`GEMINI_API_KEY` …). بی‌کلید ⇒
+   `failed` **با دلیل** (صف گیر نمی‌کند، ناظر ادعای شنیدن نمی‌کند).
+3. `models/inspection.py` → `file_read_debt`: `pending` بدهی است و با بازکردنِ `/raw` صاف **نمی‌شود**.
+   تصمیمِ قبلیِ این ریپو که `failed` بدهی نیست (تستِ `test_a_failed_extraction_is_no_read_debt`) **حفظ شد**.
+4. `POST /api/inspection/files/{id}/extract` (تازه): بایت‌ها را از درایو/دیسک می‌گیرد، با خواننده‌های امروز
+   دوباره استخراج و `pending` را رونویسی می‌کند، اگر متن عوض شد شمارندهٔ خواندن را صفر می‌کند، و audit
+   ثبت می‌کند. پاسخ `{ok, success, file}`.
+5. CLI: `ensure_extracted` در `pull` و `urgent` پیش از نوشتنِ کارتابل؛ `scripts/supervisor/inspection_view.py`
+   (تازه) تصویرها را به PNG، SVG را با playwright، هر صفحهٔ TIFF، فریمِ ویدیو هر ۵ ثانیه (imageio-ffmpeg)،
+   و زیپ را روی دیسک باز می‌کند؛ PDF ⇒ یادآوریِ دیدنِ همهٔ صفحه‌ها. پاک‌سازی با `shutil.rmtree`.
+   `scripts/supervisor/requirements.txt` (تازه). `backend/requirements.txt`: `olefile`، `striprtf`.
+6. دستورها: `PROMPT.md` v14→**v15** (بخش‌های «هر قالبی، کامل» و «پیوستی که کد است — بخوان، بفهم، خودت
+   بنویس؛ عیناً کپی نکن»؛ اصلاحِ جملهٔ قدیمیِ «`.doc` بی‌متن است»؛ معرفیِ `pending`)، `URGENT_PROMPT.md`
+   v6→**v7**. نسخه‌های قبلی: `archive/PROMPT-v14-2026-10-08.md`، `archive/URGENT_PROMPT-v6-2026-10-08.md`.
+7. تست: `backend/tests/test_inspection_formats.py` (doc و msg ِ واقعی از دادهٔ آزمونِ Apache POI در
+   `tests/fixtures/inspection_formats/`، xls، rtf، odt، epub، eml با پیوست، zip ِ تو در تو، پسوندِ ناشناخته،
+   `pending`، ادامهٔ رونویسی تا `<<END>>` از Files API، بی‌کلید)، و در `test_inspection_files.py`: بدهیِ
+   `pending` و اندپوینتِ extract.
+8. تجربه: `experiences/review-reads-every-format-in-full.md`.
+
+**گیت:** pytest کامل + `npm run type-check` + `npm run build` (نتیجه در کامیت).
+**برای مالک:** اگر کلیدِ Gemini در «تنظیماتِ AI» یا `GEMINI_API_KEY` روی Render نیست، صوت/ویدیو `failed`
+با همین دلیل می‌شوند — یک کلیدِ Gemini بگذار تا رونویسیِ کامل فعال شود.

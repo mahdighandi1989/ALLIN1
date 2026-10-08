@@ -654,3 +654,32 @@ class TestReadDebtIsHonest:
 
     def test_no_files_is_no_debt(self):
         assert file_read_debt([]) == [] and file_read_debt(None) == []
+
+
+def test_pending_media_is_a_read_debt_that_opening_does_not_clear():
+    """audio/video waiting for its full transcript: downloading the bytes is not
+    hearing them — the debt stays until the transcript exists and is read."""
+    from datetime import datetime, timezone
+
+    class F:
+        id, filename, extract_status = "1", "voice.mp3", "pending"
+        text_chars, read_chars, viewed_at = 0, 0, datetime.now(timezone.utc)
+    assert [d["reason"] for d in file_read_debt([F()])] == ["pending"]
+
+
+class TestExtractEndpoint:
+    async def test_pending_audio_is_transcribed_in_full_and_the_read_counter_restarts(
+            self, client, auth_headers, monkeypatch):
+        from app.services import inspection_media as imedia
+
+        rep = await _sheet(client, auth_headers)
+        r = await _upload(client, auth_headers, rep["id"], "voice.mp3", b"ID3....", mime="audio/mpeg")
+        f = r.json()["file"]
+        assert f["extract_status"] == "pending"
+        monkeypatch.setattr(imedia, "transcribe", lambda *a, **k: {
+            "ok": True, "text": "[00:00:00] تمامِ گفتار تا آخر", "note": "", "truncated": False,
+            "model": "m"})
+        r = await client.post(f"/api/inspection/files/{f['id']}/extract", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        g = r.json()["file"]
+        assert g["extract_status"] == "ok" and g["text_chars"] > 0 and g["read_chars"] == 0

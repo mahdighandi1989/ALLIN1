@@ -24,6 +24,7 @@ WHAT THIS ROUTER REFUSES, AND WHY (each one paid for in the sibling project):
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import uuid
@@ -619,6 +620,74 @@ async def file_raw(file_id: str, db: AsyncSession = Depends(get_db),
         content=data, media_type=row.mime or "application/octet-stream",
         headers={"Content-Disposition": content_disposition(disp, row.filename or "file"),
                  "Cache-Control": "private, max-age=300"})
+
+
+@router.post("/files/{file_id}/extract")
+async def extract_file(file_id: str, db: AsyncSession = Depends(get_db),
+                       user=Depends(get_current_active_user)):
+    """(Re)read one attachment with today's readers — and for audio/video (or an
+    archive holding some) produce the FULL transcript (services/inspection_media).
+
+    The supervisor's `pull` calls it for every file still `pending`. New text is
+    a new reading duty, so the read counter starts over.
+    """
+    import asyncio
+
+    from app.services import inspection_media as imedia
+
+    row = await _file_or_404(db, file_id)
+    try:
+        data = await ifiles.load(row)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=410, detail=str(exc)[:300]) from exc
+    if not data:
+        raise HTTPException(status_code=410, detail="بایت‌های این فایل در دسترس نیست")
+    token = _GEMINI_KEY.set(await _gemini_key(db))
+    try:
+        name, mime = row.filename or "", row.mime or ""
+        ex = await asyncio.to_thread(
+            lambda: imedia.finish_extraction(ifiles.extract(data, name, mime), data, name, mime))
+    finally:
+        _GEMINI_KEY.reset(token)
+    text = ex["text"] or ""
+    if text != (row.text or ""):
+        row.read_chars, row.read_at = 0, None
+    row.extract_status, row.extract_note, row.text = ex["status"], ex["note"], text
+    row.text_chars, row.text_truncated = len(text), bool(ex.get("truncated"))
+    row.page_count = int(ex.get("page_count") or 0)
+    await db.commit()
+    await db.refresh(row)
+    await record_audit(
+        action="inspection_file_extract", entity_type="inspection", entity_id=row.report_id,
+        detail=f"«{row.filename}» — استخراج: {row.extract_status}، {row.text_chars} نویسه",
+        user=user, db=db)
+    return {"ok": True, "success": True, "file": _file_dict(row)}
+
+
+#: The Gemini key from «AI settings» (DB), handed to the transcription thread —
+#: asyncio.to_thread copies the context, so the sync KEY_PROVIDERS hook sees it.
+_GEMINI_KEY: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("inspection_gemini_key", default=None)
+
+
+async def _gemini_key(db: AsyncSession) -> Optional[str]:
+    try:
+        from app.ai.manager import AIManager
+        from app.models.ai_config import AIProvider
+
+        p = (await db.execute(select(AIProvider).where(AIProvider.key == "gemini"))).scalar_one_or_none()
+        return AIManager.effective_api_key(p) if p is not None else None
+    except Exception:  # noqa: BLE001 — env vars remain the fallback
+        return None
+
+
+def _register_key_provider() -> None:
+    from app.services import inspection_media as imedia
+
+    if _GEMINI_KEY.get not in imedia.KEY_PROVIDERS:
+        imedia.KEY_PROVIDERS.insert(0, _GEMINI_KEY.get)
+
+
+_register_key_provider()
 
 
 @router.delete("/files/{file_id}")

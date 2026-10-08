@@ -1,0 +1,8 @@
+# The supervisor routine's own tools (not the app's runtime):
+#   Pillow + pillow-heif — every image format made viewable (HEIC/TIFF/BMP/AVIF/ICO → PNG)
+#   imageio-ffmpeg       — a bundled ffmpeg: frames from attached videos
+#   playwright           — page_map / screenshot / SVG rendering (Chromium is in /opt/pw-browsers)
+Pillow>=10.4
+pillow-heif>=0.18
+imageio-ffmpeg>=0.5.1
+playwright==1.56.0

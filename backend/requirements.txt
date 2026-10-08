@@ -37,6 +37,10 @@ pypdf==6.13.3
 # xlrd reads the legacy binary .xls format (openpyxl only handles .xlsx/.xlsm).
 # Pinned to 2.0.1 — the last release; 2.x intentionally supports .xls only.
 xlrd==2.0.1
+# «نظارت و سرکشی» reads every format in full: legacy Word .doc / Outlook .msg (OLE)
+# and RTF — services/inspection_formats.py
+olefile==0.47
+striprtf==0.0.33
 structlog==24.1.0
 prometheus-client==0.20.0
 reportlab==4.1.0

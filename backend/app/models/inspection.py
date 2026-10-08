@@ -289,7 +289,7 @@ EXTRACT_LABEL = {
     "unsupported": "برای این نوع، استخراجِ متن نداریم — ناظر باید خودِ فایل را باز کند",
     "failed": "استخراج شکست خورد — دلیلش ثبت شده",
     "image": "تصویر است — ناظر باید نگاهش کند (متنی برای خواندن ندارد)",
-    "pending": "هنوز استخراج نشده",
+    "pending": "در صفِ رونویسی/استخراج — هنوز متن ندارد",
 }
 
 
@@ -323,6 +323,14 @@ def file_read_debt(files: list) -> list:
                     "reason": "truncated", "read_chars": got, "text_chars": total,
                     "remaining": 1,
                 })
+        elif status == "pending":
+            # audio/video not transcribed yet: opening the bytes is not hearing
+            # them — clears only once the full transcript exists and is read
+            debt.append({
+                "file_id": getattr(f, "id", ""), "filename": name,
+                "reason": "pending", "read_chars": 0, "text_chars": 0,
+                "remaining": 1,
+            })
         elif status in ("image", "unsupported"):
             # No text to finish — but it must still have been OPENED, or the
             # sample the owner sent was never actually looked at.

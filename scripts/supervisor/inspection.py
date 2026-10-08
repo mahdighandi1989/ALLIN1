@@ -42,6 +42,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import inspection_view as view  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = ROOT / "docs" / "supervisor" / "inspection"
 SHOTS = OUT_DIR / "shots"
@@ -67,11 +70,11 @@ class InspectionError(RuntimeError):
 
 
 def _req(path: str, *, data: bytes | None = None, headers: dict | None = None,
-         method: str = "GET") -> tuple:
+         method: str = "GET", timeout: float = TIMEOUT) -> tuple:
     url = f"{BASE}{path}"
     req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -132,6 +135,26 @@ def _save_shot(tok: str, shot_id: str, name: str) -> str | None:
     return str(path.relative_to(ROOT))
 
 
+def _rel(p: Path) -> str:
+    return str(Path(p).resolve().relative_to(ROOT))
+
+
+def ensure_extracted(tok: str, r: dict) -> dict:
+    """Every attachment still `pending` (audio/video awaiting its FULL transcript,
+    or an archive holding some) is extracted NOW, before the brief is written —
+    then the sheet is re-read. An hour of audio takes minutes; that is fine."""
+    pending = [f for f in r.get("files") or [] if f.get("extract_status") == "pending"]
+    for f in pending:
+        st, raw = _req(f"/api/inspection/files/{f['id']}/extract", method="POST",
+                       headers={"Authorization": f"Bearer {tok}"}, timeout=1800)
+        if st != 200:
+            print(json.dumps({"extract_failed": f.get("filename"), "http": st,
+                              "detail": _detail(raw)[:300]}, ensure_ascii=False), file=sys.stderr)
+    if pending:
+        r = api(tok, f"/api/inspection/{r['id']}").get("report") or r
+    return r
+
+
 def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
     """Pull ONE attached sample completely, and write it where it can be read.
 
@@ -171,7 +194,9 @@ def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
         path = FILES / f"r{report_number}-{safe}.txt"
         path.write_text(text, encoding="utf-8")
         out.update(chars=len(text), path=str(path.relative_to(ROOT)))
-        if not f.get("text_truncated"):
+        # complete text — but an archive's pictures/videos, a video's picture and
+        # a PDF's pages must ALSO be looked at, so those fetch the bytes too
+        if not f.get("text_truncated") and not view.needs_bytes(name):
             return out
         # The text was cut at a ceiling, so it is NOT the whole file. Reading it
         # all does not discharge the duty — the file itself has to be opened,
@@ -182,7 +207,7 @@ def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
 
     # No text to read — so OPEN it, which is what «read it» means for these.
     st, raw = _req(f"/api/inspection/files/{fid}/raw",
-                   headers={"Authorization": f"Bearer {tok}"})
+                   headers={"Authorization": f"Bearer {tok}"}, timeout=600)
     if st == 200 and raw:
         path = FILES / f"r{report_number}-{safe}"
         path.write_bytes(raw)
@@ -190,6 +215,11 @@ def _read_file_fully(tok: str, f: dict, report_number: int) -> dict:
         out.setdefault("path", "")
         if not out["path"]:
             out.update(path=str(path.relative_to(ROOT)), chars=len(raw))
+        extra, better = view.look_notes(path, name, status, _rel)
+        if better is not None:
+            out["raw_path"] = _rel(better)
+        if extra:
+            out["note"] = (out["note"] + " | " if out["note"] else "") + " | ".join(extra)
     else:
         out["note"] = (out["note"] + " | " if out["note"] else "") + \
             f"گرفتنِ خودِ فایل نشد: HTTP {st}"
@@ -270,13 +300,11 @@ def where_block(r: dict) -> list:
 def cmd_pull() -> int:
     tok = login()
     q = api(tok, "/api/inspection/queue")
-    reports = q.get("reports") or []
-    if SHOTS.exists():
-        for f in SHOTS.glob("*"):
-            f.unlink()
-    if FILES.exists():
-        for f in FILES.glob("*"):
-            f.unlink()
+    reports = [ensure_extracted(tok, r) for r in q.get("reports") or []]
+    import shutil
+    for d in (SHOTS, FILES):          # unpacked archives and video frames are folders
+        if d.exists():
+            shutil.rmtree(d)
     lines = [
         "# کارتابلِ «نظارت و سرکشی»",
         "",
@@ -392,6 +420,8 @@ def cmd_urgent() -> int:
     tok = login()
     got = api(tok, "/api/inspection/urgent/claim", body={"by": "routine"}, method="POST")
     r = got.get("report")
+    if r:
+        r = ensure_extracted(tok, r)
     if not r:
         busy = got.get("busy", 0)
         print(json.dumps({"claimed": None, "waiting": got.get("waiting", 0),

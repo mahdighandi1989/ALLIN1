@@ -167,8 +167,10 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
     """Pull readable text out of one file.
 
     Returns ``{status, text, note, page_count}`` where ``status`` is one of
-    ``ok | empty | unsupported | failed | image`` — four different ways of having
-    no text, never collapsed into one.
+    ``ok | empty | unsupported | failed | image | pending`` — different ways of
+    having no text, never collapsed into one. ``pending`` = audio/video (or an
+    archive holding some) waiting for its FULL transcript
+    (``inspection_media.finish_extraction``, POST /files/{id}/extract).
     """
     name = (filename or "").lower()
     mime = (mime or "").lower()
@@ -185,9 +187,23 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
         return {"status": status, "text": text, "note": note, "page_count": pages,
                 "truncated": truncated}
 
+    from app.services import inspection_formats as fmt
+
+    def extra() -> dict | None:
+        """Every format this function does not read itself — the whole text,
+        never a sample (inspection_formats; archive members come back here)."""
+        res = fmt.extract_extra(data, filename, mime, base=extract)
+        return None if res is None else done(res["status"], res["text"], res["note"],
+                                             int(res.get("page_count") or 0), bool(res.get("truncated")))
+
     try:
         if mime.startswith("image/") or ext in _IMAGE_EXT:
             return done("image", "", "تصویر است — متنی برای استخراج ندارد؛ ناظر باید بازش کند و نگاه کند")
+
+        if fmt.is_media(name, mime):
+            # audio/video: «pending» until the FULL transcript exists — never
+            # «nothing to read»
+            return extra()
 
         if ext == ".pdf" or mime == "application/pdf":
             text, pages, with_text = _pdf_text(data)
@@ -212,8 +228,7 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
                 "empty", "", "فایلِ Word باز شد ولی متنی نداشت")
 
         if ext == ".doc" or mime == "application/msword":
-            return done("unsupported", "", "قالبِ قدیمیِ .doc — استخراج‌کننده نداریم؛ "
-                                           "ناظر باید بازش کند (یا مالک .docx بفرستد)")
+            return extra()
 
         if ext in (".xlsx", ".xlsm", ".xls", ".csv"):
             from app.services.doc_ingest import workbook_to_text
@@ -245,13 +260,12 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
                 "empty", "", "اسلایدها متنی نداشتند")
 
         if ext == ".zip" or mime in ("application/zip", "application/x-zip-compressed"):
-            import zipfile
-            with zipfile.ZipFile(io.BytesIO(data)) as z:
-                names = z.namelist()[:500]
-            listing = "\n".join(names)
-            return done("ok", f"--- فهرستِ محتویاتِ آرشیو ---\n{listing}",
-                        "فقط فهرستِ فایل‌ها؛ برای دیدنِ محتوا باید بازش کرد")
+            # every member, recursively, through its own reader — not a list of names
+            return extra()
 
+        found = extra()      # rtf, odt, epub, eml, msg, any real text …
+        if found is not None:
+            return found
         # Deliberately NOT «empty»: we never tried, and saying so is the point.
         return done("unsupported", "",
                     f"برای «{ext or mime or 'این نوع'}» استخراج‌کنندهٔ متن نداریم — "
