@@ -1036,6 +1036,13 @@ async def init_database() -> None:
             await run_expiry_scan(session)
     except Exception as exc:  # pragma: no cover
         logger.error("Expiry alert scan skipped: %s", exc)
+    # Bell alerts for facilities whose own credit-file checklist is incomplete.
+    try:
+        from app.services.checklist import scan_incomplete_checklists
+        async with AsyncSessionLocal() as session:
+            await scan_incomplete_checklists(session)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Checklist alert scan skipped: %s", exc)
     # Currency exchange rates (default table on first run).
     try:
         from app.services.fx import seed_default_rates

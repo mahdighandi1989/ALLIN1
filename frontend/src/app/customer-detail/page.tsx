@@ -37,6 +37,7 @@ function CustomerDetailInner() {
   const id = params.get('id')
   const facilityParam = params.get('facility')  // open a facility's detail inline
   const tabParam = params.get('tab')            // deep-link straight to a tab (e.g. from the log)
+  const chkParam = params.get('chk')            // deep-link to ONE facility's checklist (from the bell)
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,6 +74,7 @@ function CustomerDetailInner() {
   }, [facilityParam])
   // Deep-link: ?tab=<id> jumps straight to a tab (used by the activity-log links).
   useEffect(() => { if (tabParam) setTab(tabParam) }, [tabParam])
+  useEffect(() => { if (chkParam) { setChkFacility(chkParam); setTab('checklist') } }, [chkParam])
 
   // --- Logs tab: this customer's full activity log (searchable, paginated) ---
   const [logData, setLogData] = useState<AuditList | null>(null)
@@ -155,6 +157,14 @@ function CustomerDetailInner() {
   const propsForSummary: any[] = properties.map((p: any) => ({ deed_no: p.mortgage_deed_no, city: p.city, type: p.prop_type, currency: p.valuation_currency, valuation: p.valuation }))
   // The checklist currently shown: a selected facility's own checklist, or the
   // account-level one when no facility is chosen.
+  // Every facility has its own checklist; no row yet = nothing ticked.
+  const facChecklistRows = facilities.map((f: any) => {
+    const fc = facilityChecklists.find((c: any) => c.facility_id === f.id)
+    const missing = CHECKLIST_STEPS.filter((_, i) => !done(fc?.[`item${i + 1}`]))
+    const settled = ['closed', 'inactive', 'written_off'].includes(String(f.status || '').toLowerCase())
+    return { f, fc, missing, settled }
+  })
+  const incompleteFacCount = facChecklistRows.filter((r: any) => !r.settled && r.missing.length > 0).length
   const activeChecklist = chkFacility
     ? (facilityChecklists.find((fc: any) => fc.facility_id === chkFacility) || null)
     : checklist
@@ -403,7 +413,7 @@ function CustomerDetailInner() {
     { id: 'facilities', label: 'Facilities', icon: Wallet },
     { id: 'guarantors', label: 'Guarantors', icon: ShieldCheck },
     { id: 'collateral', label: 'Collateral & Property', icon: Building2 },
-    { id: 'checklist', label: 'Checklist', icon: ClipboardCheck },
+    { id: 'checklist', label: incompleteFacCount ? `Checklist (${incompleteFacCount}⚠)` : 'Checklist', icon: ClipboardCheck },
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
     { id: 'notes', label: 'Notes', icon: StickyNote },
     { id: 'attachments', label: 'Attachments', icon: Paperclip },
@@ -907,6 +917,26 @@ function CustomerDetailInner() {
 
       {tab === 'checklist' && (
         <Section title="Credit-File Checklist (9 steps)">
+          {facChecklistRows.length > 0 && (
+            <div className="mb-4 space-y-1.5" id="facility-checklists">
+              <p className="text-xs text-gray-500">Facility checklists — every facility needs all 9 steps ticked ({incompleteFacCount} incomplete)</p>
+              {facChecklistRows.map(({ f, fc, missing, settled }: any) => {
+                const ok = missing.length === 0
+                const sel = chkFacility === f.id
+                return (
+                  <button key={f.id} type="button" onClick={() => setChkFacility(f.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${sel ? 'ring-2 ring-blue-400 ' : ''}${ok ? 'bg-green-50 border-green-200' : settled ? 'bg-gray-50 border-gray-200' : 'bg-amber-50 border-amber-300'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{f.name || (f.facility_type || '').toUpperCase() || 'Facility'}</span>
+                      <span className="text-xs text-gray-500">Ref {f.id}</span>
+                      <span className="ml-auto text-xs font-semibold">{CHECKLIST_STEPS.length - missing.length}/{CHECKLIST_STEPS.length} {ok ? '✓' : settled ? '(settled)' : '⚠'}</span>
+                    </div>
+                    {!ok && <div className="text-xs text-amber-700 mt-0.5">Missing: {missing.join(', ')}</div>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <label className="text-xs text-gray-500">Checklist for:</label>
             <select value={chkFacility} onChange={(e) => setChkFacility(e.target.value)}

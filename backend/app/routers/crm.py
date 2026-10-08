@@ -17,7 +17,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -628,6 +628,12 @@ async def toggle_facility_checklist(
         date=date.today().isoformat(),
         user=getattr(user, "username", "") or "",
     ))
+    if all(_is_done(getattr(fc, f"item{i}", "")) for i in range(1, 10)):
+        # Fully ticked: retire this facility's open bell alert.
+        from app.models.notification import Notification
+        await db.execute(
+            update(Notification).where(Notification.category == f"checklist:{fid}").values(is_read=True)
+        )
     await db.commit()
     return _fc_dict(fc)
 
@@ -959,7 +965,10 @@ async def run_expiry_scan_endpoint(
     `expiry_warning_days` setting. Accepts GET so an admin can run it from the
     browser address bar too."""
     from app.services.expiry import run_expiry_scan
-    return await run_expiry_scan(db)
+    from app.services.checklist import scan_incomplete_checklists
+    result = await run_expiry_scan(db)
+    result["checklists"] = await scan_incomplete_checklists(db)
+    return result
 
 
 @router.get("/merge-status")
