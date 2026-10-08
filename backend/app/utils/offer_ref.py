@@ -15,7 +15,15 @@ import re
 from typing import Optional
 
 _DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
-_SEP = r"\s*[/\\\-.]\s*"
+# Invisible / look-alike characters that dirty pasted text carries: ZWNJ/ZWJ/LRM/RLM/BOM,
+# NBSP, and the dash / slash look-alikes (en/em dash, minus, fraction/division slash,
+# fullwidth slash, Arabic decimal/thousands separators).
+_NOISE = dict.fromkeys(map(ord, "\u200c\u200d\u200e\u200f\u202a\u202b\u202c\ufeff"), None)
+_NOISE.update({ord(c): "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2212"})
+_NOISE.update({ord(c): "/" for c in "\u2044\u2215\uff0f\u066b\u066c"})
+_NOISE[0xA0] = " "
+# Separator between the four parts of a 182-reference: / \\ - . or just whitespace.
+_SEP = r"(?:\s*[/\\\-.]\s*|\s+)"
 
 # 182/4/1045/2025 — tolerate spaces / dashes / backslash / dots between parts.
 _OD_RE = re.compile(rf"(?<![0-9A-Za-z])182{_SEP}(\d{{1,3}}){_SEP}(\d{{1,6}}){_SEP}(\d{{4}})(?!\d)")
@@ -26,7 +34,7 @@ _LOAN_RE = re.compile(r"(?<![0-9A-Za-z])([A-Za-z]{2,5})[\s\-_./]*(\d{11,16})(?!\
 def extract_offer_ref(text: Optional[str]) -> Optional[str]:
     if not text:
         return None
-    s = str(text).translate(_DIGIT_MAP)
+    s = str(text).translate(_DIGIT_MAP).translate(_NOISE)
     m = _OD_RE.search(s)
     if m:
         return "182/{}/{}/{}".format(*m.groups())

@@ -95,7 +95,7 @@ class FacilityResponse(BaseModel):
     def offer_ref(self) -> Optional[str]:
         """Canonical offer-letter number (182/... or PFX-<13 digits>) parsed from
         ``name``; None when the stored text is not a recognisable reference."""
-        return extract_offer_ref(self.name)
+        return extract_offer_ref(self.name) or extract_offer_ref(self.notes)
 
 
 class FacilityListResponse(BaseModel):

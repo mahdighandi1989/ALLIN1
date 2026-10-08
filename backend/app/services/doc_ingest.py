@@ -100,7 +100,7 @@ Return STRICT JSON ONLY (no markdown, no commentary), exactly this shape:
                      "nationality": "", "national_id": "", "passport_no": "", "passport_issue": "", "passport_expiry": "",
                      "emirates_id_no": "", "emirates_id_expiry": "", "share": "", "remarks": ""} ],
       "facilities": [ {"facility_type": "overdraft | loan | cheque_discounting | trust_receipt | lc_sight | lc_usance | lc | lg | log | other",
-                       "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "tenor_months": "", "notes": ""} ],
+                       "offer_ref": "", "amount": "", "currency": "AED", "interest_rate": "", "expiry_date": "", "tenor_months": "", "notes": ""} ],
       "properties": [ {"prop_type": "", "address": "", "city": "", "country": "", "postal_code": "",
                        "owner": "", "owner_national_id": "",
                        "land_area": "", "infra_area": "", "building_age": "", "zone": "",
@@ -134,6 +134,7 @@ Rules:
 - Partner/share percentages are real percentages between 0 and 100 and should sum to about 100. A value that cannot be a percentage (e.g. a capital amount such as 3,300,000) is an extraction error — omit it. Likewise sanity-check every number against its meaning (an interest rate is not thousands of percent).
 - "partners" = the company's shareholders/partners AND its managers/directors/authorized signatories — set "role" to what is printed (Partner, Manager, Director, Authorized Signatory, …). A person who is both partner and manager gets ONE entry with the fuller role. "guarantors" = people/companies guaranteeing the facility. They are DIFFERENT — never confuse them.
 - PERSON IDENTITY NUMBERS MATTER: for EVERY partner/manager/guarantor and for the property owner, capture the national ID (کد ملی — the 10-digit Iranian code — or the local equivalent) plus, for partners/managers, the passport number with its ISSUE and EXPIRY dates and the Emirates ID number with its expiry, whenever the document shows them. Copy ID numbers digit-for-digit; never guess or pad them.
+- "facilities".offer_ref = the facility's offer-letter reference number exactly as printed: 182/<n>/<seq>/<year> for non-loan facilities, or letters (STF/BLC/PIM/TPL…) + ~13 digits for loans; omit if not printed.
 - "facilities" = EVERY credit facility / limit (overdraft, loan, cheque discounting, trust receipt, LC sight/usance, LG, letter of guarantee, …) with its amount/limit, interest rate or margin, and expiry. Map each to the closest facility_type above; use "other" only if none fits. For interest_rate give the NUMBER only (8.5 for "8.5% p.a."; for a margin like "EIBOR + 3%" give 3). A facility rate is a small percentage (usually under ~25) — never hundreds or thousands; if you cannot find a real rate, leave it blank. "expiry_date" is a real calendar date — do NOT invent one from a tenor ("loan for 48 months" is a TENOR, not an expiry in 2048; leave expiry blank if no date is printed); when a tenor IS printed, put the number of months in "tenor_months" (48 for "48 months"). If a facility was renewed or CONVERTED from another type, report only its CURRENT state — do not list both the old and the new.
 - "properties" = ONLY real estate that is MORTGAGED / pledged as security to the bank. Do NOT list the company's own offices, branches, warehouses or business addresses unless they are explicitly mortgaged. If the SAME property is described in several places, output it ONCE with all its details merged into that single entry (not several rows with different type labels). Put the title-deed / property registration number in "mortgage_deed_no" (e.g. 638/140), the location text in "address", and a land-parcel/plate number in "plate_no" — never put the deed number in the address, and never swap deed and plate.
 - For each mortgaged property also hunt for: the OWNER/mortgagor's name and national ID (کد ملی مالک/راهن), the postal code, the land area and built-up area (متراژ زمین/زیربنا) with the building age and zone, the valuation with its DATE, and the INSURANCE POLICY: policy number ("insurance_no"), the insurer's computer/system code (کد رایانه — "insurance_computer_code"), the policy's issue and expiry dates, the POLICYHOLDER (بیمه‌گذار — "insurance_policyholder"), the insured subject (مورد بیمه — "insurance_subject"), the exact business-activity description as printed (شرح دقیق فعالیت شغلی — "insurance_activity"), the TOTAL sum insured / covered capital digit-for-digit (مجموع سرمایهٔ تحت پوشش — "insurance_coverage_total"), and the issuing business unit/branch (واحد کاری صدور — "insurance_issuing_unit"). ALSO capture, when printed: the central-insurance unique code (کد یکتای بیمه مرکزی — "insurance_unique_code"), the BENEFICIARY the policy is issued in favour of (ذینفع / بنفعِ … — "insurance_beneficiary", exact wording), the total payable premium digit-for-digit (جمع کل حق بیمهٔ قابل پرداخت — "insurance_premium_total"), the covered perils list as printed (خطرات تحت پوشش — "insurance_perils"), and the insurance type/kind line (نوع بیمه/نوع بیمه‌نامه، e.g. «آتش‌سوزی - مسکونی / قطعی» — "insurance_type"). These appear on the title deed, the mortgage deed, the valuation report and the insurance policy pages — read all of them. ATTRIBUTION on an insurance policy: the POLICYHOLDER (بیمه‌گذار) and the beneficiary are very often the BANK itself — the bank is NEVER the customer; the customer this property belongs to is the DEBTOR (مدیون/بدهکار) or the owner/mortgagor (مالک/راهن) named on the policy, so put THAT name in the customer's "name" and keep the bank only inside the insurance fields.
@@ -723,6 +724,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     f_added = f_updated = f_skipped_deposits = 0
     if customer is not None:
         from app.models.facility import Facility, FacilityType, FacilityStatus
+        from app.utils.offer_ref import extract_offer_ref, offer_ref_key
         valid_ft = {t.value for t in FacilityType}
         existing_facs = (await db.execute(select(Facility).where(
             Facility.customer_id == customer.id, Facility.is_deleted == False))).scalars().all()  # noqa: E712
@@ -749,8 +751,14 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             # document created another ACTIVE facility with the same amount
             # (dedupe skipped, row created) and exposure double-counted.
             match_ft = ft or "other"
+            ref_key = offer_ref_key(fc.get("offer_ref")) or offer_ref_key(fc.get("notes"))
+            # Same bank reference == same facility, whatever the spacing/dashes.
             frow = next((r for r in existing_facs
-                         if str(getattr(r.facility_type, "value", r.facility_type) or "") == match_ft), None)
+                         if ref_key and offer_ref_key(r.name) == ref_key), None) if ref_key else None
+            if frow is None:
+                frow = next((r for r in existing_facs
+                             if str(getattr(r.facility_type, "value", r.facility_type) or "") == match_ft
+                             and not (ref_key and offer_ref_key(r.name))), None)
             if frow is None:
                 if amt is None:
                     continue  # no amount → nothing to anchor a new facility on
@@ -765,6 +773,8 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
                 if not frow.amount and amt is not None:
                     frow.amount = amt
                 f_updated += 1
+            if ref_key and not (frow.name or "").strip():
+                frow.name = extract_offer_ref(fc.get("offer_ref")) or extract_offer_ref(fc.get("notes"))
             if rate is not None and not frow.interest_rate:
                 frow.interest_rate = rate
             if fc.get("notes") and not (frow.notes or ""):

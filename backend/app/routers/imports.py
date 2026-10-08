@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.offer_ref import offer_ref_key
 from app.database import get_db
 from app.models.customer import Customer, AccountType, CustomerStatus
 from app.models.facility import Facility, FacilityType, FacilityStatus
@@ -300,7 +301,9 @@ async def import_facilities(
             fac_cache[customer_id] = list((await db.execute(
                 select(Facility).where(Facility.customer_id == customer_id,
                                        Facility.is_deleted == False))).scalars().all())  # noqa: E712
-        if db_cleanup.find_duplicate(candidate, fac_cache[customer_id], model=Facility) is not None:
+        _rk = offer_ref_key(candidate.name)
+        if (_rk and any(offer_ref_key(x.name) == _rk for x in fac_cache[customer_id])) or \
+                db_cleanup.find_duplicate(candidate, fac_cache[customer_id], model=Facility) is not None:
             skipped.append({"row": idx, "account_no": account_no,
                             "error": "تسهیلاتِ تکراری (همان نوع و مبلغ) — نادیده گرفته شد"})
             continue
