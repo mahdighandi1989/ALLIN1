@@ -49,6 +49,7 @@ export interface Facility {
   customer_name: string | null
   facility_type: string
   name: string | null
+  offer_ref?: string | null
   status: string
   amount: number
   outstanding: number

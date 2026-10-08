@@ -928,7 +928,7 @@ function CustomerDetailInner() {
                     className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${sel ? 'ring-2 ring-blue-400 ' : ''}${ok ? 'bg-green-50 border-green-200' : settled ? 'bg-gray-50 border-gray-200' : 'bg-amber-50 border-amber-300'}`}>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{f.name || (f.facility_type || '').toUpperCase() || 'Facility'}</span>
-                      <span className="text-xs text-gray-500">Ref {f.id}</span>
+                      <span className="text-xs text-gray-500" dir="ltr">Ref {f.offer_ref || '—'}</span>
                       <span className="ml-auto text-xs font-semibold">{CHECKLIST_STEPS.length - missing.length}/{CHECKLIST_STEPS.length} {ok ? '✓' : settled ? '(settled)' : '⚠'}</span>
                     </div>
                     {!ok && <div className="text-xs text-amber-700 mt-0.5">Missing: {missing.join(', ')}</div>}
@@ -943,7 +943,7 @@ function CustomerDetailInner() {
               className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm">
               <option value="">Account-level</option>
               {facilities.map((f: any) => (
-                <option key={f.id} value={f.id}>{(f.name || (f.facility_type || '').toUpperCase() || 'Facility')} · {f.id}</option>
+                <option key={f.id} value={f.id}>{facOptionLabel(f)}</option>
               ))}
             </select>
             {chkFacility
@@ -1038,7 +1038,7 @@ function CustomerDetailInner() {
             <select value={upOpts.facility_id} onChange={(e) => setUpOpts((s: any) => ({ ...s, facility_id: e.target.value }))}
               className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm">
               <option value="">No facility</option>
-              {facilities.map((f: any) => <option key={f.id} value={f.id}>{(f.name || (f.facility_type || '').toUpperCase() || 'Facility')} · {f.id}</option>)}
+              {facilities.map((f: any) => <option key={f.id} value={f.id}>{facOptionLabel(f)}</option>)}
             </select>
             <input value={upOpts.row_index} onChange={(e) => setUpOpts((s: any) => ({ ...s, row_index: e.target.value }))}
               placeholder="Row (e.g. 11)" className="w-28 border border-gray-300 rounded-lg px-2.5 py-2 text-sm" />
@@ -1344,6 +1344,12 @@ function RelationshipsPanel({ relationships, onOpen }: { relationships: any; onO
 
 // Facilities list with clickable rows that open the facility's detail inline
 // (under the customer profile) instead of navigating to a separate island page.
+// Facility reference = the offer-letter number (182/… or PFX-<13 digits>), never the internal row id.
+function facOptionLabel(f: any): string {
+  const kind = (f.facility_type || '').toUpperCase() || 'Facility'
+  return f.offer_ref ? `${kind} · ${f.offer_ref}` : (f.name && f.name !== f.offer_ref ? `${kind} · ${f.name}` : kind)
+}
+
 function ClickableFacilities({ facilities, onOpen }: { facilities: any[]; onOpen: (id: string) => void }) {
   if (!facilities.length) return <Empty>No facilities</Empty>
   return (

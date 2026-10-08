@@ -1,8 +1,9 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 from datetime import datetime, date
 from typing import Optional
 from decimal import Decimal
 from app.models.facility import FacilityType, FacilityStatus
+from app.utils.offer_ref import extract_offer_ref
 from app.schemas.validators import (
     SafeText,
     OptionalSafeText,
@@ -88,6 +89,13 @@ class FacilityResponse(BaseModel):
     is_deleted: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    @computed_field
+    @property
+    def offer_ref(self) -> Optional[str]:
+        """Canonical offer-letter number (182/... or PFX-<13 digits>) parsed from
+        ``name``; None when the stored text is not a recognisable reference."""
+        return extract_offer_ref(self.name)
 
 
 class FacilityListResponse(BaseModel):
