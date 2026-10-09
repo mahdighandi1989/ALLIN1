@@ -73,6 +73,19 @@ async def seconds_until_due(db, interval_s: int) -> float:
     return max(0.0, interval_s - (datetime.now(timezone.utc) - last).total_seconds())
 
 
+async def keyed_provider_lacks_discovered(db) -> bool:
+    """True when a provider with a key has no live-discovered model in the DB —
+    i.e. the list is showing only the static catalog and a sync is overdue
+    regardless of the marker."""
+    from app.ai import ai_manager
+    from app.models.ai_config import AIModel, AIProvider
+
+    providers = (await db.execute(select(AIProvider))).scalars().all()
+    models = (await db.execute(select(AIModel))).scalars().all()
+    have = {m.provider_key for m in models if (m.source or "catalog") == "discovered"}
+    return any(ai_manager.effective_api_key(p) and p.key not in have for p in providers)
+
+
 async def sync_all_providers(db) -> Dict[str, Any]:
     """Sync every provider that has a usable key. Never raises."""
     from app.ai import ai_manager
@@ -113,6 +126,8 @@ async def run_periodic_model_sync() -> None:
             try:
                 async with AsyncSessionLocal() as session:
                     due_in = await seconds_until_due(session, interval)
+                    if due_in > 0 and await keyed_provider_lacks_discovered(session):
+                        due_in = 0  # list was reset (restart/deploy) — don't wait out the interval
                 if due_in > 0:
                     await asyncio.sleep(min(due_in, interval))
                     continue

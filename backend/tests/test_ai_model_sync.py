@@ -112,3 +112,32 @@ def test_drop_superseded_keeps_newest_per_tier_and_dedupes():
     ]
     names = [i["display_name"] for i in drop_superseded(items)]
     assert names == ["Opus 5.5", "Haiku 4.5", "Gemini 2.5 Flash", "G3 preview"]
+
+
+async def test_restart_seed_keeps_discovered_models(db_session):
+    """A restart re-runs the catalog seed; it must not wipe models the live sync found."""
+    from app.ai.manager import seed_ai_catalog
+
+    await seed_ai_catalog(db_session)
+    db_session.add(AIModel(model_key="anthropic:claude-opus-5-5", api_model_id="claude-opus-5-5",
+                           provider_key="anthropic", display_name="Claude Opus 5.5", enabled=True,
+                           capabilities=["text"], priority=0, source="discovered", is_custom=False))
+    await db_session.commit()
+    await seed_ai_catalog(db_session)
+    from sqlalchemy import select
+    keys = {m.model_key for m in (await db_session.execute(select(AIModel))).scalars()}
+    assert "anthropic:claude-opus-5-5" in keys
+
+
+async def test_sync_is_due_when_a_keyed_provider_has_no_discovered_models(db_session, monkeypatch):
+    from app.ai import ai_manager
+
+    db_session.add(AIProvider(key="p-keyed", display_name="Keyed", enabled=True))
+    await db_session.commit()
+    monkeypatch.setattr(ai_manager, "effective_api_key", lambda p: "k")
+    assert await model_sync.keyed_provider_lacks_discovered(db_session) is True
+    db_session.add(AIModel(model_key="p-keyed:x", api_model_id="x", provider_key="p-keyed",
+                           display_name="x", enabled=True, capabilities=[], priority=5,
+                           source="discovered", is_custom=False))
+    await db_session.commit()
+    assert await model_sync.keyed_provider_lacks_discovered(db_session) is False

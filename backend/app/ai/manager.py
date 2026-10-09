@@ -317,7 +317,11 @@ async def seed_ai_catalog(db: AsyncSession) -> Dict[str, int]:
     # and detaches any task route first so nothing dangles.
     catalog_keys = {mdef["model_key"] for _, mdef in catalog.iter_catalog_models()}
     for mk, m in existing_models.items():
-        if (getattr(m, "source", "catalog") or "catalog") != "custom" and not getattr(m, "is_custom", False) and mk not in catalog_keys:
+        # Only rows the catalog itself created. «discovered» rows come from the
+        # live sync (e.g. claude-opus-5-5) and are not in the static catalog by
+        # definition — pruning them here wiped every newer model on each restart
+        # and left the hard-coded older ones until the next 24h sync.
+        if (getattr(m, "source", "catalog") or "catalog") == "catalog" and not getattr(m, "is_custom", False) and mk not in catalog_keys:
             for r in (await db.execute(select(AITaskRoute).where(AITaskRoute.model_id == m.id))).scalars():
                 r.model_id = None
             await db.delete(m)
