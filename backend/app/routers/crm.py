@@ -635,6 +635,13 @@ async def toggle_facility_checklist(
             update(Notification).where(Notification.category == f"checklist:{fid}").values(is_read=True)
         )
     await db.commit()
+    if fc.account_no:
+        await _audit(
+            db, user, action="update", entity_type="checklist", account_no=fc.account_no,
+            entity_id=fid,
+            detail=f"چک‌لیستِ تسهیلات {fid} — «{CHECKLIST_STEPS[payload.step - 1]}» "
+                   f"{'تیک خورد' if payload.done else 'برگشت به انتظار'}",
+        )
     return _fc_dict(fc)
 
 
@@ -1933,12 +1940,16 @@ async def _add_child(db, model, prefix, account_no, data, allowed, user):
     return result
 
 
-async def _update_child(db, model, item_id, data, allowed):
+async def _update_child(db, model, item_id, data, allowed, user=None, entity_type=None, label=None):
     obj = (await db.execute(select(model).where(model.id == item_id))).scalar_one_or_none()
     if obj is None:
         raise HTTPException(status_code=404, detail="Record not found")
     _apply_child_fields(obj, data, allowed)
     await db.commit()
+    if entity_type and getattr(obj, "account_no", None):
+        await _audit(db, user, action="update", entity_type=entity_type, account_no=obj.account_no,
+                     entity_id=item_id,
+                     detail=f"ویرایشِ {label or entity_type} (فیلدها: {'، '.join(sorted(data))})")
     return _child_dict(obj)
 
 
@@ -2074,6 +2085,7 @@ async def update_property(
     """Edit a mortgaged property."""
     return await _update_child(
         db, MortgagedProperty, item_id, payload.model_dump(exclude_unset=True), _PROPERTY_FIELDS,
+        user, "property", "ملکِ مرهونه",
     )
 
 
@@ -2192,6 +2204,7 @@ async def update_fixed_deposit(
     """Edit a fixed deposit."""
     return await _update_child(
         db, FixedDeposit, item_id, payload.model_dump(exclude_unset=True), _FD_FIELDS,
+        user, "fixed_deposit", "سپردهٔ ثابت",
     )
 
 
@@ -2259,6 +2272,7 @@ async def update_partner(
     """Edit a partner / shareholder."""
     return await _update_child(
         db, Partner, item_id, payload.model_dump(exclude_unset=True), _PARTNER_FIELDS,
+        user, "partner", "شریک",
     )
 
 

@@ -923,7 +923,10 @@ async def _process_document(db: AsyncSession, data: bytes, fname: str, mime: str
             action="import", entity_type="document", entity_id=r.get("customer_id"),
             account_no=r.get("account_no"),
             detail=f"استخراج از فایل «{fname}»" + (f" — {nfields} فیلد" if nfields else "")
-                   + (f" — تطبیق: {r['match_basis']}" if r.get("match_basis") else ""),
+                   + (f" — تطبیق: {r['match_basis']}" if r.get("match_basis") else "")
+                   + (f" — تسهیلات: {r.get('facilities_added', 0)} جدید، {r.get('facilities_updated', 0)} به‌روز"
+                      if (r.get("facilities_added") or r.get("facilities_updated")) else "")
+                   + (f" — مرجع آفرلتر: {'، '.join(r['facility_refs'])}" if r.get("facility_refs") else ""),
             user=actor, request=None, db=db,
         )
     if kb_summary["added"]:

@@ -722,6 +722,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
     # amounts/rate/expiry are fill-empty (a curated amount is never clobbered) and
     # a NEW record is only created when an amount is present (no phantom limits).
     f_added = f_updated = f_skipped_deposits = 0
+    f_refs: list = []   # offer-letter refs touched (for the customer's Logs tab)
     if customer is not None:
         from app.models.facility import Facility, FacilityType, FacilityStatus
         from app.utils.offer_ref import extract_offer_ref, offer_ref_key
@@ -775,6 +776,8 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
                 f_updated += 1
             if ref_key and not (frow.name or "").strip():
                 frow.name = extract_offer_ref(fc.get("offer_ref")) or extract_offer_ref(fc.get("notes"))
+            if (frow.name or "").strip() and frow.name.strip() not in f_refs:
+                f_refs.append(frow.name.strip())
             if rate is not None and not frow.interest_rate:
                 frow.interest_rate = rate
             if fc.get("notes") and not (frow.notes or ""):
@@ -815,6 +818,7 @@ async def persist_customer(db: AsyncSession, cust: dict, username: str, source: 
             "guarantors_added": g_added, "guarantors_updated": g_updated,
             "partners_added": pt_added, "partners_updated": pt_updated,
             "facilities_added": f_added, "facilities_updated": f_updated,
+            "facility_refs": f_refs,
             "facilities_skipped_deposits": f_skipped_deposits,
             "properties_added": p_added, "properties_updated": p_updated,
             "property_events_added": p_events,

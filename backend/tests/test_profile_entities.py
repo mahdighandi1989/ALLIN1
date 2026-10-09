@@ -138,6 +138,16 @@ class TestFacilityChecklist:
         assert t2.json()["item1"] == "⌛"
         assert t2.json()["total"] == "0"
 
+    async def test_toggle_lands_in_customer_logs_tab(self, client: AsyncClient, admin_headers: dict, test_customer: Customer):
+        acc = test_customer.account_no
+        r = await client.post(f"/api/crm/facilities/{acc}", headers=admin_headers,
+                              json={"facility_type": "loan", "amount": 1000})
+        fid = r.json()["id"]
+        t = await client.patch(f"/api/crm/facility-checklist/{fid}", headers=admin_headers, json={"step": 2, "done": True})
+        assert t.status_code == 200, t.text
+        logs = await client.get(f"/api/audit/?account_no={acc}", headers=admin_headers)
+        assert any(e["entity_type"] == "checklist" and e["entity_id"] == fid for e in logs.json()["items"])
+
     async def test_main_facility_create_seeds_checklist(self, client: AsyncClient, auth_headers: dict, test_customer: Customer):
         r = await client.post("/api/facilities/", headers=auth_headers,
                               json={"customer_id": test_customer.id, "facility_type": "lc", "amount": 2000, "currency": "AED"})
