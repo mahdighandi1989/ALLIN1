@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:39805",
+ "base": "http://127.0.0.1:36885",
  "server_started": true,
  "endpoints": [
   {
@@ -383,7 +383,7 @@
    "console_error_count": 0,
    "bad_responses": [],
    "request_failures": [
-    "GET http://127.0.0.1:39805/api/auth/me"
+    "GET http://127.0.0.1:36885/api/auth/me"
    ],
    "server_alive_after": true
   },
@@ -573,8 +573,8 @@
    "text_len": 517,
    "buttons": 4,
    "inputs": 0,
-   "clicked": 3,
-   "skipped_destructive": 1,
+   "clicked": 4,
+   "skipped_destructive": 0,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -591,9 +591,9 @@
    "text_len": 1591,
    "buttons": 69,
    "inputs": 28,
-   "clicked": 16,
-   "skipped_destructive": 2,
-   "buttons_unreachable": 0,
+   "clicked": 5,
+   "skipped_destructive": 1,
+   "buttons_unreachable": 12,
    "buttons_examined": 18,
    "buttons_not_examined": 51,
    "button_coverage_percent": 26,
@@ -627,8 +627,8 @@
    "text_len": 2481,
    "buttons": 4,
    "inputs": 0,
-   "clicked": 3,
-   "skipped_destructive": 1,
+   "clicked": 4,
+   "skipped_destructive": 0,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -645,8 +645,8 @@
    "text_len": 473,
    "buttons": 4,
    "inputs": 1,
-   "clicked": 3,
-   "skipped_destructive": 1,
+   "clicked": 4,
+   "skipped_destructive": 0,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -956,12 +956,12 @@
   "pages_with_console_errors": 0,
   "pages_that_killed_the_server": 0,
   "pages_after_which_server_was_slow": 0,
-  "buttons_clicked": 182,
-  "buttons_skipped_destructive": 5,
+  "buttons_clicked": 174,
+  "buttons_skipped_destructive": 1,
   "buttons_visible_total": 1668,
   "buttons_examined": 316,
   "buttons_not_examined": 1352,
-  "buttons_unreachable": 129,
+  "buttons_unreachable": 141,
   "button_coverage_percent": 19,
   "pages_with_partial_button_coverage": 6,
   "max_clicks_per_page": 18
