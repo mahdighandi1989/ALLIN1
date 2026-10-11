@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:46403",
+ "base": "http://127.0.0.1:39805",
  "server_started": true,
  "endpoints": [
   {
@@ -50,7 +50,7 @@
   {
    "path": "/api/crm/run-expiry-scan",
    "status": 200,
-   "bytes": 116
+   "bytes": 223
   },
   {
    "path": "/api/crm/merge-status",
@@ -235,12 +235,12 @@
   {
    "path": "/api/notifications/",
    "status": 200,
-   "bytes": 619
+   "bytes": 2000
   },
   {
    "path": "/api/notifications/unread-count",
    "status": 200,
-   "bytes": 12
+   "bytes": 13
   },
   {
    "path": "/api/imports/customers/template",
@@ -303,6 +303,16 @@
    "bytes": 39
   },
   {
+   "path": "/api/knowledge/chat/models",
+   "status": 200,
+   "bytes": 167
+  },
+  {
+   "path": "/api/knowledge/chat/sessions",
+   "status": 200,
+   "bytes": 15
+  },
+  {
    "path": "/api/cleanup/history",
    "status": 200,
    "bytes": 11
@@ -330,7 +340,7 @@
   {
    "path": "/api/inspection/urgent",
    "status": 200,
-   "bytes": 170
+   "bytes": 172
   },
   {
    "path": "/health",
@@ -342,7 +352,7 @@
   {
    "route": "/audit",
    "rendered": true,
-   "text_len": 598,
+   "text_len": 617,
    "buttons": 4,
    "inputs": 5,
    "clicked": 4,
@@ -360,7 +370,7 @@
   {
    "route": "/auth/callback",
    "rendered": true,
-   "text_len": 3342,
+   "text_len": 3346,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -373,7 +383,7 @@
    "console_error_count": 0,
    "bad_responses": [],
    "request_failures": [
-    "GET http://127.0.0.1:46403/api/auth/me"
+    "GET http://127.0.0.1:39805/api/auth/me"
    ],
    "server_alive_after": true
   },
@@ -542,7 +552,7 @@
   {
    "route": "/dashboard",
    "rendered": true,
-   "text_len": 3342,
+   "text_len": 3346,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -563,8 +573,8 @@
    "text_len": 517,
    "buttons": 4,
    "inputs": 0,
-   "clicked": 4,
-   "skipped_destructive": 0,
+   "clicked": 3,
+   "skipped_destructive": 1,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -581,9 +591,9 @@
    "text_len": 1591,
    "buttons": 69,
    "inputs": 28,
-   "clicked": 6,
-   "skipped_destructive": 0,
-   "buttons_unreachable": 12,
+   "clicked": 16,
+   "skipped_destructive": 2,
+   "buttons_unreachable": 0,
    "buttons_examined": 18,
    "buttons_not_examined": 51,
    "button_coverage_percent": 26,
@@ -617,8 +627,8 @@
    "text_len": 2481,
    "buttons": 4,
    "inputs": 0,
-   "clicked": 4,
-   "skipped_destructive": 0,
+   "clicked": 3,
+   "skipped_destructive": 1,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -635,8 +645,8 @@
    "text_len": 473,
    "buttons": 4,
    "inputs": 1,
-   "clicked": 4,
-   "skipped_destructive": 0,
+   "clicked": 3,
+   "skipped_destructive": 1,
    "buttons_unreachable": 0,
    "buttons_examined": 4,
    "buttons_not_examined": 0,
@@ -668,7 +678,7 @@
   {
    "route": "/inspection",
    "rendered": true,
-   "text_len": 798,
+   "text_len": 799,
    "buttons": 10,
    "inputs": 0,
    "clicked": 6,
@@ -686,13 +696,13 @@
   {
    "route": "/knowledge",
    "rendered": true,
-   "text_len": 30389,
-   "buttons": 9,
+   "text_len": 30401,
+   "buttons": 10,
    "inputs": 1,
    "clicked": 6,
    "skipped_destructive": 0,
-   "buttons_unreachable": 3,
-   "buttons_examined": 9,
+   "buttons_unreachable": 4,
+   "buttons_examined": 10,
    "buttons_not_examined": 0,
    "button_coverage_percent": 100,
    "console_errors": [],
@@ -722,7 +732,7 @@
   {
    "route": "/login",
    "rendered": true,
-   "text_len": 3342,
+   "text_len": 3346,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -937,7 +947,7 @@
   }
  ],
  "summary": {
-  "endpoints_checked": 67,
+  "endpoints_checked": 69,
   "endpoints_5xx": 0,
   "endpoints_5xx_expected": 1,
   "endpoints_dead": 0,
@@ -946,12 +956,12 @@
   "pages_with_console_errors": 0,
   "pages_that_killed_the_server": 0,
   "pages_after_which_server_was_slow": 0,
-  "buttons_clicked": 175,
-  "buttons_skipped_destructive": 0,
-  "buttons_visible_total": 1667,
-  "buttons_examined": 315,
+  "buttons_clicked": 182,
+  "buttons_skipped_destructive": 5,
+  "buttons_visible_total": 1668,
+  "buttons_examined": 316,
   "buttons_not_examined": 1352,
-  "buttons_unreachable": 140,
+  "buttons_unreachable": 129,
   "button_coverage_percent": 19,
   "pages_with_partial_button_coverage": 6,
   "max_clicks_per_page": 18

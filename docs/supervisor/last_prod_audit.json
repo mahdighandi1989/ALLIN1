@@ -1,5 +1,5 @@
 {
- "base": "(تنظیم نشده)",
+ "base": "https://banking-ops-api.onrender.com",
  "connected": false,
- "error": "SUPERVISOR_API_BASE تنظیم نشده — بدونِ آن نمی‌دانم به کجا وصل شوم"
+ "error": "«/api/crm/data-quality?limit=5000&offset=5000» پاسخِ HTTP 500 داد"
 }

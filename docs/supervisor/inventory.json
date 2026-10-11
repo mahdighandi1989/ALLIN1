@@ -91,9 +91,9 @@
   {
    "route": "/customer-detail",
    "file": "frontend/src/app/customer-detail/page.tsx",
-   "lines": 1450,
-   "buttons": 43,
-   "onclick": 46,
+   "lines": 1486,
+   "buttons": 44,
+   "onclick": 47,
    "inputs": 32,
    "forms": 1,
    "links": 0,
@@ -201,7 +201,7 @@
   {
    "route": "/inspection",
    "file": "frontend/src/app/inspection/page.tsx",
-   "lines": 811,
+   "lines": 821,
    "buttons": 19,
    "onclick": 20,
    "inputs": 6,
@@ -212,9 +212,9 @@
   {
    "route": "/knowledge",
    "file": "frontend/src/app/knowledge/page.tsx",
-   "lines": 347,
-   "buttons": 2,
-   "onclick": 2,
+   "lines": 355,
+   "buttons": 3,
+   "onclick": 3,
    "inputs": 1,
    "forms": 0,
    "links": 0,
@@ -941,6 +941,26 @@
   {
    "group": "knowledgeApi",
    "method": "deleteEntry"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "chatModels"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "chatSessions"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "chatSession"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "chatAsk"
+  },
+  {
+   "group": "knowledgeApi",
+   "method": "chatApprove"
   },
   {
    "group": "letterAiApi",
@@ -2738,6 +2758,48 @@
    "name": "delete_topic"
   },
   {
+   "path": "/api/knowledge/chat/models",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_models"
+  },
+  {
+   "path": "/api/knowledge/chat/sessions",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_sessions"
+  },
+  {
+   "path": "/api/knowledge/chat/sessions/{session_id}",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_session"
+  },
+  {
+   "path": "/api/knowledge/chat/ask",
+   "methods": [
+    "POST"
+   ],
+   "name": "chat_ask"
+  },
+  {
+   "path": "/api/knowledge/chat/messages/{message_id}/approve",
+   "methods": [
+    "POST"
+   ],
+   "name": "chat_approve"
+  },
+  {
+   "path": "/api/knowledge/chat/files/{file_id}/raw",
+   "methods": [
+    "GET"
+   ],
+   "name": "chat_file_raw"
+  },
+  {
    "path": "/api/cleanup/scan",
    "methods": [
     "POST"
@@ -2841,6 +2903,13 @@
     "GET"
    ],
    "name": "file_raw"
+  },
+  {
+   "path": "/api/inspection/files/{file_id}/extract",
+   "methods": [
+    "POST"
+   ],
+   "name": "extract_file"
   },
   {
    "path": "/api/inspection/files/{file_id}",
@@ -2981,6 +3050,9 @@
   "google_drive",
   "google_oauth",
   "inspection_files",
+  "inspection_formats",
+  "inspection_media",
+  "kb_chat",
   "kb_store",
   "letter_assistant",
   "letter_attachment_extract",
@@ -3017,6 +3089,7 @@
   "import_job",
   "inspection",
   "kb",
+  "kb_chat",
   "letter",
   "notification",
   "offer_letter",
@@ -3030,11 +3103,11 @@
  "totals": {
   "pages": 34,
   "menu_items": 20,
-  "buttons": 371,
+  "buttons": 373,
   "inputs": 358,
-  "routes": 245,
-  "api_methods": 193,
-  "services": 42,
-  "models": 28
+  "routes": 252,
+  "api_methods": 198,
+  "services": 45,
+  "models": 29
  }
 }

@@ -7,12 +7,12 @@
 |---|---|
 | صفحه‌ها | 34 |
 | آیتم‌های منو | 20 |
-| دکمه‌ها | 371 |
+| دکمه‌ها | 373 |
 | ورودی‌ها (input/select/textarea) | 358 |
-| مسیرهای API | 245 |
-| متدهای کلاینتِ API | 193 |
-| سرویس‌ها | 42 |
-| مدل‌ها | 28 |
+| مسیرهای API | 252 |
+| متدهای کلاینتِ API | 198 |
+| سرویس‌ها | 45 |
+| مدل‌ها | 29 |
 
 ## منوی کناری
 
@@ -51,7 +51,7 @@
 | `/credit-file` | 172 | 3 | 1 | 0 | 3 |
 | `/credit-file-corporate` | 673 | 15 | 41 | 0 | 7 |
 | `/credit-file-retail` | 620 | 13 | 40 | 0 | 4 |
-| `/customer-detail` | 1450 | 43 | 32 | 0 | 28 |
+| `/customer-detail` | 1486 | 44 | 32 | 0 | 28 |
 | `/customers` | 564 | 12 | 12 | 0 | 5 |
 | `/daily-log` | 71 | 1 | 2 | 0 | 1 |
 | `/dashboard` | 427 | 0 | 0 | 0 | 2 |
@@ -61,8 +61,8 @@
 | `/forms` | 176 | 1 | 0 | 2 | 0 |
 | `/general` | 168 | 6 | 4 | 0 | 9 |
 | `/import` | 303 | 3 | 3 | 0 | 2 |
-| `/inspection` | 811 | 19 | 6 | 0 | 16 |
-| `/knowledge` | 347 | 2 | 1 | 0 | 2 |
+| `/inspection` | 821 | 19 | 6 | 0 | 16 |
+| `/knowledge` | 355 | 3 | 1 | 0 | 2 |
 | `/letter` | 3976 | 103 | 37 | 0 | 29 |
 | `/login` | 219 | 2 | 2 | 1 | 0 |
 | `/offer-letter` | 1890 | 38 | 35 | 0 | 8 |
@@ -227,6 +227,7 @@
 | POST | `/api/inspection/file` |
 | GET | `/api/inspection/files/{file_id}` |
 | DELETE | `/api/inspection/files/{file_id}` |
+| POST | `/api/inspection/files/{file_id}/extract` |
 | GET | `/api/inspection/files/{file_id}/raw` |
 | GET | `/api/inspection/files/{file_id}/text` |
 | GET | `/api/inspection/queue` |
@@ -242,6 +243,12 @@
 | POST | `/api/inspection/{report_id}/urgent` |
 | DELETE | `/api/inspection/{report_id}/urgent` |
 | GET | `/api/knowledge/` |
+| POST | `/api/knowledge/chat/ask` |
+| GET | `/api/knowledge/chat/files/{file_id}/raw` |
+| POST | `/api/knowledge/chat/messages/{message_id}/approve` |
+| GET | `/api/knowledge/chat/models` |
+| GET | `/api/knowledge/chat/sessions` |
+| GET | `/api/knowledge/chat/sessions/{session_id}` |
 | POST | `/api/knowledge/entries` |
 | DELETE | `/api/knowledge/entries/{entry_id}` |
 | DELETE | `/api/knowledge/topics/{topic_id}` |
