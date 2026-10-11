@@ -9,6 +9,7 @@
  * matching has to survive that, and it must never guess: a legal report on the
  * wrong branch's paper carries the wrong telephone and fax to a court.
  */
+import { createHash } from 'crypto'
 import {
   BRANCH_SENDERS, CASE_BRANCHES, HOUSE_SENDERS, branchBySender, branchFor, paperOf,
 } from './caseLetterhead'
@@ -177,5 +178,23 @@ describe('every branch entry is usable', () => {
     // system can import but the letter cannot name is a gap the owner finds.
     for (const code of ['2533', '2690', '2776', '2900', '4350', '2624', '2898', '1741', '3535'])
       expect(CASE_BRANCHES.some((b) => b.code === code)).toBe(true)
+  })
+})
+
+// Owner-confirmed 2026-10-11: each branch prints its OWN telephone/fax footer.
+// Murshid Bazar ↔ 2264805/2265723 · Al Maktoum ↔ 6035555/6035254. Pinned by the
+// image's hash so a swapped or replaced footer fails here, not on a court letter.
+describe('footer pairing — confirmed by the owner', () => {
+  const h = (s?: string) => createHash('sha256').update(s || '').digest('hex').slice(0, 16)
+  it.each([
+    ['2898', 'cb694c47c15a0132'],   // MURSHID BAZAR — TEL 2264805/2265723
+    ['2624', '7cdc95b936c6dc80'],   // AL MAKTOUM — TEL 6035555, DIRECT 6035254
+  ])('branch %s keeps its own footer', (code, hash) => {
+    const b = CASE_BRANCHES.find((x) => x.code === code)
+    expect(h(b?.footer)).toBe(hash)
+  })
+  it('no two branches share a footer', () => {
+    const f = CASE_BRANCHES.map((b) => b.footer).filter(Boolean)
+    expect(new Set(f).size).toBe(f.length)
   })
 })

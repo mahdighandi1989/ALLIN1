@@ -112,6 +112,12 @@ const MAKTOUM_FOOTER = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAz4AAABgCA
  *
  * The footers are NOT interchangeable: each carries its own branch's telephone,
  * direct line and fax. They are paired with the header the owner sent them with.
+ *
+ * CONFIRMED by the owner 2026-10-11 («به نظرم فوتر ها درسته همینه که گفتی»):
+ *   مرشد بازار 2898 ↔ TEL +9714-2264805/2265723, FAX 2266543
+ *   المکتوم   2624 ↔ TEL +9714-6035555, DIRECT 6035254, FAX 2234460/2226643
+ * `caseBranch.test.ts` pins each footer image to its branch by hash, so they
+ * cannot be swapped silently.
  */
 export const CASE_BRANCHES: CaseBranch[] = [
   {
