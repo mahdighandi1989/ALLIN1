@@ -51,6 +51,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
   // to the server's ceiling. They are uploaded AFTER the sheet exists, because a
   // 100MB body cannot ride along inside the JSON that creates it.
   const [picked, setPicked] = useState<File[]>([])
+  const [rushNow, setRushNow] = useState(false)   // v178 — file it already marked ⚡ فوری
   const [target, setTarget] = useState('')   // '' = a new sheet; otherwise the sheet this goes under
   const [upPct, setUpPct] = useState<{ name: string; pct: number } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -346,6 +347,13 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
         } catch (e) { failed.push(`${f.name} (${parseApiError(e)})`) }
       }
       setUpPct(null)
+      // v178 — «تیک باشه که پیش از ثبت حالت فوری رو روشن کنم». The sheet exists
+      // now, so the same call the ⚡ button on the inspection page makes is used —
+      // one path, one queue. A failure here must not lose the report.
+      let rushFailed = false
+      if (rushNow) {
+        try { await inspectionApi.rush(rep.id) } catch { rushFailed = true }
+      }
       if (under) {
         // The follow-up carries its OWN box and screenshot, and claims only the
         // files uploaded with it — the parent sheet's samples stay the parent's.
@@ -362,7 +370,9 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
           ? `گزارش با ${picked.length} فایلِ نمونه ثبت شد — ناظر باید کاملشان را بخواند`
           : 'گزارش ثبت شد — ناظر در دورِ بعد جواب می‌دهد')
       }
-      setSpot(null); setText(''); setShot(null); setPicked([]); setTarget('')
+      if (rushFailed) toast.error('ثبت شد ولی فوری‌کردنش نشد — از صفحهٔ نظارت و سرکشی با ⚡ بزن')
+      else if (rushNow) toast.success('⚡ در صفِ فوری هم قرار گرفت')
+      setSpot(null); setText(''); setShot(null); setPicked([]); setTarget(''); setRushNow(false)
       await refresh()
     } catch (e) { toast.error(parseApiError(e)) } finally { setBusy(false); setUpPct(null) }
   }
@@ -399,7 +409,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
       {spot && (
         <div dir="rtl" data-inspection-layer="1"
           className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) { setSpot(null); setPicked([]) } }}>
+          onClick={(e) => { if (e.target === e.currentTarget) { setSpot(null); setPicked([]); setRushNow(false) } }}>
           <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-2xl">
             <div className="mb-2 text-sm font-bold text-gray-900">گزارشِ نظارت و سرکشی</div>
             <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900">
@@ -485,6 +495,11 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
                 </div>
               </div>
             )}
+            <label dir="rtl" className="mt-2 flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-800">
+              <input type="checkbox" checked={rushNow} onChange={(e) => setRushNow(e.target.checked)}
+                className="h-4 w-4 accent-amber-600" />
+              <span>⚡ فوری — همین حالا بدونِ انتظارِ دورِ بعد رسیدگی شود</span>
+            </label>
             {upPct && (
               <div dir="rtl" className="mt-1.5 text-[11px] text-amber-800">
                 در حالِ بالا رفتن: {upPct.name} — {upPct.pct}٪
@@ -513,7 +528,7 @@ export function InspectionProvider({ children }: { children: React.ReactNode }) 
                 </span>
               )}
               <span className="flex-1" />
-              <button onClick={() => { setSpot(null); setPicked([]) }} type="button"
+              <button onClick={() => { setSpot(null); setPicked([]); setRushNow(false) }} type="button"
                 className="rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100">انصراف</button>
               {/* v154 — filing while the capture is still running is how the
                   owner's report ended up with no picture. Wait for it: the sheet

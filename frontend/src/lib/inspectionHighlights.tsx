@@ -139,9 +139,14 @@ type Placed = {
   place: Placement
 }
 
-export function InspectionHighlights({ pathname }: { pathname: string }) {
+export function InspectionHighlights({ pathname, active = true }: { pathname: string; active?: boolean }) {
   const [reports, setReports] = useState<InspectionReport[]>([])
-  const [enabled, setEnabled] = useState(true)
+  // v178 — «در حالتی که دکمه نظارت روشن هست فقط کادرها رو نشون بده و خاموشه نشون نده».
+  // Hiding is ONLY about drawing: the supervisor reads the sheets either way, and
+  // the stored preference below is untouched, so switching نظارت back on restores
+  // exactly what the owner had chosen.
+  const [prefEnabled, setEnabled] = useState(true)
+  const enabled = prefEnabled && active
   const [opacity, setOpacity] = useState(HL_DEFAULT_OPACITY)
   const [placed, setPlaced] = useState<Placed[]>([])
   const [hover, setHover] = useState<{ p: Placed; x: number; y: number } | null>(null)

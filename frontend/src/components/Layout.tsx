@@ -133,6 +133,7 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
   const { user, logout, authDisabled, loading } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
+  const inspectionOn = !!useInspection()?.active
 
   // Central auth gate (mirrors the language project's access gate). When login
   // is enforced, send anonymous visitors to /login.
@@ -243,7 +244,7 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
         {/* v150 — the filed reports, drawn back onto the very spot they were
             drawn on. The layer never takes a pointer event (see the module), so
             everything above stays fully clickable. */}
-        <InspectionHighlights pathname={pathname || '/'} />
+        <InspectionHighlights pathname={pathname || '/'} active={inspectionOn} />
       </div>
     </div>
   )
