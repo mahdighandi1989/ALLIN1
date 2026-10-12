@@ -41,7 +41,12 @@ v8: شاخه‌های `supervisor-pending/*` را **GitHub خودش** روی `ma
 git fetch origin --prune && git ls-remote --heads origin 'supervisor-pending/*'
 ```
 
-شاخه‌ای که هنوز هست و آخرین کامیتش بیش از ~۴۰ دقیقه پیش است، یعنی آن workflow
+**اول:** شاخه‌ای که کاملاً داخلِ `main` است
+(`git merge-base --is-ancestor origin/<شاخه> origin/main` موفق) **تمام‌شده** است —
+فقط یک بار `git push origin --delete <شاخه>` را امتحان کن و اگر رد شد، **رهایش کن**؛ دوباره
+نفرستش (حلقه می‌سازد). فقط اگر برگه‌اش هنوز جواب ندارد، جوابش را بنویس.
+
+شاخه‌ای که هنوز هست، **جلوتر از `main`** است و آخرین کامیتش بیش از ~۴۰ دقیقه پیش است، یعنی آن workflow
 روی آن **شکست** خورده (CI قرمز، یا `main` در این فاصله جلو رفته و fast-forward
 نشد). **فقط همین پیشوند** — به هیچ شاخهٔ دیگری (`claude/...` و بقیه) دست نزن. برای هر کدام:
 1. `git fetch origin <شاخه>` و `git checkout -B pending FETCH_HEAD`؛
