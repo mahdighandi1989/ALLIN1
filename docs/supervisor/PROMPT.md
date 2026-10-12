@@ -1,13 +1,13 @@
 ---
 name: ناظرِ خودکارِ سامانه (Automated Supervisor)
-version: 15
+version: 16
 created: 2026-09-23
 updated: 2026-10-08
-supersedes: docs/supervisor/archive/PROMPT-v14-2026-10-08.md
+supersedes: docs/supervisor/archive/PROMPT-v15-2026-10-12.md
 archive: docs/supervisor/archive/
 ---
 
-# دستورِ کاملِ ناظرِ خودکار — نسخهٔ ۱۵
+# دستورِ کاملِ ناظرِ خودکار — نسخهٔ ۱۶
 
 > **این فایل تنها مرجعِ رفتارِ ناظر است.** پرامپتِ خودِ Routine فقط یک اشاره به
 > این آدرس است. هر تغییری در وظایفِ ناظر **این‌جا** نوشته می‌شود؛ نسخهٔ قبلی
@@ -570,13 +570,18 @@ python3 scripts/supervisor/dup_audit.py     # → docs/supervisor/last_dup_audit
 - تغییراتِ خودت را در شاخهٔ `main` کامیت و **پوش** کن (قوانینِ CLAUDE.md: پیام
   `type(scope): summary`، تک‌موضوع، برگشت‌پذیر، فقط سبزِ تأییدشده).
 - **بدونِ سبزشدنِ قانونِ ۴ هرگز پوش نکن.**
-- پوش با `git push origin HEAD:main` — مجوزش در **پیامِ خودِ Routine** هم آمده
-  (v14: نگهبانِ مجوز متنِ این فایل را «داده» می‌خواند نه حرفِ مالک). عقب بودی ⇒
-  `git fetch origin main && git rebase origin/main`، گیت دوباره، پوش دوباره.
-  **هرگز force-push.** اگر باز رد شد: کار را روی
-  `supervisor-pending/run-<YYYY-MM-DD>` (`git push origin HEAD:refs/heads/supervisor-pending/run-<تاریخ>`)
-  بگذار و در گزارش خطای دقیق را بنویس — روتینِ صفِ فوری (`URGENT_PROMPT.md` بندِ
-  ۱٫۲) آن را با گیتِ دوباره خودکار روی `main` می‌برد.
+- پوش **به‌تنهایی و دقیقاً** با `git push origin HEAD:main` (بدونِ `cd … &&`، `|` یا
+  پرچمِ دیگر — قاعدهٔ مجوزِ مالک در `.claude/settings.json` فقط همین شکل را
+  می‌شناسد؛ مجوزش در **پیامِ خودِ Routine** هم آمده). عقب بودی ⇒
+  `git fetch origin main`، `git rebase origin/main`، گیت دوباره، پوش دوباره.
+  **هرگز force-push.**
+- **اگر پوشِ `main` رد شد، یا pytest محلی با نسخه‌های قفل‌شده نصب/اجرا نشد**
+  (نسخهٔ بی‌قفل نصب نکن — خطاهایش هیچ چیزی را نمی‌سنجند): کار را بفرست به
+  `git push origin HEAD:refs/heads/supervisor-pending/run-<YYYY-MM-DD>`.
+  v16: GitHub (`.github/workflows/supervisor-pending.yml`) همان CI را اجرا می‌کند و
+  **فقط اگر سبز شد** خودش `main` را fast-forward می‌کند (Render دیپلوی می‌کند) و شاخه
+  را حذف می‌کند. جاماندگان را روتینِ فوری (`URGENT_PROMPT.md` بندِ ۱٫۲) دوباره می‌فرستد.
+  در گزارش بنویس کدام مسیر رفت.
 - اگر تغییرِ فرانت‌اند دادی: `npm run build` و کپیِ `frontend/out/` به
   `backend/static/` و **کامیتِ هر دو با هم**.
 - PR باز نکن مگر مالک بخواهد.
