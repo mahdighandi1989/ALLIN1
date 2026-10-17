@@ -1,5 +1,5 @@
 {
- "base": "http://127.0.0.1:52503",
+ "base": "http://127.0.0.1:44881",
  "server_started": true,
  "endpoints": [
   {
@@ -200,7 +200,7 @@
   {
    "path": "/api/reports/top-exposures",
    "status": 200,
-   "bytes": 1509
+   "bytes": 1516
   },
   {
    "path": "/api/reports/portfolio/export.csv",
@@ -340,7 +340,7 @@
   {
    "path": "/api/inspection/urgent",
    "status": 200,
-   "bytes": 170
+   "bytes": 171
   },
   {
    "path": "/health",
@@ -370,7 +370,7 @@
   {
    "route": "/auth/callback",
    "rendered": true,
-   "text_len": 3346,
+   "text_len": 3345,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -383,7 +383,7 @@
    "console_error_count": 0,
    "bad_responses": [],
    "request_failures": [
-    "GET http://127.0.0.1:52503/api/auth/me"
+    "GET http://127.0.0.1:44881/api/auth/me"
    ],
    "server_alive_after": true
   },
@@ -552,7 +552,7 @@
   {
    "route": "/dashboard",
    "rendered": true,
-   "text_len": 3346,
+   "text_len": 3345,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -678,7 +678,7 @@
   {
    "route": "/inspection",
    "rendered": true,
-   "text_len": 798,
+   "text_len": 799,
    "buttons": 10,
    "inputs": 0,
    "clicked": 6,
@@ -732,7 +732,7 @@
   {
    "route": "/login",
    "rendered": true,
-   "text_len": 3346,
+   "text_len": 3345,
    "buttons": 6,
    "inputs": 0,
    "clicked": 6,
@@ -822,7 +822,7 @@
   {
    "route": "/reports",
    "rendered": true,
-   "text_len": 1619,
+   "text_len": 1626,
    "buttons": 8,
    "inputs": 0,
    "clicked": 6,
